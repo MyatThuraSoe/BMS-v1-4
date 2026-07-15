@@ -51,10 +51,39 @@ const Reports = () => {
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>Daily Sales Report - {formatDate(dateRange.start)}</Typography>
           <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4">{dailySales.totalSales || 0}</Typography><Typography color="text.secondary">Total Sales</Typography></Paper></Grid>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4">{formatCurrency(dailySales.totalRevenue)}</Typography><Typography color="text.secondary">Total Revenue</Typography></Paper></Grid>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4">{dailySales.itemCount || 0}</Typography><Typography color="text.secondary">Items Sold</Typography></Paper></Grid>
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">
+                {dailySales.totalTransactions || 0}
+              </Typography>
+              <Typography color="text.secondary">
+                Sales Today
+              </Typography>
+            </Paper>
           </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">
+                {formatCurrency(dailySales.totalRevenue || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                Today's Revenue
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">
+                {formatCurrency(dailySales.averageTransactionValue || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                Average Sale
+              </Typography>
+            </Paper>
+          </Grid>
+        </Grid>
         </Paper>
       )}
 
@@ -62,10 +91,39 @@ const Reports = () => {
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>Inventory Report</Typography>
           <Grid container spacing={3} sx={{ mt: 1 }}>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4">{inventory.totalProducts || 0}</Typography><Typography color="text.secondary">Total Products</Typography></Paper></Grid>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4">{formatCurrency(inventory.totalValue)}</Typography><Typography color="text.secondary">Total Value</Typography></Paper></Grid>
-            <Grid item xs={12} md={4}><Paper sx={{ p: 2, textAlign: 'center' }}><Typography variant="h4" color="error">{inventory.lowStockCount || 0}</Typography><Typography color="text.secondary">Low Stock Items</Typography></Paper></Grid>
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">
+                {inventory.totalProducts || 0}
+              </Typography>
+              <Typography color="text.secondary">
+                Total Products
+              </Typography>
+            </Paper>
           </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4">
+                {formatCurrency(inventory.totalInventoryValue || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                Total Inventory Value
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={12} md={4}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h4" color="error">
+                {inventory.lowStockProductsCount || 0}
+              </Typography>
+              <Typography color="text.secondary">
+                Low Stock Products
+              </Typography>
+            </Paper>
+          </Grid>
+        </Grid>
         </Paper>
       )}
     </Box>

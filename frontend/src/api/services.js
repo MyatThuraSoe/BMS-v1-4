@@ -280,10 +280,14 @@ export const receiptService = {
 
 export const inventoryService = {
   adjustStock: async (productId, adjustment) => {
-    const response = await apiClient.post(`/inventory/products/${productId}/adjust`, {
-      quantityChange: adjustment.quantityChange,
-      reason: adjustment.reason,
-    });
+    const response = await apiClient.post(
+      `/inventory/products/${productId}/adjust`,
+      {
+        productId: adjustment.productId,
+        quantityChange: adjustment.quantityChange,
+        reason: adjustment.reason,
+      }
+    );
     return response.data;
   },
 

@@ -18,7 +18,7 @@ const ProductForm = () => {
   const [formData, setFormData] = useState({
     name: '', sku: '', barcode: '', description: '', price: '', cost: '', stockQuantity: '', lowStockThreshold: '10', categoryId: '',
   });
-  const [images, setImages] = useState([]);
+  const [image, setImage] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -66,17 +66,20 @@ const ProductForm = () => {
       }
       
       // Step 2: If there are images and we have a product ID, upload them separately
-      if (images.length > 0 && result.data?.id) {
-        const productId = result.data.id;
-        for (const img of images) {
-          const imgForm = new FormData();
-          imgForm.append('images', img);
-          await apiClient.post(`/products/${productId}/images`, imgForm, {
-            headers: { 'Content-Type': 'multipart/form-data' },
-          });
-        }
+      if (image && result.data?.id) {
+          const productId = result.data.id;
+
+          const formData = new FormData();
+          formData.append("file", image);
+
+          await apiClient.post(
+              `/products/${productId}/images`,
+              formData
+          );
       }
+        
       return result;
+      
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Product updated successfully' : 'Product created successfully');
@@ -100,7 +103,7 @@ const ProductForm = () => {
   };
 
   const handleImageChange = (e) => {
-    setImages(Array.from(e.target.files));
+      setImage(e.target.files[0]);
   };
 
   if (!isManager()) {
@@ -146,7 +149,11 @@ const ProductForm = () => {
               <TextField fullWidth label="Description" name="description" multiline rows={3} value={formData.description} onChange={handleChange} />
             </Grid>
             <Grid item xs={12}>
-              <input type="file" multiple accept="image/*" onChange={handleImageChange} />
+              <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+              />
               <Typography variant="caption">Upload product images</Typography>
             </Grid>
             <Grid item xs={12}>

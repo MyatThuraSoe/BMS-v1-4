@@ -17,7 +17,12 @@ const StockAdjustment = () => {
   const { data: products } = useQuery({ queryKey: ['products-all'], queryFn: () => productService.getAll(0, 100) });
 
   const adjustMutation = useMutation({
-    mutationFn: (data) => inventoryService.adjustStock(data.productId, { quantityChange: parseInt(data.quantityChange), reason: data.reason }),
+    mutationFn: (data) =>
+      inventoryService.adjustStock(data.productId, {
+        productId: Number(data.productId),
+        quantityChange: Number(data.quantityChange),
+        reason: data.reason,
+      }),
     onSuccess: () => {
       setSuccess('Stock adjusted successfully');
       queryClient.invalidateQueries(['inventory-products']);

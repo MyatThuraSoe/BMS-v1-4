@@ -39,8 +39,17 @@ const Dashboard = () => {
     enabled: true,
   });
 
-  const dailySales = dailySalesData?.data || { totalSales: 0, totalRevenue: 0, itemCount: 0 };
-  const inventory = inventoryData?.data || { totalProducts: 0, totalValue: 0, lowStockCount: 0 };
+  const dailySales = dailySalesData?.data || {
+    totalTransactions: 0,
+    totalRevenue: 0,
+    averageTransactionValue: 0,
+  };
+
+  const inventory = inventoryData?.data || {
+    totalProducts: 0,
+    totalInventoryValue: 0,
+    lowStockProductsCount: 0,
+  };
   const recentSales = recentSalesData?.data?.content || [];
 
   const formatCurrency = (amount) => {
@@ -59,8 +68,8 @@ const Dashboard = () => {
       <Grid container spacing={3}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Today's Sales"
-            value={dailySales.totalSales || 0}
+            title="Sales Today"
+            value={dailySales.totalTransactions || 0}
             icon={<ShoppingCart />}
             color="primary.main"
           />
@@ -68,14 +77,14 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title="Today's Revenue"
-            value={formatCurrency(dailySales.totalRevenue)}
+            value={formatCurrency(dailySales.totalRevenue || 0)}
             icon={<AttachMoney />}
             color="success.main"
           />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Total Products"
+            title="Products in Stock"
             value={inventory.totalProducts || 0}
             icon={<Inventory />}
             color="info.main"
@@ -83,8 +92,8 @@ const Dashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Low Stock Items"
-            value={inventory.lowStockCount || 0}
+            title="Low Stock Alerts"
+            value={inventory.lowStockProductsCount || 0}
             icon={<TrendingUp />}
             color="warning.main"
           />
