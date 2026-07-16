@@ -37,6 +37,8 @@ import {
   ExpandMore as ExpandMoreIcon,
   AccountCircle,
   Logout,
+  Analytics as AnalyticsIcon,
+  AccountBalance as AccountingIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
@@ -53,6 +55,8 @@ const menuItems = [
   { text: 'Customers', icon: <PeopleIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'] },
+  { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'] },
+  { text: 'Accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'] },
   { text: 'Users', icon: <SecurityIcon />, path: '/users', roles: ['ADMIN'] },
   { text: 'Shop Info', icon: <ShopIcon />, path: '/shop-info', roles: ['ADMIN'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'] },

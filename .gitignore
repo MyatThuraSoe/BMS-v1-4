@@ -1,37 +1,41 @@
 ```
-# Java/Maven
-target/
-*.class
-*.jar
-*.war
-*.ear
-
-# Spring Boot
-*.log
-hs_err_pid*
-
 # Dependencies
 node_modules/
+frontend/node_modules/
 
-# IDE
+# Java class files
+*.class
+bms-backend/target/
+
+# Build and distribution directories
+build/
+dist/
+target/
+
+# IDE files
 .vscode/
 .idea/
-*.swp
-*.swo
 
-# Environment
+# Environment variables
 .env
 .env.local
-*.env.*
 
 # Logs
 *.log
 
-# OS
+# OS generated files
 .DS_Store
 Thumbs.db
 
-# Build artifacts
-build/
-dist/
+# Temporary files
+*.tmp
+*.temp
+
+# Compiled JavaScript (if any)
+*.js.map
+
+# Python cache (if any)
+__pycache__/
+*.pyc
+
 ```

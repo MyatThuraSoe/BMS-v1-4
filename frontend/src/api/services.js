@@ -306,6 +306,11 @@ export const saleService = {
     });
     return response.data;
   },
+
+  refundSale: async (saleId, refundData) => {
+    const response = await apiClient.post(`/sales/${saleId}/refund`, refundData);
+    return response.data;
+  },
 };
 
 export const receiptService = {
@@ -391,6 +396,73 @@ export const reportService = {
 
   getSalesTrend: async (days = 7) => {
     const response = await apiClient.get(`/reports/sales-trend?days=${days}`);
+    return response.data;
+  },
+
+  getProfitReport: async (startDate, endDate) => {
+    const response = await apiClient.get(`/reports/profit?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getTopProducts: async (period = 'MONTH', limit = 10) => {
+    const response = await apiClient.get(`/reports/top-products?period=${period}&limit=${limit}`);
+    return response.data;
+  },
+
+  getTopCategories: async (period = 'MONTH') => {
+    const response = await apiClient.get(`/reports/top-categories?period=${period}`);
+    return response.data;
+  },
+
+  getProfitSummary: async (startDate, endDate) => {
+    const response = await apiClient.get(`/reports/profit-summary?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getProfitTrend: async (period = 'MONTH', points = 12) => {
+    const response = await apiClient.get(`/reports/profit-trend?period=${period}&points=${points}`);
+    return response.data;
+  },
+
+  getAccountingSummary: async (year, month) => {
+    const response = await apiClient.get(`/reports/accounting-summary?year=${year}&month=${month}`);
+    return response.data;
+  },
+};
+
+export const expenseService = {
+  getAll: async (page = 0, size = 20, sortBy = 'expenseDate', sortDir = 'desc') => {
+    const response = await apiClient.get(`/expenses?page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await apiClient.get(`/expenses/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await apiClient.post('/expenses', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await apiClient.put(`/expenses/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await apiClient.delete(`/expenses/${id}`);
+    return response.data;
+  },
+
+  getByCategory: async (category, page = 0, size = 20) => {
+    const response = await apiClient.get(`/expenses/category/${category}?page=${page}&size=${size}`);
+    return response.data;
+  },
+
+  getByDateRange: async (startDate, endDate, page = 0, size = 20) => {
+    const response = await apiClient.get(`/expenses/date-range?startDate=${startDate}&endDate=${endDate}&page=${page}&size=${size}`);
     return response.data;
   },
 };
