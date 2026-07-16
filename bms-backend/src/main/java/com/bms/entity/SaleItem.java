@@ -35,10 +35,19 @@ public class SaleItem {
     @Column(name = "tax_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
+    @Column(name = "cost_price_at_sale", precision = 10, scale = 2)
+    private BigDecimal costPriceAtSale;
+
+    @Column(name = "quantity_refunded", nullable = false)
+    private Integer quantityRefunded = 0;
+
     @PrePersist
     protected void onCreate() {
         if (totalPrice == null && unitPrice != null && quantity != null) {
             totalPrice = unitPrice.multiply(new BigDecimal(quantity));
+        }
+        if (quantityRefunded == null) {
+            quantityRefunded = 0;
         }
     }
 
@@ -63,4 +72,10 @@ public class SaleItem {
 
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+
+    public BigDecimal getCostPriceAtSale() { return costPriceAtSale; }
+    public void setCostPriceAtSale(BigDecimal costPriceAtSale) { this.costPriceAtSale = costPriceAtSale; }
+
+    public Integer getQuantityRefunded() { return quantityRefunded; }
+    public void setQuantityRefunded(Integer quantityRefunded) { this.quantityRefunded = quantityRefunded; }
 }

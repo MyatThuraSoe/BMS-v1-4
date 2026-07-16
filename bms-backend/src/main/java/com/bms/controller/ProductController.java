@@ -49,11 +49,12 @@ public class ProductController {
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> getAllProducts(
+            @RequestParam(required = false) Long categoryId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "name") String sortBy) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy));
-        Page<ProductResponse> products = productService.getAllProducts(pageable);
+        Page<ProductResponse> products = productService.getAllProducts(categoryId, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Products retrieved successfully", products));
     }
 

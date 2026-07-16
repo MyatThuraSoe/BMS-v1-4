@@ -19,6 +19,7 @@ import {
   DialogContent,
   DialogActions,
   Alert,
+  MenuItem,
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -33,15 +34,23 @@ const Products = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
 
+  // Fetch categories for filter dropdown
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories-all'],
+    queryFn: () => categoryService.getAll(0, 100),
+  });
+  const categories = categoriesData?.data?.content || [];
+
   const { data: productsData, isLoading } = useQuery({
-    queryKey: ['products', page, size, search],
-    queryFn: () => productService.getAll(page, size, 'createdAt'),
+    queryKey: ['products', page, size, search, selectedCategory],
+    queryFn: () => productService.getAll(page, size, 'createdAt', selectedCategory),
   });
 
   const deleteMutation = useMutation({
@@ -75,15 +84,32 @@ const Products = () => {
         )}
       </Box>
 
-      <Paper sx={{ mb: 2 }}>
-        <TextField
-          fullWidth
-          placeholder="Search products..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
-          size="small"
-        />
+      <Paper sx={{ mb: 2, p: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <TextField
+            select
+            label="Category"
+            value={selectedCategory || ''}
+            onChange={(e) => setSelectedCategory(e.target.value ? Number(e.target.value) : null)}
+            sx={{ minWidth: 200 }}
+            size="small"
+          >
+            <MenuItem value="">All Categories</MenuItem>
+            {categories.map((cat) => (
+              <MenuItem key={cat.id} value={cat.id}>
+                {cat.name}
+              </MenuItem>
+            ))}
+          </TextField>
+          <TextField
+            fullWidth
+            placeholder="Search products..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
+            size="small"
+          />
+        </Box>
       </Paper>
 
       <TableContainer component={Paper}>

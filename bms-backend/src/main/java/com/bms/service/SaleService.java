@@ -1,8 +1,12 @@
 package com.bms.service;
 
 import com.bms.dto.request.CartVerifyRequest;
+import com.bms.dto.request.RefundItemRequest;
+import com.bms.dto.request.RefundRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.response.CartVerifyResponse;
+import com.bms.dto.response.RefundItemResponse;
+import com.bms.dto.response.RefundResponse;
 import com.bms.dto.response.SaleItemResponse;
 import com.bms.dto.response.SaleResponse;
 import com.bms.entity.*;
@@ -19,6 +23,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -43,6 +48,9 @@ public class SaleService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RefundRepository refundRepository;
 
     public Page<Sale> getAllSales(Pageable pageable) {
         return saleRepository.findActiveSales(pageable);
@@ -125,6 +133,9 @@ public class SaleService {
             BigDecimal itemTax = pricing[1];
             item.setTotalPrice(itemTotal);
             item.setTaxAmount(itemTax);
+
+            // Capture cost price at time of sale for accurate profit calculation
+            item.setCostPriceAtSale(product.getCostPrice());
 
             sale.getItems().add(item);
 
@@ -255,6 +266,138 @@ public class SaleService {
         return convertToResponse(updatedSale);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public RefundResponse processRefund(Long saleId, RefundRequest request, Long userId) {
+        // 1. Sale must exist and not be voided
+        Sale sale = saleRepository.findById(saleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
+        
+        if (sale.getIsVoided()) {
+            throw new BusinessException("Cannot refund a voided sale");
+        }
+        
+        if (!sale.getIsActive() || sale.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Sale not found: " + saleId);
+        }
+
+        // 2. Validate each item: can't refund more than purchased minus already refunded
+        BigDecimal totalRefundAmount = BigDecimal.ZERO;
+        List<RefundItem> refundItems = new ArrayList<>();
+        
+        for (RefundItemRequest itemRequest : request.getItems()) {
+            SaleItem saleItem = sale.getItems().stream()
+                    .filter(item -> item.getId().equals(itemRequest.getSaleItemId()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException("Sale item not found in this sale: " + itemRequest.getSaleItemId()));
+            
+            int quantityRequested = itemRequest.getQuantity();
+            int quantityAlreadyRefunded = saleItem.getQuantityRefunded() != null ? saleItem.getQuantityRefunded() : 0;
+            int quantityAvailableForRefund = saleItem.getQuantity() - quantityAlreadyRefunded;
+            
+            if (quantityRequested > quantityAvailableForRefund) {
+                throw new BusinessException("Cannot refund " + quantityRequested + " units of '" + 
+                    saleItem.getProduct().getName() + "'. Only " + quantityAvailableForRefund + 
+                    " unit(s) available for refund (original: " + saleItem.getQuantity() + 
+                    ", already refunded: " + quantityAlreadyRefunded + ")");
+            }
+            
+            if (quantityRequested <= 0) {
+                throw new BusinessException("Refund quantity must be positive for item: " + saleItem.getProduct().getName());
+            }
+            
+            // 3. Compute refund amount using original sale price
+            BigDecimal itemRefundAmount = saleItem.getUnitPrice().multiply(BigDecimal.valueOf(quantityRequested));
+            totalRefundAmount = totalRefundAmount.add(itemRefundAmount);
+            
+            // Prepare refund item (will be saved after validation passes)
+            RefundItem refundItem = new RefundItem();
+            refundItem.setSaleItem(saleItem);
+            refundItem.setQuantityRefunded(quantityRequested);
+            refundItem.setRefundAmount(itemRefundAmount);
+            refundItems.add(refundItem);
+        }
+        
+        // 4. Create the refund record
+        Refund refund = new Refund();
+        refund.setSale(sale);
+        User refundedBy = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        refund.setRefundedBy(refundedBy);
+        refund.setRefundDate(LocalDateTime.now());
+        refund.setReason(request.getReason());
+        refund.setTotalRefundAmount(totalRefundAmount);
+        
+        Refund savedRefund = refundRepository.save(refund);
+        
+        // Save refund items and update sale item quantities
+        for (RefundItem refundItem : refundItems) {
+            refundItem.setRefund(savedRefund);
+            // Link the refund item entity properly
+            SaleItem saleItem = refundItem.getSaleItem();
+            saleItem.setQuantityRefunded(saleItem.getQuantityRefunded() + refundItem.getQuantityRefunded());
+        }
+        refundRepository.saveAll(refundItems);
+        
+        // 5. Restore stock for refunded items
+        for (RefundItem refundItem : refundItems) {
+            SaleItem saleItem = refundItem.getSaleItem();
+            Product product = saleItem.getProduct();
+            int quantityToRestore = refundItem.getQuantityRefunded();
+            
+            int newStock = product.getStockQuantity() + quantityToRestore;
+            product.setStockQuantity(newStock);
+            productRepository.save(product);
+            
+            // Create stock movement record for return
+            StockMovement movement = new StockMovement();
+            movement.setProduct(product);
+            movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
+            movement.setQuantity(quantityToRestore);
+            movement.setReferenceType(StockMovement.ReferenceType.RETURN);
+            movement.setReferenceId(savedRefund.getId());
+            movement.setDescription("Stock restored from refund: " + sale.getInvoiceNumber() + 
+                " - Item: " + product.getName() + ", Qty: " + quantityToRestore);
+            movement.setCreatedBy(refundedBy);
+            movement.setMovementDate(LocalDateTime.now());
+            stockMovementRepository.save(movement);
+        }
+        
+        // 6. Log the action
+        auditLogService.logAction(userId, "SALE_REFUND", 
+            "Refund processed for sale: " + sale.getInvoiceNumber() + 
+            ". Amount: $" + totalRefundAmount + ". Reason: " + request.getReason(), 
+            "Refund", savedRefund.getId(), null, savedRefund.toString());
+        
+        return convertRefundToResponse(savedRefund);
+    }
+
+    public RefundResponse convertRefundToResponse(Refund refund) {
+        RefundResponse response = new RefundResponse();
+        response.setId(refund.getId());
+        response.setSaleId(refund.getSale().getId());
+        response.setInvoiceNumber(refund.getSale().getInvoiceNumber());
+        response.setRefundedById(refund.getRefundedBy().getId());
+        response.setRefundedByName(refund.getRefundedBy().getFirstName() + " " + refund.getRefundedBy().getLastName());
+        response.setRefundDate(refund.getRefundDate());
+        response.setReason(refund.getReason());
+        response.setTotalRefundAmount(refund.getTotalRefundAmount());
+        
+        List<RefundItemResponse> itemResponses = new ArrayList<>();
+        for (RefundItem item : refund.getRefundItems()) {
+            RefundItemResponse itemResponse = new RefundItemResponse();
+            itemResponse.setId(item.getId());
+            itemResponse.setSaleItemId(item.getSaleItem().getId());
+            itemResponse.setProductId(item.getSaleItem().getProduct().getId());
+            itemResponse.setProductName(item.getSaleItem().getProduct().getName());
+            itemResponse.setQuantityRefunded(item.getQuantityRefunded());
+            itemResponse.setRefundAmount(item.getRefundAmount());
+            itemResponses.add(itemResponse);
+        }
+        response.setItems(itemResponses);
+        
+        return response;
+    }
+
     public void deleteSale(Long id, Long userId) {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + id));
@@ -310,6 +453,7 @@ public class SaleService {
         response.setUnitPrice(item.getUnitPrice());
         response.setTotalPrice(item.getTotalPrice());
         response.setTaxAmount(item.getTaxAmount());
+        response.setCostPriceAtSale(item.getCostPriceAtSale());
         return response;
     }
 

@@ -29,7 +29,10 @@ import Users from './pages/Users';
 import UserForm from './pages/UserForm';
 import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
+import ShopInfo from './pages/ShopInfo';
 import NotFound from './pages/NotFound';
+import Analytics from './pages/Analytics';
+import Accounting from './pages/Accounting';
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
@@ -130,6 +133,12 @@ function AppRoutes() {
         {/* Reports (Admin & Manager only) */}
         <Route path="reports" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Reports /></ProtectedRoute>} />
         
+        {/* Analytics (Admin only) */}
+        <Route path="analytics" element={<ProtectedRoute allowedRoles={['ADMIN']}><Analytics /></ProtectedRoute>} />
+        
+        {/* Accounting (Admin only) */}
+        <Route path="accounting" element={<ProtectedRoute allowedRoles={['ADMIN']}><Accounting /></ProtectedRoute>} />
+        
         {/* Users (Admin only) */}
         <Route path="users" element={<ProtectedRoute allowedRoles={['ADMIN']}><Users /></ProtectedRoute>} />
         <Route path="users/new" element={<ProtectedRoute allowedRoles={['ADMIN']}><UserForm /></ProtectedRoute>} />
@@ -137,6 +146,9 @@ function AppRoutes() {
         
         {/* Settings (Admin only) */}
         <Route path="settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
+        
+        {/* Shop Info (Admin only) */}
+        <Route path="shop-info" element={<ProtectedRoute allowedRoles={['ADMIN']}><ShopInfo /></ProtectedRoute>} />
         
         {/* Audit Logs (Admin only) */}
         <Route path="audit-logs" element={<ProtectedRoute allowedRoles={['ADMIN']}><AuditLogs /></ProtectedRoute>} />

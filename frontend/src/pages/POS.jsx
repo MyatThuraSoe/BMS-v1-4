@@ -21,6 +21,8 @@ import {
   Alert,
   Pagination,
   Autocomplete,
+  ToggleButtonGroup,
+  ToggleButton,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -32,7 +34,7 @@ import {
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { productService, customerService, saleService } from '../api/services';
+import { productService, customerService, saleService, categoryService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
 
@@ -45,6 +47,7 @@ const POS = () => {
 
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
@@ -54,6 +57,13 @@ const POS = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [verifiedTotals, setVerifiedTotals] = useState(null); // { subtotal, taxAmount, totalAmount } from last successful verify
+
+  // Fetch categories for filter
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories-pos'],
+    queryFn: () => categoryService.getAll(0, 100),
+  });
+  const categories = categoriesData?.data?.content || [];
 
   // Fetch products
   const { data: productsData, isLoading } = useQuery({
@@ -71,12 +81,13 @@ const POS = () => {
   });
   const customers = customersData?.data?.content || [];
 
-  // Filter products by search
+  // Filter products by search and category
   const filteredProducts = products.filter(
     (p) =>
-      p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode?.toLowerCase().includes(searchQuery.toLowerCase())
+      (!selectedCategory || p.categoryId === selectedCategory) &&
+      (p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.barcode?.toLowerCase().includes(searchQuery.toLowerCase()))
   );
 
   const addToCart = (product) => {
@@ -285,16 +296,32 @@ const POS = () => {
         {/* Products Section */}
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 2, mb: 2 }}>
-            <TextField
-              fullWidth
-              placeholder="Search by name, SKU, or barcode..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              InputProps={{
-                startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-              }}
-              sx={{ mb: 2 }}
-            />
+            <Box sx={{ mb: 2 }}>
+              <TextField
+                fullWidth
+                placeholder="Search by name, SKU, or barcode..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                InputProps={{
+                  startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                }}
+              />
+            </Box>
+            <Box sx={{ mb: 2, display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+              <ToggleButtonGroup
+                value={selectedCategory}
+                exclusive
+                onChange={(e, val) => setSelectedCategory(val)}
+                size="small"
+              >
+                <ToggleButton value={null}>All</ToggleButton>
+                {categories.map((cat) => (
+                  <ToggleButton key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </ToggleButton>
+                ))}
+              </ToggleButtonGroup>
+            </Box>
             <Grid container spacing={1}>
               {filteredProducts.map((product) => (
                 <Grid item xs={6} sm={4} md={3} key={product.id}>

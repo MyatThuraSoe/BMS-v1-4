@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -170,8 +171,24 @@ public class PurchaseService {
         for (PurchaseItem item : purchase.getItems()) {
             Product product = item.getProduct();
             
-            int oldStock = product.getStockQuantity();
-            int newStock = oldStock + item.getQuantity();
+            // Calculate weighted average cost before updating stock
+            BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+            int oldStockQty = product.getStockQuantity();
+            int purchasedQty = item.getQuantity();
+            BigDecimal purchasedUnitCost = item.getUnitCost();
+
+            BigDecimal totalOldValue = oldCostPrice.multiply(BigDecimal.valueOf(oldStockQty));
+            BigDecimal totalNewValue = purchasedUnitCost.multiply(BigDecimal.valueOf(purchasedQty));
+            int totalQty = oldStockQty + purchasedQty;
+
+            BigDecimal newWeightedCost = totalQty > 0
+                ? totalOldValue.add(totalNewValue).divide(BigDecimal.valueOf(totalQty), 2, RoundingMode.HALF_UP)
+                : purchasedUnitCost;
+
+            product.setCostPrice(newWeightedCost);
+            
+            // Update stock quantity
+            int newStock = oldStockQty + item.getQuantity();
             product.setStockQuantity(newStock);
             productRepository.save(product);
 

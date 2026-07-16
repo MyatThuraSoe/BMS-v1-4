@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService, productService } from '../api/services';
 import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
 import { formatDateTime } from '../utils/helpers';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const StatCard = ({ title, value, icon, color }) => (
   <Paper sx={{ p: 3, display: 'flex', alignItems: 'center', height: '100%' }}>
@@ -39,6 +40,12 @@ const Dashboard = () => {
     enabled: true,
   });
 
+  const { data: salesTrendData } = useQuery({
+    queryKey: ['salesTrend', 7],
+    queryFn: () => reportService.getSalesTrend(7),
+    enabled: true,
+  });
+
   const dailySales = dailySalesData?.data || {
     totalTransactions: 0,
     totalRevenue: 0,
@@ -51,12 +58,18 @@ const Dashboard = () => {
     lowStockProductsCount: 0,
   };
   const recentSales = recentSalesData?.data?.content || [];
+  const salesTrend = salesTrendData?.data || [];
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
     }).format(amount || 0);
+  };
+
+  const formatDate = (dateStr) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
   };
 
   return (
@@ -101,7 +114,27 @@ const Dashboard = () => {
       </Grid>
 
       <Grid container spacing={3} sx={{ mt: 2 }}>
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={8}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>Sales Trend (Last 7 Days)</Typography>
+            {salesTrend.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                No sales data available for the last 7 days.
+              </Typography>
+            ) : (
+              <ResponsiveContainer width="100%" height={250}>
+                <LineChart data={salesTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tickFormatter={formatDate} />
+                  <YAxis />
+                  <Tooltip formatter={(value) => formatCurrency(value)} />
+                  <Line type="monotone" dataKey="totalSales" stroke="#1976d2" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </Paper>
+        </Grid>
+        <Grid item xs={12} md={4}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>Quick Actions</Typography>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
@@ -120,7 +153,10 @@ const Dashboard = () => {
             </Box>
           </Paper>
         </Grid>
-        <Grid item xs={12} md={6}>
+      </Grid>
+
+      <Grid container spacing={3} sx={{ mt: 2 }}>
+        <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>Recent Activity</Typography>
             {recentSales.length === 0 ? (

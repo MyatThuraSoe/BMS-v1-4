@@ -1,5 +1,40 @@
 import apiClient from './apiClient';
 
+export const shopInfoService = {
+  getShopInfo: async () => {
+    const response = await apiClient.get('/shop-info');
+    return response.data;
+  },
+
+  updateShopInfo: async (data) => {
+    const response = await apiClient.put('/shop-info', data);
+    return response.data;
+  },
+
+  uploadLogo: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/shop-info/logo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  getLogo: async () => {
+    const response = await apiClient.get('/shop-info/logo', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  deleteLogo: async () => {
+    const response = await apiClient.delete('/shop-info/logo');
+    return response.data;
+  },
+};
+
 export const authService = {
   login: async (username, password) => {
     const response = await apiClient.post('/auth/login', { username, password });
@@ -43,8 +78,12 @@ export const authService = {
 };
 
 export const productService = {
-  getAll: async (page = 0, size = 20, sortBy = 'createdAt') => {
-    const response = await apiClient.get(`/products?page=${page}&size=${size}&sortBy=${sortBy}`);
+  getAll: async (page = 0, size = 20, sortBy = 'createdAt', categoryId = null) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size), sortBy });
+    if (categoryId !== null && categoryId !== undefined) {
+      params.append('categoryId', String(categoryId));
+    }
+    const response = await apiClient.get(`/products?${params.toString()}`);
     return response.data;
   },
 
@@ -267,6 +306,11 @@ export const saleService = {
     });
     return response.data;
   },
+
+  refundSale: async (saleId, refundData) => {
+    const response = await apiClient.post(`/sales/${saleId}/refund`, refundData);
+    return response.data;
+  },
 };
 
 export const receiptService = {
@@ -347,6 +391,78 @@ export const reportService = {
 
   getInventoryReport: async () => {
     const response = await apiClient.get('/reports/inventory');
+    return response.data;
+  },
+
+  getSalesTrend: async (days = 7) => {
+    const response = await apiClient.get(`/reports/sales-trend?days=${days}`);
+    return response.data;
+  },
+
+  getProfitReport: async (startDate, endDate) => {
+    const response = await apiClient.get(`/reports/profit?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getTopProducts: async (period = 'MONTH', limit = 10) => {
+    const response = await apiClient.get(`/reports/top-products?period=${period}&limit=${limit}`);
+    return response.data;
+  },
+
+  getTopCategories: async (period = 'MONTH') => {
+    const response = await apiClient.get(`/reports/top-categories?period=${period}`);
+    return response.data;
+  },
+
+  getProfitSummary: async (startDate, endDate) => {
+    const response = await apiClient.get(`/reports/profit-summary?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getProfitTrend: async (period = 'MONTH', points = 12) => {
+    const response = await apiClient.get(`/reports/profit-trend?period=${period}&points=${points}`);
+    return response.data;
+  },
+
+  getAccountingSummary: async (year, month) => {
+    const response = await apiClient.get(`/reports/accounting-summary?year=${year}&month=${month}`);
+    return response.data;
+  },
+};
+
+export const expenseService = {
+  getAll: async (page = 0, size = 20, sortBy = 'expenseDate', sortDir = 'desc') => {
+    const response = await apiClient.get(`/expenses?page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await apiClient.get(`/expenses/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await apiClient.post('/expenses', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await apiClient.put(`/expenses/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await apiClient.delete(`/expenses/${id}`);
+    return response.data;
+  },
+
+  getByCategory: async (category, page = 0, size = 20) => {
+    const response = await apiClient.get(`/expenses/category/${category}?page=${page}&size=${size}`);
+    return response.data;
+  },
+
+  getByDateRange: async (startDate, endDate, page = 0, size = 20) => {
+    const response = await apiClient.get(`/expenses/date-range?startDate=${startDate}&endDate=${endDate}&page=${page}&size=${size}`);
     return response.data;
   },
 };
