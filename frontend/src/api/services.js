@@ -68,10 +68,27 @@ export const productService = {
     return response.data;
   },
 
-  getImage: async (productId, imageId) => {
-    const response = await apiClient.get(`/products/${productId}/images/${imageId}`, {
+  getImage: async (productId) => {
+    const response = await apiClient.get(`/products/${productId}/image`, {
       responseType: 'blob',
     });
+    return response.data;
+  },
+
+  uploadImage: async (productId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post(`/products/${productId}/image`, formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          });
+    return response.data;
+  },
+
+  deleteImage: async (productId) => {
+    const response = await apiClient.delete(`/products/${productId}/image`);
     return response.data;
   },
 

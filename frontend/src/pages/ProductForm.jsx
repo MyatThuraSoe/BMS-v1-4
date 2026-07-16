@@ -8,6 +8,8 @@ import { productService, categoryService } from '../api/services';
 import apiClient from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
 
+import ProductImage from '../components/ProductImage';
+
 const ProductForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -18,7 +20,9 @@ const ProductForm = () => {
   const [formData, setFormData] = useState({
     name: '', sku: '', barcode: '', description: '', price: '', cost: '', stockQuantity: '', lowStockThreshold: '10', categoryId: '',
   });
-  const [image, setImage] = useState(null);
+  const [image, setImage] = useState(null);       // newly selected file, not yet uploaded
+  const [imagePreview, setImagePreview] = useState(null); // local preview URL for the newly selected file
+  const [removeExistingImage, setRemoveExistingImage] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -65,21 +69,15 @@ const ProductForm = () => {
         result = await productService.create(jsonData);
       }
       
-      // Step 2: If there are images and we have a product ID, upload them separately
+      
+      
+      // Step 2: If a new image was selected, upload it (this replaces any existing image)
       if (image && result.data?.id) {
-          const productId = result.data.id;
-
-          const formData = new FormData();
-          formData.append("file", image);
-
-          await apiClient.post(
-              `/products/${productId}/images`,
-              formData
-          );
+        await productService.uploadImage(result.data.id, image);
       }
         
       return result;
-      
+
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Product updated successfully' : 'Product created successfully');
@@ -103,7 +101,22 @@ const ProductForm = () => {
   };
 
   const handleImageChange = (e) => {
-      setImage(e.target.files[0]);
+    const file = e.target.files[0];
+    setImage(file);
+    setRemoveExistingImage(false);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(file ? URL.createObjectURL(file) : null);
+  };
+
+  const handleRemoveImage = async () => {
+    if (isEdit && existingProduct?.data?.hasImage && !image) {
+      await productService.deleteImage(id);
+      queryClient.invalidateQueries(['product', id]);
+    }
+    setImage(null);
+    setRemoveExistingImage(true);
+    if (imagePreview) URL.revokeObjectURL(imagePreview);
+    setImagePreview(null);
   };
 
   if (!isManager()) {
@@ -149,6 +162,16 @@ const ProductForm = () => {
               <TextField fullWidth label="Description" name="description" multiline rows={3} value={formData.description} onChange={handleChange} />
             </Grid>
             <Grid item xs={12}>
+              {imagePreview ? (
+                <Box component="img" src={imagePreview} alt="New" sx={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 1, mb: 1 }} />
+              ) : (isEdit && existingProduct?.data?.hasImage && !removeExistingImage) ? (
+                <ProductImage productId={id} hasImage={true} size={100} />
+              ) : null}
+              {((isEdit && existingProduct?.data?.hasImage && !removeExistingImage) || image) && (
+                <Button size="small" color="error" onClick={handleRemoveImage} sx={{ display: 'block', mt: 1 }}>
+                  Remove Image
+                </Button>
+              )}
               <input
                   type="file"
                   accept="image/*"

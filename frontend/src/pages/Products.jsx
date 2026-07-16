@@ -26,6 +26,9 @@ import { productService, categoryService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 
+import ProductImage from '../components/ProductImage';
+
+
 const Products = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
@@ -87,7 +90,9 @@ const Products = () => {
         <Table>
           <TableHead>
             <TableRow>
+              <TableCell>No</TableCell>
               <TableCell>Name</TableCell>
+              <TableCell>Image</TableCell>
               <TableCell>SKU</TableCell>
               <TableCell>Category</TableCell>
               <TableCell align="right">Price</TableCell>
@@ -102,9 +107,11 @@ const Products = () => {
             ) : products.length === 0 ? (
               <TableRow><TableCell colSpan={7} align="center">No products found</TableCell></TableRow>
             ) : (
-              products.map((product) => (
+              products.map((product, index) => (
                 <TableRow key={product.id}>
+                  <TableCell>{page * size + index + 1}</TableCell>
                   <TableCell>{product.name}</TableCell>
+                  <TableCell><ProductImage productId={product.id} hasImage={product.hasImage} size={48} /></TableCell>
                   <TableCell>{product.sku}</TableCell>
                   <TableCell>{product.categoryName || '-'}</TableCell>
                   <TableCell align="right">{formatCurrency(product.unitPrice)}</TableCell>

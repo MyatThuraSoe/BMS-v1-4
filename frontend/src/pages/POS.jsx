@@ -19,6 +19,7 @@ import {
   DialogActions,
   Chip,
   Alert,
+  Pagination,
   Autocomplete,
 } from '@mui/material';
 import {
@@ -34,7 +35,14 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, customerService, saleService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
+
+import ProductImage from '../components/ProductImage';
+
 const POS = () => {
+
+  const [page, setPage] = useState(0);
+  const pageSize = 20;
+
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -48,11 +56,13 @@ const POS = () => {
   const [verifiedTotals, setVerifiedTotals] = useState(null); // { subtotal, taxAmount, totalAmount } from last successful verify
 
   // Fetch products
-  const { data: productsData } = useQuery({
-    queryKey: ['products-pos'],
-    queryFn: () => productService.getAll(0, 100),
+  const { data: productsData, isLoading } = useQuery({
+    queryKey: ['products-pos', page],
+    queryFn: () => productService.getAll(page, pageSize),
+    keepPreviousData: true,
   });
   const products = productsData?.data?.content || [];
+  const totalPages = productsData?.data?.totalPages || 0;
 
   // Fetch customers
   const { data: customersData } = useQuery({
@@ -288,6 +298,8 @@ const POS = () => {
             <Grid container spacing={1}>
               {filteredProducts.map((product) => (
                 <Grid item xs={6} sm={4} md={3} key={product.id}>
+                  
+                  
                   <Paper
                     onClick={() => addToCart(product)}
                     sx={{
@@ -297,6 +309,7 @@ const POS = () => {
                       opacity: product.stockQuantity <= 0 ? 0.5 : 1,
                     }}
                   >
+                    <ProductImage productId={product.id} hasImage={product.hasImage} size={50} />
                     <Typography variant="body2" noWrap>
                       {product.name}
                     </Typography>
@@ -311,6 +324,20 @@ const POS = () => {
               ))}
             </Grid>
           </Paper>
+          <Box
+            sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              mt: 2,
+            }}
+          >
+            <Pagination
+                page={page + 1}
+                count={totalPages}
+                color="primary"
+                onChange={(e, value) => setPage(value - 1)}
+            />
+          </Box>
         </Grid>
 
         {/* Cart Section */}
