@@ -1,9 +1,11 @@
 package com.bms.controller;
 
 import com.bms.dto.request.CartVerifyRequest;
+import com.bms.dto.request.RefundRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.CartVerifyResponse;
+import com.bms.dto.response.RefundResponse;
 import com.bms.dto.response.SaleResponse;
 import com.bms.entity.Sale;
 import com.bms.service.SaleService;
@@ -83,6 +85,20 @@ public class SaleController {
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
         SaleResponse sale = saleService.voidSale(id, userId, reason);
         return ResponseEntity.ok(new ApiResponse<>(true, "Sale voided successfully", sale));
+    }
+
+    @PostMapping("/{saleId}/refund")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<RefundResponse>> refundSale(
+            @PathVariable Long saleId,
+            @Valid @RequestBody RefundRequest request,
+            Authentication authentication) {
+        // Extract authenticated user from SecurityContext
+        org.springframework.security.core.userdetails.UserDetails userDetails = 
+            (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+        RefundResponse refund = saleService.processRefund(saleId, request, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Refund processed successfully", refund));
     }
 
     @DeleteMapping("/{id}")

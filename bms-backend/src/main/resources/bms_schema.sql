@@ -211,10 +211,45 @@ CREATE TABLE sale_items (
     unit_price DECIMAL(10,2) NOT NULL,
     total_price DECIMAL(10,2) NOT NULL,
     tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    cost_price_at_sale DECIMAL(10,2) NULL,
+    quantity_refunded INT NOT NULL DEFAULT 0,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_sale_item_sale (sale_id),
     INDEX idx_sale_item_product (product_id)
+);
+
+-- Refunds table
+CREATE TABLE refunds (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    sale_id BIGINT NOT NULL,
+    refunded_by BIGINT NOT NULL,
+    refund_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reason TEXT NOT NULL,
+    total_refund_amount DECIMAL(10,2) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    deleted_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (sale_id) REFERENCES sales(id),
+    FOREIGN KEY (refunded_by) REFERENCES users(id),
+    INDEX idx_refund_sale (sale_id),
+    INDEX idx_refund_user (refunded_by),
+    INDEX idx_refund_date (refund_date)
+);
+
+-- Refund Items table
+CREATE TABLE refund_items (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    refund_id BIGINT NOT NULL,
+    sale_item_id BIGINT NOT NULL,
+    quantity_refunded INT NOT NULL,
+    refund_amount DECIMAL(10,2) NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
+    FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+    INDEX idx_refund_item_refund (refund_id),
+    INDEX idx_refund_item_sale_item (sale_item_id)
 );
 
 -- Stock Movements table
@@ -282,3 +317,24 @@ INSERT INTO system_settings (setting_key, setting_value, description, data_type)
 ('low_stock_threshold', '5', 'Default threshold for low stock alerts', 'INTEGER'),
 ('receipt_print_enabled', 'true', 'Whether receipt printing is enabled', 'BOOLEAN'),
 ('invoice_prefix', 'INV-', 'Prefix for invoice numbers', 'STRING');
+
+-- Expenses table
+CREATE TABLE expenses (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(50) NOT NULL,
+    description VARCHAR(255),
+    amount DECIMAL(10,2) NOT NULL,
+    expense_date DATE NOT NULL,
+    created_by BIGINT NOT NULL,
+    receipt_image LONGBLOB NULL,
+    receipt_image_type VARCHAR(10) NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    deleted_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_expense_category (category),
+    INDEX idx_expense_date (expense_date),
+    INDEX idx_expense_created_by (created_by),
+    INDEX idx_expense_is_active (is_active)
+);
