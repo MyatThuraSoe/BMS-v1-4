@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, Paper, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { receiptService } from '../api/services';
+import { receiptService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
@@ -10,6 +10,39 @@ import { notifySuccess, notifyError } from '../utils/notify';
 const ReceiptPreview = () => {
   const { invoiceNumber } = useParams();
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [shopInfo, setShopInfo] = useState(null);
+  const [logoUrl, setLogoUrl] = useState(null);
+
+  // Fetch shop info for branding
+  useEffect(() => {
+    const fetchShopInfo = async () => {
+      try {
+        const response = await shopInfoService.getShopInfo();
+        const info = response?.data || null;
+        setShopInfo(info);
+        
+        if (info?.hasLogo) {
+          try {
+            const logoBlob = await shopInfoService.getLogo();
+            const url = URL.createObjectURL(logoBlob);
+            setLogoUrl(url);
+          } catch (err) {
+            setLogoUrl(null);
+          }
+        }
+      } catch (err) {
+        setShopInfo(null);
+      }
+    };
+    
+    fetchShopInfo();
+    
+    return () => {
+      if (logoUrl) {
+        URL.revokeObjectURL(logoUrl);
+      }
+    };
+  }, []);
 
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', invoiceNumber],
@@ -20,6 +53,7 @@ const ReceiptPreview = () => {
   if (!data?.data) return <Typography>Receipt not found</Typography>;
 
   const receipt = data.data;
+  const shopName = shopInfo?.shopName || 'BUSINESS MANAGEMENT SYSTEM';
 
   const handlePrint = () => {
     window.print();
@@ -43,7 +77,19 @@ const ReceiptPreview = () => {
   return (
     <Box sx={{ p: 3, maxWidth: 400, mx: 'auto' }}>
       <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
-        <Typography variant="h6">BMS v1</Typography>
+        {logoUrl && (
+          <Box component="img" src={logoUrl} alt="Shop Logo" sx={{ maxWidth: 80, maxHeight: 80, mb: 1 }} />
+        )}
+        <Typography variant="h6">{shopName}</Typography>
+        {shopInfo?.address && (
+          <Typography variant="body2" sx={{ fontSize: 10 }}>{shopInfo.address}</Typography>
+        )}
+        {shopInfo?.phone && (
+          <Typography variant="body2" sx={{ fontSize: 10 }}>Tel: {shopInfo.phone}</Typography>
+        )}
+        {shopInfo?.email && (
+          <Typography variant="body2" sx={{ fontSize: 10 }}>{shopInfo.email}</Typography>
+        )}
         <Typography variant="body2">Invoice: {receipt.invoiceNumber}</Typography>
         <Typography variant="body2">{formatDateTime(receipt.saleDate)}</Typography>
         <Typography variant="body2">Cashier: {receipt.cashierName}</Typography>

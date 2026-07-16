@@ -4,6 +4,7 @@ import com.bms.entity.Sale;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.dto.response.DailySalesTrendDto;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -215,5 +216,46 @@ public class ReportService {
         report.put("lowStockItems", lowStockList);
 
         return report;
+    }
+
+    // Sales trend report - returns daily sales for the last N days
+    public List<DailySalesTrendDto> getSalesTrend(int days) {
+        LocalDate today = LocalDate.now();
+        LocalDate startDate = today.minusDays(days - 1);
+        
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = today.plusDays(1).atStartOfDay();
+
+        // Fetch all non-voided sales in the date range
+        Pageable pageable = PageRequest.of(0, 10000);
+        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
+        List<Sale> sales = salesPage.getContent();
+        
+        // Group sales by date and calculate totals
+        Map<LocalDate, DailySalesTrendDto> dailyMap = new HashMap<>();
+        
+        // Initialize all dates with zero values to ensure contiguous range
+        for (int i = 0; i < days; i++) {
+            LocalDate date = startDate.plusDays(i);
+            dailyMap.put(date, new DailySalesTrendDto(date, BigDecimal.ZERO, 0));
+        }
+        
+        // Aggregate actual sales data
+        for (Sale sale : sales) {
+            if (!sale.getIsVoided()) {
+                LocalDate saleDate = sale.getSaleDate().toLocalDate();
+                DailySalesTrendDto dto = dailyMap.get(saleDate);
+                if (dto != null) {
+                    dto.setTotalSales(dto.getTotalSales().add(sale.getTotalAmount()));
+                    dto.setTransactionCount(dto.getTransactionCount() + 1);
+                }
+            }
+        }
+
+        // Convert to list sorted by date
+        List<DailySalesTrendDto> result = new ArrayList<>(dailyMap.values());
+        result.sort(Comparator.comparing(DailySalesTrendDto::getDate));
+        
+        return result;
     }
 }

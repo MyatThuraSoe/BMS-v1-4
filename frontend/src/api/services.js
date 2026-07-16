@@ -1,5 +1,40 @@
 import apiClient from './apiClient';
 
+export const shopInfoService = {
+  getShopInfo: async () => {
+    const response = await apiClient.get('/shop-info');
+    return response.data;
+  },
+
+  updateShopInfo: async (data) => {
+    const response = await apiClient.put('/shop-info', data);
+    return response.data;
+  },
+
+  uploadLogo: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/shop-info/logo', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  },
+
+  getLogo: async () => {
+    const response = await apiClient.get('/shop-info/logo', {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  deleteLogo: async () => {
+    const response = await apiClient.delete('/shop-info/logo');
+    return response.data;
+  },
+};
+
 export const authService = {
   login: async (username, password) => {
     const response = await apiClient.post('/auth/login', { username, password });
@@ -43,8 +78,12 @@ export const authService = {
 };
 
 export const productService = {
-  getAll: async (page = 0, size = 20, sortBy = 'createdAt') => {
-    const response = await apiClient.get(`/products?page=${page}&size=${size}&sortBy=${sortBy}`);
+  getAll: async (page = 0, size = 20, sortBy = 'createdAt', categoryId = null) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size), sortBy });
+    if (categoryId !== null && categoryId !== undefined) {
+      params.append('categoryId', String(categoryId));
+    }
+    const response = await apiClient.get(`/products?${params.toString()}`);
     return response.data;
   },
 
@@ -347,6 +386,11 @@ export const reportService = {
 
   getInventoryReport: async () => {
     const response = await apiClient.get('/reports/inventory');
+    return response.data;
+  },
+
+  getSalesTrend: async (days = 7) => {
+    const response = await apiClient.get(`/reports/sales-trend?days=${days}`);
     return response.data;
   },
 };

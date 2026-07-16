@@ -50,9 +50,14 @@ public class ProductService {
     @Autowired
     private AuditLogService auditLogService;
 
-    public Page<ProductResponse> getAllProducts(Pageable pageable) {
-        return productRepository.findActiveProducts(pageable)
-                .map(this::convertToResponse);
+    public Page<ProductResponse> getAllProducts(Long categoryId, Pageable pageable) {
+        if (categoryId == null) {
+            return productRepository.findActiveProducts(pageable)
+                    .map(this::convertToResponse);
+        } else {
+            return productRepository.findByCategoryId(categoryId, pageable)
+                    .map(this::convertToResponse);
+        }
     }
 
     public Page<ProductResponse> searchProducts(String keyword, Pageable pageable) {

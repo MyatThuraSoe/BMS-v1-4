@@ -1,6 +1,7 @@
 package com.bms.controller;
 
 import com.bms.dto.response.ApiResponse;
+import com.bms.dto.response.DailySalesTrendDto;
 import com.bms.service.ReportService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -62,6 +63,13 @@ public class ReportController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         List<Map<String, Object>> report = reportService.getCashierPerformanceReport(startDate, endDate);
         return ResponseEntity.ok(new ApiResponse<>(true, "Cashier performance report retrieved successfully", report));
+    }
+
+    @GetMapping("/sales-trend")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<DailySalesTrendDto>>> getSalesTrend(
+            @RequestParam(defaultValue = "7") int days) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Sales trend retrieved", reportService.getSalesTrend(days)));
     }
 
     @GetMapping("/inventory")

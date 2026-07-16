@@ -1,62 +1,37 @@
 ```
+# Java/Maven
+target/
+*.class
+*.jar
+*.war
+*.ear
+
+# Spring Boot
+*.log
+hs_err_pid*
+
 # Dependencies
 node_modules/
 
-# Build artifacts
-dist/
-build/
-target/
-
-# Environment variables
-.env
-.env.local
-*.env.*
-
-# Editor/IDE files
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*.tmp
+
+# Environment
+.env
+.env.local
+*.env.*
 
 # Logs
 *.log
 
-# Python cache
-__pycache__/
-*.pyc
-*.pyo
-
-# Coverage reports
-coverage/
-htmlcov/
-.coverage
-
-# OS generated files
+# OS
 .DS_Store
 Thumbs.db
 
-# Compressed files
-*.zip
-*.gz
-*.tar
-*.tgz
-*.bz2
-*.xz
-*.7z
-*.rar
-*.zst
-*.lz4
-*.lzh
-*.cab
-*.arj
-*.rpm
-*.deb
-*.Z
-*.lz
-*.lzo
-*.tar.gz
-*.tar.bz2
-*.tar.xz
-*.tar.zst
+# Build artifacts
+build/
+dist/
 ```

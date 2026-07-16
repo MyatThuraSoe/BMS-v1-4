@@ -31,6 +31,7 @@ import {
   Settings as SettingsIcon,
   Security as SecurityIcon,
   History as HistoryIcon,
+  Store as ShopIcon,
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
   ExpandMore as ExpandMoreIcon,
@@ -53,6 +54,7 @@ const menuItems = [
   { text: 'Sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Users', icon: <SecurityIcon />, path: '/users', roles: ['ADMIN'] },
+  { text: 'Shop Info', icon: <ShopIcon />, path: '/shop-info', roles: ['ADMIN'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'] },
   { text: 'Audit Logs', icon: <HistoryIcon />, path: '/audit-logs', roles: ['ADMIN'] },
 ];

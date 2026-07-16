@@ -3,6 +3,17 @@ package com.bms.controller;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.receipt.ReceiptDto;
 import com.bms.service.ReceiptService;
+import com.bms.service.ShopInfoService;
+import com.bms.dto.response.ShopInfoResponse;
+import Document;
+import Element;
+import Font;
+import Image;
+import PageSize;
+import Paragraph;
+import Phrase;
+import PdfPTable;
+import PdfWriter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -12,6 +23,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 @RestController
 @RequestMapping("/api/receipts")
@@ -19,6 +31,7 @@ import java.nio.charset.StandardCharsets;
 public class ReceiptController {
 
     private final ReceiptService receiptService;
+    private final ShopInfoService shopInfoService;
 
     @GetMapping("/invoice/{invoiceNumber}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
@@ -38,6 +51,7 @@ public class ReceiptController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<String> printReceiptHtml(@PathVariable String invoiceNumber) {
         ReceiptDto receipt = receiptService.getReceiptByInvoiceNumber(invoiceNumber);
+        ShopInfoResponse shopInfo = shopInfoService.getShopInfo();
         
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>");
@@ -47,6 +61,7 @@ public class ReceiptController {
         html.append("@media print { @page { margin: 0; size: 58mm auto; } body { margin: 0; padding: 5px; } }");
         html.append("body { font-family: 'Courier New', monospace; font-size: 12px; width: 58mm; margin: 0 auto; }");
         html.append(".header { text-align: center; margin-bottom: 10px; }");
+        html.append(".logo { max-width: 80px; max-height: 80px; margin: 0 auto 5px; display: block; }");
         html.append(".line { border-bottom: 1px dashed #000; margin: 5px 0; }");
         html.append(".item { display: flex; justify-content: space-between; margin: 3px 0; }");
         html.append(".item-name { flex: 2; }");
@@ -58,8 +73,34 @@ public class ReceiptController {
         html.append("</style></head><body>");
         
         html.append("<div class='header'>");
-        html.append("<h3 style='margin: 0;'>BUSINESS MANAGEMENT SYSTEM</h3>");
-        html.append("<p style='margin: 2px 0;'>RECEIPT</p>");
+        
+        // Logo (if exists)
+        if (shopInfo.isHasLogo() && shopInfo.getShopName() != null) {
+            try {
+                byte[] logoData = shopInfoService.getLogo();
+                String logoType = shopInfoService.getLogoType();
+                String base64Logo = Base64.getEncoder().encodeToString(logoData);
+                html.append("<img src='data:image/").append(logoType).append(";base64,").append(base64Logo).append("' class='logo' alt='Logo'/>");
+            } catch (Exception e) {
+                // Logo fetch failed, skip it silently
+            }
+        }
+        
+        // Shop name and info
+        String shopName = shopInfo.getShopName() != null ? shopInfo.getShopName() : "BUSINESS MANAGEMENT SYSTEM";
+        html.append("<h3 style='margin: 0;'>").append(shopName).append("</h3>");
+        
+        if (shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>").append(shopInfo.getAddress()).append("</p>");
+        }
+        if (shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>Tel: ").append(shopInfo.getPhone()).append("</p>");
+        }
+        if (shopInfo.getEmail() != null && !shopInfo.getEmail().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>").append(shopInfo.getEmail()).append("</p>");
+        }
+        
+        html.append("<p style='margin: 5px 0;'><strong>RECEIPT</strong></p>");
         html.append("</div>");
         
         html.append("<div class='line'></div>");
@@ -114,75 +155,108 @@ public class ReceiptController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<byte[]> generateReceiptPdf(@PathVariable String invoiceNumber) {
         ReceiptDto receipt = receiptService.getReceiptByInvoiceNumber(invoiceNumber);
+        ShopInfoResponse shopInfo = shopInfoService.getShopInfo();
         
         // Generate PDF using OpenPDF library
         try {
-            com.lowagie.text.Document document = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4, 20, 20, 20, 20);
+            Document document = new Document(PageSize.A4, 20, 20, 20, 20);
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
-            com.lowagie.text.pdf.PdfWriter.getInstance(document, baos);
+            PdfWriter.getInstance(document, baos);
             
             document.open();
             
             // Header
-            com.lowagie.text.Font titleFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 14, com.lowagie.text.Font.BOLD);
-            com.lowagie.text.Font normalFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 10, com.lowagie.text.Font.NORMAL);
-            com.lowagie.text.Font smallFont = new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 8, com.lowagie.text.Font.NORMAL);
+            Font titleFont = new Font(Font.HELVETICA, 14, Font.BOLD);
+            Font normalFont = new Font(Font.HELVETICA, 10, Font.NORMAL);
+            Font smallFont = new Font(Font.HELVETICA, 8, Font.NORMAL);
             
-            com.lowagie.text.Paragraph title = new com.lowagie.text.Paragraph("BUSINESS MANAGEMENT SYSTEM", titleFont);
-            title.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            // Logo (if exists)
+            if (shopInfo.isHasLogo()) {
+                try {
+                    byte[] logoData = shopInfoService.getLogo();
+                    Image logo = Image.getInstance(logoData);
+                    logo.scaleToFit(60f, 60f);
+                    logo.setAlignment(Element.ALIGN_CENTER);
+                    logo.setSpacingAfter(5f);
+                    document.add(logo);
+                } catch (Exception e) {
+                    // Logo fetch failed, skip it silently
+                }
+            }
+            
+            // Shop name and info
+            String shopName = shopInfo.getShopName() != null ? shopInfo.getShopName() : "BUSINESS MANAGEMENT SYSTEM";
+            Paragraph title = new Paragraph(shopName, titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
             document.add(title);
             
-            com.lowagie.text.Paragraph subtitle = new com.lowagie.text.Paragraph("RECEIPT", normalFont);
-            subtitle.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            if (shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+                Paragraph address = new Paragraph(shopInfo.getAddress(), smallFont);
+                address.setAlignment(Element.ALIGN_CENTER);
+                document.add(address);
+            }
+            if (shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+                Paragraph phone = new Paragraph("Tel: " + shopInfo.getPhone(), smallFont);
+                phone.setAlignment(Element.ALIGN_CENTER);
+                document.add(phone);
+            }
+            if (shopInfo.getEmail() != null && !shopInfo.getEmail().isEmpty()) {
+                Paragraph email = new Paragraph(shopInfo.getEmail(), smallFont);
+                email.setAlignment(Element.ALIGN_CENTER);
+                document.add(email);
+            }
+            
+            Paragraph subtitle = new Paragraph("RECEIPT", normalFont);
+            subtitle.setAlignment(Element.ALIGN_CENTER);
             subtitle.setSpacingAfter(10);
             document.add(subtitle);
             
-            document.add(new com.lowagie.text.Paragraph("Invoice: " + receipt.getInvoiceNumber(), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Date: " + receipt.getSaleDate(), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Cashier: " + receipt.getCashierName(), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Customer: " + receipt.getCustomerName(), normalFont));
+            document.add(new Paragraph("Invoice: " + receipt.getInvoiceNumber(), normalFont));
+            document.add(new Paragraph("Date: " + receipt.getSaleDate(), normalFont));
+            document.add(new Paragraph("Cashier: " + receipt.getCashierName(), normalFont));
+            document.add(new Paragraph("Customer: " + receipt.getCustomerName(), normalFont));
             
-            document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
+            document.add(new Paragraph("------------------------------------------------", smallFont));
             
             // Items table
-            com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(4);
+            PdfPTable table = new PdfPTable(4);
             table.setWidthPercentage(100);
             table.setWidths(new float[]{3f, 1f, 1f, 1f});
             
-            table.addCell(new com.lowagie.text.Phrase("Item", smallFont));
-            table.addCell(new com.lowagie.text.Phrase("Qty", smallFont));
-            table.addCell(new com.lowagie.text.Phrase("Price", smallFont));
-            table.addCell(new com.lowagie.text.Phrase("Total", smallFont));
+            table.addCell(new Phrase("Item", smallFont));
+            table.addCell(new Phrase("Qty", smallFont));
+            table.addCell(new Phrase("Price", smallFont));
+            table.addCell(new Phrase("Total", smallFont));
             
             for (var item : receipt.getItems()) {
-                table.addCell(new com.lowagie.text.Phrase(item.getProductName(), smallFont));
-                table.addCell(new com.lowagie.text.Phrase(String.valueOf(item.getQuantity()), smallFont));
-                table.addCell(new com.lowagie.text.Phrase(String.format("$%.2f", item.getUnitPrice()), smallFont));
-                table.addCell(new com.lowagie.text.Phrase(String.format("$%.2f", item.getSubtotal()), smallFont));
+                table.addCell(new Phrase(item.getProductName(), smallFont));
+                table.addCell(new Phrase(String.valueOf(item.getQuantity()), smallFont));
+                table.addCell(new Phrase(String.format("$%.2f", item.getUnitPrice()), smallFont));
+                table.addCell(new Phrase(String.format("$%.2f", item.getSubtotal()), smallFont));
             }
             
             document.add(table);
             
-            document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
+            document.add(new Paragraph("------------------------------------------------", smallFont));
             
             // Totals
-            document.add(new com.lowagie.text.Paragraph("Subtotal: $" + String.format("%.2f", receipt.getSubtotal()), normalFont));
+            document.add(new Paragraph("Subtotal: $" + String.format("%.2f", receipt.getSubtotal()), normalFont));
             if (receipt.getTaxAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                document.add(new com.lowagie.text.Paragraph("Tax: $" + String.format("%.2f", receipt.getTaxAmount()), normalFont));
+                document.add(new Paragraph("Tax: $" + String.format("%.2f", receipt.getTaxAmount()), normalFont));
             }
             if (receipt.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                document.add(new com.lowagie.text.Paragraph("Discount: -$" + String.format("%.2f", receipt.getDiscountAmount()), normalFont));
+                document.add(new Paragraph("Discount: -$" + String.format("%.2f", receipt.getDiscountAmount()), normalFont));
             }
-            document.add(new com.lowagie.text.Paragraph("TOTAL: $" + String.format("%.2f", receipt.getTotalAmount()), 
-                new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 12, com.lowagie.text.Font.BOLD)));
-            document.add(new com.lowagie.text.Paragraph("Paid: $" + String.format("%.2f", receipt.getAmountPaid()), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Change: $" + String.format("%.2f", receipt.getChangeGiven()), normalFont));
+            document.add(new Paragraph("TOTAL: $" + String.format("%.2f", receipt.getTotalAmount()), 
+                new Font(Font.HELVETICA, 12, Font.BOLD)));
+            document.add(new Paragraph("Paid: $" + String.format("%.2f", receipt.getAmountPaid()), normalFont));
+            document.add(new Paragraph("Change: $" + String.format("%.2f", receipt.getChangeGiven()), normalFont));
             
-            document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
+            document.add(new Paragraph("------------------------------------------------", smallFont));
             
             // Footer
-            com.lowagie.text.Paragraph footer = new com.lowagie.text.Paragraph("Thank you for your business!", smallFont);
-            footer.setAlignment(com.lowagie.text.Element.ALIGN_CENTER);
+            Paragraph footer = new Paragraph("Thank you for your business!", smallFont);
+            footer.setAlignment(Element.ALIGN_CENTER);
             footer.setSpacingBefore(10);
             document.add(footer);
             
@@ -205,6 +279,7 @@ public class ReceiptController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<byte[]> generateReceiptPng(@PathVariable String invoiceNumber) {
         ReceiptDto receipt = receiptService.getReceiptByInvoiceNumber(invoiceNumber);
+        ShopInfoResponse shopInfo = shopInfoService.getShopInfo();
         
         // Generate PNG using Java 2D graphics
         try {
@@ -212,7 +287,8 @@ public class ReceiptController {
             int lineHeight = 20;
             int padding = 20;
             int itemCount = receipt.getItems().size();
-            int height = padding * 2 + lineHeight * (10 + itemCount);
+            int logoHeight = shopInfo.isHasLogo() ? 70 : 0;
+            int height = padding * 2 + lineHeight * (10 + itemCount) + logoHeight;
             
             java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
             java.awt.Graphics2D g2d = image.createGraphics();
@@ -225,10 +301,44 @@ public class ReceiptController {
             g2d.setColor(java.awt.Color.BLACK);
             g2d.setFont(new java.awt.Font("Courier New", java.awt.Font.PLAIN, 12));
             
-            int y = padding + lineHeight;
+            int y = padding;
+            
+            // Logo (if exists)
+            if (shopInfo.isHasLogo()) {
+                try {
+                    byte[] logoData = shopInfoService.getLogo();
+                    java.awt.Image logo = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(logoData));
+                    if (logo != null) {
+                        // Scale logo to fit within 60x60 while maintaining aspect ratio
+                        java.awt.Image scaledLogo = logo.getScaledInstance(60, 60, java.awt.Image.SCALE_SMOOTH);
+                        int logoX = (width - 60) / 2;
+                        g2d.drawImage(scaledLogo, logoX, y, null);
+                        y += 70;
+                    }
+                } catch (Exception e) {
+                    // Logo fetch failed, skip it silently
+                }
+            }
             
             // Header
-            g2d.drawString("BUSINESS MANAGEMENT SYSTEM", width / 2 - 100, y);
+            String shopName = shopInfo.getShopName() != null ? shopInfo.getShopName() : "BUSINESS MANAGEMENT SYSTEM";
+            g2d.drawString(shopName, width / 2 - g2d.getFontMetrics().stringWidth(shopName) / 2, y);
+            y += lineHeight;
+            
+            if (shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+                g2d.drawString(shopInfo.getAddress(), width / 2 - g2d.getFontMetrics().stringWidth(shopInfo.getAddress()) / 2, y);
+                y += lineHeight;
+            }
+            if (shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+                String phoneStr = "Tel: " + shopInfo.getPhone();
+                g2d.drawString(phoneStr, width / 2 - g2d.getFontMetrics().stringWidth(phoneStr) / 2, y);
+                y += lineHeight;
+            }
+            if (shopInfo.getEmail() != null && !shopInfo.getEmail().isEmpty()) {
+                g2d.drawString(shopInfo.getEmail(), width / 2 - g2d.getFontMetrics().stringWidth(shopInfo.getEmail()) / 2, y);
+                y += lineHeight;
+            }
+            
             y += lineHeight;
             g2d.drawString("RECEIPT", width / 2 - 30, y);
             y += lineHeight * 2;
@@ -304,6 +414,8 @@ public class ReceiptController {
     }
 
     private String buildReceiptHtml(ReceiptDto receipt) {
+        ShopInfoResponse shopInfo = shopInfoService.getShopInfo();
+        
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>");
         html.append("<html><head>");
@@ -312,6 +424,7 @@ public class ReceiptController {
         html.append("@media print { @page { margin: 0; size: 58mm auto; } body { margin: 0; padding: 5px; } }");
         html.append("body { font-family: 'Courier New', monospace; font-size: 12px; width: 58mm; margin: 0 auto; }");
         html.append(".header { text-align: center; margin-bottom: 10px; }");
+        html.append(".logo { max-width: 80px; max-height: 80px; margin: 0 auto 5px; display: block; }");
         html.append(".line { border-bottom: 1px dashed #000; margin: 5px 0; }");
         html.append(".item { display: flex; justify-content: space-between; margin: 3px 0; }");
         html.append(".item-name { flex: 2; }");
@@ -323,8 +436,34 @@ public class ReceiptController {
         html.append("</style></head><body>");
         
         html.append("<div class='header'>");
-        html.append("<h3 style='margin: 0;'>BUSINESS MANAGEMENT SYSTEM</h3>");
-        html.append("<p style='margin: 2px 0;'>RECEIPT</p>");
+        
+        // Logo (if exists)
+        if (shopInfo.isHasLogo() && shopInfo.getShopName() != null) {
+            try {
+                byte[] logoData = shopInfoService.getLogo();
+                String logoType = shopInfoService.getLogoType();
+                String base64Logo = Base64.getEncoder().encodeToString(logoData);
+                html.append("<img src='data:image/").append(logoType).append(";base64,").append(base64Logo).append("' class='logo' alt='Logo'/>");
+            } catch (Exception e) {
+                // Logo fetch failed, skip it silently
+            }
+        }
+        
+        // Shop name and info
+        String shopName = shopInfo.getShopName() != null ? shopInfo.getShopName() : "BUSINESS MANAGEMENT SYSTEM";
+        html.append("<h3 style='margin: 0;'>").append(shopName).append("</h3>");
+        
+        if (shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>").append(shopInfo.getAddress()).append("</p>");
+        }
+        if (shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>Tel: ").append(shopInfo.getPhone()).append("</p>");
+        }
+        if (shopInfo.getEmail() != null && !shopInfo.getEmail().isEmpty()) {
+            html.append("<p style='margin: 2px 0; font-size: 10px;'>").append(shopInfo.getEmail()).append("</p>");
+        }
+        
+        html.append("<p style='margin: 5px 0;'><strong>RECEIPT</strong></p>");
         html.append("</div>");
         
         html.append("<div class='line'></div>");
