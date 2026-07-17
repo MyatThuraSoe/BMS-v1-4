@@ -191,23 +191,17 @@ public class SaleService {
     private String generateInvoiceNumber() {
         String prefix = "INV-";
         String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-        
-        // Use database-level locking with SELECT FOR UPDATE to ensure atomicity
-        // This works across multiple application instances
-        return saleRepository.findLastInvoiceByPrefix(prefix + datePart)
-                .map(lastSale -> {
 
-                    String lastNumber = lastSale.getInvoiceNumber();
+        List<Sale> matches = saleRepository.findLastInvoicesByPrefix(
+                prefix + datePart, org.springframework.data.domain.PageRequest.of(0, 1));
 
-                    int seqNum = Integer.parseInt(
-                            lastNumber.substring(lastNumber.lastIndexOf("-") + 1)
-                    );
+        if (matches.isEmpty()) {
+            return prefix + datePart + "-0001";
+        }
 
-                    return prefix + datePart + "-" +
-                            String.format("%04d", seqNum + 1);
-
-                })
-                .orElse(prefix + datePart + "-0001");
+        String lastNumber = matches.get(0).getInvoiceNumber();
+        int seqNum = Integer.parseInt(lastNumber.substring(lastNumber.lastIndexOf("-") + 1));
+        return prefix + datePart + "-" + String.format("%04d", seqNum + 1);
     }
 
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {

@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.List;
 
 @Repository
 public interface SaleRepository extends JpaRepository<Sale, Long> {
@@ -50,6 +51,5 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     WHERE s.invoiceNumber LIKE CONCAT(:prefix, '%')
     ORDER BY s.invoiceNumber DESC
     """)
-    Optional<Sale> findLastInvoiceByPrefix(@Param("prefix") String prefix);
-
+    List<Sale> findLastInvoicesByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
 }

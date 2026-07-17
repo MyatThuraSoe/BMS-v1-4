@@ -10,13 +10,11 @@ import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CategoryRepository;
-import com.bms.repository.ProductImageRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.StockMovementRepository;
 import com.bms.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +24,6 @@ import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -38,8 +35,6 @@ public class ProductService {
     @Autowired
     private CategoryRepository categoryRepository;
 
-    @Autowired
-    private ProductImageRepository productImageRepository;
 
     @Autowired
     private StockMovementRepository stockMovementRepository;
@@ -188,54 +183,40 @@ public class ProductService {
             "Product", product.getId(), product.toString(), null);
     }
 
-    public void uploadProductImage(Long productId, MultipartFile file, Boolean isPrimary) throws IOException {
+    @Transactional
+    public void uploadProductImage(Long productId, MultipartFile file) throws IOException {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        // If this is primary, unset all other primary images
-        if (Boolean.TRUE.equals(isPrimary)) {
-            productImageRepository.unsetPrimaryImages(productId);
+        product.setImageData(file.getBytes());
+        product.setImageType(getFileExtension(file.getOriginalFilename()));
+        productRepository.save(product);
+
+        auditLogService.logAction(null, "PRODUCT_IMAGE_UPLOAD",
+                "Image uploaded for product: " + product.getName(),
+                "Product", productId, null, null);
+    }
+
+    public byte[] getProductImage(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        if (product.getImageData() == null) {
+            throw new ResourceNotFoundException("Product " + productId + " has no image");
         }
-
-        ProductImage image = new ProductImage();
-        image.setProduct(product);
-        image.setImageData(file.getBytes());
-        image.setImageType(getFileExtension(file.getOriginalFilename()));
-        image.setIsPrimary(Boolean.TRUE.equals(isPrimary));
-        
-        // Set display order
-        Integer maxOrder = productImageRepository.findMaxDisplayOrder(productId);
-        image.setDisplayOrder(maxOrder != null ? maxOrder + 1 : 0);
-
-        productImageRepository.save(image);
-
-        // Log the image upload
-        auditLogService.logAction(null, "PRODUCT_IMAGE_UPLOAD", 
-            "Image uploaded for product: " + product.getName(), 
-            "ProductImage", productId, null, null);
+        return product.getImageData();
     }
 
-    public byte[] getProductImage(Long imageId) {
-        ProductImage image = productImageRepository.findById(imageId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product image not found: " + imageId));
-        return image.getImageData();
-    }
+    public void deleteProductImage(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-    public List<ProductImage> getProductImages(Long productId) {
-        return productImageRepository.findByProductIdOrderByDisplayOrderAsc(productId);
-    }
+        product.setImageData(null);
+        product.setImageType(null);
+        productRepository.save(product);
 
-    public void deleteProductImage(Long imageId) {
-        ProductImage image = productImageRepository.findById(imageId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product image not found: " + imageId));
-        
-        Long productId = image.getProduct().getId();
-        productImageRepository.delete(image);
-
-        // Log the image deletion
-        auditLogService.logAction(null, "PRODUCT_IMAGE_DELETE", 
-            "Image deleted for product ID: " + productId, 
-            "ProductImage", imageId, null, null);
+        auditLogService.logAction(null, "PRODUCT_IMAGE_DELETE",
+                "Image deleted for product: " + product.getName(),
+                "Product", productId, null, null);
     }
 
     @Transactional
@@ -279,39 +260,7 @@ public class ProductService {
                 .map(this::convertToResponse);
     }
 
-    @Transactional
-    public void reorderProductImages(Long productId, List<ImageOrderRequest> imageOrders) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
-        
-        for (ImageOrderRequest order : imageOrders) {
-            ProductImage image = productImageRepository.findById(order.getImageId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product image not found: " + order.getImageId()));
-            
-            if (!image.getProduct().getId().equals(productId)) {
-                throw new BusinessException("Image does not belong to the specified product");
-            }
-            
-            image.setDisplayOrder(order.getDisplayOrder());
-            image.setIsPrimary(order.getIsPrimary());
-            
-            // If this is set as primary, clear others
-            if (Boolean.TRUE.equals(order.getIsPrimary())) {
-                productImageRepository.clearPrimaryImages(productId);
-            }
-        }
-        
-        productImageRepository.saveAll(imageOrders.stream()
-            .map(o -> {
-                try {
-                    return productImageRepository.findById(o.getImageId()).orElse(null);
-                } catch (Exception e) {
-                    return null;
-                }
-            })
-            .filter(img -> img != null)
-            .toList());
-    }
+
 
     public static class ImageOrderRequest {
         private Long imageId;
@@ -348,8 +297,7 @@ public class ProductService {
         }
 
         // Check if product has images
-        boolean hasImages = productImageRepository.existsByProductId(product.getId());
-        response.setHasImages(hasImages);
+        response.setHasImage(product.getImageData() != null);
 
         return response;
     }

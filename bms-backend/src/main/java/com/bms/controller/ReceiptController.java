@@ -15,11 +15,13 @@ import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/receipts")
-@RequiredArgsConstructor
 public class ReceiptController {
 
     private final ReceiptService receiptService;
 
+    public ReceiptController(ReceiptService receiptService) {
+        this.receiptService = receiptService;
+    }
     @GetMapping("/invoice/{invoiceNumber}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<ReceiptDto>> getReceiptByInvoiceNumber(@PathVariable String invoiceNumber) {

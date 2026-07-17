@@ -15,11 +15,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 @Service
-@RequiredArgsConstructor
 public class ReceiptService {
 
     private final SaleRepository saleRepository;
     private final UserRepository userRepository;
+    public ReceiptService(SaleRepository saleRepository, UserRepository userRepository) {
+        this.saleRepository = saleRepository;
+        this.userRepository = userRepository;
+    }
 
     @Transactional(readOnly = true)
     public ReceiptDto getReceiptByInvoiceNumber(String invoiceNumber) {

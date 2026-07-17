@@ -33,18 +33,7 @@ public class ProductController {
     @Autowired
     private com.bms.service.UserService userService;
 
-    public static class ImageOrderRequest {
-        private Long imageId;
-        private Integer displayOrder;
-        private Boolean isPrimary;
 
-        public Long getImageId() { return imageId; }
-        public void setImageId(Long imageId) { this.imageId = imageId; }
-        public Integer getDisplayOrder() { return displayOrder; }
-        public void setDisplayOrder(Integer displayOrder) { this.displayOrder = displayOrder; }
-        public Boolean getIsPrimary() { return isPrimary; }
-        public void setIsPrimary(Boolean isPrimary) { this.isPrimary = isPrimary; }
-    }
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
@@ -112,50 +101,33 @@ public class ProductController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Product deleted successfully", null));
     }
 
-    @PostMapping("/{id}/images")
+    @PostMapping("/{id}/image")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<Void>> uploadProductImage(
             @PathVariable Long id,
-            @RequestParam("file") MultipartFile file,
-            @RequestParam(value = "isPrimary", defaultValue = "false") Boolean isPrimary) throws IOException {
-        productService.uploadProductImage(id, file, isPrimary);
+            @RequestParam("file") MultipartFile file) throws IOException {
+        productService.uploadProductImage(id, file);
         return ResponseEntity.ok(new ApiResponse<>(true, "Image uploaded successfully", null));
     }
 
-    @GetMapping("/images/{imageId}")
+    @GetMapping("/{id}/image")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
-    public ResponseEntity<byte[]> getProductImage(@PathVariable Long imageId) {
-        byte[] imageData = productService.getProductImage(imageId);
+    public ResponseEntity<byte[]> getProductImage(@PathVariable Long id) {
+        byte[] imageData = productService.getProductImage(id);
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"product_" + imageId + ".jpg\"")
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"product_" + id + ".jpg\"")
                 .body(imageData);
     }
 
-    @GetMapping("/{id}/images")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
-    public ResponseEntity<ApiResponse<List<Long>>> getProductImages(@PathVariable Long id) {
-        List<Long> imageIds = productService.getProductImages(id).stream()
-                .map(img -> img.getId())
-                .toList();
-        return ResponseEntity.ok(new ApiResponse<>(true, "Product images retrieved successfully", imageIds));
-    }
 
-    @DeleteMapping("/images/{imageId}")
+    @DeleteMapping("/{id}/image")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<Void>> deleteProductImage(@PathVariable Long imageId) {
-        productService.deleteProductImage(imageId);
+    public ResponseEntity<ApiResponse<Void>> deleteProductImage(@PathVariable Long id) {
+        productService.deleteProductImage(id);
         return ResponseEntity.ok(new ApiResponse<>(true, "Image deleted successfully", null));
     }
 
-    @PutMapping("/{id}/images/reorder")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<Void>> reorderProductImages(
-            @PathVariable Long id,
-            @RequestBody List<com.bms.service.ProductService.ImageOrderRequest> imageOrders) {
-        productService.reorderProductImages(id, imageOrders);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Product images reordered successfully", null));
-    }
 
     @PostMapping("/{id}/stock/adjust")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")

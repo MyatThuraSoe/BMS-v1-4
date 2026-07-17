@@ -45,9 +45,15 @@ public class Product {
     
     @Column(name = "min_stock_level")
     private Integer minStockLevel = 0;
-    
+
     @Column(name = "barcode")
     private String barcode;
+
+    @Column(name = "image_data", columnDefinition = "LONGBLOB")
+    private byte[] imageData;
+
+    @Column(name = "image_type", length = 10)
+    private String imageType;
     
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
@@ -129,4 +135,10 @@ public class Product {
     
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public byte[] getImageData() { return imageData; }
+    public void setImageData(byte[] imageData) { this.imageData = imageData; }
+
+    public String getImageType() { return imageType; }
+    public void setImageType(String imageType) { this.imageType = imageType; }
 }
