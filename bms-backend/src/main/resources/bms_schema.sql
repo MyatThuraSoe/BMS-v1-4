@@ -85,6 +85,20 @@ CREATE TABLE product_images (
     INDEX idx_product_image_primary (is_primary)
 );
 
+-- Shop Info table (singleton - only one row ever exists)
+CREATE TABLE shop_info (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    shop_name VARCHAR(255) NOT NULL,
+    shop_type VARCHAR(50) NOT NULL,
+    address TEXT,
+    phone VARCHAR(20),
+    email VARCHAR(100),
+    logo_data LONGBLOB NULL,
+    logo_type VARCHAR(10) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- Suppliers table
 CREATE TABLE suppliers (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
