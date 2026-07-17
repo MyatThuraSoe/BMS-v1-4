@@ -2,10 +2,11 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, Paper, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { receiptService } from '../api/services';
+import { receiptService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
+import ShopLogo from '../components/ShopLogo';
 
 const ReceiptPreview = () => {
   const { invoiceNumber } = useParams();
@@ -14,6 +15,11 @@ const ReceiptPreview = () => {
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', invoiceNumber],
     queryFn: () => receiptService.getByInvoiceNumber(invoiceNumber),
+  });
+
+  const { data: shopInfoData } = useQuery({
+    queryKey: ['shopInfo-preview'],
+    queryFn: () => shopInfoService.get(),
   });
 
   if (isLoading) return <CircularProgress />;
@@ -43,10 +49,14 @@ const ReceiptPreview = () => {
   return (
     <Box sx={{ p: 3, maxWidth: 400, mx: 'auto' }}>
       <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
-        <Typography variant="h6">BMS v1</Typography>
+        <ReceiptHeader
+            shopName={shopInfoData?.data?.shopName}
+            hasLogo={shopInfoData?.data?.hasLogo}
+        />
         <Typography variant="body2">Invoice: {receipt.invoiceNumber}</Typography>
+
         <Typography variant="body2">{formatDateTime(receipt.saleDate)}</Typography>
-        <Typography variant="body2">Cashier: {receipt.cashierName}</Typography>
+        {/* <Typography variant="body2">Cashier: {receipt.cashierName}</Typography> */}
         <Typography variant="body2">Customer: {receipt.customerName || 'Walk-in'}</Typography>
       </Box>
 
@@ -90,4 +100,16 @@ const ReceiptPreview = () => {
   );
 };
 
+const ReceiptHeader = ({ shopName, hasLogo }) => {
+  return (
+    <>
+      <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
+        <ShopLogo size={56}  hasLogo={hasLogo} />
+      </Box>
+      <Typography variant="h6">{shopName || 'Shop'}</Typography>
+    </>
+  );
+};
+
 export default ReceiptPreview;
+

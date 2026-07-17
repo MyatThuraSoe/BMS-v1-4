@@ -32,13 +32,17 @@ import {
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { productService, customerService, saleService } from '../api/services';
+import { productService, customerService, saleService, categoryService } from '../api/services';
+
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
 
 import ProductImage from '../components/ProductImage';
+import ShopLogo from '../components/ShopLogo';
+import { shopInfoService } from '../api/services';
 
 const POS = () => {
+
 
   const [page, setPage] = useState(0);
   const pageSize = 20;
@@ -55,7 +59,17 @@ const POS = () => {
   const { user } = useAuth();
   const [verifiedTotals, setVerifiedTotals] = useState(null); // { subtotal, taxAmount, totalAmount } from last successful verify
 
+  // Shop info (for receipt branding)
+  const { data: shopInfoData } = useQuery({
+    queryKey: ['shopInfo'],
+    queryFn: () => shopInfoService.get(),
+    enabled: true,
+  });
+
+  const shopInfo = shopInfoData?.data;
+
   // Fetch products
+
   const { data: productsData, isLoading } = useQuery({
     queryKey: ['products-pos', page],
     queryFn: () => productService.getAll(page, pageSize),
@@ -72,12 +86,28 @@ const POS = () => {
   const customers = customersData?.data?.content || [];
 
   // Filter products by search
+  const [selectedCategory, setSelectedCategory] = useState('');
+
+  const { data: categoriesData } = useQuery({
+    queryKey: ['categories-pos'],
+    queryFn: () => categoryService.getAll(0, 100),
+    enabled: true,
+  });
+
+  const categories = categoriesData?.data?.content || [];
+
   const filteredProducts = products.filter(
-    (p) =>
-      p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.barcode?.toLowerCase().includes(searchQuery.toLowerCase())
+    (p) => {
+      const matchesSearch =
+        p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.sku?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.barcode?.toLowerCase().includes(searchQuery.toLowerCase());
+
+      const matchesCategory = !selectedCategory || String(p.categoryId) === String(selectedCategory);
+      return matchesSearch && matchesCategory;
+    }
   );
+
 
   const addToCart = (product) => {
     const existingItem = cart.find((item) => item.productId === product.id);
@@ -295,8 +325,28 @@ const POS = () => {
               }}
               sx={{ mb: 2 }}
             />
+            <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
+              <Chip
+                label="All"
+                clickable
+                color={!selectedCategory ? 'primary' : 'default'}
+                variant={!selectedCategory ? 'filled' : 'outlined'}
+                onClick={() => setSelectedCategory('')}
+              />
+              {categories.map((c) => (
+                <Chip
+                  key={c.id}
+                  label={c.name}
+                  clickable
+                  color={selectedCategory && String(selectedCategory) === String(c.id) ? 'primary' : 'default'}
+                  variant={selectedCategory && String(selectedCategory) === String(c.id) ? 'filled' : 'outlined'}
+                  onClick={() => setSelectedCategory(String(c.id))}
+                />
+              ))}
+            </Box>
             <Grid container spacing={1}>
               {filteredProducts.map((product) => (
+
                 <Grid item xs={6} sm={4} md={3} key={product.id}>
                   
                   
@@ -518,8 +568,13 @@ const POS = () => {
         <DialogContent>
           {lastSale && (
             <Box sx={{ p: 2, fontFamily: 'monospace', bgcolor: '#f5f5f5' }}>
-              <Typography variant="h6" align="center">BMS v1</Typography>
+              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
+                <ShopLogo size={56} />
+              </Box>
+              <Typography variant="h6" align="center">{shopInfo?.shopName || 'Shop'}</Typography>
+
               <Typography variant="body2" align="center">Invoice: {lastSale.invoiceNumber}</Typography>
+
               <Typography variant="body2" align="center">
                 {new Date(lastSale.saleDate).toLocaleString()}
               </Typography>

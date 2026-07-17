@@ -1,5 +1,6 @@
 package com.bms.service;
 
+import com.bms.dto.response.DailySalesTrendDto;
 import com.bms.entity.Sale;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleRepository;
@@ -180,6 +181,37 @@ public class ReportService {
         report.sort((a, b) -> ((BigDecimal) b.get("totalSales")).compareTo((BigDecimal) a.get("totalSales")));
         
         return report;
+    }
+
+    public List<DailySalesTrendDto> getSalesTrend(int days) {
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(Math.max(days, 1) - 1);
+        LocalDateTime startDateTime = startDate.atStartOfDay();
+        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
+
+        Pageable pageable = PageRequest.of(0, 1000);
+        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
+        List<Sale> sales = salesPage.getContent();
+
+        Map<LocalDate, DailySalesTrendDto> trendByDate = new LinkedHashMap<>();
+        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            trendByDate.put(date, new DailySalesTrendDto(date, BigDecimal.ZERO, 0));
+        }
+
+        for (Sale sale : sales) {
+            if (sale.getIsVoided() != null && sale.getIsVoided()) {
+                continue;
+            }
+            LocalDate saleDate = sale.getSaleDate().toLocalDate();
+            if (!trendByDate.containsKey(saleDate)) {
+                continue;
+            }
+            DailySalesTrendDto dto = trendByDate.get(saleDate);
+            dto.setTotalSales(dto.getTotalSales().add(sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO));
+            dto.setTransactionCount(dto.getTransactionCount() + 1);
+        }
+
+        return new ArrayList<>(trendByDate.values());
     }
 
     // Inventory report

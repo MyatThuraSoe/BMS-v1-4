@@ -64,6 +64,14 @@ public class ReportController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Cashier performance report retrieved successfully", report));
     }
 
+    @GetMapping("/sales-trend")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<com.bms.dto.response.DailySalesTrendDto>>> getSalesTrend(
+            @RequestParam(defaultValue = "7") int days) {
+        List<com.bms.dto.response.DailySalesTrendDto> report = reportService.getSalesTrend(days);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Sales trend retrieved successfully", report));
+    }
+
     @GetMapping("/inventory")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getInventoryReport() {

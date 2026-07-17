@@ -43,8 +43,10 @@ export const authService = {
 };
 
 export const productService = {
-  getAll: async (page = 0, size = 20, sortBy = 'createdAt') => {
-    const response = await apiClient.get(`/products?page=${page}&size=${size}&sortBy=${sortBy}`);
+  getAll: async (page = 0, size = 20, sortBy = 'createdAt', categoryId = null) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size), sortBy });
+    if (categoryId) params.append('categoryId', categoryId);
+    const response = await apiClient.get(`/products?${params.toString()}`);
     return response.data;
   },
 
@@ -319,11 +321,43 @@ export const inventoryService = {
   },
 };
 
+export const shopInfoService = {
+  get: async () => {
+    const response = await apiClient.get('/shop-info');
+    return response.data;
+  },
+
+  update: async (data) => {
+    const response = await apiClient.put('/shop-info', data);
+    return response.data;
+  },
+
+  getLogo: async () => {
+    const response = await apiClient.get('/shop-info/logo', { responseType: 'blob' });
+    return response.data;
+  },
+
+  uploadLogo: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/shop-info/logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deleteLogo: async () => {
+    const response = await apiClient.delete('/shop-info/logo');
+    return response.data;
+  },
+};
+
 export const reportService = {
   getDailySales: async (date) => {
     const response = await apiClient.get(`/reports/daily-sales?date=${date}`);
     return response.data;
   },
+
 
   getMonthlySales: async (year, month) => {
     const response = await apiClient.get(`/reports/monthly-sales?year=${year}&month=${month}`);
@@ -342,6 +376,11 @@ export const reportService = {
 
   getCashierPerformance: async (startDate, endDate) => {
     const response = await apiClient.get(`/reports/cashier-performance?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getSalesTrend: async (days = 7) => {
+    const response = await apiClient.get(`/reports/sales-trend?days=${days}`);
     return response.data;
   },
 

@@ -46,8 +46,17 @@ public class ProductService {
     private AuditLogService auditLogService;
 
     public Page<ProductResponse> getAllProducts(Pageable pageable) {
-        return productRepository.findActiveProducts(pageable)
-                .map(this::convertToResponse);
+        return getAllProducts(null, pageable);
+    }
+
+    public Page<ProductResponse> getAllProducts(Long categoryId, Pageable pageable) {
+        Page<Product> products;
+        if (categoryId != null) {
+            products = productRepository.findByCategoryIdAndIsActiveTrue(categoryId, pageable);
+        } else {
+            products = productRepository.findActiveProducts(pageable);
+        }
+        return products.map(this::convertToResponse);
     }
 
     public Page<ProductResponse> searchProducts(String keyword, Pageable pageable) {

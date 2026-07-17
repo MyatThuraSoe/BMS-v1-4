@@ -1,9 +1,10 @@
 import { useNavigate } from 'react-router-dom';
 import { Grid, Paper, Typography, Box, Button } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { reportService, saleService, productService } from '../api/services';
+import { reportService, saleService } from '../api/services';
 import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
 import { formatDateTime } from '../utils/helpers';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const StatCard = ({ title, value, icon, color }) => (
   <Paper sx={{ p: 3, display: 'flex', alignItems: 'center', height: '100%' }}>
@@ -39,6 +40,12 @@ const Dashboard = () => {
     enabled: true,
   });
 
+  const { data: salesTrendData } = useQuery({
+    queryKey: ['salesTrend', 7],
+    queryFn: () => reportService.getSalesTrend(7),
+    enabled: true,
+  });
+
   const dailySales = dailySalesData?.data || {
     totalTransactions: 0,
     totalRevenue: 0,
@@ -51,6 +58,7 @@ const Dashboard = () => {
     lowStockProductsCount: 0,
   };
   const recentSales = recentSalesData?.data?.content || [];
+  const salesTrend = salesTrendData?.data || [];
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('en-US', {
@@ -117,6 +125,22 @@ const Dashboard = () => {
               <Button variant="outlined" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
                 New Customer
               </Button>
+            </Box>
+          </Paper>
+        </Grid>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>Sales Trend (Last 7 Days)</Typography>
+            <Box sx={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={salesTrend}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" />
+                  <YAxis />
+                  <Tooltip formatter={(value) => formatCurrency(value)} />
+                  <Line type="monotone" dataKey="totalSales" stroke="#1976d2" strokeWidth={2} />
+                </LineChart>
+              </ResponsiveContainer>
             </Box>
           </Paper>
         </Grid>

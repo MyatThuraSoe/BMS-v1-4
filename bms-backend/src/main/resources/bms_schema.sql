@@ -270,6 +270,20 @@ CREATE TABLE system_settings (
     INDEX idx_setting_key (setting_key)
 );
 
+-- Shop Information (singleton)
+CREATE TABLE shop_info (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    shop_name VARCHAR(255) NOT NULL,
+    shop_type VARCHAR(50) NOT NULL,
+    address TEXT,
+    phone VARCHAR(20),
+    email VARCHAR(100),
+    logo_data LONGBLOB NULL,
+    logo_type VARCHAR(10) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- Insert default system settings
 INSERT INTO system_settings (setting_key, setting_value, description, data_type) VALUES
 ('business_name', 'My Business', 'Name of the business', 'STRING'),
@@ -282,3 +296,4 @@ INSERT INTO system_settings (setting_key, setting_value, description, data_type)
 ('low_stock_threshold', '5', 'Default threshold for low stock alerts', 'INTEGER'),
 ('receipt_print_enabled', 'true', 'Whether receipt printing is enabled', 'BOOLEAN'),
 ('invoice_prefix', 'INV-', 'Prefix for invoice numbers', 'STRING');
+

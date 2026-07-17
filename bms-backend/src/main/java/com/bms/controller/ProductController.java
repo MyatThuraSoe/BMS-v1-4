@@ -40,9 +40,10 @@ public class ProductController {
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> getAllProducts(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "name") String sortBy) {
+            @RequestParam(defaultValue = "name") String sortBy,
+            @RequestParam(required = false) Long categoryId) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy));
-        Page<ProductResponse> products = productService.getAllProducts(pageable);
+        Page<ProductResponse> products = productService.getAllProducts(categoryId, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Products retrieved successfully", products));
     }
 

@@ -29,6 +29,7 @@ import Users from './pages/Users';
 import UserForm from './pages/UserForm';
 import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
+import ShopInfo from './pages/ShopInfo';
 import NotFound from './pages/NotFound';
 
 // Layout
@@ -137,6 +138,7 @@ function AppRoutes() {
         
         {/* Settings (Admin only) */}
         <Route path="settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
+        <Route path="shop-info" element={<ProtectedRoute allowedRoles={['ADMIN']}><ShopInfo /></ProtectedRoute>} />
         
         {/* Audit Logs (Admin only) */}
         <Route path="audit-logs" element={<ProtectedRoute allowedRoles={['ADMIN']}><AuditLogs /></ProtectedRoute>} />

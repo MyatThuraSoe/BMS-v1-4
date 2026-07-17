@@ -54,6 +54,7 @@ const menuItems = [
   { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Users', icon: <SecurityIcon />, path: '/users', roles: ['ADMIN'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'] },
+  { text: 'Shop Info', icon: <SettingsIcon />, path: '/shop-info', roles: ['ADMIN'] },
   { text: 'Audit Logs', icon: <HistoryIcon />, path: '/audit-logs', roles: ['ADMIN'] },
 ];
 
