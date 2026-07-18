@@ -165,6 +165,7 @@ const POS = () => {
     setSelectedCustomer(null);
     setCashAmount('');
     setError('');
+    setVerifiedTotals(0);
   };
 
   const subtotal = cart.reduce(
@@ -302,7 +303,7 @@ const POS = () => {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Point of Sale
+        Available Products
       </Typography>
 
       {error && (
@@ -408,47 +409,56 @@ const POS = () => {
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell>Item</TableCell>
-                        <TableCell align="right">Qty</TableCell>
-                        <TableCell align="right">Action</TableCell>
+                          <TableCell>Item</TableCell>
+                          <TableCell align="right">Price</TableCell>
+                          <TableCell align="center">Qty</TableCell>
+                          <TableCell align="right">Total</TableCell>
+                          <TableCell align="center">Action</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {cart.map((item) => (
                         <TableRow key={item.productId}>
-                          <TableCell>
-                            <Typography variant="body2" noWrap>
-                              {item.name}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
+                          <TableCell>{item.name}</TableCell>
+
+                          <TableCell align="right">
                               {formatCurrency(item.price)}
-                            </Typography>
                           </TableCell>
+
+                          <TableCell align="center">
+                              <IconButton
+                                  size="small"
+                                  onClick={() => updateQuantity(item.productId, -1)}
+                              >
+                                  <RemoveIcon fontSize="small" />
+                              </IconButton>
+
+                              {item.quantity}
+
+                              <IconButton
+                                  size="small"
+                                  onClick={() => updateQuantity(item.productId, 1)}
+                              >
+                                  <AddIcon fontSize="small" />
+                              </IconButton>
+                          </TableCell>
+
                           <TableCell align="right">
-                            <IconButton
-                              size="small"
-                              onClick={() => updateQuantity(item.productId, -1)}
-                            >
-                              <RemoveIcon fontSize="small" />
-                            </IconButton>
-                            {item.quantity}
-                            <IconButton
-                              size="small"
-                              onClick={() => updateQuantity(item.productId, 1)}
-                            >
-                              <AddIcon fontSize="small" />
-                            </IconButton>
+                              <strong>
+                                  {formatCurrency(item.price * item.quantity)}
+                              </strong>
                           </TableCell>
-                          <TableCell align="right">
-                            <IconButton
-                              size="small"
-                              onClick={() => removeFromCart(item.productId)}
-                              color="error"
-                            >
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
+
+                          <TableCell align="center">
+                              <IconButton
+                                  color="error"
+                                  size="small"
+                                  onClick={() => removeFromCart(item.productId)}
+                              >
+                                  <DeleteIcon fontSize="small" />
+                              </IconButton>
                           </TableCell>
-                        </TableRow>
+                      </TableRow>
                       ))}
                     </TableBody>
                   </Table>
@@ -578,9 +588,9 @@ const POS = () => {
               <Typography variant="body2" align="center">
                 {new Date(lastSale.saleDate).toLocaleString()}
               </Typography>
-              <Typography variant="body2" align="center">
+              {/* <Typography variant="body2" align="center">
                 Cashier: {user?.username}
-              </Typography>
+              </Typography> */}
               <Typography variant="body2" align="center">
                 Customer: {lastSale.customerName || 'Walk-in'}
               </Typography>

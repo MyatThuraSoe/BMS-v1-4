@@ -55,7 +55,7 @@ const Sales = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Sales</Typography>
+      
 
       <TableContainer component={Paper}>
         <Table>

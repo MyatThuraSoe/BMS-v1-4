@@ -12,7 +12,13 @@ const CustomerForm = () => {
   const { isManager } = useAuth();
   const isEdit = !!id;
 
-  const [formData, setFormData] = useState({ name: '', phone: '', email: '', address: '' });
+  const [formData, setFormData] = useState({
+      firstName: '',
+      lastName: '',
+      phone: '',
+      email: '',
+      address: '',
+  });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -23,10 +29,11 @@ const CustomerForm = () => {
       const c = existingCustomer.data;
 
       setFormData({
-        name: `${c.firstName || ''} ${c.lastName || ''}`.trim(),
-        phone: c.phone || '',
-        email: c.email || '',
-        address: c.address || '',
+          firstName: c.firstName || '',
+          lastName: c.lastName || '',
+          phone: c.phone || '',
+          email: c.email || '',
+          address: c.address || '',
       });
     }
   }, [existingCustomer]);
@@ -49,14 +56,12 @@ const CustomerForm = () => {
     setError('');
     setSuccess('');
 
-    const nameParts = formData.name.trim().split(/\s+/);
-
     const customerRequest = {
-      firstName: nameParts[0] || '',
-      lastName: nameParts.slice(1).join(' ') || '',
-      email: formData.email,
-      phone: formData.phone,
-      address: formData.address,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address,
     };
 
     saveMutation.mutate(customerRequest);
@@ -73,7 +78,10 @@ const CustomerForm = () => {
         <form onSubmit={handleSubmit}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Name" name="name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
+              <TextField fullWidth label="Firstname" name="firstName" value={formData.firstName} onChange={(e) => setFormData({ ...formData, firstName: e.target.value })} required />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField fullWidth label="Lastname" name="lastName" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} required />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label="Phone" name="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />

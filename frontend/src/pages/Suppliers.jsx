@@ -44,8 +44,8 @@ const Suppliers = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Suppliers</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
+        
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/suppliers/new')}>
             Add Supplier

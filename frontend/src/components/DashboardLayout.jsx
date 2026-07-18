@@ -39,10 +39,15 @@ import {
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 
+import { useQuery } from '@tanstack/react-query';
+import { shopInfoService } from '../api/services';
+
 const drawerWidth = 240;
 
+
+
 const menuItems = [
-  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
+  { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['ADMIN', 'MANAGER'] },
   { text: 'POS', icon: <PosIcon />, path: '/pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { text: 'Products', icon: <InventoryIcon />, path: '/products', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Categories', icon: <InventoryIcon />, path: '/categories', roles: ['ADMIN', 'MANAGER'] },
@@ -64,6 +69,13 @@ const DashboardLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout, isAdmin, isManager } = useAuth();
+
+  const { data: shopInfoData } = useQuery({
+    queryKey: ['shopInfo'],
+    queryFn: () => shopInfoService.get(),
+  });
+
+  const shopName = shopInfoData?.data?.shopName;
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -146,6 +158,18 @@ const DashboardLayout = ({ children }) => {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {menuItems.find(item => item.path === location.pathname)?.text || 'Dashboard'}
           </Typography>
+          <Box
+            sx={{
+              flexGrow: 1,
+              display: 'flex',
+              justifyContent: 'right',
+              marginRight: 3,
+            }}
+          >
+            <Typography variant="h6" noWrap component="div" sx={{ fontSize: '14px' }}>
+              {shopName || 'BMS'}
+            </Typography>
+          </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="body2">{user?.username}</Typography>
             <IconButton onClick={handleMenuOpen} size="small">

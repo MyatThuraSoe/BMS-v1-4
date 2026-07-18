@@ -217,10 +217,12 @@ export const customerService = {
     return response.data;
   },
 
-  search: async (query) => {
-    const response = await apiClient.get(`/customers/search?query=${encodeURIComponent(query)}`);
-    return response.data;
-  },
+  search: async (keyword, page = 0, size = 20) => {
+      const response = await apiClient.get(
+          `/customers/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`
+      );
+      return response.data;
+  }
 };
 
 export const saleService = {

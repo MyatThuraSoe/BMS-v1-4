@@ -43,8 +43,8 @@ const Categories = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Categories</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
+
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/categories/new')}>
             Add Category
@@ -55,7 +55,7 @@ const Categories = () => {
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
-            <TableRow>
+            <TableRow sx={{ fontWeight: 'bold', fontSize: '1.1rem' }}>
               <TableCell>Name</TableCell>
               <TableCell>Description</TableCell>
               <TableCell>Created</TableCell>

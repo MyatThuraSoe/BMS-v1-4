@@ -32,7 +32,6 @@ const Inventory = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Inventory</Typography>
 
       {lowStock.length > 0 && (
         <Alert severity="warning" sx={{ mb: 3 }}>

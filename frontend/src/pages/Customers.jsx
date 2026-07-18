@@ -20,8 +20,13 @@ const Customers = () => {
   const { isManager } = useAuth();
 
   const { data: customersData, isLoading } = useQuery({
-    queryKey: ['customers', page, size],
-    queryFn: () => customerService.getAll(page, size),
+      queryKey: ['customers', page, size, search],
+      queryFn: () => {
+          if (search.trim()) {
+              return customerService.search(search);
+          }
+          return customerService.getAll(page, size);
+      },
   });
 
   const deleteMutation = useMutation({
@@ -44,8 +49,8 @@ const Customers = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">Customers</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
+        
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
             Add Customer
