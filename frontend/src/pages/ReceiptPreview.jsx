@@ -1,16 +1,22 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Box, Typography, Paper, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
-import { receiptService, shopInfoService } from '../api/services';
+import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, TextField, Divider } from '@mui/material';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { receiptService, saleService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
-import { Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
+import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShopLogo from '../components/ShopLogo';
+import { useAuth } from '../context/AuthContext';
 
 const ReceiptPreview = () => {
   const { invoiceNumber } = useParams();
   const [printDialogOpen, setPrintDialogOpen] = useState(false);
+  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundQuantities, setRefundQuantities] = useState({});
+  const queryClient = useQueryClient();
+  const { isManager } = useAuth();
 
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', invoiceNumber],
@@ -22,10 +28,28 @@ const ReceiptPreview = () => {
     queryFn: () => shopInfoService.get(),
   });
 
+  const refundMutation = useMutation({
+    mutationFn: ({ saleId, payload }) => saleService.refundSale(saleId, payload),
+    onSuccess: () => {
+      notifySuccess('Refund processed');
+      setRefundDialogOpen(false);
+      setRefundReason('');
+      setRefundQuantities({});
+      queryClient.invalidateQueries({ queryKey: ['receipt', invoiceNumber] });
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+    },
+    onError: (err) => notifyError(err.friendlyMessage || 'Failed to process refund'),
+  });
+
   if (isLoading) return <CircularProgress />;
   if (!data?.data) return <Typography>Receipt not found</Typography>;
 
   const receipt = data.data;
+  const refundableItems = receipt.items?.filter((item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0) || [];
+  const refundTotal = refundableItems.reduce((sum, item) => {
+    const quantity = Number(refundQuantities[item.saleItemId] || 0);
+    return sum + quantity * Number(item.unitPrice || 0);
+  }, 0);
 
   const handlePrint = () => {
     window.print();
@@ -46,6 +70,27 @@ const ReceiptPreview = () => {
     }
   };
 
+  const setRefundQuantity = (item, value) => {
+    const max = (item.quantity || 0) - (item.quantityRefunded || 0);
+    const quantity = Math.max(0, Math.min(max, Number(value) || 0));
+    setRefundQuantities((current) => ({ ...current, [item.saleItemId]: quantity }));
+  };
+
+  const handleRefundSubmit = () => {
+    const items = refundableItems
+      .map((item) => ({ saleItemId: item.saleItemId, quantity: Number(refundQuantities[item.saleItemId] || 0) }))
+      .filter((item) => item.quantity > 0);
+
+    if (!receipt.saleId || items.length === 0 || !refundReason.trim()) {
+      return;
+    }
+
+    refundMutation.mutate({
+      saleId: receipt.saleId,
+      payload: { reason: refundReason.trim(), items },
+    });
+  };
+
   return (
     <Box sx={{ p: 3, maxWidth: 400, mx: 'auto' }}>
       <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
@@ -62,9 +107,14 @@ const ReceiptPreview = () => {
 
       <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 2, fontFamily: 'monospace' }}>
         {receipt.items?.map((item, idx) => (
-          <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2">{item.productName} x{item.quantity}</Typography>
-            <Typography variant="body2">{formatCurrency(item.price * item.quantity)}</Typography>
+          <Box key={idx} sx={{ mb: 1 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography variant="body2">{item.productName} x{item.quantity}</Typography>
+              <Typography variant="body2">{formatCurrency(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</Typography>
+            </Box>
+            {(item.quantityRefunded || 0) > 0 && (
+              <Typography variant="caption" color="warning.main">Refunded: {item.quantityRefunded}</Typography>
+            )}
           </Box>
         ))}
       </Box>
@@ -93,9 +143,69 @@ const ReceiptPreview = () => {
         <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('pdf')}>PDF</Button>
         <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('png')}>PNG</Button>
       </Box>
+      {isManager() && refundableItems.length > 0 && (
+        <Box sx={{ mt: 1 }}>
+          <Button fullWidth variant="outlined" color="warning" startIcon={<RefundIcon />} onClick={() => setRefundDialogOpen(true)}>
+            Refund
+          </Button>
+        </Box>
+      )}
       <Box sx={{ mt: 1 }}>
         <Button fullWidth variant="text" onClick={() => window.close()}>Close</Button>
       </Box>
+
+      <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>Refund Items</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 2 }}>Invoice: {receipt.invoiceNumber}</Typography>
+          {refundableItems.map((item) => {
+            const max = (item.quantity || 0) - (item.quantityRefunded || 0);
+            return (
+              <Box key={item.saleItemId} sx={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 2, alignItems: 'center', mb: 2 }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={600}>{item.productName}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Available: {max} @ {formatCurrency(item.unitPrice)}
+                  </Typography>
+                </Box>
+                <TextField
+                  size="small"
+                  type="number"
+                  label="Qty"
+                  inputProps={{ min: 0, max }}
+                  value={refundQuantities[item.saleItemId] || ''}
+                  onChange={(e) => setRefundQuantity(item, e.target.value)}
+                />
+              </Box>
+            );
+          })}
+          <Divider sx={{ my: 2 }} />
+          <TextField
+            fullWidth
+            required
+            multiline
+            rows={3}
+            label="Reason"
+            value={refundReason}
+            onChange={(e) => setRefundReason(e.target.value)}
+          />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
+            <Typography fontWeight={600}>Refund Total</Typography>
+            <Typography fontWeight={600}>{formatCurrency(refundTotal)}</Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRefundDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleRefundSubmit}
+            color="warning"
+            variant="contained"
+            disabled={refundMutation.isPending || refundTotal <= 0 || !refundReason.trim()}
+          >
+            Refund
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
@@ -112,4 +222,3 @@ const ReceiptHeader = ({ shopName, hasLogo }) => {
 };
 
 export default ReceiptPreview;
-

@@ -53,6 +53,23 @@ const Sales = () => {
   const sales = salesData?.data?.content || [];
   const totalElements = salesData?.data?.totalElements || 0;
 
+  const getSaleStatus = (sale) => {
+    if (sale.isVoided) return 'VOIDED';
+    const items = sale.items || [];
+    const refunded = items.reduce((sum, item) => sum + Number(item.quantityRefunded || 0), 0);
+    const quantity = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+    if (quantity > 0 && refunded >= quantity) return 'REFUNDED';
+    if (refunded > 0) return 'PARTIALLY REFUNDED';
+    return 'COMPLETED';
+  };
+
+  const getStatusColor = (status) => {
+    if (status === 'COMPLETED') return 'success';
+    if (status === 'VOIDED') return 'error';
+    if (status === 'REFUNDED' || status === 'PARTIALLY REFUNDED') return 'warning';
+    return 'default';
+  };
+
   return (
     <Box>
       
@@ -76,26 +93,29 @@ const Sales = () => {
             ) : sales.length === 0 ? (
               <TableRow><TableCell colSpan={7} align="center">No sales found</TableCell></TableRow>
             ) : (
-              sales.map((s) => (
-                <TableRow key={s.id}>
-                  <TableCell>{s.invoiceNumber}</TableCell>
-                  <TableCell>{s.customerName || 'Walk-in'}</TableCell>
-                  <TableCell align="right">{formatCurrency(s.totalAmount)}</TableCell>
-                  <TableCell align="right">{formatCurrency(s.amountPaid)}</TableCell>
-                  <TableCell><Chip label={s.status} size="small" color={s.status === 'COMPLETED' ? 'success' : s.status === 'VOIDED' ? 'error' : 'warning'} /></TableCell>
-                  <TableCell>{formatDateTime(s.saleDate)}</TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" onClick={() => navigate(`/receipt/${s.invoiceNumber}`)}><PrintIcon /></IconButton>
-                    <IconButton size="small" onClick={() => navigate(`/sales/${s.id}`)}><ViewIcon /></IconButton>
-                    {isManager() && s.status !== 'VOIDED' && (
-                      <IconButton size="small" color="warning" onClick={() => { setSelectedSale(s); setVoidDialogOpen(true); }}>Void</IconButton>
-                    )}
-                    {isManager() && (
-                      <IconButton size="small" color="error" onClick={() => { setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+              sales.map((s) => {
+                const status = getSaleStatus(s);
+                return (
+                  <TableRow key={s.id}>
+                    <TableCell>{s.invoiceNumber}</TableCell>
+                    <TableCell>{s.customerName || 'Walk-in'}</TableCell>
+                    <TableCell align="right">{formatCurrency(s.totalAmount)}</TableCell>
+                    <TableCell align="right">{formatCurrency(s.amountPaid)}</TableCell>
+                    <TableCell><Chip label={status} size="small" color={getStatusColor(status)} /></TableCell>
+                    <TableCell>{formatDateTime(s.saleDate)}</TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" onClick={() => navigate(`/receipt/${s.invoiceNumber}`)}><PrintIcon /></IconButton>
+                      <IconButton size="small" onClick={() => navigate(`/sales/${s.id}`)}><ViewIcon /></IconButton>
+                      {isManager() && status !== 'VOIDED' && (
+                        <IconButton size="small" color="warning" onClick={() => { setSelectedSale(s); setVoidDialogOpen(true); }}>Void</IconButton>
+                      )}
+                      {isManager() && (
+                        <IconButton size="small" color="error" onClick={() => { setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>

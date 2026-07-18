@@ -1,5 +1,6 @@
 package com.bms.controller;
 
+import com.bms.dto.response.AccountingSummaryResponse;
 import com.bms.dto.response.ApiResponse;
 import com.bms.service.ReportService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -70,6 +71,50 @@ public class ReportController {
             @RequestParam(defaultValue = "7") int days) {
         List<com.bms.dto.response.DailySalesTrendDto> report = reportService.getSalesTrend(days);
         return ResponseEntity.ok(new ApiResponse<>(true, "Sales trend retrieved successfully", report));
+    }
+
+    @GetMapping("/top-products")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getTopProducts(
+            @RequestParam(defaultValue = "MONTH") String period,
+            @RequestParam(defaultValue = "10") int limit) {
+        List<Map<String, Object>> report = reportService.getTopProducts(period, limit);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Top products report retrieved successfully", report));
+    }
+
+    @GetMapping("/top-categories")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getTopCategories(
+            @RequestParam(defaultValue = "MONTH") String period) {
+        List<Map<String, Object>> report = reportService.getTopCategories(period);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Top categories report retrieved successfully", report));
+    }
+
+    @GetMapping("/profit-summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getProfitSummary(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        Map<String, Object> report = reportService.getProfitSummary(startDate, endDate);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Profit summary retrieved successfully", report));
+    }
+
+    @GetMapping("/profit-trend")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getProfitTrend(
+            @RequestParam(defaultValue = "MONTH") String period,
+            @RequestParam(defaultValue = "12") int points) {
+        List<Map<String, Object>> report = reportService.getProfitTrend(period, points);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Profit trend retrieved successfully", report));
+    }
+
+    @GetMapping("/accounting-summary")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<AccountingSummaryResponse>> getAccountingSummary(
+            @RequestParam int year,
+            @RequestParam int month) {
+        AccountingSummaryResponse report = reportService.getAccountingSummary(year, month);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Accounting summary retrieved successfully", report));
     }
 
     @GetMapping("/inventory")

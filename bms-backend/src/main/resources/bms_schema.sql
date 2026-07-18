@@ -211,6 +211,8 @@ CREATE TABLE sale_items (
     unit_price DECIMAL(10,2) NOT NULL,
     total_price DECIMAL(10,2) NOT NULL,
     tax_amount DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    cost_price_at_sale DECIMAL(10,2) NULL,
+    quantity_refunded INT NOT NULL DEFAULT 0,
     FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
     FOREIGN KEY (product_id) REFERENCES products(id),
     INDEX idx_sale_item_sale (sale_id),
@@ -235,6 +237,46 @@ CREATE TABLE stock_movements (
     INDEX idx_stock_movement_type (movement_type),
     INDEX idx_stock_movement_reference (reference_type, reference_id),
     INDEX idx_stock_movement_date (movement_date)
+);
+
+CREATE TABLE expenses (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    category VARCHAR(50) NOT NULL,
+    description VARCHAR(255),
+    amount DECIMAL(10,2) NOT NULL,
+    expense_date DATE NOT NULL,
+    created_by BIGINT NOT NULL,
+    receipt_image LONGBLOB NULL,
+    receipt_image_type VARCHAR(10) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+CREATE TABLE refunds (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    sale_id BIGINT NOT NULL,
+    refunded_by BIGINT NOT NULL,
+    refund_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    reason TEXT NOT NULL,
+    total_refund_amount DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (sale_id) REFERENCES sales(id),
+    FOREIGN KEY (refunded_by) REFERENCES users(id),
+    INDEX idx_refund_sale (sale_id),
+    INDEX idx_refund_date (refund_date),
+    INDEX idx_refund_user (refunded_by)
+);
+
+CREATE TABLE refund_items (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    refund_id BIGINT NOT NULL,
+    sale_item_id BIGINT NOT NULL,
+    quantity_refunded INT NOT NULL,
+    refund_amount DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
+    FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+    INDEX idx_refund_item_refund (refund_id),
+    INDEX idx_refund_item_sale_item (sale_item_id)
 );
 
 -- Audit Logs table
@@ -296,4 +338,3 @@ INSERT INTO system_settings (setting_key, setting_value, description, data_type)
 ('low_stock_threshold', '5', 'Default threshold for low stock alerts', 'INTEGER'),
 ('receipt_print_enabled', 'true', 'Whether receipt printing is enabled', 'BOOLEAN'),
 ('invoice_prefix', 'INV-', 'Prefix for invoice numbers', 'STRING');
-

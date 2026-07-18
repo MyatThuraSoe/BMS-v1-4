@@ -7,6 +7,7 @@ import java.util.List;
 public class ReceiptDto {
 
     private String invoiceNumber;
+    private Long saleId;
     private LocalDateTime saleDate;
     private String cashierName;
     private String customerName;
@@ -28,6 +29,7 @@ public class ReceiptDto {
     // All-Args Constructor
     public ReceiptDto(
             String invoiceNumber,
+            Long saleId,
             LocalDateTime saleDate,
             String cashierName,
             String customerName,
@@ -41,6 +43,7 @@ public class ReceiptDto {
             String paymentMethod
     ) {
         this.invoiceNumber = invoiceNumber;
+        this.saleId = saleId;
         this.saleDate = saleDate;
         this.cashierName = cashierName;
         this.customerName = customerName;
@@ -61,6 +64,14 @@ public class ReceiptDto {
 
     public void setInvoiceNumber(String invoiceNumber) {
         this.invoiceNumber = invoiceNumber;
+    }
+
+    public Long getSaleId() {
+        return saleId;
+    }
+
+    public void setSaleId(Long saleId) {
+        this.saleId = saleId;
     }
 
 

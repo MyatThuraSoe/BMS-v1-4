@@ -11,6 +11,7 @@ import com.bms.entity.StockMovement;
 import com.bms.entity.Supplier;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
+import com.bms.service.CostCalculationUtils;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.PurchaseRepository;
@@ -170,8 +171,16 @@ public class PurchaseService {
         for (PurchaseItem item : purchase.getItems()) {
             Product product = item.getProduct();
             
+            BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
             int oldStock = product.getStockQuantity();
             int newStock = oldStock + item.getQuantity();
+            BigDecimal newWeightedCost = CostCalculationUtils.calculateWeightedAverageCost(
+                    oldCostPrice,
+                    oldStock,
+                    item.getUnitCost(),
+                    item.getQuantity()
+            );
+            product.setCostPrice(newWeightedCost);
             product.setStockQuantity(newStock);
             productRepository.save(product);
 

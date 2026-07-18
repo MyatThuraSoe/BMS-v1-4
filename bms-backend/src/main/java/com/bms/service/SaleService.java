@@ -1,8 +1,10 @@
 package com.bms.service;
 
 import com.bms.dto.request.CartVerifyRequest;
+import com.bms.dto.request.RefundRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.response.CartVerifyResponse;
+import com.bms.dto.response.RefundResponse;
 import com.bms.dto.response.SaleItemResponse;
 import com.bms.dto.response.SaleResponse;
 import com.bms.entity.*;
@@ -19,7 +21,9 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -43,6 +47,9 @@ public class SaleService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private RefundRepository refundRepository;
 
     public Page<Sale> getAllSales(Pageable pageable) {
         return saleRepository.findActiveSales(pageable);
@@ -119,6 +126,7 @@ public class SaleService {
             item.setProduct(product);
             item.setQuantity(itemRequest.getQuantity());
             item.setUnitPrice(product.getUnitPrice());
+            item.setCostPriceAtSale(product.getCostPrice());
 
             BigDecimal[] pricing = calculateItemPricing(product, itemRequest.getQuantity());
             BigDecimal itemTotal = pricing[0];
@@ -249,6 +257,86 @@ public class SaleService {
         return convertToResponse(updatedSale);
     }
 
+    public RefundResponse processRefund(Long saleId, RefundRequest request, Long userId) {
+        Sale sale = saleRepository.findById(saleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
+
+        if (sale.getIsVoided() != null && sale.getIsVoided()) {
+            throw new BusinessException("Cannot refund a voided sale");
+        }
+
+        User refundedBy = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        Refund refund = new Refund();
+        refund.setSale(sale);
+        refund.setRefundedBy(refundedBy);
+        refund.setRefundDate(LocalDateTime.now());
+        refund.setReason(request.getReason());
+
+        BigDecimal totalRefundAmount = BigDecimal.ZERO;
+        Set<Long> requestedSaleItemIds = new HashSet<>();
+
+        for (RefundRequest.RefundItemRequest itemRequest : request.getItems()) {
+            if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
+                throw new BusinessException("Duplicate refund item: " + itemRequest.getSaleItemId());
+            }
+
+            SaleItem saleItem = sale.getItems().stream()
+                    .filter(item -> item.getId().equals(itemRequest.getSaleItemId()))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException("Sale item does not belong to this sale: " + itemRequest.getSaleItemId()));
+
+            int alreadyRefunded = saleItem.getQuantityRefunded() != null ? saleItem.getQuantityRefunded() : 0;
+            int refundableQuantity = saleItem.getQuantity() - alreadyRefunded;
+            int requestedQuantity = itemRequest.getQuantity();
+            if (requestedQuantity > refundableQuantity) {
+                throw new BusinessException("Cannot refund " + requestedQuantity + " of " + saleItem.getProduct().getName()
+                        + ". Refundable quantity is " + refundableQuantity);
+            }
+
+            BigDecimal refundAmount = saleItem.getUnitPrice()
+                    .multiply(BigDecimal.valueOf(requestedQuantity))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+
+            Product product = productRepository.findByIdForUpdate(saleItem.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + saleItem.getProduct().getId()));
+            product.setStockQuantity(product.getStockQuantity() + requestedQuantity);
+            productRepository.save(product);
+
+            saleItem.setQuantityRefunded(alreadyRefunded + requestedQuantity);
+
+            RefundItem refundItem = new RefundItem();
+            refundItem.setRefund(refund);
+            refundItem.setSaleItem(saleItem);
+            refundItem.setQuantityRefunded(requestedQuantity);
+            refundItem.setRefundAmount(refundAmount);
+            refund.getItems().add(refundItem);
+
+            StockMovement movement = new StockMovement();
+            movement.setProduct(product);
+            movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
+            movement.setQuantity(requestedQuantity);
+            movement.setReferenceType(StockMovement.ReferenceType.RETURN);
+            movement.setReferenceId(sale.getId());
+            movement.setDescription("Stock restored from refund: " + sale.getInvoiceNumber());
+            movement.setCreatedBy(refundedBy);
+            movement.setMovementDate(LocalDateTime.now());
+            stockMovementRepository.save(movement);
+
+            totalRefundAmount = totalRefundAmount.add(refundAmount);
+        }
+
+        refund.setTotalRefundAmount(totalRefundAmount);
+        Refund savedRefund = refundRepository.save(refund);
+
+        auditLogService.logAction(userId, "SALE_REFUND",
+                "Refund processed for sale: " + sale.getInvoiceNumber() + ". Amount: " + totalRefundAmount,
+                "Refund", savedRefund.getId(), null, savedRefund.toString());
+
+        return convertRefundToResponse(savedRefund);
+    }
+
     public void deleteSale(Long id, Long userId) {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + id));
@@ -304,6 +392,31 @@ public class SaleService {
         response.setUnitPrice(item.getUnitPrice());
         response.setTotalPrice(item.getTotalPrice());
         response.setTaxAmount(item.getTaxAmount());
+        response.setCostPriceAtSale(item.getCostPriceAtSale());
+        response.setQuantityRefunded(item.getQuantityRefunded());
+        return response;
+    }
+
+    private RefundResponse convertRefundToResponse(Refund refund) {
+        RefundResponse response = new RefundResponse();
+        response.setId(refund.getId());
+        response.setSaleId(refund.getSale().getId());
+        response.setInvoiceNumber(refund.getSale().getInvoiceNumber());
+        response.setRefundedBy(refund.getRefundedBy().getId());
+        response.setRefundedByUsername(refund.getRefundedBy().getUsername());
+        response.setRefundDate(refund.getRefundDate());
+        response.setReason(refund.getReason());
+        response.setTotalRefundAmount(refund.getTotalRefundAmount());
+        response.setItems(refund.getItems().stream().map(item -> {
+            RefundResponse.RefundItemResponse itemResponse = new RefundResponse.RefundItemResponse();
+            itemResponse.setId(item.getId());
+            itemResponse.setSaleItemId(item.getSaleItem().getId());
+            itemResponse.setProductId(item.getSaleItem().getProduct().getId());
+            itemResponse.setProductName(item.getSaleItem().getProduct().getName());
+            itemResponse.setQuantityRefunded(item.getQuantityRefunded());
+            itemResponse.setRefundAmount(item.getRefundAmount());
+            return itemResponse;
+        }).collect(Collectors.toList()));
         return response;
     }
 

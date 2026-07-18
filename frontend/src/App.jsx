@@ -23,6 +23,8 @@ import Sales from './pages/Sales';
 import SaleDetail from './pages/SaleDetail';
 import ReceiptPreview from './pages/ReceiptPreview';
 import Reports from './pages/Reports';
+import Analytics from './pages/Analytics';
+import Accounting from './pages/Accounting';
 import Inventory from './pages/Inventory';
 import StockAdjustment from './pages/StockAdjustment';
 import Users from './pages/Users';
@@ -130,6 +132,8 @@ function AppRoutes() {
         
         {/* Reports (Admin & Manager only) */}
         <Route path="reports" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Reports /></ProtectedRoute>} />
+        <Route path="analytics" element={<ProtectedRoute allowedRoles={['ADMIN']}><Analytics /></ProtectedRoute>} />
+        <Route path="accounting" element={<ProtectedRoute allowedRoles={['ADMIN']}><Accounting /></ProtectedRoute>} />
         
         {/* Users (Admin only) */}
         <Route path="users" element={<ProtectedRoute allowedRoles={['ADMIN']}><Users /></ProtectedRoute>} />

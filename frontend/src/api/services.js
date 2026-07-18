@@ -251,6 +251,11 @@ export const saleService = {
     return response.data;
   },
 
+  refundSale: async (id, data) => {
+    const response = await apiClient.post(`/sales/${id}/refund`, data);
+    return response.data;
+  },
+
   delete: async (id) => {
     const response = await apiClient.delete(`/sales/${id}`);
     return response.data;
@@ -354,6 +359,52 @@ export const shopInfoService = {
   },
 };
 
+export const expenseService = {
+  getAll: async (month = null, year = null) => {
+    const params = new URLSearchParams();
+    if (month) params.append('startDate', `${year || new Date().getFullYear()}-${String(month).padStart(2, '0')}-01`);
+    if (month) params.append('endDate', `${year || new Date().getFullYear()}-${String(month).padStart(2, '0')}-${new Date(year || new Date().getFullYear(), month, 0).getDate()}`);
+    const response = await apiClient.get(`/expenses${params.toString() ? `?${params.toString()}` : ''}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await apiClient.post('/expenses', data);
+    return response.data;
+  },
+
+  update: async (id, data) => {
+    const response = await apiClient.put(`/expenses/${id}`, data);
+    return response.data;
+  },
+
+  delete: async (id) => {
+    const response = await apiClient.delete(`/expenses/${id}`);
+    return response.data;
+  },
+
+  getReceiptImage: async (id) => {
+    const response = await apiClient.get(`/expenses/${id}/receipt-image`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
+  uploadReceiptImage: async (id, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post(`/expenses/${id}/receipt-image`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deleteReceiptImage: async (id) => {
+    const response = await apiClient.delete(`/expenses/${id}/receipt-image`);
+    return response.data;
+  },
+};
+
 export const reportService = {
   getDailySales: async (date) => {
     const response = await apiClient.get(`/reports/daily-sales?date=${date}`);
@@ -388,6 +439,31 @@ export const reportService = {
 
   getInventoryReport: async () => {
     const response = await apiClient.get('/reports/inventory');
+    return response.data;
+  },
+
+  getTopProducts: async (period = 'MONTH', limit = 10) => {
+    const response = await apiClient.get(`/reports/top-products?period=${period}&limit=${limit}`);
+    return response.data;
+  },
+
+  getTopCategories: async (period = 'MONTH') => {
+    const response = await apiClient.get(`/reports/top-categories?period=${period}`);
+    return response.data;
+  },
+
+  getProfitSummary: async (startDate, endDate) => {
+    const response = await apiClient.get(`/reports/profit-summary?startDate=${startDate}&endDate=${endDate}`);
+    return response.data;
+  },
+
+  getProfitTrend: async (period = 'MONTH') => {
+    const response = await apiClient.get(`/reports/profit-trend?period=${period}&points=12`);
+    return response.data;
+  },
+
+  getAccountingSummary: async (year, month) => {
+    const response = await apiClient.get(`/reports/accounting-summary?year=${year}&month=${month}`);
     return response.data;
   },
 };
@@ -448,5 +524,3 @@ export const auditLogService = {
     return response.data;
   },
 };
-
-

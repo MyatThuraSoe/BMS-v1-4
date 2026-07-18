@@ -57,6 +57,8 @@ const menuItems = [
   { text: 'Customers', icon: <PeopleIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'] },
+  { text: 'Analytics', icon: <ReportIcon />, path: '/analytics', roles: ['ADMIN'] },
+  { text: 'Accounting', icon: <ReportIcon />, path: '/accounting', roles: ['ADMIN'] },
   { text: 'Users', icon: <SecurityIcon />, path: '/users', roles: ['ADMIN'] },
   { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'] },
   { text: 'Shop Info', icon: <SettingsIcon />, path: '/shop-info', roles: ['ADMIN'] },

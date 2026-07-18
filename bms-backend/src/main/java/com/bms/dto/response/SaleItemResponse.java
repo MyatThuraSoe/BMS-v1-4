@@ -10,6 +10,8 @@ public class SaleItemResponse {
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
     private BigDecimal taxAmount;
+    private BigDecimal costPriceAtSale;
+    private Integer quantityRefunded;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -25,4 +27,8 @@ public class SaleItemResponse {
     public void setTotalPrice(BigDecimal totalPrice) { this.totalPrice = totalPrice; }
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+    public BigDecimal getCostPriceAtSale() { return costPriceAtSale; }
+    public void setCostPriceAtSale(BigDecimal costPriceAtSale) { this.costPriceAtSale = costPriceAtSale; }
+    public Integer getQuantityRefunded() { return quantityRefunded; }
+    public void setQuantityRefunded(Integer quantityRefunded) { this.quantityRefunded = quantityRefunded; }
 }

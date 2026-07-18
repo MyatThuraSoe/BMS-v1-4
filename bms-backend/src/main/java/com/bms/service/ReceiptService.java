@@ -49,6 +49,7 @@ public class ReceiptService {
 
         return new ReceiptDto(
                 sale.getInvoiceNumber(),
+                sale.getId(),
                 sale.getSaleDate(),
                 cashierName,
                 customerName,
@@ -91,6 +92,7 @@ public class ReceiptService {
 
         return new ReceiptDto(
                 sale.getInvoiceNumber(),
+                sale.getId(),
                 sale.getSaleDate(),
                 cashierName,
                 customerName,
@@ -108,12 +110,13 @@ public class ReceiptService {
     private ReceiptItemDto toReceiptItemDto(SaleItem item) {
         return new ReceiptItemDto(
                 item.getProduct().getId(),
+                item.getId(),
                 item.getProduct().getName(),
                 item.getProduct().getSku(),
                 item.getQuantity(),
+                item.getQuantityRefunded(),
                 item.getUnitPrice(),
                 item.getTotalPrice()
         );
     }
 }
-
