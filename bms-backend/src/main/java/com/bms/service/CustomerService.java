@@ -12,6 +12,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.opencsv.CSVWriterBuilder;
+import com.opencsv.ICSVWriter;
+
+import java.io.Writer;
 import java.time.LocalDateTime;
 import java.util.Optional;
 
@@ -123,7 +127,7 @@ public class CustomerService {
             "Customer", customer.getId(), customer.toString(), null);
     }
 
-    private String generateCustomerCode() {
+private String generateCustomerCode() {
         String prefix = "CUST-";
         String datePart = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
         
@@ -148,6 +152,37 @@ public class CustomerService {
         return prefix + datePart + "-" + String.format("%04d", seqNum);
     }
 
+    public void exportCustomersToCsv(Writer writer) {
+        Page<Customer> customers = customerRepository.findActiveCustomers(org.springframework.data.domain.Pageable.unpaged());
+        ICSVWriter csvWriter = new CSVWriterBuilder(writer)
+                .withSeparator(',')
+                .build();
+
+        csvWriter.writeNext(new String[]{
+                "Customer Code", "First Name", "Last Name", "Email", "Phone",
+                "Address", "City", "State", "Zip Code", "Country",
+                "Credit Balance", "Credit Limit", "Notes"
+        });
+
+        for (Customer customer : customers) {
+            csvWriter.writeNext(new String[]{
+                    customer.getCustomerCode() != null ? customer.getCustomerCode() : "",
+                    customer.getFirstName() != null ? customer.getFirstName() : "",
+                    customer.getLastName() != null ? customer.getLastName() : "",
+                    customer.getEmail() != null ? customer.getEmail() : "",
+                    customer.getPhone() != null ? customer.getPhone() : "",
+                    customer.getAddress() != null ? customer.getAddress() : "",
+                    customer.getCity() != null ? customer.getCity() : "",
+                    customer.getState() != null ? customer.getState() : "",
+                    customer.getZipCode() != null ? customer.getZipCode() : "",
+                    customer.getCountry() != null ? customer.getCountry() : "",
+                    customer.getCreditBalance() != null ? customer.getCreditBalance().toPlainString() : "0.00",
+                    customer.getCreditLimit() != null ? customer.getCreditLimit().toPlainString() : "0.00",
+                    customer.getNotes() != null ? customer.getNotes() : ""
+            });
+        }
+    }
+
     private CustomerResponse convertToResponse(Customer customer) {
         CustomerResponse response = new CustomerResponse();
         response.setId(customer.getId());
@@ -162,6 +197,8 @@ public class CustomerService {
         response.setZipCode(customer.getZipCode());
         response.setCountry(customer.getCountry());
         response.setNotes(customer.getNotes());
+        response.setCreditBalance(customer.getCreditBalance());
+        response.setCreditLimit(customer.getCreditLimit());
         response.setIsActive(customer.getIsActive());
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());

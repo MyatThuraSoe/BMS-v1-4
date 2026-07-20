@@ -42,6 +42,9 @@ public class Sale {
     @Column(name = "discount_amount", precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "discount_reason", length = 1000)
+    private String discountReason;
+
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
@@ -86,7 +89,8 @@ public class Sale {
     private List<SaleItem> items = new ArrayList<>();
 
     public enum PaymentMethod {
-        CASH
+        CASH,
+        CREDIT
     }
 
     @PrePersist
@@ -130,6 +134,9 @@ public class Sale {
 
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
+    public String getDiscountReason() { return discountReason; }
+    public void setDiscountReason(String discountReason) { this.discountReason = discountReason; }
 
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }

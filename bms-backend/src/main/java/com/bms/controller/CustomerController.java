@@ -1,11 +1,18 @@
 package com.bms.controller;
 
+import com.bms.dto.request.CreditPaymentCreateRequest;
 import com.bms.dto.request.CustomerCreateRequest;
 import com.bms.dto.response.ApiResponse;
+import com.bms.dto.response.CreditPaymentResponse;
 import com.bms.dto.response.CustomerResponse;
 import com.bms.entity.Customer;
+import com.bms.service.CreditPaymentService;
 import com.bms.service.CustomerService;
+import com.bms.service.UserService;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
+
+import java.io.IOException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -14,6 +21,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -22,6 +31,12 @@ public class CustomerController {
 
     @Autowired
     private CustomerService customerService;
+
+    @Autowired
+    private CreditPaymentService creditPaymentService;
+
+    @Autowired
+    private UserService userService;
 
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
@@ -75,6 +90,28 @@ public class CustomerController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Customer deleted successfully", null));
     }
 
+@PostMapping("/{customerId}/credit-payments")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<CreditPaymentResponse>> createCreditPayment(
+            @PathVariable Long customerId,
+            @Valid @RequestBody CreditPaymentCreateRequest request,
+            Authentication authentication) {
+
+        UserDetails userDetails = (UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+
+        CreditPaymentResponse response = creditPaymentService.createCreditPayment(customerId, request, userId);
+        return ResponseEntity.status(HttpStatus.CREATED).body(new ApiResponse<>(true, "Credit payment recorded successfully", response));
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public void exportCustomers(HttpServletResponse response) throws IOException {
+        response.setContentType("text/csv");
+        response.setHeader("Content-Disposition", "attachment; filename=\"customers.csv\"");
+        customerService.exportCustomersToCsv(response.getWriter());
+    }
+
     private CustomerResponse convertToResponse(Customer customer) {
         CustomerResponse response = new CustomerResponse();
         response.setId(customer.getId());
@@ -89,6 +126,8 @@ public class CustomerController {
         response.setZipCode(customer.getZipCode());
         response.setCountry(customer.getCountry());
         response.setNotes(customer.getNotes());
+        response.setCreditBalance(customer.getCreditBalance());
+        response.setCreditLimit(customer.getCreditLimit());
         response.setIsActive(customer.getIsActive());
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());

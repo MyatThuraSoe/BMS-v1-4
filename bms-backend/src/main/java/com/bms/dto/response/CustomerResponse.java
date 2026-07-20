@@ -18,6 +18,10 @@ public class CustomerResponse {
     private String zipCode;
     private String country;
     private String notes;
+
+    private BigDecimal creditBalance;
+    private BigDecimal creditLimit;
+
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -46,6 +50,13 @@ public class CustomerResponse {
     public void setCountry(String country) { this.country = country; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public BigDecimal getCreditBalance() { return creditBalance; }
+    public void setCreditBalance(BigDecimal creditBalance) { this.creditBalance = creditBalance; }
+
+    public BigDecimal getCreditLimit() { return creditLimit; }
+    public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
+
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public LocalDateTime getCreatedAt() { return createdAt; }

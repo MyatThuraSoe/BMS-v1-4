@@ -17,6 +17,10 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.opencsv.CSVWriterBuilder;
+import com.opencsv.ICSVWriter;
+
+import java.io.Writer;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -90,15 +94,30 @@ public class SaleService {
         sale.setInvoiceNumber(invoiceNumber);
         sale.setCashierId(cashierId);
         sale.setSaleDate(LocalDateTime.now());
-        sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        // Payment method (CASH / CREDIT)
+        String paymentMethod = request.getPaymentMethod();
+        if (paymentMethod == null) {
+            paymentMethod = "CASH";
+        }
+
+        if ("CASH".equals(paymentMethod)) {
+            sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        } else if ("CREDIT".equals(paymentMethod)) {
+            sale.setPaymentMethod(Sale.PaymentMethod.CREDIT);
+        } else {
+            throw new BusinessException("Invalid paymentMethod. Use CASH or CREDIT");
+        }
+
         sale.setNotes(request.getNotes());
         sale.setIsVoided(false);
 
-        // Set customer if provided (walk-in if null)
+        // Set customer if provided (walk-in if null). CREDIT always requires a customer.
         if (request.getCustomerId() != null) {
             Customer customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
             sale.setCustomer(customer);
+        } else if (sale.getPaymentMethod() == Sale.PaymentMethod.CREDIT) {
+            throw new BusinessException("Customer is required for CREDIT sales");
         }
 
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -142,27 +161,91 @@ public class SaleService {
 
         sale.setSubtotal(subtotal);
         sale.setTaxAmount(taxAmount);
-        sale.setDiscountAmount(BigDecimal.ZERO);
-        
-        BigDecimal totalAmount = subtotal.add(taxAmount);
-        sale.setTotalAmount(totalAmount);
-        sale.setAmountPaid(request.getAmountPaid());
-        
-        BigDecimal changeGiven = request.getAmountPaid().subtract(totalAmount);
-        if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException("Amount paid (" + request.getAmountPaid() + 
-                ") is less than total amount (" + totalAmount + ")");
+
+        // Discount computation (whole-sale level): applied before final total
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (request.getDiscountType() != null && request.getDiscountValue() != null) {
+            if ("PERCENTAGE".equals(request.getDiscountType())) {
+                if (request.getDiscountValue().compareTo(BigDecimal.ZERO) < 0 ||
+                    request.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+                    throw new BusinessException("Discount percentage must be between 0 and 100");
+                }
+                discountAmount = subtotal.multiply(request.getDiscountValue())
+                        .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            } else if ("FIXED".equals(request.getDiscountType())) {
+                if (request.getDiscountValue().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new BusinessException("Fixed discount cannot be negative");
+                }
+                discountAmount = request.getDiscountValue();
+            } else {
+                throw new BusinessException("Invalid discount type. Use PERCENTAGE or FIXED");
+            }
+
+            BigDecimal saleTotalBeforeDiscount = subtotal.add(taxAmount);
+            if (discountAmount.compareTo(saleTotalBeforeDiscount) > 0) {
+                throw new BusinessException("Discount cannot exceed the sale total");
+            }
+
+            if (discountAmount.compareTo(BigDecimal.ZERO) > 0) {
+                sale.setDiscountReason(request.getDiscountReason());
+            }
         }
-        sale.setChangeGiven(changeGiven);
+
+        sale.setDiscountAmount(discountAmount);
+
+        BigDecimal totalAmount = subtotal.add(taxAmount).subtract(discountAmount);
+        sale.setTotalAmount(totalAmount);
+
+        // Payment + credit handling
+        if (sale.getPaymentMethod() == Sale.PaymentMethod.CREDIT) {
+            if (totalAmount.compareTo(BigDecimal.ZERO) <= 0) {
+                throw new BusinessException("Total amount must be greater than 0 for CREDIT sales");
+            }
+            if (request.getAmountPaid() == null) {
+                throw new BusinessException("Amount paid is required");
+            }
+            if (request.getAmountPaid().compareTo(BigDecimal.ZERO) != 0) {
+                throw new BusinessException("For CREDIT sales, amountPaid must be 0");
+            }
+
+            Customer customer = sale.getCustomer();
+            if (customer == null) {
+                throw new BusinessException("Customer is required for CREDIT sales");
+            }
+
+            BigDecimal newCreditBalance = customer.getCreditBalance().add(totalAmount);
+            BigDecimal creditLimit = customer.getCreditLimit() != null ? customer.getCreditLimit() : BigDecimal.ZERO;
+
+            if (newCreditBalance.compareTo(creditLimit) > 0) {
+                throw new BusinessException("CREDIT limit exceeded");
+            }
+
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+
+            Customer updatedCustomer = customer;
+            updatedCustomer.setCreditBalance(newCreditBalance);
+            customerRepository.save(updatedCustomer);
+        } else {
+            // CASH
+            sale.setAmountPaid(request.getAmountPaid());
+
+            BigDecimal changeGiven = request.getAmountPaid().subtract(totalAmount);
+            if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("Amount paid (" + request.getAmountPaid() +
+                        ") is less than total amount (" + totalAmount + ")");
+            }
+            sale.setChangeGiven(changeGiven);
+        }
 
         Sale savedSale = saleRepository.save(sale);
 
         // Process stock deductions
         processStockDeduction(savedSale, cashierId);
 
-        auditLogService.logAction(cashierId, "SALE_CREATE", 
-            "Sale created: " + savedSale.getInvoiceNumber(), 
-            "Sale", savedSale.getId(), null, savedSale.toString());
+        auditLogService.logAction(cashierId, "SALE_CREATE",
+                "Sale created: " + savedSale.getInvoiceNumber(),
+                "Sale", savedSale.getId(), null, savedSale.toString());
 
         return convertToResponse(savedSale);
     }
@@ -277,6 +360,10 @@ public class SaleService {
         BigDecimal totalRefundAmount = BigDecimal.ZERO;
         Set<Long> requestedSaleItemIds = new HashSet<>();
 
+        // If CREDIT sale, refund should reduce customer's credit_balance (allocate discount proportionally)
+        // This uses the same allocatedDiscount/refundAmount computed per refunded item.
+        Customer creditedCustomer = sale.getCustomer();
+
         for (RefundRequest.RefundItemRequest itemRequest : request.getItems()) {
             if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
                 throw new BusinessException("Duplicate refund item: " + itemRequest.getSaleItemId());
@@ -295,9 +382,31 @@ public class SaleService {
                         + ". Refundable quantity is " + refundableQuantity);
             }
 
-            BigDecimal refundAmount = saleItem.getUnitPrice()
+            // Refund on discounted sales:
+            // Discounts are applied at whole-sale level (sale.discountAmount).
+            // Allocate the discount proportionally to the refunded item's pre-tax total
+            // (saleItem.totalPrice corresponds to pre-tax line total).
+            BigDecimal itemPreTaxTotal = saleItem.getUnitPrice()
                     .multiply(BigDecimal.valueOf(requestedQuantity))
                     .setScale(2, java.math.RoundingMode.HALF_UP);
+
+            BigDecimal allocatedDiscount = BigDecimal.ZERO;
+            if (sale.getDiscountAmount() != null
+                    && sale.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0
+                    && sale.getSubtotal() != null
+                    && sale.getSubtotal().compareTo(BigDecimal.ZERO) > 0) {
+
+                allocatedDiscount = sale.getDiscountAmount()
+                        .multiply(itemPreTaxTotal)
+                        .divide(sale.getSubtotal(), 2, java.math.RoundingMode.HALF_UP);
+            }
+
+            BigDecimal refundAmount = itemPreTaxTotal.subtract(allocatedDiscount)
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+
+            if (refundAmount.compareTo(BigDecimal.ZERO) < 0) {
+                refundAmount = BigDecimal.ZERO;
+            }
 
             Product product = productRepository.findByIdForUpdate(saleItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + saleItem.getProduct().getId()));
@@ -325,6 +434,20 @@ public class SaleService {
             stockMovementRepository.save(movement);
 
             totalRefundAmount = totalRefundAmount.add(refundAmount);
+        }
+
+        // Apply credit reversal only for CREDIT payments
+        if (sale.getPaymentMethod() == Sale.PaymentMethod.CREDIT) {
+            if (creditedCustomer == null) {
+                throw new BusinessException("Customer missing for CREDIT refund reversal");
+            }
+
+            BigDecimal newCreditBalance = creditedCustomer.getCreditBalance().subtract(totalRefundAmount);
+            if (newCreditBalance.compareTo(BigDecimal.ZERO) < 0) {
+                newCreditBalance = BigDecimal.ZERO; // prevent negative credit balance
+            }
+            creditedCustomer.setCreditBalance(newCreditBalance);
+            customerRepository.save(creditedCustomer);
         }
 
         refund.setTotalRefundAmount(totalRefundAmount);
@@ -465,13 +588,80 @@ public class SaleService {
             results.add(result);
         }
 
+        // Apply discount to authoritative totals as part of verifyCart
+        BigDecimal discountAmount = BigDecimal.ZERO;
+        if (request.getDiscountType() != null && request.getDiscountValue() != null) {
+            if ("PERCENTAGE".equals(request.getDiscountType())) {
+                if (request.getDiscountValue().compareTo(BigDecimal.ZERO) < 0 ||
+                        request.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+                    throw new BusinessException("Discount percentage must be between 0 and 100");
+                }
+                discountAmount = subtotal.multiply(request.getDiscountValue())
+                        .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+            } else if ("FIXED".equals(request.getDiscountType())) {
+                if (request.getDiscountValue().compareTo(BigDecimal.ZERO) < 0) {
+                    throw new BusinessException("Fixed discount cannot be negative");
+                }
+                discountAmount = request.getDiscountValue();
+            } else {
+                throw new BusinessException("Invalid discount type. Use PERCENTAGE or FIXED");
+            }
+
+            BigDecimal saleTotalBeforeDiscount = subtotal.add(taxAmount);
+            if (discountAmount.compareTo(saleTotalBeforeDiscount) > 0) {
+                throw new BusinessException("Discount cannot exceed the sale total");
+            }
+        }
+
+        BigDecimal totalAfterDiscount = subtotal.add(taxAmount).subtract(discountAmount);
+
         response.setItems(results);
         response.setSubtotal(subtotal);
         response.setTaxAmount(taxAmount);
-        response.setTotalAmount(subtotal.add(taxAmount));
+        response.setTotalAmount(totalAfterDiscount);
         response.setMessages(messages);
         response.setValid(!anyChanged);
         return response;
+    }
+
+    public void exportSalesToCsv(Writer writer, LocalDate startDate, LocalDate endDate) {
+        LocalDateTime start = startDate != null ? startDate.atStartOfDay() : LocalDate.now().minusMonths(3).atStartOfDay();
+        LocalDateTime end = endDate != null ? endDate.plusDays(1).atStartOfDay() : LocalDate.now().plusDays(1).atStartOfDay();
+
+        List<Sale> sales = saleRepository.findByDateRange(start, end, Pageable.unpaged()).getContent();
+
+        ICSVWriter csvWriter = new CSVWriterBuilder(writer)
+                .withSeparator(',')
+                .build();
+
+        csvWriter.writeNext(new String[]{
+                "Invoice Number", "Sale Date", "Customer", "Cashier ID",
+                "Subtotal", "Tax Amount", "Discount Amount", "Total Amount",
+                "Amount Paid", "Change Given", "Payment Method", "Status", "Notes"
+        });
+
+        for (Sale sale : sales) {
+            String status = sale.getIsVoided() != null && sale.getIsVoided() ? "VOIDED" : "COMPLETED";
+            String customerName = sale.getCustomer() != null
+                    ? sale.getCustomer().getFirstName() + " " + sale.getCustomer().getLastName()
+                    : "Walk-in";
+
+            csvWriter.writeNext(new String[]{
+                    sale.getInvoiceNumber(),
+                    sale.getSaleDate() != null ? sale.getSaleDate().toString() : "",
+                    customerName,
+                    String.valueOf(sale.getCashierId()),
+                    sale.getSubtotal() != null ? sale.getSubtotal().toPlainString() : "0.00",
+                    sale.getTaxAmount() != null ? sale.getTaxAmount().toPlainString() : "0.00",
+                    sale.getDiscountAmount() != null ? sale.getDiscountAmount().toPlainString() : "0.00",
+                    sale.getTotalAmount() != null ? sale.getTotalAmount().toPlainString() : "0.00",
+                    sale.getAmountPaid() != null ? sale.getAmountPaid().toPlainString() : "0.00",
+                    sale.getChangeGiven() != null ? sale.getChangeGiven().toPlainString() : "0.00",
+                    sale.getPaymentMethod() != null ? sale.getPaymentMethod().name() : "CASH",
+                    status,
+                    sale.getNotes() != null ? sale.getNotes() : ""
+            });
+        }
     }
 
     // Shared by both verifyCart() and createSale() so the math can never drift apart again.

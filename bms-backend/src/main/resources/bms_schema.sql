@@ -1,19 +1,23 @@
--- BMS Database Schema
+-- BMS Database Schema — regenerated from actual current entity classes
+-- Every table below was built by reading the real .java entity files directly, not the old schema file.
+-- See the notes at the bottom for two things worth cleaning up that this regeneration surfaced.
+
 CREATE DATABASE IF NOT EXISTS bms_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE bms_db;
 
--- Roles table
+-- ============================================================
+-- Roles
+-- ============================================================
 CREATE TABLE roles (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(50) NOT NULL UNIQUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    name VARCHAR(50) NOT NULL UNIQUE
 );
 
--- Insert default roles
 INSERT INTO roles (name) VALUES ('ROLE_ADMIN'), ('ROLE_MANAGER'), ('ROLE_CASHIER');
 
--- Users table
+-- ============================================================
+-- Users
+-- ============================================================
 CREATE TABLE users (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -33,11 +37,13 @@ CREATE TABLE users (
     INDEX idx_user_is_active (is_active)
 );
 
--- Categories table
+-- ============================================================
+-- Categories
+-- ============================================================
 CREATE TABLE categories (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL,
-    description TEXT,
+    name VARCHAR(255) NOT NULL,
+    description VARCHAR(1000),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -46,19 +52,25 @@ CREATE TABLE categories (
     INDEX idx_category_is_active (is_active)
 );
 
--- Products table
+-- ============================================================
+-- Products
+-- Note: image_data/image_type live directly on this table (single-image
+-- design) — see note at the bottom about product_images still existing too.
+-- ============================================================
 CREATE TABLE products (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    sku VARCHAR(50) NOT NULL UNIQUE,
+    sku VARCHAR(255) NOT NULL UNIQUE,
     name VARCHAR(255) NOT NULL,
-    description TEXT,
-    category_id BIGINT,
+    description VARCHAR(2000),
+    category_id BIGINT NULL,
     unit_price DECIMAL(10,2) NOT NULL,
     cost_price DECIMAL(10,2),
     tax_rate DECIMAL(5,2) DEFAULT 0.00,
     stock_quantity INT NOT NULL DEFAULT 0,
     min_stock_level INT DEFAULT 0,
-    barcode VARCHAR(100),
+    barcode VARCHAR(255),
+    image_data LONGBLOB NULL,
+    image_type VARCHAR(10) NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -71,7 +83,10 @@ CREATE TABLE products (
     INDEX idx_product_category (category_id)
 );
 
--- Product Images table
+-- ============================================================
+-- Product Images (legacy multi-image table — still referenced by
+-- ProductService/ProductController; see note at the bottom)
+-- ============================================================
 CREATE TABLE product_images (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     product_id BIGINT NOT NULL,
@@ -85,17 +100,19 @@ CREATE TABLE product_images (
     INDEX idx_product_image_primary (is_primary)
 );
 
--- Suppliers table
+-- ============================================================
+-- Suppliers
+-- ============================================================
 CREATE TABLE suppliers (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    contact_person VARCHAR(100),
-    email VARCHAR(100),
-    phone VARCHAR(20),
-    address TEXT,
-    tax_id VARCHAR(50),
+    contact_person VARCHAR(255),
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(255) NOT NULL UNIQUE,
+    address VARCHAR(500),
+    tax_id VARCHAR(255),
     payment_terms VARCHAR(100),
-    notes TEXT,
+    notes VARCHAR(1000),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at DATETIME NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -105,10 +122,63 @@ CREATE TABLE suppliers (
     INDEX idx_supplier_is_active (is_active)
 );
 
--- Purchases table
+-- ============================================================
+-- Customers
+-- ============================================================
+CREATE TABLE customers (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_code VARCHAR(255) NOT NULL UNIQUE,
+    first_name VARCHAR(255) NOT NULL,
+    last_name VARCHAR(255) NOT NULL,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    phone VARCHAR(255) NOT NULL UNIQUE,
+    address VARCHAR(500),
+    city VARCHAR(255),
+    state VARCHAR(255),
+    zip_code VARCHAR(255),
+    country VARCHAR(255),
+    notes VARCHAR(1000),
+
+    credit_balance DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    credit_limit DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    deleted_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_customer_code (customer_code),
+    INDEX idx_customer_email (email),
+    INDEX idx_customer_phone (phone),
+    INDEX idx_customer_is_active (is_active)
+);
+
+-- ============================================================
+-- Credit Payments (store credit ledger)
+-- ============================================================
+CREATE TABLE credit_payments (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    payment_date DATETIME NOT NULL,
+    amount DECIMAL(12,2) NOT NULL, -- positive amount reduces customer's credit_balance (i.e., customer pays)
+    reference VARCHAR(255), -- optional cashier/operator reference
+    notes VARCHAR(1000),
+    created_by BIGINT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    FOREIGN KEY (customer_id) REFERENCES customers(id),
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_credit_payment_customer (customer_id),
+    INDEX idx_credit_payment_date (payment_date)
+);
+
+-- ============================================================
+-- Purchases
+-- ============================================================
 CREATE TABLE purchases (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    purchase_number VARCHAR(50) NOT NULL UNIQUE,
+    purchase_number VARCHAR(255) NOT NULL UNIQUE,
     supplier_id BIGINT NOT NULL,
     purchase_date DATE NOT NULL,
     subtotal DECIMAL(10,2) NOT NULL,
@@ -116,7 +186,7 @@ CREATE TABLE purchases (
     total_amount DECIMAL(10,2) NOT NULL,
     discount_amount DECIMAL(10,2) DEFAULT 0.00,
     payment_status ENUM('PENDING', 'PARTIAL', 'PAID') NOT NULL DEFAULT 'PENDING',
-    notes TEXT,
+    notes VARCHAR(1000),
     created_by BIGINT NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     deleted_at DATETIME NULL,
@@ -131,7 +201,9 @@ CREATE TABLE purchases (
     INDEX idx_purchase_payment_status (payment_status)
 );
 
--- Purchase Items table
+-- ============================================================
+-- Purchase Items
+-- ============================================================
 CREATE TABLE purchase_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     purchase_id BIGINT NOT NULL,
@@ -145,31 +217,12 @@ CREATE TABLE purchase_items (
     INDEX idx_purchase_item_product (product_id)
 );
 
--- Customers table
-CREATE TABLE customers (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    customer_code VARCHAR(50) NOT NULL UNIQUE,
-    first_name VARCHAR(50) NOT NULL,
-    last_name VARCHAR(50) NOT NULL,
-    email VARCHAR(100),
-    phone VARCHAR(20),
-    address TEXT,
-    city VARCHAR(100),
-    state VARCHAR(100),
-    zip_code VARCHAR(20),
-    country VARCHAR(100),
-    notes TEXT,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    deleted_at DATETIME NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    INDEX idx_customer_code (customer_code),
-    INDEX idx_customer_email (email),
-    INDEX idx_customer_phone (phone),
-    INDEX idx_customer_is_active (is_active)
-);
-
--- Sales table
+-- ============================================================
+-- Sales
+-- Note: payment_method enum currently has only CASH — Document 3's
+-- store-credit feature (if you build it) will need to extend this to
+-- also include CREDIT.
+-- ============================================================
 CREATE TABLE sales (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     invoice_number VARCHAR(50) NOT NULL UNIQUE,
@@ -183,9 +236,9 @@ CREATE TABLE sales (
     amount_paid DECIMAL(10,2) NOT NULL,
     change_given DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     payment_method ENUM('CASH') NOT NULL DEFAULT 'CASH',
-    notes TEXT,
+    notes VARCHAR(1000),
     is_voided BOOLEAN DEFAULT FALSE,
-    voided_reason TEXT,
+    voided_reason VARCHAR(1000),
     voided_by BIGINT NULL,
     voided_at DATETIME NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -202,7 +255,9 @@ CREATE TABLE sales (
     INDEX idx_sale_is_voided (is_voided)
 );
 
--- Sale Items table
+-- ============================================================
+-- Sale Items
+-- ============================================================
 CREATE TABLE sale_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     sale_id BIGINT NOT NULL,
@@ -219,46 +274,15 @@ CREATE TABLE sale_items (
     INDEX idx_sale_item_product (product_id)
 );
 
--- Stock Movements table
-CREATE TABLE stock_movements (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    product_id BIGINT NOT NULL,
-    movement_type ENUM('IN', 'OUT', 'ADJUSTMENT', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT') NOT NULL,
-    quantity INT NOT NULL,
-    reference_type ENUM('PURCHASE', 'SALE', 'STOCK_ADJUSTMENT', 'RETURN') NOT NULL,
-    reference_id BIGINT NOT NULL,
-    description TEXT,
-    created_by BIGINT NOT NULL,
-    movement_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (product_id) REFERENCES products(id),
-    FOREIGN KEY (created_by) REFERENCES users(id),
-    INDEX idx_stock_movement_product (product_id),
-    INDEX idx_stock_movement_type (movement_type),
-    INDEX idx_stock_movement_reference (reference_type, reference_id),
-    INDEX idx_stock_movement_date (movement_date)
-);
-
-CREATE TABLE expenses (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    category VARCHAR(50) NOT NULL,
-    description VARCHAR(255),
-    amount DECIMAL(10,2) NOT NULL,
-    expense_date DATE NOT NULL,
-    created_by BIGINT NOT NULL,
-    receipt_image LONGBLOB NULL,
-    receipt_image_type VARCHAR(10) NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at DATETIME NULL,
-    FOREIGN KEY (created_by) REFERENCES users(id)
-);
-
+-- ============================================================
+-- Refunds
+-- ============================================================
 CREATE TABLE refunds (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     sale_id BIGINT NOT NULL,
     refunded_by BIGINT NOT NULL,
-    refund_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    reason TEXT NOT NULL,
+    refund_date DATETIME NOT NULL,
+    reason VARCHAR(1000) NOT NULL,
     total_refund_amount DECIMAL(10,2) NOT NULL,
     FOREIGN KEY (sale_id) REFERENCES sales(id),
     FOREIGN KEY (refunded_by) REFERENCES users(id),
@@ -267,6 +291,9 @@ CREATE TABLE refunds (
     INDEX idx_refund_user (refunded_by)
 );
 
+-- ============================================================
+-- Refund Items
+-- ============================================================
 CREATE TABLE refund_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     refund_id BIGINT NOT NULL,
@@ -279,32 +306,36 @@ CREATE TABLE refund_items (
     INDEX idx_refund_item_sale_item (sale_item_id)
 );
 
--- Audit Logs table
-CREATE TABLE audit_logs (
+-- ============================================================
+-- Stock Movements
+-- ============================================================
+CREATE TABLE stock_movements (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    user_id BIGINT,
-    action VARCHAR(100) NOT NULL,
-    description TEXT,
-    entity_type VARCHAR(50),
-    entity_id BIGINT,
-    old_values LONGTEXT,
-    new_values LONGTEXT,
-    ip_address VARCHAR(45),
-    user_agent TEXT,
-    timestamp DATETIME NOT NULL,
+    product_id BIGINT NOT NULL,
+    movement_type ENUM('IN', 'OUT', 'ADJUSTMENT', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT') NOT NULL,
+    quantity INT NOT NULL,
+    reference_type ENUM('PURCHASE', 'SALE', 'STOCK_ADJUSTMENT', 'RETURN') NOT NULL,
+    reference_id BIGINT NOT NULL,
+    description VARCHAR(1000),
+    created_by BIGINT NOT NULL,
+    movement_date DATETIME NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    INDEX idx_audit_user (user_id),
-    INDEX idx_audit_action (action),
-    INDEX idx_audit_timestamp (timestamp),
-    INDEX idx_audit_entity (entity_type, entity_id)
+    FOREIGN KEY (product_id) REFERENCES products(id),
+    FOREIGN KEY (created_by) REFERENCES users(id),
+    INDEX idx_stock_movement_product (product_id),
+    INDEX idx_stock_movement_type (movement_type),
+    INDEX idx_stock_movement_reference (reference_type, reference_id),
+    INDEX idx_stock_movement_date (movement_date)
 );
 
--- System Settings table
+-- ============================================================
+-- System Settings
+-- ============================================================
 CREATE TABLE system_settings (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    setting_key VARCHAR(100) NOT NULL UNIQUE,
-    setting_value TEXT,
-    description TEXT,
+    setting_key VARCHAR(255) NOT NULL UNIQUE,
+    setting_value VARCHAR(5000),
+    description VARCHAR(1000),
     data_type ENUM('STRING', 'INTEGER', 'DECIMAL', 'BOOLEAN', 'JSON') NOT NULL DEFAULT 'STRING',
     is_public BOOLEAN NOT NULL DEFAULT FALSE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -312,21 +343,8 @@ CREATE TABLE system_settings (
     INDEX idx_setting_key (setting_key)
 );
 
--- Shop Information (singleton)
-CREATE TABLE shop_info (
-    id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    shop_name VARCHAR(255) NOT NULL,
-    shop_type VARCHAR(50) NOT NULL,
-    address TEXT,
-    phone VARCHAR(20),
-    email VARCHAR(100),
-    logo_data LONGBLOB NULL,
-    logo_type VARCHAR(10) NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-);
-
--- Insert default system settings
+-- Default settings. Note: business_name/address/phone/email below now
+-- overlap with the shop_info table — see note at the bottom.
 INSERT INTO system_settings (setting_key, setting_value, description, data_type) VALUES
 ('business_name', 'My Business', 'Name of the business', 'STRING'),
 ('business_address', '', 'Address of the business', 'STRING'),
@@ -338,3 +356,97 @@ INSERT INTO system_settings (setting_key, setting_value, description, data_type)
 ('low_stock_threshold', '5', 'Default threshold for low stock alerts', 'INTEGER'),
 ('receipt_print_enabled', 'true', 'Whether receipt printing is enabled', 'BOOLEAN'),
 ('invoice_prefix', 'INV-', 'Prefix for invoice numbers', 'STRING');
+
+-- ============================================================
+-- Audit Logs
+-- ============================================================
+CREATE TABLE audit_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id BIGINT NULL,
+    action VARCHAR(255) NOT NULL,
+    description VARCHAR(1000),
+    entity_type VARCHAR(255),
+    entity_id BIGINT NULL,
+    old_values VARCHAR(5000),
+    new_values VARCHAR(5000),
+    ip_address VARCHAR(255),
+    user_agent VARCHAR(255),
+    timestamp DATETIME NOT NULL,
+    INDEX idx_audit_user (user_id),
+    INDEX idx_audit_action (action),
+    INDEX idx_audit_timestamp (timestamp)
+);
+
+-- ============================================================
+-- Shop Info (singleton — the application expects at most one row)
+-- ============================================================
+CREATE TABLE shop_info (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    shop_name VARCHAR(255) NOT NULL,
+    shop_type ENUM('MINI_MART', 'GROCERY', 'PHARMACY', 'FURNITURE_SHOP', 'ELECTRONICS', 'CLOTHING', 'RESTAURANT', 'OTHER') NOT NULL,
+    address VARCHAR(255),
+    phone VARCHAR(20),
+    email VARCHAR(100),
+    logo_data LONGBLOB NULL,
+    logo_type VARCHAR(10) NULL
+);
+
+-- ============================================================
+-- Expenses
+-- ============================================================
+CREATE TABLE expenses (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    category ENUM('RENT', 'UTILITIES', 'TRAVEL', 'TAXES', 'SALARY', 'SUPPLIES', 'MAINTENANCE', 'MARKETING', 'OTHER') NOT NULL,
+    description VARCHAR(255),
+    amount DECIMAL(10,2) NOT NULL,
+    expense_date DATE NOT NULL,
+    created_by BIGINT NOT NULL,
+    receipt_image LONGBLOB NULL,
+    receipt_image_type VARCHAR(10) NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- ============================================================
+-- Invoice Sequences (present in the codebase — see note below on
+-- whether this is actually still used)
+-- ============================================================
+CREATE TABLE invoice_sequences (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    sequence_date DATE,
+    last_number INT,
+    UNIQUE KEY uk_invoice_sequence_date (sequence_date)
+);
+
+
+-- ============================================================
+-- NOTES — two things this regeneration surfaced that you should know about
+-- ============================================================
+--
+-- 1. product_images vs. products.image_data/image_type
+--    Both exist in the current codebase right now. `ProductService` and
+--    `ProductController` still reference the old `ProductImage` entity
+--    (multi-image, with is_primary/display_order) *in addition to* the
+--    newer single-image columns directly on `products`. This looks like
+--    the single-image redesign added the new columns but the old
+--    table/entity/endpoints were never actually removed. Both tables are
+--    included above so Hibernate's `ddl-auto: validate` won't complain
+--    either way, but you likely only want one of these live long-term —
+--    worth deciding which, then actually deleting the other side
+--    (entity, repository, endpoints, and this table) rather than leaving
+--    both running in parallel indefinitely.
+--
+-- 2. invoice_sequences appears unused
+--    The `InvoiceSequence` entity and its repository exist, but nothing
+--    in any service class actually calls it — invoice numbers are
+--    generated by `SaleRepository.findLastInvoicesByPrefix()` against the
+--    `sales` table directly instead. This table is included so `validate`
+--    won't fail, but it looks like leftover scaffolding from an earlier
+--    approach that was superseded. Safe to remove (entity + repository +
+--    table) if you confirm nothing references it, or safe to leave as
+--    inert dead weight if you'd rather not touch it right now.
+--
+-- Everything else above was read directly from the current .java entity
+-- files, not carried over from the old schema file, so it should be a
+-- faithful match to what Hibernate currently expects.

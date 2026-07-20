@@ -20,6 +20,11 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.bms.dto.response.ImportResultDto;
+import jakarta.servlet.http.HttpServletResponse;
+
+
+
 import java.io.IOException;
 import java.util.List;
 
@@ -156,7 +161,25 @@ public class ProductController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Low stock products retrieved successfully", products));
     }
 
+    // Doc4 §2 CSV Import/Export
+    @PostMapping("/import")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<ImportResultDto>> importProducts(
+            @RequestParam("file") MultipartFile file) {
+        ImportResultDto result = productService.importProductsFromCsv(file);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Import completed", result));
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public void exportProducts(HttpServletResponse response) throws IOException {
+        response.setContentType("text/csv");
+        response.setHeader("Content-Disposition", "attachment; filename=\"products.csv\"");
+        productService.exportProductsToCsv(response.getWriter());
+    }
+
     private ProductResponse convertToResponse(Product product) {
+
         ProductResponse response = new ProductResponse();
         response.setId(product.getId());
         response.setSku(product.getSku());

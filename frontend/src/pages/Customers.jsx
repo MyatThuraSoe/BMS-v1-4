@@ -71,14 +71,16 @@ const Customers = () => {
               <TableCell>Email</TableCell>
               <TableCell>Address</TableCell>
               <TableCell>Created</TableCell>
+              <TableCell>Credit (Balance)</TableCell>
+              <TableCell>Credit Limit</TableCell>
               {isManager() && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center">Loading...</TableCell></TableRow>
             ) : customers.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center">No customers found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center">No customers found</TableCell></TableRow>
             ) : (
               customers.map((c) => (
                 <TableRow key={c.id}>
@@ -89,6 +91,8 @@ const Customers = () => {
                   <TableCell>{c.email || '-'}</TableCell>
                   <TableCell>{c.address || '-'}</TableCell>
                   <TableCell>{formatDateTime(c.createdAt)}</TableCell>
+                  <TableCell>{c.creditBalance ?? 0}</TableCell>
+                  <TableCell>{c.creditLimit ?? 0}</TableCell>
                   {isManager() && (
                     <TableCell align="right">
                       <IconButton size="small" onClick={() => navigate(`/customers/${c.id}`)}><EditIcon /></IconButton>

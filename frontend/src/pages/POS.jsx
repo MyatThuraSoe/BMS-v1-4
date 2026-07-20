@@ -50,8 +50,13 @@ const POS = () => {
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('CASH'); // CASH | CREDIT
   const [cashAmount, setCashAmount] = useState('');
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
+
+  const [discountType, setDiscountType] = useState('');
+  const [discountValue, setDiscountValue] = useState('');
+  const [discountReason, setDiscountReason] = useState('');
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [error, setError] = useState('');
@@ -214,7 +219,13 @@ const POS = () => {
   });
 
   const verifyCartMutation = useMutation({
-    mutationFn: (cartItems) => saleService.verifyCart(cartItems),
+    mutationFn: (payload) =>
+      saleService.verifyCart({
+        items: payload.items,
+        discountType: payload.discountType,
+        discountValue: payload.discountValue,
+        discountReason: payload.discountReason,
+      }),
     onSuccess: (response) => {
       const result = response.data;
 
@@ -260,23 +271,42 @@ const POS = () => {
       setError('Cart is empty');
       return;
     }
-    if (!cashAmount || parseFloat(cashAmount) <= 0) {
-      setError('Enter a cash amount');
+
+    if (paymentMethod === 'CASH') {
+      if (!cashAmount || parseFloat(cashAmount) <= 0) {
+        setError('Enter a cash amount');
+        return;
+      }
+    }
+
+    if (paymentMethod === 'CREDIT' && !selectedCustomer) {
+      setError('Select a customer for credit payment');
       return;
     }
-    verifyCartMutation.mutate(cart); // opens the dialog itself on success, via onSuccess above
+
+    verifyCartMutation.mutate({
+      items: cart,
+      discountType: discountType || null,
+      discountValue: discountValue !== '' ? Number(discountValue) : null,
+      discountReason: discountReason || null,
+    }); // opens the dialog itself on success, via onSuccess above
   };
 
   const confirmCheckout = () => {
+    const amountPaid = paymentMethod === 'CASH' ? parseFloat(cashAmount) : 0;
+
     const saleData = {
       items: cart.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         price: item.price,
       })),
-      customerId: selectedCustomer?.id,
-      paymentMethod: 'CASH',
-      amountPaid: parseFloat(cashAmount),
+      customerId: paymentMethod === 'CREDIT' ? selectedCustomer?.id : selectedCustomer?.id, // keep optional for CASH
+      paymentMethod,
+      amountPaid,
+      discountType: discountType || null,
+      discountValue: discountValue !== '' ? Number(discountValue) : null,
+      discountReason: discountReason || null,
     };
     createSaleMutation.mutate(saleData);
   };
@@ -494,6 +524,42 @@ const POS = () => {
                 <Typography>Tax:</Typography>
                 <Typography>{formatCurrency(displayTax)}</Typography>
             </Box>
+              {/* Discount section */}
+              <TextField
+                select
+                label="Discount Type"
+                value={discountType}
+                onChange={(e) => setDiscountType(e.target.value)}
+                size="small"
+                sx={{ mb: 1 }}
+              >
+                <MenuItem value="">No discount</MenuItem>
+                <MenuItem value="PERCENTAGE">Percentage (%)</MenuItem>
+                <MenuItem value="FIXED">Fixed Amount ($)</MenuItem>
+              </TextField>
+
+              {discountType && (
+                <TextField
+                  label={discountType === 'PERCENTAGE' ? 'Discount %' : 'Discount $'}
+                  type="number"
+                  value={discountValue}
+                  onChange={(e) => setDiscountValue(e.target.value)}
+                  size="small"
+                  sx={{ mb: 1 }}
+                />
+              )}
+
+              {/* Optional reason */}
+              {discountType && (
+                <TextField
+                  label="Discount Reason (optional)"
+                  value={discountReason}
+                  onChange={(e) => setDiscountReason(e.target.value)}
+                  size="small"
+                  sx={{ mb: 1 }}
+                />
+              )}
+
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                 <Typography variant="h6">Total:</Typography>
                 <Typography variant="h6" color="primary">
@@ -502,14 +568,36 @@ const POS = () => {
               </Box>
 
               <TextField
-                fullWidth
-                label="Cash Amount"
-                type="number"
-                value={cashAmount}
-                onChange={(e) => setCashAmount(e.target.value)}
+                select
+                label="Payment Method"
+                value={paymentMethod}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setPaymentMethod(next);
+                  if (next === 'CREDIT') setCashAmount('');
+                }}
                 size="small"
                 sx={{ mb: 1 }}
-              />
+              >
+                <MenuItem value="CASH">Cash</MenuItem>
+                <MenuItem value="CREDIT">Store Credit (Tab)</MenuItem>
+              </TextField>
+
+              {paymentMethod === 'CASH' ? (
+                <TextField
+                  fullWidth
+                  label="Cash Amount"
+                  type="number"
+                  value={cashAmount}
+                  onChange={(e) => setCashAmount(e.target.value)}
+                  size="small"
+                  sx={{ mb: 1 }}
+                />
+              ) : (
+                <Typography variant="caption" color="text.secondary" sx={{ mb: 1, display: 'block' }}>
+                  Credit sale: amount paid is 0 and customer credit balance will be updated.
+                </Typography>
+              )}
 
               {cashAmount && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
@@ -548,15 +636,26 @@ const POS = () => {
         <DialogContent>
           <Typography>Items: {cart.length}</Typography>
           <Typography>Total: {formatCurrency(displayTotal)}</Typography>
-          <Typography>Cash: {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
-          <Typography>Change: {formatCurrency(displayChange)}</Typography>
+          <Typography>Payment: {paymentMethod === 'CASH' ? 'Cash' : 'Store Credit (Tab)'}</Typography>
+
+          {paymentMethod === 'CASH' ? (
+            <>
+              <Typography>Cash: {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
+              <Typography>Change: {formatCurrency(displayChange)}</Typography>
+              {parseFloat(cashAmount) < displayTotal && (
+                <Alert severity="error" sx={{ mt: 2 }}>
+                  Cash amount is less than the total. Please collect {formatCurrency(displayTotal - (parseFloat(cashAmount) || 0))} more.
+                </Alert>
+              )}
+            </>
+          ) : (
+            <Typography variant="body2" color="text.secondary">
+              Customer credit will be reduced by total (less discounts).
+            </Typography>
+          )}
+
           {selectedCustomer && (
             <Typography>Customer: {selectedCustomer.firstName} {selectedCustomer.lastName}</Typography>
-          )}
-          {parseFloat(cashAmount) < displayTotal && (
-            <Alert severity="error" sx={{ mt: 2 }}>
-              Cash amount is less than the total. Please collect {formatCurrency(displayTotal - (parseFloat(cashAmount) || 0))} more.
-            </Alert>
           )}
         </DialogContent>
         <DialogActions>
@@ -565,7 +664,7 @@ const POS = () => {
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
-            disabled={parseFloat(cashAmount) < displayTotal}
+            disabled={paymentMethod === 'CASH' ? parseFloat(cashAmount) < displayTotal : false}
           >
             Confirm
           </Button>
@@ -576,8 +675,8 @@ const POS = () => {
       <Dialog open={showReceiptDialog} onClose={() => setShowReceiptDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Receipt</DialogTitle>
         <DialogContent>
-          {lastSale && (
-            <Box sx={{ p: 2, fontFamily: 'monospace', bgcolor: '#f5f5f5' }}>
+              {lastSale && (
+                <Box sx={{ p: 2, fontFamily: 'monospace', bgcolor: '#f5f5f5' }}>
               <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
                 <ShopLogo size={56} />
               </Box>
@@ -605,6 +704,21 @@ const POS = () => {
                   </Typography>
                 </Box>
               ))}
+
+              {lastSale.discountAmount && Number(lastSale.discountAmount) > 0 && (
+                <>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2">Discount:</Typography>
+                    <Typography variant="body2">-{formatCurrency(lastSale.discountAmount)}</Typography>
+                  </Box>
+                  {lastSale.discountReason && (
+                    <Typography variant="caption" color="text.secondary">
+                      Reason: {lastSale.discountReason}
+                    </Typography>
+                  )}
+                </>
+              )}
+
               <br />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Typography variant="body2">Total:</Typography>

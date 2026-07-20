@@ -1,33 +1,62 @@
-# TODO - Requirements Doc 1 (Foundation & UX Improvements)
+# TODO
 
-## Phase 1: Shop Information + Receipt branding
-- [x] Add backend data model: `shop_info` table migration in `bms_schema.sql`
-- [x] Implement backend entity + repository + DTO + service: `ShopInfo`
-- [x] Implement backend endpoints:
-  - [x] GET `/api/shop-info` (defaults if none)
-  - [x] PUT `/api/shop-info` (admin upsert)
-  - [x] POST `/api/shop-info/logo` (multipart upload)
-  - [x] GET `/api/shop-info/logo` (returns bytes)
-  - [x] DELETE `/api/shop-info/logo` (admin)
-- [x] Update receipt generation (HTML/PDF/PNG): replace hardcoded “BMS v1” with ShopInfo name/address/phone and embed logo conditionally
-- [x] Update POS receipt dialog preview to use ShopInfo name/logo
-- [x] Frontend: implement `ShopInfo.jsx` (Admin only)
-- [x] Frontend: implement `ShopLogo.jsx` component
-- [x] Frontend: extend `frontend/src/api/services.js` with `shopInfoService`
-- [ ] Frontend: add sidebar menu item for shop info under Settings (Admin only)
+## Phase doc4-back-office (v1.4 requirements doc4)
 
-## Phase 2: Product category filtering
-- [ ] Backend: add optional `categoryId` to GET `/api/products` and wire to service/repository
-- [x] Frontend: add category dropdown filter to `Products.jsx` and refetch with `queryKey` + pass `categoryId`
-- [x] Frontend: add category chips/tabs to `POS.jsx` and filter client-side
+### §2 CSV Import/Export
+- [x] Update `bms-backend/pom.xml` add `com.opencsv:opencsv`.
 
-## Phase 3: Dashboard sales trend chart
-- [ ] Backend: add endpoint `GET /api/reports/sales-trend?days=7` with DTO `DailySalesTrendDto`
-- [ ] Frontend: add `reportService.getSalesTrend(days)`
-- [ ] Frontend: update `Dashboard.jsx` to render recharts chart for 7-day trend
+- [x] Add DTO `ImportResultDto`.
 
-## Testing / verification
-- [ ] `bms-backend` builds successfully (mvn test)
-- [ ] `frontend` builds successfully (npm run build)
-- [ ] Manual QA checklist for acceptance criteria in each phase
+- [x] Implement `ProductService.importProductsFromCsv(MultipartFile)` row-by-row with per-row errors, auto-create categories, update by SKU.
+
+
+- [x] Implement `ProductService.exportProductsToCsv(Writer)` using OpenCSV.
+
+- [x] Add endpoints in `ProductController`:
+
+  - [x] `POST /api/products/import` (ADMIN/MANAGER)
+
+  - [x] `GET /api/products/export` (ADMIN/MANAGER, raw CSV)
+
+- [ ] Implement Sales CSV export in backend (`SaleService.exportSalesToCsv` + `SaleController` endpoint `GET /api/sales/export?startDate=&endDate=`).
+- [ ] Implement Customers CSV export in backend (`CustomerService.exportCustomersToCsv` + `CustomerController` endpoint `GET /api/customers/export`).
+
+- [x] Frontend `frontend/public/` add CSV template file (header + sample row).
+
+
+- [ ] Update `frontend/src/api/services.js` add import/export helpers (products/sales/customers) incl. blob download.
+- [ ] Update `frontend/src/pages/Products.jsx`:
+  - [ ] Add Import dialog (file picker + download template + upload)
+  - [ ] Show import result summary with per-row errors
+  - [ ] Add Export button downloading raw CSV
+- [ ] Update `frontend/src/pages/Sales.jsx` add Export button.
+- [ ] Update `frontend/src/pages/Customers.jsx` add Export button.
+
+### §3 Low-Stock Reorder Suggestions
+- [ ] Add DTO `ReorderSuggestionDto`.
+- [ ] Implement `InventoryService.getReorderSuggestions()`:
+  - [ ] averageDailySales from last 30 days
+  - [ ] daysUntilStockout and suggestedReorderQuantity targeting 14 days
+  - [ ] last supplier + last unit cost from latest PurchaseItem
+  - [ ] handle averageDailySales==0 as insufficient sales history
+- [ ] Add endpoint `GET /api/.../reorder-suggestions` (ADMIN/MANAGER).
+- [ ] Update low-stock UI (likely `frontend/src/pages/Inventory.jsx`):
+  - [ ] show reorder suggestion table
+  - [ ] days color coding
+  - [ ] per-row “Create Purchase Order” prefill `/purchases/new`.
+
+### §1 Cash Drawer / Shift Reconciliation (last)
+- [ ] Add `cash_shifts` table + `cash_shift_id` column to `sales` (entity + schema).
+- [ ] Add `CashShift` entity/repository.
+- [ ] Implement `CashShiftService.openShift/current/closeShift` + shift calculation.
+- [ ] Add `CashShiftController` endpoints.
+- [ ] Modify `SaleService.createSale()` to tag cash sales to open shift.
+- [ ] Frontend add `frontend/src/pages/CashShift.jsx`.
+- [ ] Show persistent shift indicator for cashiers.
+- [ ] Add shift history list for admin/manager.
+
+### Testing / Validation (after all)
+- [ ] Backend Maven build.
+- [ ] Frontend Vite build.
+- [ ] Manual acceptance checks for doc4 criteria.
 

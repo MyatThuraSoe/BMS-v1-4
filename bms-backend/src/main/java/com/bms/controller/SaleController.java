@@ -22,6 +22,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.io.IOException;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -134,5 +137,16 @@ public class SaleController {
             @Valid @RequestBody CartVerifyRequest request) {
         CartVerifyResponse response = saleService.verifyCart(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Cart verified", response));
+    }
+
+    @GetMapping("/export")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public void exportSales(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            HttpServletResponse response) throws IOException {
+        response.setContentType("text/csv");
+        response.setHeader("Content-Disposition", "attachment; filename=\"sales.csv\"");
+        saleService.exportSalesToCsv(response.getWriter(), startDate, endDate);
     }
 }

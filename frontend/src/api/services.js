@@ -98,6 +98,27 @@ export const productService = {
     const response = await apiClient.get(`/inventory/products/low-stock?threshold=${threshold}`);
     return response.data;
   },
+
+  importProducts: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await apiClient.post('/products/import', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  downloadExport: async () => {
+    const response = await apiClient.get('/products/export', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'products.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export const categoryService = {
@@ -222,7 +243,24 @@ export const customerService = {
           `/customers/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`
       );
       return response.data;
-  }
+  },
+
+  addCreditPayment: async (customerId, data) => {
+    const response = await apiClient.post(`/customers/${customerId}/credit-payments`, data);
+    return response.data;
+  },
+
+  downloadExport: async () => {
+    const response = await apiClient.get('/customers/export', { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'customers.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 export const saleService = {
@@ -266,7 +304,7 @@ export const saleService = {
     return response.data;
   },
 
-  verifyCart: async (cart) => {
+verifyCart: async (cart) => {
     const response = await apiClient.post('/sales/verify-cart', {
       items: cart.map((item) => ({
         productId: item.productId,
@@ -275,6 +313,21 @@ export const saleService = {
       })),
     });
     return response.data;
+  },
+
+  downloadExport: async (startDate, endDate) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('startDate', startDate);
+    if (endDate) params.append('endDate', endDate);
+    const response = await apiClient.get(`/sales/export?${params.toString()}`, { responseType: 'blob' });
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'sales.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
   },
 };
 

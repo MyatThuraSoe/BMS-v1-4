@@ -10,8 +10,37 @@ public class CartVerifyRequest {
     @NotEmpty(message = "Cart items are required")
     private List<CartVerifyItem> items;
 
+    /**
+     * Discount type:
+     * - PERCENTAGE: discountValue is percentage (0..100)
+     * - FIXED: discountValue is fixed amount
+     * - null: no discount
+     */
+    private String discountType;
+
+    /**
+     * Meaning depends on discountType.
+     * - PERCENTAGE: 10 means 10%
+     * - FIXED: 2.00 means $2 off
+     */
+    private BigDecimal discountValue;
+
+    /**
+     * Optional discount reason (for audit / transparency; not required for total math).
+     */
+    private String discountReason;
+
     public List<CartVerifyItem> getItems() { return items; }
     public void setItems(List<CartVerifyItem> items) { this.items = items; }
+
+    public String getDiscountType() { return discountType; }
+    public void setDiscountType(String discountType) { this.discountType = discountType; }
+
+    public BigDecimal getDiscountValue() { return discountValue; }
+    public void setDiscountValue(BigDecimal discountValue) { this.discountValue = discountValue; }
+
+    public String getDiscountReason() { return discountReason; }
+    public void setDiscountReason(String discountReason) { this.discountReason = discountReason; }
 
     public static class CartVerifyItem {
         @NotNull

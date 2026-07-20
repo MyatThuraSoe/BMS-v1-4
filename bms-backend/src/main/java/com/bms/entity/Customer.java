@@ -46,6 +46,12 @@ public class Customer {
     @Column(length = 1000)
     private String notes;
 
+    @Column(name = "credit_balance", precision = 12, scale = 2, nullable = false)
+    private java.math.BigDecimal creditBalance = java.math.BigDecimal.ZERO;
+
+    @Column(name = "credit_limit", precision = 12, scale = 2, nullable = false)
+    private java.math.BigDecimal creditLimit = java.math.BigDecimal.ZERO;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -108,6 +114,12 @@ public class Customer {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public java.math.BigDecimal getCreditBalance() { return creditBalance; }
+    public void setCreditBalance(java.math.BigDecimal creditBalance) { this.creditBalance = creditBalance; }
+
+    public java.math.BigDecimal getCreditLimit() { return creditLimit; }
+    public void setCreditLimit(java.math.BigDecimal creditLimit) { this.creditLimit = creditLimit; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
