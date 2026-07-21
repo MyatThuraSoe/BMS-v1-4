@@ -55,6 +55,9 @@ public class SaleService {
     @Autowired
     private RefundRepository refundRepository;
 
+    @Autowired
+    private CashShiftRepository cashShiftRepository;
+
     public Page<Sale> getAllSales(Pageable pageable) {
         return saleRepository.findActiveSales(pageable);
     }
@@ -110,6 +113,14 @@ public class SaleService {
 
         sale.setNotes(request.getNotes());
         sale.setIsVoided(false);
+
+        // Attach cash shift if payment method is CASH and cashier has an open shift
+        if (sale.getPaymentMethod() == Sale.PaymentMethod.CASH) {
+            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN").orElse(null);
+            if (openShift != null) {
+                sale.setCashShift(openShift);
+            }
+        }
 
         // Set customer if provided (walk-in if null). CREDIT always requires a customer.
         if (request.getCustomerId() != null) {

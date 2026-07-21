@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert,
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '../api/services';
 import { formatDateTime } from '../utils/helpers';
@@ -47,14 +47,27 @@ const Customers = () => {
   const customers = customersData?.data?.content || [];
   const totalElements = customersData?.data?.totalElements || 0;
 
+  const handleExport = async () => {
+    try {
+      await customerService.downloadExport();
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
+
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3, gap: 1 }}>
         
         {isManager() && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
-            Add Customer
-          </Button>
+          <>
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport}>
+              Export
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
+              Add Customer
+            </Button>
+          </>
         )}
       </Box>
 

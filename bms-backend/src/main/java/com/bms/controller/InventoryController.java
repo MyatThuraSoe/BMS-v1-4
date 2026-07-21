@@ -3,8 +3,10 @@ package com.bms.controller;
 import com.bms.dto.request.StockAdjustmentRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.ProductResponse;
+import com.bms.dto.response.ReorderSuggestionDto;
 import com.bms.entity.Product;
 import com.bms.service.ProductService;
+import com.bms.service.InventoryService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -32,6 +34,9 @@ public class InventoryController {
     @Autowired
     private ProductService productService;
 
+    @Autowired
+    private InventoryService inventoryService;
+
     @GetMapping("/products")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> getAllProducts(
@@ -53,6 +58,13 @@ public class InventoryController {
         Pageable pageable = PageRequest.of(page, size, Sort.by("stockQuantity"));
         Page<ProductResponse> products = productService.getLowStockProducts(threshold, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Low stock products retrieved successfully", products));
+    }
+
+    @GetMapping("/reorder-suggestions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<ReorderSuggestionDto>>> getReorderSuggestions() {
+        List<ReorderSuggestionDto> suggestions = inventoryService.getReorderSuggestions();
+        return ResponseEntity.ok(new ApiResponse<>(true, "Reorder suggestions retrieved successfully", suggestions));
     }
 
     @PostMapping("/products/{id}/adjust")

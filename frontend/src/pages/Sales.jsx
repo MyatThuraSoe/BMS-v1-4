@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip,
 } from '@mui/material';
-import { Delete as DeleteIcon, Visibility as ViewIcon, Print as PrintIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Visibility as ViewIcon, Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { saleService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
@@ -53,6 +53,14 @@ const Sales = () => {
   const sales = salesData?.data?.content || [];
   const totalElements = salesData?.data?.totalElements || 0;
 
+  const handleExport = async () => {
+    try {
+      await saleService.downloadExport();
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
+
   const getSaleStatus = (sale) => {
     if (sale.isVoided) return 'VOIDED';
     const items = sale.items || [];
@@ -72,7 +80,13 @@ const Sales = () => {
 
   return (
     <Box>
-      
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3, gap: 1 }}>
+        {isManager() && (
+          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport}>
+            Export
+          </Button>
+        )}
+      </Box>
 
       <TableContainer component={Paper}>
         <Table>

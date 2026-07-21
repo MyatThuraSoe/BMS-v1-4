@@ -375,6 +375,11 @@ export const inventoryService = {
     return response.data;
   },
 
+  getReorderSuggestions: async () => {
+    const response = await apiClient.get('/inventory/reorder-suggestions');
+    return response.data;
+  },
+
   getStockMovements: async (productId, page = 0, size = 20) => {
     const response = await apiClient.get(`/inventory/product/${productId}/movements?page=${page}&size=${size}`);
     return response.data;
@@ -574,6 +579,37 @@ export const auditLogService = {
     if (filters.endDate) params.append('endDate', filters.endDate);
     
     const response = await apiClient.get(`/audit-logs?${params.toString()}`);
+    return response.data;
+  },
+};
+
+export const cashShiftService = {
+  open: async (data) => {
+    const response = await apiClient.post("/shifts/open", data);
+    return response.data;
+  },
+
+  getCurrent: async () => {
+    const response = await apiClient.get("/shifts/current");
+    return response.data;
+  },
+
+  close: async (id, data) => {
+    const response = await apiClient.post(`/shifts/${id}/close`, data);
+    return response.data;
+  },
+
+  getHistory: async (params = {}) => {
+    const queryParams = new URLSearchParams();
+    if (params.startDate) queryParams.append("startDate", params.startDate);
+    if (params.endDate) queryParams.append("endDate", params.endDate);
+    if (params.cashierId) queryParams.append("cashierId", params.cashierId);
+    const response = await apiClient.get(`/shifts?${queryParams.toString()}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await apiClient.get(`/shifts/${id}`);
     return response.data;
   },
 };

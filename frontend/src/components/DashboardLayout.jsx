@@ -31,6 +31,7 @@ import {
   Settings as SettingsIcon,
   Security as SecurityIcon,
   History as HistoryIcon,
+  AccountBalanceWallet,
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
   ExpandMore as ExpandMoreIcon,
@@ -40,7 +41,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 
 import { useQuery } from '@tanstack/react-query';
-import { shopInfoService } from '../api/services';
+import { shopInfoService, cashShiftService } from '../api/services';
 
 const drawerWidth = 240;
 
@@ -56,6 +57,7 @@ const menuItems = [
   { text: 'Purchases', icon: <CartIcon />, path: '/purchases', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Customers', icon: <PeopleIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
+  { text: 'Cash Shift', icon: <AccountBalanceWallet />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'] },
   { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'] },
   { text: 'Analytics', icon: <ReportIcon />, path: '/analytics', roles: ['ADMIN'] },
   { text: 'Accounting', icon: <ReportIcon />, path: '/accounting', roles: ['ADMIN'] },
@@ -77,7 +79,16 @@ const DashboardLayout = ({ children }) => {
     queryFn: () => shopInfoService.get(),
   });
 
+  const { data: currentShiftData } = useQuery({
+    queryKey: ['currentShift'],
+    queryFn: () => cashShiftService.getCurrent(),
+    enabled: user?.roles?.some(r => r.name === 'CASHIER' || r.name === 'ADMIN' || r.name === 'MANAGER'),
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
   const shopName = shopInfoData?.data?.shopName;
+  const currentShift = currentShiftData?.data;
+  const hasOpenShift = currentShift && currentShift.status === 'OPEN';
 
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen);
@@ -160,6 +171,25 @@ const DashboardLayout = ({ children }) => {
           <Typography variant="h6" noWrap component="div" sx={{ flexGrow: 1 }}>
             {menuItems.find(item => item.path === location.pathname)?.text || 'Dashboard'}
           </Typography>
+          {hasOpenShift && (
+            <Box
+              sx={{
+                backgroundColor: 'success.main',
+                color: 'white',
+                px: 2,
+                py: 0.5,
+                borderRadius: 1,
+                fontSize: '0.875rem',
+                fontWeight: 'bold',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+              }}
+            >
+              <AccountBalanceWallet fontSize="small" />
+              Shift: Open since {new Date(currentShift.openingTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </Box>
+          )}
           <Box
             sx={{
               flexGrow: 1,

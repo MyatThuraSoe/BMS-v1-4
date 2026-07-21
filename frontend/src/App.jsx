@@ -33,6 +33,7 @@ import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
 import ShopInfo from './pages/ShopInfo';
 import NotFound from './pages/NotFound';
+import CashShift from './pages/CashShift';
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
@@ -146,6 +147,9 @@ function AppRoutes() {
         
         {/* Audit Logs (Admin only) */}
         <Route path="audit-logs" element={<ProtectedRoute allowedRoles={['ADMIN']}><AuditLogs /></ProtectedRoute>} />
+
+        {/* Cash Shift (All authenticated users) */}
+        <Route path="cash-shift" element={<CashShift />} />
       </Route>
       
       <Route path="*" element={<NotFound />} />

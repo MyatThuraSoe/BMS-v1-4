@@ -18,10 +18,11 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
+  Alert,
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon, Upload as UploadIcon, Download as DownloadIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { productService, categoryService } from '../api/services';
+import { productService, categoryService, inventoryService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import ProductImage from '../components/ProductImage';
@@ -39,6 +40,42 @@ const Products = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const [selectedFile, setSelectedFile] = useState(null);
+
+  const importMutation = useMutation({
+    mutationFn: (file) => productService.import(file),
+    onSuccess: (data) => {
+      setImportResult(data.data);
+      queryClient.invalidateQueries(['products']);
+    },
+    onError: (error) => {
+      setImportResult({ errors: [{ message: error.message }] });
+    },
+  });
+
+  const handleImportSubmit = () => {
+    if (selectedFile) {
+      importMutation.mutate(selectedFile);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const response = await productService.export();
+      const blob = new Blob([response], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'products.csv';
+      link.click();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Export failed:', error);
+    }
+  };
 
   const { data: categoryData } = useQuery({
     queryKey: ['categories-filter'],
@@ -73,12 +110,20 @@ const Products = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
+      <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3, gap: 1 }}>
 
         {isManager() && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/products/new')}>
-            Add Product
-          </Button>
+          <>
+            <Button variant="outlined" startIcon={<UploadIcon />} onClick={() => setImportDialogOpen(true)}>
+              Import
+            </Button>
+            <Button variant="outlined" startIcon={<DownloadIcon />} onClick={handleExport}>
+              Export
+            </Button>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/products/new')}>
+              Add Product
+            </Button>
+          </>
         )}
       </Box>
 
@@ -135,11 +180,11 @@ const Products = () => {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7 + (isManager() ? 1 : 0)} align="center">Loading...</TableCell>
+                <TableCell colSpan={8 + (isManager() ? 1 : 0)} align="center">Loading...</TableCell>
               </TableRow>
             ) : products.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7 + (isManager() ? 1 : 0)} align="center">No products found</TableCell>
+                <TableCell colSpan={8 + (isManager() ? 1 : 0)} align="center">No products found</TableCell>
               </TableRow>
             ) : (
               products.map((product, index) => (
@@ -202,6 +247,81 @@ const Products = () => {
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
           <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Import Dialog */}
+      <Dialog open={importDialogOpen} onClose={() => setImportDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Import Products from CSV</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>
+            Download the template file to ensure correct format.
+          </Alert>
+          <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
+            <Button
+              variant="outlined"
+              startIcon={<DownloadIcon />}
+              href="/products_template.csv"
+              download
+              component="a"
+            >
+              Download Template
+            </Button>
+          </Box>
+          <Box sx={{ border: '1px dashed', borderColor: 'divider', p: 3, textAlign: 'center', mb: 2 }}>
+            <input
+              accept=".csv"
+              style={{ display: 'none' }}
+              id="csv-file-upload"
+              type="file"
+              onChange={(e) => setSelectedFile(e.target.files[0])}
+            />
+            <label htmlFor="csv-file-upload">
+              <Button variant="outlined" component="span" startIcon={<UploadIcon />}>
+                {selectedFile ? selectedFile.name : 'Select CSV File'}
+              </Button>
+            </label>
+          </Box>
+          {importResult && (
+            <Box>
+              <Alert severity={importResult.errors?.length > 0 ? 'warning' : 'success'} sx={{ mb: 2 }}>
+                Import completed: {importResult.successCount || 0} created, {importResult.updatedCount || 0} updated.
+                {importResult.errors?.length > 0 && ` ${importResult.errors.length} errors.`}
+              </Alert>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <TableContainer component={Paper} variant="outlined">
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Row</TableCell>
+                        <TableCell>Error Message</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {importResult.errors.map((err, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell>{err.row}</TableCell>
+                          <TableCell>{err.message}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setImportDialogOpen(false); setImportResult(null); setSelectedFile(null); }}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleImportSubmit}
+            variant="contained"
+            disabled={!selectedFile || importMutation.isPending}
+          >
+            {importMutation.isPending ? 'Importing...' : 'Upload & Import'}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

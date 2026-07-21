@@ -52,4 +52,15 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     ORDER BY s.invoiceNumber DESC
     """)
     List<Sale> findLastInvoicesByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
+
+    @Query("SELECT COALESCE(SUM(s.totalAmount), 0) FROM Sale s " +
+           "WHERE s.cashShift.id = :shiftId AND s.paymentMethod = 'CASH' AND s.isVoided = false")
+    java.math.BigDecimal sumCashSalesByShiftId(@Param("shiftId") Long shiftId);
+
+    @Query("SELECT si.product.id, AVG(si.quantity * 1.0 / 30.0) " +
+           "FROM SaleItem si " +
+           "JOIN si.sale s " +
+           "WHERE s.saleDate >= :startDate AND s.isVoided = false " +
+           "GROUP BY si.product.id")
+    java.util.List<Object[]> findAverageDailySalesByProductId(@Param("startDate") LocalDateTime startDate);
 }
