@@ -524,3 +524,10 @@ export const auditLogService = {
     return response.data;
   },
 };
+
+export const backupService = {
+  downloadFullBackup: async () => {
+    const response = await apiClient.get('/backup/export', { responseType: 'blob' });
+    return response.data;
+  },
+};

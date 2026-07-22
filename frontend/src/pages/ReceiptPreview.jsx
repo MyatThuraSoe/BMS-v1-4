@@ -4,10 +4,11 @@ import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActi
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { receiptService, saleService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
-import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon } from '@mui/icons-material';
+import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon, Bluetooth as BluetoothIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShopLogo from '../components/ShopLogo';
 import { useAuth } from '../context/AuthContext';
+import { connectPrinter, printReceipt, isBluetoothSupported, isPrinterConnected } from '../utils/bluetoothPrinter';
 
 const ReceiptPreview = () => {
   const { invoiceNumber } = useParams();
@@ -15,8 +16,10 @@ const ReceiptPreview = () => {
   const [refundDialogOpen, setRefundDialogOpen] = useState(false);
   const [refundReason, setRefundReason] = useState('');
   const [refundQuantities, setRefundQuantities] = useState({});
+  const [printerConnected, setPrinterConnected] = useState(isPrinterConnected());
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const bluetoothSupported = isBluetoothSupported();
 
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', invoiceNumber],
@@ -67,6 +70,21 @@ const ReceiptPreview = () => {
       notifySuccess(`Receipt downloaded as ${format.toUpperCase()}`);
     } catch (err) {
       notifyError(err.friendlyMessage || 'Failed to download receipt');
+    }
+  };
+
+  const handleBluetoothPrint = async () => {
+    try {
+      if (!printerConnected) {
+        const deviceName = await connectPrinter();
+        setPrinterConnected(true);
+        notifySuccess(`Connected to ${deviceName}`);
+      }
+      await printReceipt(receipt, shopInfoData?.data || {});
+      notifySuccess('Printed successfully');
+    } catch (err) {
+      setPrinterConnected(isPrinterConnected());
+      notifyError('Bluetooth printing failed: ' + err.message);
     }
   };
 
@@ -143,6 +161,24 @@ const ReceiptPreview = () => {
         <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('pdf')}>PDF</Button>
         <Button fullWidth variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('png')}>PNG</Button>
       </Box>
+      {bluetoothSupported ? (
+        <Box sx={{ mt: 1 }}>
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<BluetoothIcon />}
+            onClick={handleBluetoothPrint}
+          >
+            {printerConnected ? 'Print via Bluetooth' : 'Connect & Print via Bluetooth'}
+          </Button>
+        </Box>
+      ) : (
+        <Box sx={{ mt: 1 }}>
+          <Button fullWidth variant="outlined" disabled startIcon={<BluetoothIcon />}>
+            Bluetooth printing not supported on this device
+          </Button>
+        </Box>
+      )}
       {isManager() && refundableItems.length > 0 && (
         <Box sx={{ mt: 1 }}>
           <Button fullWidth variant="outlined" color="warning" startIcon={<RefundIcon />} onClick={() => setRefundDialogOpen(true)}>

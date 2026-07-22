@@ -21,6 +21,7 @@
     <properties>
         <java.version>17</java.version>
         <lombok.version>1.18.34</lombok.version>
+        <poi.version>5.2.5</poi.version>
     </properties>
 
 
@@ -98,6 +99,18 @@
             <groupId>com.github.librepdf</groupId>
             <artifactId>openpdf</artifactId>
             <version>1.3.43</version>
+        </dependency>
+
+        <!-- Apache POI for Excel backup export -->
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi</artifactId>
+            <version>${poi.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>org.jetbrains</groupId>

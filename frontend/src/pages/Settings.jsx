@@ -2,26 +2,24 @@ import { useState, useEffect } from 'react';
 import {
   Box,
   Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
   TextField,
   Button,
   Grid,
   Alert,
   Switch,
   FormControlLabel,
+  Paper,
+  CircularProgress,
 } from '@mui/material';
+import { Backup as BackupIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { systemSettingService } from '../api/services';
+import { systemSettingService, backupService } from '../api/services';
+import { notifySuccess, notifyError } from '../utils/notify';
 
 const Settings = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [backupLoading, setBackupLoading] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: settingsData, isLoading } = useQuery({
@@ -64,6 +62,24 @@ const Settings = () => {
     const setting = settings[key];
     if (setting) {
       updateMutation.mutate({ key, value: setting.settingValue });
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    setBackupLoading(true);
+    try {
+      const blob = await backupService.downloadFullBackup();
+      const url = window.URL.createObjectURL(new Blob([blob]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `bms-backup-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.click();
+      window.URL.revokeObjectURL(url);
+      notifySuccess('Backup downloaded successfully');
+    } catch (err) {
+      notifyError(err.friendlyMessage || 'Failed to download backup');
+    } finally {
+      setBackupLoading(false);
     }
   };
 
@@ -141,6 +157,24 @@ const Settings = () => {
           {success}
         </Alert>
       )}
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom>
+          Data Backup
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Download a complete snapshot of your business data as an Excel file. Store it somewhere
+          safe (e.g. Google Drive, external drive) for disaster recovery.
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={backupLoading ? <CircularProgress size={18} color="inherit" /> : <BackupIcon />}
+          onClick={handleDownloadBackup}
+          disabled={backupLoading}
+        >
+          Download Full Backup
+        </Button>
+      </Paper>
 
       <Grid container spacing={3}>
         {Object.values(settings).map((setting) => (
