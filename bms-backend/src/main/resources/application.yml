@@ -1,0 +1,44 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: bms-backend
+  datasource:
+    url: jdbc:mysql://localhost:3306/bms_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: myat
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+jwt:
+  secret: MySecureSecretKeyForJWTTokenGeneration2026!
+  expiration: 86400000
+
+logging:
+  level:
+    com.bms: DEBUG
+    org.springframework.security: INFO
+
+
+google:
+  oauth:
+    client-id: haha
+    client-secret: 123
+    redirect-uri: http://localhost:8080/api/backups/google/callback
+    # Change redirect-uri to your production URL in production!
+
+
