@@ -1,0 +1,54 @@
+{
+  "name": "bms-desktop",
+  "version": "1.0.0",
+  "description": "LumiPOS - Business Management System",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "build:win": "electron-builder --win",
+    "dev": "electron . --dev"
+  },
+  "build": {
+    "appId": "com.lumipos.bms",
+    "productName": "LumiPOS",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "bms-backend/target/bms-backend-1.0.0.jar",
+        "to": "app/bms-backend-1.0.0.jar"
+      },
+      {
+        "from": "bundled-jre",
+        "to": "bundled-jre",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "electron/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "LumiPOS",
+      "uninstallDisplayName": "LumiPOS - Uninstall"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.8.0",
+    "electron-builder": "^26.15.7"
+  }
+}

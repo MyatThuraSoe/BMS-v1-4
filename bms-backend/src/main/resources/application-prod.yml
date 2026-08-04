@@ -1,0 +1,60 @@
+server:
+  port: 8080
+  # [CHANGE 1] Security: Restrict to localhost only.
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: bms-offline
+
+  datasource:
+    # [CHANGE 2] Switch to local file-based H2 database (No MySQL required)
+    url: jdbc:h2:file:C:/BMS_Data/bms_db;AUTO_SERVER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      # Note: 'update' works, but 'none' is safer once your schema is finalized
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        # [CHANGE 3] Switch Hibernate dialect to H2
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: false # Disable formatting to save CPU
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  # Disable H2 web console for security in production
+  h2:
+    console:
+      enabled: true
+      settings:
+        web-allow-others: false
+
+jwt:
+  secret: c2VjcmV0S2V5Rm9yQk1TT2ZmbGluZUFwcENyZWF0ZWRGb3JNeWF0VGh1cmFTb2UyMDI2
+  expiration: 86400000
+
+logging:
+  level:
+    com.bms: INFO # [CHANGE 4] Change to INFO to prevent massive log files on customer PCs
+    org.springframework.security: WARN
+
+google:
+  oauth:
+    client-id: haha
+    client-secret: k
+    # [CHANGE 5] Google redirects back to the local Spring Boot server
+    redirect-uri: http://127.0.0.1:8080/api/backups/google/callback
+    # [CHANGE 6] Frontend is now served by Spring Boot on 8080, NOT Vite on 5173!
+    frontend-redirect-base: http://127.0.0.1:8080
+
+# [CHANGE 7] Custom property for saving product images and expense receipts locally
+app:
+  upload-dir: C:/BMS_Data/uploads

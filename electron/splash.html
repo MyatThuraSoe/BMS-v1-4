@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #FFFFFF 0%, #F3F5F1 50%, #E8EDE6 100%);
+            font-family: 'Segoe UI', sans-serif;
+            overflow: hidden;
+            -webkit-app-region: drag;
+        }
+
+        .logo-container {
+            text-align: center;
+            animation: fadeInUp 0.8s ease-out;
+        }
+
+        .logo-icon {
+            width: 120px;
+            height: 120px;
+            margin: 0 auto 24px;
+            position: relative;
+        }
+
+        .logo-icon img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        /* Glowing pulse animation */
+        .logo-icon::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 140px;
+            height: 140px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(43, 110, 79, 0.15) 0%, transparent 70%);
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .app-name {
+            font-family: 'Georgia', serif;
+            font-size: 42px;
+            font-weight: 600;
+            color: #1C2620;
+            letter-spacing: -0.5px;
+            margin-bottom: 8px;
+        }
+
+        .app-subtitle {
+            font-size: 14px;
+            color: #5B655D;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            margin-bottom: 48px;
+        }
+
+        .progress-container {
+            width: 280px;
+            height: 3px;
+            background: #DEDFD6;
+            border-radius: 3px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #2B6E4F, #B8862E);
+            border-radius: 3px;
+            transition: width 0.5s ease;
+            animation: progressAnim 12s ease-in-out forwards;
+        }
+
+        .status-text {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #5B655D;
+            opacity: 0;
+            animation: fadeIn 0.5s ease 1s forwards;
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.5; }
+            50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.8; }
+        }
+
+        @keyframes progressAnim {
+            0% { width: 0%; }
+            10% { width: 15%; }
+            30% { width: 35%; }
+            50% { width: 55%; }
+            70% { width: 70%; }
+            85% { width: 85%; }
+            95% { width: 92%; }
+            100% { width: 95%; }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="logo-container">
+        <div class="logo-icon">
+            <!-- Replace with your actual logo image -->
+            <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+                <circle cx="60" cy="55" r="35" stroke="#2B6E4F" stroke-width="3" fill="none" opacity="0.3"/>
+                <path d="M45 70 C45 50, 55 35, 60 30 C65 35, 75 50, 75 70" stroke="#2B6E4F" stroke-width="3" fill="rgba(43,110,79,0.1)"/>
+                <path d="M50 65 L55 55 L60 60 L65 50 L70 58" stroke="#2B6E4F" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+                <rect x="42" y="72" width="36" height="4" rx="2" fill="#2B6E4F" opacity="0.6"/>
+                <rect x="48" y="79" width="24" height="3" rx="1.5" fill="#2B6E4F" opacity="0.3"/>
+            </svg>
+        </div>
+        <div class="app-name">LumiPOS</div>
+        <div class="app-subtitle">Business Management System</div>
+        <div class="progress-container">
+            <div class="progress-bar" id="progressBar"></div>
+        </div>
+        <div class="status-text" id="statusText">Starting application...</div>
+    </div>
+
+    <script>
+        // Listen for progress updates from Electron main process
+        const { ipcRenderer } = require('electron');
+        
+        ipcRenderer.on('splash-progress', (event, data) => {
+            const bar = document.getElementById('progressBar');
+            const text = document.getElementById('statusText');
+            
+            if (data.percent !== undefined) {
+                bar.style.animation = 'none';
+                bar.style.width = data.percent + '%';
+            }
+            if (data.message) {
+                text.textContent = data.message;
+            }
+        });
+    </script>
+</body>
+</html>
