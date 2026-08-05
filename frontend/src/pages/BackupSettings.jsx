@@ -65,7 +65,7 @@ const BackupSettings = () => {
     const status = searchParams.get('status');
     if (status === 'success') {
       setMessage({ type: 'success', text: 'Google Drive connected successfully!' });
-      queryClient.invalidateQueries(['backupSettings']);
+      queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
       window.history.replaceState({}, document.title, window.location.pathname); // Clean URL
     } else if (status === 'error') {
       setMessage({ type: 'error', text: 'Failed to connect Google Drive. Please try again.' });
@@ -77,7 +77,7 @@ const BackupSettings = () => {
   const updateMutation = useMutation({
     mutationFn: backupService.updateSettings,
     onSuccess: () => {
-      queryClient.invalidateQueries(['backupSettings']);
+      queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
       setMessage({ type: 'success', text: 'Backup settings saved successfully.' });
     },
     onError: () => {
@@ -103,7 +103,7 @@ const BackupSettings = () => {
     if (window.confirm("Are you sure you want to disconnect Google Drive? Automated backups will stop.")) {
       try {
         await backupService.disconnect();
-        queryClient.invalidateQueries(['backupSettings']);
+        queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
         setMessage({ type: 'info', text: 'Google Drive disconnected.' });
       } catch (error) {
         setMessage({ type: 'error', text: 'Failed to disconnect.' });
@@ -118,7 +118,7 @@ const BackupSettings = () => {
     try {
       const res = await backupService.runNow(dateRange.startDate || null, dateRange.endDate || null);
       setMessage({ type: 'success', text: `${res.message} Saved to: ${res.data}` });
-      queryClient.invalidateQueries(['backupSettings']);
+      queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || 'Backup failed. Check backend logs.' });
     } finally {

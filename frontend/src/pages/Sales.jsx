@@ -57,16 +57,31 @@ const Sales = () => {
     enabled: customerInput.length > 0,
   });
 
-  const { data: salesData, isLoading } = useQuery({
-    queryKey: ['sales', page, size, range, customStartDate, customEndDate, selectedCustomer?.id, debouncedInvoice],
-    queryFn: () => saleService.getAll(
-      page, size, 'saleDate',
-      range || null,
-      range === 'CUSTOM' ? customStartDate : null,
-      range === 'CUSTOM' ? customEndDate : null,
-      selectedCustomer?.id || null,
-      debouncedInvoice || null,
-    ),
+  const { data: salesData, isLoading, isFetching } = useQuery({
+    queryKey: [
+      'sales',
+      page,
+      size,
+      range,
+      customStartDate,
+      customEndDate,
+      selectedCustomer?.id,
+      debouncedInvoice,
+    ],
+    queryFn: () =>
+      saleService.getAll(
+        page,
+        size,
+        'saleDate',
+        range || null,
+        range === 'CUSTOM' ? customStartDate : null,
+        range === 'CUSTOM' ? customEndDate : null,
+        selectedCustomer?.id || null,
+        debouncedInvoice || null
+      ),
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   const handleRangeChange = (newRange) => {
@@ -91,7 +106,7 @@ const Sales = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => saleService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['sales']);
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
       setDeleteDialogOpen(false);
     },
   });
@@ -99,7 +114,7 @@ const Sales = () => {
   const voidMutation = useMutation({
     mutationFn: ({ id, reason }) => saleService.voidSale(id, reason),
     onSuccess: () => {
-      queryClient.invalidateQueries(['sales']);
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
       setVoidDialogOpen(false);
       setVoidReason('');
     },
@@ -211,9 +226,9 @@ const Sales = () => {
               <TableCell>Invoice #</TableCell>
               <TableCell>Customer</TableCell>
               <TableCell align="right">Total</TableCell>
-              <TableCell align="right">Paid</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Paid</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Date</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Date</TableCell>
               <TableCell align="right">Actions</TableCell>
             </TableRow>
           </TableHead>
@@ -230,9 +245,9 @@ const Sales = () => {
                     <TableCell>{s.invoiceNumber}</TableCell>
                     <TableCell>{s.customerName || 'Walk-in'}</TableCell>
                     <TableCell align="right">{formatCurrency(s.totalAmount)}</TableCell>
-                    <TableCell align="right">{formatCurrency(s.amountPaid)}</TableCell>
+                    <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{formatCurrency(s.amountPaid)}</TableCell>
                     <TableCell><Chip label={status} size="small" color={getStatusColor(status)} /></TableCell>
-                    <TableCell>{formatDateTime(s.saleDate)}</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.saleDate)}</TableCell>
                     <TableCell align="right">
                       <IconButton size="small" onClick={() => navigate(`/receipt/${s.invoiceNumber}`)}><PrintIcon /></IconButton>
                       <IconButton size="small" onClick={() => navigate(`/sales/${s.id}`)}><ViewIcon /></IconButton>

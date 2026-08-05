@@ -96,7 +96,7 @@ const PurchaseForm = () => {
     mutationFn: async (data) => purchaseService.create(data),
     onSuccess: () => {
       setSuccess('Purchase created');
-      queryClient.invalidateQueries(['purchases']);
+      queryClient.invalidateQueries({ queryKey: ['purchases'] });
       setTimeout(() => navigate('/purchases'), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || 'Failed to save'),

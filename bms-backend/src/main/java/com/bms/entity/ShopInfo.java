@@ -44,6 +44,9 @@ public class ShopInfo {
     @Column(name = "logo_type", length = 10)
     private String logoType;
 
+    @Column(name = "currency", length = 10)
+    private String currency = "USD";
+
     @Version
     private Long version;
 
@@ -109,6 +112,14 @@ public class ShopInfo {
 
     public void setLogoType(String logoType) {
         this.logoType = logoType;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public Long getVersion() {

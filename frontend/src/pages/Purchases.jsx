@@ -30,7 +30,7 @@ const Purchases = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => purchaseService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['purchases']);
+      queryClient.invalidateQueries({ queryKey: ['purchases'] });
       setDeleteDialogOpen(false);
       notifySuccess('Purchase deleted');
     },
@@ -41,14 +41,14 @@ const Purchases = () => {
   });
   const paymentStatusMutation = useMutation({
     mutationFn: ({ id, paymentStatus }) => purchaseService.updatePaymentStatus(id, paymentStatus),
-    onSuccess: () => queryClient.invalidateQueries(['purchases']),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchases'] }),
     onError: (err) => notifyError(err.friendlyMessage || 'Failed to update payment status'),
   });
 
   const updatePaymentStatusMutation = useMutation({
     mutationFn: ({ id, paymentStatus }) => purchaseService.updatePaymentStatus(id, paymentStatus),
     onSuccess: () => {
-      queryClient.invalidateQueries(['purchases']);
+      queryClient.invalidateQueries({ queryKey: ['purchases'] });
       setPaymentStatusMenuAnchor(null);
     },
   });
@@ -89,8 +89,8 @@ const Purchases = () => {
               <TableCell>Supplier</TableCell>
               <TableCell align="right">Total</TableCell>
               <TableCell>Payment Status</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Date</TableCell>
+              <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Status</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Date</TableCell>
               {isManager() && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
@@ -117,14 +117,14 @@ const Purchases = () => {
                       </IconButton>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                     <Chip
                       label={p.paymentStatus}
                       size="small"
                       color={p.paymentStatus === 'PAID' ? 'success' : p.paymentStatus === 'PARTIAL' ? 'warning' : 'error'}
                     />
                   </TableCell>
-                  <TableCell>{formatDateTime(p.purchaseDate)}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(p.purchaseDate)}</TableCell>
                   {isManager() && (
                     <TableCell align="right">
                       <TextField

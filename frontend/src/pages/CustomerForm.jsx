@@ -45,7 +45,7 @@ const CustomerForm = () => {
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Customer updated' : 'Customer created');
-      queryClient.invalidateQueries(['customers']);
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
       setTimeout(() => navigate('/customers'), 1500);
     },
     onError: (err) => {

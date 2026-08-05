@@ -36,7 +36,7 @@ const SupplierForm = () => {
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Supplier updated' : 'Supplier created');
-      queryClient.invalidateQueries(['suppliers']);
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       setTimeout(() => navigate('/suppliers'), 1500);
     },
     onError: (err) => {

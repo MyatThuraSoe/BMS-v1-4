@@ -25,7 +25,7 @@ const StockAdjustment = () => {
       }),
     onSuccess: () => {
       setSuccess('Stock adjusted successfully');
-      queryClient.invalidateQueries(['inventory-products']);
+      queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
       setTimeout(() => navigate('/inventory'), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || 'Failed to adjust stock'),

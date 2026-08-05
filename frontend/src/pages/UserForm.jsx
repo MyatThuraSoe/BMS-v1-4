@@ -13,7 +13,7 @@ import {
   Select,
 } from '@mui/material';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { userService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 
@@ -22,6 +22,7 @@ const UserForm = () => {
   const navigate = useNavigate();
   const { user: currentUser } = useAuth();
   const isEdit = !!id;
+  const queryClient = useQueryClient();
 
   const [formData, setFormData] = useState({
     username: '',
@@ -74,6 +75,7 @@ const UserForm = () => {
       return userService.create(data);
     },
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       navigate('/users');
     },
     onError: (err) => {

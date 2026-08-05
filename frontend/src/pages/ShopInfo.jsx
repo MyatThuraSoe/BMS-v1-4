@@ -2,11 +2,22 @@ import { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, Paper, TextField, MenuItem, Button, Alert, CircularProgress } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { shopInfoService } from '../api/services';
+import { setCurrencyCode } from '../utils/helpers';
 
 import { CloudUpload as UploadIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import ShopLogo, { clearShopLogoCache } from '../components/ShopLogo';
 const SHOP_TYPES = ['MINI_MART','GROCERY','PHARMACY','FURNITURE_SHOP','ELECTRONICS','CLOTHING','RESTAURANT','OTHER'];
+
+const CURRENCIES = [
+  { code: 'USD', label: 'US Dollar ($)' },
+  { code: 'EUR', label: 'Euro (€)' },
+  { code: 'GBP', label: 'British Pound (£)' },
+  { code: 'THB', label: 'Thai Baht (฿)' },
+  { code: 'MMK', label: 'Myanmar Kyat (K)' },
+  { code: 'SGD', label: 'Singapore Dollar (S$)' },
+  { code: 'INR', label: 'Indian Rupee (₹)' },
+];
 
 const ShopInfo = () => {
 
@@ -29,6 +40,7 @@ const ShopInfo = () => {
     address: '',
     phone: '',
     email: '',
+    currency: 'USD',
   });
 
   useEffect(() => {
@@ -40,6 +52,7 @@ const ShopInfo = () => {
       address: d.address || '',
       phone: d.phone || '',
       email: d.email || '',
+      currency: d.currency || 'USD',
     });
   }, [data]);
 
@@ -48,7 +61,7 @@ const ShopInfo = () => {
   const updateMutation = useMutation({
     mutationFn: (payload) => shopInfoService.update(payload),
     onSuccess: () => {
-      queryClient.invalidateQueries(['shopInfo']);
+      queryClient.invalidateQueries({ queryKey: ['shopInfo'] });
     },
   });
 
@@ -108,7 +121,9 @@ const ShopInfo = () => {
       address: form.address,
       phone: form.phone,
       email: form.email,
+      currency: form.currency,
     });
+    setCurrencyCode(form.currency);
   };
 
   if (!isAdmin()) {
@@ -158,6 +173,21 @@ const ShopInfo = () => {
               {SHOP_TYPES.map((t) => (
                 <MenuItem key={t} value={t}>
                   {t}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              label="Currency"
+              value={form.currency}
+              onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
+              fullWidth
+              helperText="Used to display all prices and amounts across the app"
+            >
+              {CURRENCIES.map((c) => (
+                <MenuItem key={c.code} value={c.code}>
+                  {c.label}
                 </MenuItem>
               ))}
             </TextField>

@@ -81,7 +81,7 @@ const ProductForm = () => {
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Product updated successfully' : 'Product created successfully');
-      queryClient.invalidateQueries(['products']);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       setTimeout(() => navigate('/products'), 1500);
     },
     onError: (err) => {
@@ -115,7 +115,7 @@ const ProductForm = () => {
   const handleRemoveImage = async () => {
     if (isEdit && existingProduct?.data?.hasImage && !image) {
       await productService.deleteImage(id);
-      queryClient.invalidateQueries(['product', id]);
+      queryClient.invalidateQueries({ queryKey: ['product', id] });
     }
     setImage(null);
     setRemoveExistingImage(true);

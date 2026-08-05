@@ -1,7 +1,5 @@
 import { Grid, Paper, Typography, Box } from '@mui/material';
-
-const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+import { formatCurrency } from '../utils/helpers';
 
 // One consistent row, everywhere this data appears: Revenue -> Gross Profit -> Expenses -> Net Profit.
 // This is the only place that formats/labels these four numbers — Dashboard and Accounting both

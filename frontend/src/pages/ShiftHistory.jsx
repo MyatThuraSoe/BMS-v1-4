@@ -5,9 +5,7 @@ import {
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { shiftService, userService } from '../api/services';
-
-const formatCurrency = (amount) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+import { formatCurrency } from '../utils/helpers';
 
 const ShiftHistory = () => {
   const [page, setPage] = useState(0);
@@ -57,10 +55,10 @@ const ShiftHistory = () => {
             <TableRow>
               <TableCell>Cashier</TableCell>
               <TableCell>Opened</TableCell>
-              <TableCell>Closed</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Closed</TableCell>
               <TableCell align="right">Opening Amount</TableCell>
-              <TableCell align="right">Expected</TableCell>
-              <TableCell align="right">Actual</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Expected</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Actual</TableCell>
               <TableCell align="right">Variance</TableCell>
               <TableCell>Status</TableCell>
             </TableRow>
@@ -75,10 +73,10 @@ const ShiftHistory = () => {
                 <TableRow key={s.id}>
                   <TableCell>{s.cashierName || s.cashierId}</TableCell>
                   <TableCell>{new Date(s.openingTime).toLocaleString()}</TableCell>
-                  <TableCell>{s.closingTime ? new Date(s.closingTime).toLocaleString() : '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{s.closingTime ? new Date(s.closingTime).toLocaleString() : '-'}</TableCell>
                   <TableCell align="right">{formatCurrency(s.openingAmount)}</TableCell>
-                  <TableCell align="right">{s.expectedAmount != null ? formatCurrency(s.expectedAmount) : '-'}</TableCell>
-                  <TableCell align="right">{s.closingAmount != null ? formatCurrency(s.closingAmount) : '-'}</TableCell>
+                  <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{s.expectedAmount != null ? formatCurrency(s.expectedAmount) : '-'}</TableCell>
+                  <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{s.closingAmount != null ? formatCurrency(s.closingAmount) : '-'}</TableCell>
                   <TableCell align="right">
                     {s.variance != null ? (
                       <Chip

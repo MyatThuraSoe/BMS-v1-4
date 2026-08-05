@@ -36,7 +36,7 @@ const CategoryForm = () => {
     },
     onSuccess: () => {
       setSuccess(isEdit ? 'Category updated' : 'Category created');
-      queryClient.invalidateQueries(['categories']);
+      queryClient.invalidateQueries({ queryKey: ['categories'] });
       setTimeout(() => navigate('/categories'), 1500);
     },
     onError: (err) => {

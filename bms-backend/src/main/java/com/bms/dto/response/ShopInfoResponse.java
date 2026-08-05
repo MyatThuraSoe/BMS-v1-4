@@ -8,6 +8,7 @@ public class ShopInfoResponse {
     private String address;
     private String phone;
     private String email;
+    private String currency;
     private boolean hasLogo;
 
     public ShopInfoResponse() {
@@ -19,6 +20,7 @@ public class ShopInfoResponse {
                              String address,
                              String phone,
                              String email,
+                             String currency,
                              boolean hasLogo) {
         this.id = id;
         this.shopName = shopName;
@@ -26,6 +28,7 @@ public class ShopInfoResponse {
         this.address = address;
         this.phone = phone;
         this.email = email;
+        this.currency = currency;
         this.hasLogo = hasLogo;
     }
 
@@ -75,6 +78,14 @@ public class ShopInfoResponse {
 
     public void setEmail(String email) {
         this.email = email;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
     }
 
     public boolean isHasLogo() {

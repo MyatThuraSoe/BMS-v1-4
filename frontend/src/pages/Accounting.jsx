@@ -40,8 +40,8 @@ const Accounting = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['expenses']);
-      queryClient.invalidateQueries(['accountingSummary']);
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       setDialogOpen(false);
       resetForm();
       notifySuccess('Expense added');
@@ -61,8 +61,8 @@ const Accounting = () => {
       return response;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries(['expenses']);
-      queryClient.invalidateQueries(['accountingSummary']);
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       setDialogOpen(false);
       resetForm();
       notifySuccess('Expense updated');
@@ -73,8 +73,8 @@ const Accounting = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => expenseService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['expenses']);
-      queryClient.invalidateQueries(['accountingSummary']);
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       notifySuccess('Expense deleted');
     },
     onError: (err) => notifyError(err.friendlyMessage || 'Unable to delete expense'),
@@ -132,7 +132,7 @@ const Accounting = () => {
             <TextField fullWidth label="Year" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
           </Grid>
           <Grid item xs={12} md={4}>
-            <Button fullWidth variant="outlined" sx={{ height: '56px' }} onClick={() => queryClient.invalidateQueries(['accountingSummary'])}>Refresh</Button>
+            <Button fullWidth variant="outlined" sx={{ height: '56px' }} onClick={() => queryClient.invalidateQueries({ queryKey: ['accountingSummary'] })}>Refresh</Button>
           </Grid>
         </Grid>
       </Paper>

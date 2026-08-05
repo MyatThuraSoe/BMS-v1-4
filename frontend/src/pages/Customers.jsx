@@ -43,7 +43,7 @@ const Customers = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => customerService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['customers']);
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
       setDeleteDialogOpen(false);
     },
     onError: () => {
@@ -86,9 +86,9 @@ const Customers = () => {
             <TableRow>
               <TableCell>Name</TableCell>
               <TableCell>Phone</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Address</TableCell>
-              <TableCell>Created</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Email</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Address</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Created</TableCell>
               {isManager() && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
@@ -112,9 +112,9 @@ const Customers = () => {
                     </Box>
                   </TableCell>
                   <TableCell>{c.phone || '-'}</TableCell>
-                  <TableCell>{c.email || '-'}</TableCell>
-                  <TableCell>{c.address || '-'}</TableCell>
-                  <TableCell>{formatDateTime(c.createdAt)}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.email || '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.address || '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(c.createdAt)}</TableCell>
                   {isManager() && (
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {c.isQuickAdd && (

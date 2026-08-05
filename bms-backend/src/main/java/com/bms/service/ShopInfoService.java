@@ -30,6 +30,7 @@ public class ShopInfoService {
                     "",
                     "",
                     "",
+                    "USD",
                     false
             );
         }
@@ -42,6 +43,7 @@ public class ShopInfoService {
                 info.getAddress(),
                 info.getPhone(),
                 info.getEmail(),
+                info.getCurrency() != null ? info.getCurrency() : "USD",
                 info.getLogoData() != null
         );
     }
@@ -55,6 +57,7 @@ public class ShopInfoService {
         info.setAddress(req.getAddress());
         info.setPhone(req.getPhone());
         info.setEmail(req.getEmail());
+        info.setCurrency(req.getCurrency() != null ? req.getCurrency() : "USD");
 
         ShopInfo saved = shopInfoRepository.save(info);
         return getShopInfo();
@@ -91,6 +94,7 @@ public class ShopInfoService {
         private String address;
         private String phone;
         private String email;
+        private String currency;
 
         public String getShopName() {
             return shopName;
@@ -130,6 +134,14 @@ public class ShopInfoService {
 
         public void setEmail(String email) {
             this.email = email;
+        }
+
+        public String getCurrency() {
+            return currency;
+        }
+
+        public void setCurrency(String currency) {
+            this.currency = currency;
         }
     }
 

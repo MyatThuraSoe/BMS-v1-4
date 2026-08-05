@@ -56,6 +56,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { authService, shopInfoService, shiftService } from '../api/services';
 import { useQuery } from '@tanstack/react-query';
+import { setCurrencyCode } from '../utils/helpers';
 
 const menuGroups = [
   {
@@ -167,6 +168,12 @@ const DashboardLayout = ({ children }) => {
 
   const currentShift = currentShiftData?.data;
   const shopName = shopInfoData?.data?.shopName;
+
+  // Keep the app-wide currency sign in sync with the Shop Info setting
+  useEffect(() => {
+    const currency = shopInfoData?.data?.currency;
+    if (currency) setCurrencyCode(currency);
+  }, [shopInfoData]);
 
   const handleDrawerToggle = () => setMobileOpen(!mobileOpen);
   const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);

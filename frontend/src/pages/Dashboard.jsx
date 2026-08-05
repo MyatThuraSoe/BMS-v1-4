@@ -4,7 +4,7 @@ import { Grid, Paper, Typography, Box, Button } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService } from '../api/services';
 import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
-import { formatDateTime } from '../utils/helpers';
+import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 import SetupChecklist from '../components/SetupChecklist';
@@ -92,13 +92,6 @@ const Dashboard = () => {
   
   const recentSales = recentSalesData?.data?.content || [];
   const salesTrend = salesTrendData?.data || [];
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount || 0);
-  };
 
   return (
     <Box>

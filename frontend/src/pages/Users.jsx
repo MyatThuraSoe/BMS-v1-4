@@ -44,7 +44,7 @@ const Users = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => userService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['users']);
+      queryClient.invalidateQueries({ queryKey: ['users'] });
       setDeleteDialogOpen(false);
     },
     onError: () => {

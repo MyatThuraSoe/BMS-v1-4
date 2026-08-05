@@ -43,7 +43,7 @@ const Settings = () => {
   const updateMutation = useMutation({
     mutationFn: ({ key, value }) => systemSettingService.update(key, { settingValue: value }),
     onSuccess: () => {
-      queryClient.invalidateQueries(['settings']);
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
       setSuccess('Settings updated successfully');
       setTimeout(() => setSuccess(''), 3000);
     },

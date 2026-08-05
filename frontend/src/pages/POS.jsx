@@ -40,6 +40,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
+import { formatCurrency } from '../utils/helpers';
 
 import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
@@ -215,7 +216,7 @@ const filteredProducts = products.filter(
       setShowCheckoutDialog(false);
       setShowReceiptDialog(true);
       clearCart();
-      queryClient.invalidateQueries(['products-pos']);
+      queryClient.invalidateQueries({ queryKey: ['products-pos'] });
     },
     onError: (err) => {
       const message = err.response?.data?.message || '';
@@ -302,13 +303,6 @@ const filteredProducts = products.filter(
       amountPaid: parseFloat(cashAmount),
     };
     createSaleMutation.mutate(saleData);
-  };
-
-  const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-    }).format(amount || 0);
   };
 
   // 👇 FIXED: Fetches HTML with JWT token, then opens it in a new window

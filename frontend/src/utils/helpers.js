@@ -1,8 +1,17 @@
+let cachedCurrencyCode = 'USD'; // sensible default before the real setting loads
+
+export const setCurrencyCode = (code) => { cachedCurrencyCode = code || 'USD'; };
+
 export const formatCurrency = (amount) => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-  }).format(amount || 0);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: cachedCurrencyCode,
+    }).format(amount || 0);
+  } catch {
+    // Invalid/unsupported currency code — fail safe rather than crash the page
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount || 0);
+  }
 };
 
 export const formatDate = (dateString) => {

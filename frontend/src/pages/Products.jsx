@@ -74,8 +74,8 @@ const ProductsTab = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => productService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['products']);
-      queryClient.invalidateQueries(['low-stock']);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       setDeleteDialogOpen(false);
     },
     onError: () => setDeleteDialogOpen(false),
@@ -158,11 +158,11 @@ const ProductsTab = () => {
               <TableCell>No</TableCell>
               <TableCell>Image</TableCell>
               <TableCell>Name</TableCell>
-              <TableCell>SKU</TableCell>
-              <TableCell>Category</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>SKU</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Category</TableCell>
               <TableCell align="right">Price</TableCell>
               <TableCell align="right">Stock</TableCell>
-              <TableCell align="right">Threshold</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Threshold</TableCell>
               <TableCell>Status</TableCell>
               {isManager() && <TableCell align="right">Actions</TableCell>}
             </TableRow>
@@ -180,15 +180,15 @@ const ProductsTab = () => {
                     <TableCell>{page * size + index + 1}</TableCell>
                     <TableCell><ProductImage productId={product.id} hasImage={product.hasImage} size={48} /></TableCell>
                     <TableCell>{product.name}</TableCell>
-                    <TableCell>{product.sku}</TableCell>
-                    <TableCell>{product.categoryName || '-'}</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{product.sku}</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{product.categoryName || '-'}</TableCell>
                     <TableCell align="right">{formatCurrency(product.unitPrice)}</TableCell>
                     <TableCell align="right">
                       <Typography color={product.stockQuantity <= (product.minStockLevel || 10) ? 'error' : 'inherit'}>
                         {product.stockQuantity}
                       </Typography>
                     </TableCell>
-                    <TableCell align="right">{product.minStockLevel || 10}</TableCell>
+                    <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{product.minStockLevel || 10}</TableCell>
                     <TableCell><Chip size="small" label={status.label} color={status.color} /></TableCell>
                     {isManager() && (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>

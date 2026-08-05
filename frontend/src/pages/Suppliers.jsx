@@ -45,7 +45,7 @@ const Suppliers = () => {
   const deleteMutation = useMutation({
     mutationFn: (id) => supplierService.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries(['suppliers']);
+      queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       setDeleteDialogOpen(false);
     },
     onError: () => {
@@ -87,10 +87,10 @@ const Suppliers = () => {
           <TableHead>
             <TableRow>
               <TableCell>Name</TableCell>
-              <TableCell>Contact</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Contact</TableCell>
               <TableCell>Phone</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Created</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Email</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Created</TableCell>
               {isManager() && <TableCell align="right">Actions</TableCell>}
             </TableRow>
           </TableHead>
@@ -108,10 +108,10 @@ const Suppliers = () => {
                   sx={{ cursor: 'pointer' }}
                 >
                   <TableCell>{s.name}</TableCell>
-                  <TableCell>{s.contactPerson || '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{s.contactPerson || '-'}</TableCell>
                   <TableCell>{s.phone || '-'}</TableCell>
-                  <TableCell>{s.email || '-'}</TableCell>
-                  <TableCell>{formatDateTime(s.createdAt)}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{s.email || '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.createdAt)}</TableCell>
                   {isManager() && (
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       <IconButton 
