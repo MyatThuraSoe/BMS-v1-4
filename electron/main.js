@@ -185,20 +185,11 @@ function createWindow() {
         }, 2000);
     });
 
-    // Prevent window from being destroyed on close - hide to tray instead
-    mainWindow.on('close', (event) => {
+    // Clicking the window close (X) button shuts the whole app down,
+    // including the background Java server, so reopening never hits a busy port.
+    mainWindow.on('close', () => {
         if (!isQuitting) {
-            event.preventDefault();
-            mainWindow.hide();
-            
-            // Show tray notification on first hide
-            if (tray && !tray.hasShownNotification) {
-                tray.displayBalloon({
-                    title: 'LumiPOS',
-                    content: 'LumiPOS is still running in the background. Right-click the tray icon to quit.'
-                });
-                tray.hasShownNotification = true;
-            }
+            quitApp();
         }
     });
 

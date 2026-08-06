@@ -200,7 +200,17 @@ const Settings = () => {
         ))}
       </Grid>
 
-      <ShutdownButton />
+        <Paper sx={{ p: 3, mt: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            System Shutdown
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Use the button below to safely shut down the system. Make sure to save all your work
+            before proceeding.
+          </Typography>
+          <ShutdownButton />
+        </Paper>
+      
     </Box>
   );
 };

@@ -127,14 +127,15 @@ const filteredProducts = products.filter(
   const addToCart = (product) => {
     const existingItem = cart.find((item) => item.productId === product.id);
     if (existingItem) {
-      if (existingItem.quantity >= product.stockQuantity) {
+      const currentQty = parseInt(existingItem.quantity, 10) || 0;
+      if (currentQty >= product.stockQuantity) {
         setError(`Cannot add more. Only ${product.stockQuantity} available.`);
         return;
       }
       setCart(
         cart.map((item) =>
           item.productId === product.id
-            ? { ...item, quantity: item.quantity + 1 }
+            ? { ...item, quantity: currentQty + 1 }
             : item
         )
       );
@@ -156,12 +157,14 @@ const filteredProducts = products.filter(
       cart
         .map((item) => {
           if (item.productId === productId) {
-            const newQty = item.quantity + delta;
+            const currentQty = parseInt(item.quantity, 10) || 0;
+            const newQty = currentQty + delta;
             if (newQty <= 0) return null;
             if (newQty > item.stockQuantity) {
               setError(`Cannot exceed available stock: ${item.stockQuantity}`);
-              return item;
+              return { ...item, quantity: item.stockQuantity };
             }
+            setError('');
             return { ...item, quantity: newQty };
           }
           return item;
@@ -169,6 +172,43 @@ const filteredProducts = products.filter(
         .filter(Boolean)
     );
     setError('');
+  };
+
+  const handleQuantityInputChange = (productId, value) => {
+    setCart((prevCart) =>
+      prevCart.map((item) => {
+        if (item.productId === productId) {
+          if (value === '') {
+            return { ...item, quantity: '' }; // Allow clearing input temporarily
+          }
+          const newQty = parseInt(value, 10);
+          if (isNaN(newQty)) return item;
+          
+          if (newQty > item.stockQuantity) {
+            setError(`Cannot exceed available stock: ${item.stockQuantity}`);
+            return { ...item, quantity: item.stockQuantity };
+          }
+          setError('');
+          return { ...item, quantity: newQty };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleQuantityInputBlur = (productId) => {
+    setCart((prevCart) =>
+      prevCart.map((item) => {
+        if (item.productId === productId) {
+          const qty = parseInt(item.quantity, 10);
+          if (isNaN(qty) || qty <= 0) {
+            return { ...item, quantity: 1 }; // Default to 1 if left empty or invalid
+          }
+          return item;
+        }
+        return item;
+      })
+    );
   };
 
   const removeFromCart = (productId) => {
@@ -186,13 +226,13 @@ const filteredProducts = products.filter(
   };
 
   const subtotal = cart.reduce(
-      (sum, item) => sum + item.price * item.quantity,
+      (sum, item) => sum + item.price * (parseInt(item.quantity) || 0),
       0
   );
 
   const tax = cart.reduce(
       (sum, item) =>
-          sum + (item.price * item.quantity * item.taxRate) / 100,
+          sum + (item.price * (parseInt(item.quantity) || 0) * item.taxRate) / 100,
       0
   );
 
@@ -217,6 +257,14 @@ const filteredProducts = products.filter(
       setShowReceiptDialog(true);
       clearCart();
       queryClient.invalidateQueries({ queryKey: ['products-pos'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['financialSummary'] });
+      queryClient.invalidateQueries({ queryKey: ['dailySales'] });
+      queryClient.invalidateQueries({ queryKey: ['recentSales'] });
+      queryClient.invalidateQueries({ queryKey: ['salesTrend'] });
     },
     onError: (err) => {
       const message = err.response?.data?.message || '';
@@ -257,6 +305,7 @@ const filteredProducts = products.filter(
         prevCart.map((cartItem) => {
           const fresh = result.items.find((i) => i.productId === cartItem.productId);
           if (!fresh) return cartItem;
+          const currentQty = parseInt(cartItem.quantity, 10) || 0;
           return {
             ...cartItem,
             price: fresh.unitPrice,
@@ -264,8 +313,8 @@ const filteredProducts = products.filter(
             stockQuantity: fresh.availableStock,
             // clamp quantity down if stock dropped below what's in the cart
             quantity: fresh.insufficientStock
-              ? Math.min(cartItem.quantity, fresh.availableStock)
-              : cartItem.quantity,
+              ? Math.min(currentQty, fresh.availableStock)
+              : currentQty || 1,
           };
         })
       );
@@ -283,18 +332,29 @@ const filteredProducts = products.filter(
       setError('Cart is empty');
       return;
     }
+
+    // Sanitize quantities before proceeding to ensure no empty quantities are sent
+    const sanitizedCart = cart.map(item => {
+      const qty = parseInt(item.quantity, 10);
+      if (isNaN(qty) || qty <= 0) {
+        return { ...item, quantity: 1 };
+      }
+      return item;
+    });
+    setCart(sanitizedCart);
+
     if (!cashAmount || parseFloat(cashAmount) <= 0) {
       setError('Enter a cash amount');
       return;
     }
-    verifyCartMutation.mutate(cart); // opens the dialog itself on success, via onSuccess above
+    verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
   };
 
   const confirmCheckout = () => {
     const saleData = {
       items: cart.map((item) => ({
         productId: item.productId,
-        quantity: item.quantity,
+        quantity: parseInt(item.quantity, 10) || 1, // Fallback to 1 just in case
         price: item.price,
       })),
       customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
@@ -347,7 +407,7 @@ const filteredProducts = products.filter(
         await printReceiptViaQZ(lastSale, shopInfo || {});
         notifySuccess('Receipt sent to printer!');
       } catch (err) {
-        // Error is already notified inside the utility
+        // Error is already handled inside the utility
       }
     }
   };
@@ -521,8 +581,8 @@ const filteredProducts = products.filter(
                     <TableHead>
                       <TableRow>
                           <TableCell>Item</TableCell>
-                          <TableCell align="right">Price</TableCell>
                           <TableCell align="center">Qty</TableCell>
+                          <TableCell align="right">Price</TableCell>
                           <TableCell align="right">Total</TableCell>
                           <TableCell align="center">Action</TableCell>
                       </TableRow>
@@ -532,10 +592,6 @@ const filteredProducts = products.filter(
                         <TableRow key={item.productId}>
                           <TableCell>{item.name}</TableCell>
 
-                          <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem' }}>
-                              {formatCurrency(item.price)}
-                          </TableCell>
-
                           <TableCell align="center">
                               <IconButton
                                   size="small"
@@ -544,7 +600,24 @@ const filteredProducts = products.filter(
                                   <RemoveIcon fontSize="small" />
                               </IconButton>
 
-                              {item.quantity}
+                              <TextField
+                                  type="number"
+                                  size="small"
+                                  value={item.quantity}
+                                  onChange={(e) => handleQuantityInputChange(item.productId, e.target.value)}
+                                  onBlur={() => handleQuantityInputBlur(item.productId)}
+                                  inputProps={{ min: 1, max: item.stockQuantity }}
+                                  sx={{ 
+                                    mx: 0.5, 
+                                    width: '70px',
+                                    '& input::-webkit-outer-spin-button, & input::-webkit-inner-spin-button': { 
+                                      WebkitAppearance: 'none', 
+                                      margin: 0 
+                                    },
+                                    '& input[type=number]': { MozAppearance: 'textfield' },
+                                    '& input': { textAlign: 'center', padding: '6px 4px' }
+                                  }}
+                              />
 
                               <IconButton
                                   size="small"
@@ -554,8 +627,12 @@ const filteredProducts = products.filter(
                               </IconButton>
                           </TableCell>
 
+                          <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem' }}>
+                              {formatCurrency(item.price)}
+                          </TableCell>
+
                           <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem', fontWeight: 600 }}>
-                              {formatCurrency(item.price * item.quantity)}
+                              {formatCurrency(item.price * (parseInt(item.quantity) || 0))}
                           </TableCell>
 
                           <TableCell align="center">

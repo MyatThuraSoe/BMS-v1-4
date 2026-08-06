@@ -49,6 +49,9 @@ const ReceiptPreview = () => {
       setRefundQuantities({});
       queryClient.invalidateQueries({ queryKey: ['receipt', invoiceNumber] });
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
     },
     onError: (err) => notifyError(err.friendlyMessage || 'Failed to process refund'),
   });

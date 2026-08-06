@@ -97,6 +97,9 @@ const PurchaseForm = () => {
     onSuccess: () => {
       setSuccess('Purchase created');
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
       setTimeout(() => navigate('/purchases'), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || 'Failed to save'),

@@ -107,6 +107,9 @@ const Sales = () => {
     mutationFn: (id) => saleService.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
       setDeleteDialogOpen(false);
     },
   });
@@ -115,6 +118,9 @@ const Sales = () => {
     mutationFn: ({ id, reason }) => saleService.voidSale(id, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['sales'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
       setVoidDialogOpen(false);
       setVoidReason('');
     },

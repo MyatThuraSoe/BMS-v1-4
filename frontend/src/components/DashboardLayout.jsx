@@ -213,9 +213,17 @@ const DashboardLayout = ({ children }) => {
     <Box>
       <Toolbar sx={{ justifyContent: collapsed ? 'center' : 'space-between', px: collapsed ? 1 : 2 }}>
         {!collapsed && (
-          <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-            BMS v1
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box
+              component="img"
+              src="/bms-logo.png"
+              alt="BMS logo"
+              sx={{ width: 50, height: 50, display: 'block' }}
+            />
+            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
+              BMS v1
+            </Typography>
+          </Box>
         )}
         <IconButton onClick={() => setCollapsed(!collapsed)} size="small">
           {collapsed ? <ChevronLeftIcon sx={{ transform: 'rotate(180deg)' }} /> : <ChevronLeftIcon />}

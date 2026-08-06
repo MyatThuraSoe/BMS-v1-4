@@ -144,8 +144,14 @@ const ShopInfo = () => {
 
   return (
     <Box>
+      {/* // banner appear telling shop info has been changed  */}
+      {updateMutation.isSuccess && (
+        <Alert severity="success" sx={{ mb: 2 }}>
+          Shop information updated successfully!
+        </Alert>
+      )}
       <Typography variant="h4" gutterBottom>
-        Shop Information
+        Edit Shop Information
       </Typography>
 
       <GridLayout>
@@ -306,6 +312,8 @@ const ShopInfo = () => {
           </Box>
         </Paper>
       </GridLayout>
+
+      
     </Box>
   );
 };

@@ -26,7 +26,10 @@ const StockAdjustment = () => {
     onSuccess: () => {
       setSuccess('Stock adjusted successfully');
       queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
-      setTimeout(() => navigate('/inventory'), 1500);
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
+      setTimeout(() => navigate(-1), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || 'Failed to adjust stock'),
   });
@@ -97,7 +100,7 @@ const StockAdjustment = () => {
               <Button type="submit" variant="contained" disabled={adjustMutation.isPending}>
                 {adjustMutation.isPending ? <CircularProgress size={24} /> : 'Adjust Stock'}
               </Button>
-              <Button onClick={() => navigate('/inventory')} sx={{ ml: 1 }}>Cancel</Button>
+              <Button onClick={() => navigate(-1)} sx={{ ml: 1 }}>Cancel</Button>
             </Grid>
           </Grid>
         </form>
