@@ -52,86 +52,98 @@ import {
   AccountBalanceWallet as CashIcon,
   Inventory as InventoryIcon,
   Category as CategoryIcon,
+  Info as InfoIcon,
 } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import { authService, shopInfoService, shiftService } from '../api/services';
 import { useQuery } from '@tanstack/react-query';
 import { setCurrencyCode } from '../utils/helpers';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useTranslation } from 'react-i18next';
 
 const menuGroups = [
   {
-    label: 'Overview',
+    labelKey: 'group_overview',
     items: [
-      { text: 'Dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
+      { textKey: 'dashboard', icon: <DashboardIcon />, path: '/dashboard', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
     ],
   },
   {
-    label: 'Sales',
+    labelKey: 'group_sales',
     items: [
-      { text: 'POS', icon: <PosIcon />, path: '/pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'success.main' },
-      { text: 'Sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
-      { text: 'Cash Shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
-      { text: 'Shift History', icon: <HistoryIcon />, path: '/shift-history', roles: ['ADMIN', 'MANAGER'], color: 'text.secondary' },
+      { textKey: 'pos', icon: <PosIcon />, path: '/pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'success.main' },
+      { textKey: 'sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
+      { textKey: 'cash_shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
+      { textKey: 'shift_history', icon: <HistoryIcon />, path: '/shift-history', roles: ['ADMIN', 'MANAGER'], color: 'text.secondary' },
     ],
   },
   {
-    label: 'Catalog',
+    labelKey: 'group_catalog',
     items: [
-      { text: 'Products', icon: <InventoryIcon />, path: '/products', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
-      { text: 'Categories', icon: <CategoryIcon />, path: '/categories', roles: ['ADMIN', 'MANAGER'], color: 'secondary.main' },
+      { textKey: 'products', icon: <InventoryIcon />, path: '/products', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
+      { textKey: 'categories', icon: <CategoryIcon />, path: '/categories', roles: ['ADMIN', 'MANAGER'], color: 'secondary.main' },
     ],
   },
   {
-    label: 'Procurement',
+    labelKey: 'group_procurement',
     items: [
-      { text: 'Suppliers', icon: <SupplierIcon />, path: '/suppliers', roles: ['ADMIN'], color: 'info.main' },
-      { text: 'Purchases', icon: <CartIcon />, path: '/purchases', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
+      { textKey: 'suppliers', icon: <SupplierIcon />, path: '/suppliers', roles: ['ADMIN'], color: 'info.main' },
+      { textKey: 'purchases', icon: <CartIcon />, path: '/purchases', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
   {
-    label: 'People',
+    labelKey: 'group_people',
     items: [
-      { text: 'Customers', icon: <CustomersIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'], color: 'success.main' },
-      { text: 'Users', icon: <UsersIcon />, path: '/users', roles: ['ADMIN'], color: 'error.main' },
+      { textKey: 'customers', icon: <CustomersIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'], color: 'success.main' },
+      { textKey: 'users', icon: <UsersIcon />, path: '/users', roles: ['ADMIN'], color: 'error.main' },
     ],
   },
   {
-    label: 'Insights',
+    labelKey: 'group_insights',
     items: [
-      { text: 'Reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
-      { text: 'Analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'], color: 'secondary.main' },
-      { text: 'Accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'], color: 'success.main' },
+      { textKey: 'reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
+      { textKey: 'analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'], color: 'secondary.main' },
+      { textKey: 'accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'], color: 'success.main' },
     ],
   },
   {
-    label: 'Administration',
+    labelKey: 'group_administration',
     items: [
-      { text: 'Settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'], color: 'text.secondary' },
-      { text: 'Shop Info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
-      { text: 'Backup Settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
-      { text: 'Audit Logs', icon: <AuditIcon />, path: '/audit-logs', roles: ['ADMIN'], color: 'error.main' },
+      { textKey: 'settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'], color: 'text.secondary' },
+      { textKey: 'shop_info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
+      { textKey: 'backup_settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
+      { textKey: 'audit_logs', icon: <AuditIcon />, path: '/audit-logs', roles: ['ADMIN'], color: 'error.main' },
     ],
   },
+  {
+    labelKey: 'App Info',
+    items: [
+
+      { textKey: 'About', icon: <InfoIcon />, path: '/about', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'primary.main' },
+
+    ],
+  },
+
 ];
 
 const menuItems = menuGroups.flatMap((g) => g.items);
 
-const getPageTitle = (pathname) => {
+const getPageTitle = (pathname, t) => {
   const exactMatch = menuItems.find((item) => item.path === pathname);
-  if (exactMatch) return exactMatch.text;
+  if (exactMatch) return t(exactMatch.textKey);
 
   const segments = pathname.split('/').filter(Boolean);
   
-  if (segments.length === 0) return 'Dashboard';
+  if (segments.length === 0) return t('dashboard');
 
   const section = menuItems.find((item) => item.path === '/' + segments[0]);
-  const sectionName = section?.text || segments[0] || 'Dashboard';
+  const sectionName = section ? t(section.textKey) : segments[0] || t('dashboard');
 
   if (segments.length === 1) return sectionName;
-  if (segments[1] === 'new') return `New ${sectionName.replace(/s$/, '')}`;
-  if (segments[segments.length - 1] === 'edit') return `Edit ${sectionName.replace(/s$/, '')}`;
+  if (segments[1] === 'new') return t('new_entity', { name: sectionName.replace(/s$/, '') });
+  if (segments[segments.length - 1] === 'edit') return t('edit_entity', { name: sectionName.replace(/s$/, '') });
   
-  return `${sectionName.replace(/s$/, '')} Details`;
+  return t('entity_details', { name: sectionName.replace(/s$/, '') });
 };
 
 const DashboardLayout = ({ children }) => {
@@ -154,6 +166,7 @@ const DashboardLayout = ({ children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, logout } = useAuth();
+  const { t } = useTranslation('nav');
 
   const { data: shopInfoData } = useQuery({
     queryKey: ['shopInfo'],
@@ -189,15 +202,15 @@ const DashboardLayout = ({ children }) => {
 
   const handleChangePasswordSubmit = async () => {
     setCpError(''); setCpSuccess('');
-    if (cpNewPassword !== cpConfirmPassword) { setCpError('New passwords do not match'); return; }
-    if (cpNewPassword.length < 6) { setCpError('New password must be at least 6 characters'); return; }
+    if (cpNewPassword !== cpConfirmPassword) { setCpError(t('common:passwords_not_match')); return; }
+    if (cpNewPassword.length < 6) { setCpError(t('common:password_min')); return; }
     setCpLoading(true);
     try {
       await authService.changePassword(cpCurrentPassword, cpNewPassword);
-      setCpSuccess('Password changed successfully');
+      setCpSuccess(t('common:password_changed'));
       setTimeout(() => setChangePasswordOpen(false), 1500);
     } catch (err) {
-      setCpError(err.response?.data?.message || 'Failed to change password');
+      setCpError(err.response?.data?.message || t('common:failed_to_change_password'));
     } finally {
       setCpLoading(false);
     }
@@ -216,12 +229,12 @@ const DashboardLayout = ({ children }) => {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box
               component="img"
-              src="/bms-logo.png"
+              src="/LumiPOS-logo.png"
               alt="BMS logo"
               sx={{ width: 50, height: 50, display: 'block' }}
             />
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-              BMS v1
+            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold', color: 'primary.dark' }}>
+              LumiPOS
             </Typography>
           </Box>
         )}
@@ -234,17 +247,18 @@ const DashboardLayout = ({ children }) => {
         const visibleItems = group.items.filter(canAccessItem);
         if (visibleItems.length === 0) return null;
         return (
-          <Box key={group.label}>
+          <Box key={group.labelKey}>
             {!collapsed && (
               <Typography
                 variant="caption"
                 sx={{ display: 'block', px: 2, pt: 2, pb: 0.5, color: 'text.disabled', fontWeight: 'bold', letterSpacing: 0.5 }}
               >
-                {group.label.toUpperCase()}
+                {t(group.labelKey).toUpperCase()}
               </Typography>
             )}
             <List dense>
               {visibleItems.map((item) => {
+                const label = t(item.textKey);
                 const button = (
                   <ListItemButton
                     component={Link}
@@ -267,13 +281,13 @@ const DashboardLayout = ({ children }) => {
                     >
                       {item.icon}
                     </ListItemIcon>
-                    {!collapsed && <ListItemText primary={item.text} />}
+                    {!collapsed && <ListItemText primary={label} />}
                   </ListItemButton>
                 );
                 return (
-                  <ListItem key={item.text} disablePadding sx={{ display: 'block' }}>
+                  <ListItem key={item.textKey} disablePadding sx={{ display: 'block' }}>
                     {collapsed ? (
-                      <Tooltip title={item.text} placement="right" arrow>
+                      <Tooltip title={label} placement="right" arrow>
                         <Box component="span" sx={{ display: 'block' }}>
                           {button}
                         </Box>
@@ -334,7 +348,7 @@ const DashboardLayout = ({ children }) => {
             component="div"
             sx={{ flexGrow: 1, fontSize: { xs: '1rem', sm: '1.25rem' }, minWidth: 0 }}
           >
-            {getPageTitle(location.pathname)}
+            {getPageTitle(location.pathname, t)}
           </Typography>
           <Box
             sx={{
@@ -345,12 +359,12 @@ const DashboardLayout = ({ children }) => {
             }}
           >
             <Typography variant="body2" noWrap component="div" sx={{ fontSize: '14px' }}>
-              {shopName || 'BMS'}
+              {shopName || t('common:shop_name_fallback')}
             </Typography>
             {currentShift && (
               <Chip
                 icon={<CashIcon />}
-                label={`Shift: Open since ${new Date(currentShift.openingTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`}
+                label={t('cash:opened_at', { time: new Date(currentShift.openingTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) })}
                 color="success"
                 size="small"
                 variant="filled"
@@ -359,10 +373,11 @@ const DashboardLayout = ({ children }) => {
             )}
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <LanguageSwitcher compact />
             {currentShift && (
               <Chip
                 icon={<CashIcon />}
-                label="Open"
+                label={t('cash:status_open')}
                 color="success"
                 size="small"
                 variant="filled"
@@ -379,8 +394,8 @@ const DashboardLayout = ({ children }) => {
           <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
             <MenuItem disabled><AccountCircle sx={{ mr: 1 }} />{user?.username}</MenuItem>
             <Divider />
-            <MenuItem onClick={handleChangePasswordOpen}><LockIcon sx={{ mr: 1 }} />Change Password</MenuItem>
-            <MenuItem onClick={handleLogout}><Logout sx={{ mr: 1 }} />Logout</MenuItem>
+            <MenuItem onClick={handleChangePasswordOpen}><LockIcon sx={{ mr: 1 }} />{t('common:change_password')}</MenuItem>
+            <MenuItem onClick={handleLogout}><Logout sx={{ mr: 1 }} />{t('common:logout')}</MenuItem>
           </Menu>
         </Toolbar>
       </AppBar>
@@ -423,18 +438,18 @@ const DashboardLayout = ({ children }) => {
       </Box>
 
       <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>Change Password</DialogTitle>
+        <DialogTitle>{t('common:change_password')}</DialogTitle>
         <DialogContent>
           {cpError && <Alert severity="error" sx={{ mb: 2 }}>{cpError}</Alert>}
           {cpSuccess && <Alert severity="success" sx={{ mb: 2 }}>{cpSuccess}</Alert>}
-          <TextField fullWidth label="Current Password" type="password" value={cpCurrentPassword} onChange={(e) => setCpCurrentPassword(e.target.value)} sx={{ mb: 2, mt: 1 }} />
-          <TextField fullWidth label="New Password" type="password" value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} sx={{ mb: 2 }} />
-          <TextField fullWidth label="Confirm New Password" type="password" value={cpConfirmPassword} onChange={(e) => setCpConfirmPassword(e.target.value)} />
+          <TextField fullWidth label={t('common:current_password')} type="password" value={cpCurrentPassword} onChange={(e) => setCpCurrentPassword(e.target.value)} sx={{ mb: 2, mt: 1 }} />
+          <TextField fullWidth label={t('common:new_password')} type="password" value={cpNewPassword} onChange={(e) => setCpNewPassword(e.target.value)} sx={{ mb: 2 }} />
+          <TextField fullWidth label={t('common:confirm_password')} type="password" value={cpConfirmPassword} onChange={(e) => setCpConfirmPassword(e.target.value)} />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setChangePasswordOpen(false)}>Cancel</Button>
+          <Button onClick={() => setChangePasswordOpen(false)}>{t('common:cancel')}</Button>
           <Button onClick={handleChangePasswordSubmit} variant="contained" disabled={cpLoading}>
-            {cpLoading ? 'Changing...' : 'Change Password'}
+            {cpLoading ? t('common:loading') : t('common:change_password')}
           </Button>
         </DialogActions>
       </Dialog>

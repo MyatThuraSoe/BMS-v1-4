@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Container,
   Box,
@@ -12,12 +13,14 @@ import {
   Link,
 } from '@mui/material';
 import { useAuth } from '../context/AuthContext';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const { t } = useTranslation();
   const { login, defaultRoute } = useAuth();
   const navigate = useNavigate();
 
@@ -31,7 +34,7 @@ const Login = () => {
       navigate(defaultRoute);
     } catch (err) {
       const backendMessage = err?.response?.data?.message || err?.response?.data?.error?.message;
-      setError(backendMessage || err.message || 'Login failed. Please check your credentials.');
+      setError(backendMessage || err.message || t('auth:login_failed'));
     } finally {
       setLoading(false);
     }
@@ -49,6 +52,9 @@ const Login = () => {
         backgroundSize: '24px 24px',
       }}
     >
+      <Box sx={{ position: 'absolute', top: 16, right: 16 }}>
+        <LanguageSwitcher compact />
+      </Box>
       <Container maxWidth="xs">
         <Paper
           elevation={0}
@@ -71,10 +77,10 @@ const Login = () => {
               S
             </Box>
             <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-              Sign in
+              {t('auth:sign_in_title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Enter your credentials to continue
+              {t('auth:enter_credentials')}
             </Typography>
           </Box>
 
@@ -87,7 +93,7 @@ const Login = () => {
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
               fullWidth
-              label="Username"
+              label={t('auth:username')}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               margin="normal"
@@ -99,7 +105,7 @@ const Login = () => {
             />
             <TextField
               fullWidth
-              label="Password"
+              label={t('auth:password')}
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -117,13 +123,13 @@ const Login = () => {
               sx={{ mt: 3, py: 1.5 }}
               disabled={loading}
             >
-              {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : 'Sign In'}
+              {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : t('auth:sign_in')}
             </Button>
           </Box>
 
           <Box sx={{ mt: 3, textAlign: 'center' }}>
             <Typography variant="body2" color="text.secondary">
-              First time using LumiPOS?{' '}
+              {t('auth:first_time')}{' '}
               <Link
                 component="button"
                 type="button"
@@ -135,7 +141,7 @@ const Login = () => {
                   '&:hover': { textDecoration: 'underline' }
                 }}
               >
-                Set up your account
+                {t('auth:setup_account')}
               </Link>
             </Typography>
           </Box>

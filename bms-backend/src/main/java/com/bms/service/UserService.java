@@ -140,7 +140,7 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
-            throw new com.bms.exception.BusinessException("Current password is incorrect");
+            throw new com.bms.exception.BusinessException("auth.current.password.incorrect");
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
@@ -150,5 +150,12 @@ public class UserService implements UserDetailsService {
 
     public List<User> getAllUsers() {
         return userRepository.findAll();
+    }
+
+    public User updatePreferredLanguage(String username, String lang) {
+        User user = userRepository.findByUsername(username)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        user.setPreferredLanguage(lang);
+        return userRepository.save(user);
     }
 }

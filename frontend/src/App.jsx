@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { notifyError } from './utils/notify';
 
 // Pages
+import About from './pages/About';
 import Login from './pages/Login';
 import SetupFirstAdmin from './pages/SetupFirstAdmin';
 import Dashboard from './pages/Dashboard';
@@ -86,14 +87,14 @@ const theme = createTheme({
     divider: '#DEDFD6',
   },
   typography: {
-    fontFamily: '"Work Sans", "Helvetica", "Arial", sans-serif',
+    fontFamily: '"Noto Sans", "Noto Sans Myanmar", "Noto Sans Thai", "Noto Sans JP", "Work Sans", "Helvetica", "Arial", sans-serif',
     h1: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
     h2: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
     h3: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
     h4: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
     h5: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
     h6: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    button: { fontFamily: '"Work Sans", sans-serif', fontWeight: 600, textTransform: 'none' },
+    button: { fontFamily: '"Noto Sans", "Noto Sans Myanmar", "Noto Sans Thai", "Noto Sans JP", "Work Sans", sans-serif', fontWeight: 600, textTransform: 'none' },
   },
   shape: {
     borderRadius: 10,
@@ -204,8 +205,10 @@ function AppRoutes() {
         {/* Cash Shift (all roles) */}
         <Route path="cash-shift" element={<CashShift />} />
         <Route path="shift-history" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><ShiftHistory /></ProtectedRoute>} />
+
+        {/* About Page (all roles) */}
+        <Route path="about" element={<About />} />
       </Route>
-      
       <Route path="*" element={<NotFound />} />
     </Routes>
   );

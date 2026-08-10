@@ -2,6 +2,9 @@ package com.bms.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -18,11 +21,35 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    @Autowired
+    private MessageSource messageSource;
+
+    /**
+     * Resolves a message against the message bundle, falling back to the raw
+     * string when it is not a translation key (so existing English messages
+     * keep working untouched).
+     */
+    private String resolve(String message, Object[] args) {
+        if (message == null) {
+            return message;
+        }
+        String resolved = messageSource.getMessage(
+                message,
+                args,
+                LocaleContextHolder.getLocale()
+        );
+        return resolved != null ? resolved : message;
+    }
+
+    private String resolve(String message) {
+        return resolve(message, null);
+    }
+
     @ExceptionHandler(ResourceNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleResourceNotFound(ResourceNotFoundException ex) {
         ErrorResponse error = new ErrorResponse(
             HttpStatus.NOT_FOUND.value(),
-            ex.getMessage(),
+            resolve(ex.getMessage()),
             LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.NOT_FOUND);
@@ -32,7 +59,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleBusinessException(BusinessException ex) {
         ErrorResponse error = new ErrorResponse(
             HttpStatus.BAD_REQUEST.value(),
-            ex.getMessage(),
+            resolve(ex.getMessage(), ex.getArgs()),
             LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
@@ -42,7 +69,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleOptimisticLock(org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
         ErrorResponse error = new ErrorResponse(
             HttpStatus.CONFLICT.value(),
-            "This record was changed by someone else while you were editing it. Please refresh and try again.",
+            resolve("error.optimistic.lock"),
             LocalDateTime.now()
         );
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
@@ -52,12 +79,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
-            errors.put(error.getField(), error.getDefaultMessage());
+            errors.put(error.getField(), resolve(error.getDefaultMessage()));
         }
-        
+
         ValidationErrorResponse errorResponse = new ValidationErrorResponse(
             HttpStatus.BAD_REQUEST.value(),
-            "Validation failed",
+            resolve("error.validation.failed"),
             LocalDateTime.now(),
             errors
         );
@@ -69,7 +96,7 @@ public class GlobalExceptionHandler {
         log.error("Unhandled exception caught by global handler", ex);
         ErrorResponse error = new ErrorResponse(
             HttpStatus.INTERNAL_SERVER_ERROR.value(),
-            "An unexpected error occurred",
+            resolve("error.generic"),
             LocalDateTime.now()
         );
         return new ResponseEntity<>(error, HttpStatus.INTERNAL_SERVER_ERROR);

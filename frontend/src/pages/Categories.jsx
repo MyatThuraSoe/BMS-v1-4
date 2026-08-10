@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TablePagination,
 } from '@mui/material';
@@ -16,6 +17,7 @@ const Categories = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const { t } = useTranslation('inventory');
 
   const { data: categoriesData, isLoading } = useQuery({
     queryKey: ['categories', page, size],
@@ -46,7 +48,7 @@ const Categories = () => {
   const handleDeleteClick = (category) => {
     // For expensive deletes (categories with products), keep confirmation
     if (category.productCount > 0) {
-      if (window.confirm(`Category "${category.name}" has ${category.productCount} products. Deleting it may affect these products. Are you sure?`)) {
+      if (window.confirm(t('delete_category_warning', { name: category.name, count: category.productCount }))) {
         deleteMutation.mutate(category.id);
       }
       return;
@@ -64,7 +66,7 @@ const Categories = () => {
       <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 3 }}>
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/categories/new')}>
-            Add Category
+            {t('add_category')}
           </Button>
         )}
       </Box>
@@ -73,17 +75,17 @@ const Categories = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell sx={{ fontWeight: 'bold' }}>Name</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>Description</TableCell>
-              <TableCell sx={{ fontWeight: 'bold' }}>Created</TableCell>
-              {isManager() && <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>}
+              <TableCell sx={{ fontWeight: 'bold' }}>{t('name')}</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>{t('description')}</TableCell>
+              <TableCell sx={{ fontWeight: 'bold' }}>{t('created')}</TableCell>
+              {isManager() && <TableCell align="right" sx={{ fontWeight: 'bold' }}>{t('actions')}</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={4} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4} align="center">{t('loading')}</TableCell></TableRow>
             ) : categories.length === 0 ? (
-              <TableRow><TableCell colSpan={4} align="center">No categories found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={4} align="center">{t('no_categories_found')}</TableCell></TableRow>
             ) : (
               categories.map((cat) => (
                 <TableRow key={cat.id}>

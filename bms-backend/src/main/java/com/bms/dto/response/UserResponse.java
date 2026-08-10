@@ -11,6 +11,7 @@ public class UserResponse {
     private String phone;
     private String roleName;
     private Boolean isActive;
+    private String preferredLanguage;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -30,6 +31,8 @@ public class UserResponse {
     public void setRoleName(String roleName) { this.roleName = roleName; }
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+    public String getPreferredLanguage() { return preferredLanguage; }
+    public void setPreferredLanguage(String preferredLanguage) { this.preferredLanguage = preferredLanguage; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, Paper, Grid, TextField, Button, Stack, CircularProgress, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { reportService, expenseService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
 import { notifySuccess, notifyError } from '../utils/notify';
@@ -10,6 +11,7 @@ const categories = ['RENT', 'UTILITIES', 'TRAVEL', 'TAXES', 'SALARY', 'SUPPLIES'
 const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#9c27b0', '#d32f2f', '#00838f', '#6d4c41', '#5d4037', '#455a64'];
 
 const Accounting = () => {
+  const { t } = useTranslation('accounting');
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
@@ -44,9 +46,9 @@ const Accounting = () => {
       queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       setDialogOpen(false);
       resetForm();
-      notifySuccess('Expense added');
+      notifySuccess(t('expense_added'));
     },
-    onError: (err) => notifyError(err.friendlyMessage || 'Unable to add expense'),
+    onError: (err) => notifyError(err.friendlyMessage || t('unable_add_expense')),
   });
 
   const updateMutation = useMutation({
@@ -65,9 +67,9 @@ const Accounting = () => {
       queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       setDialogOpen(false);
       resetForm();
-      notifySuccess('Expense updated');
+      notifySuccess(t('expense_updated'));
     },
-    onError: (err) => notifyError(err.friendlyMessage || 'Unable to update expense'),
+    onError: (err) => notifyError(err.friendlyMessage || t('unable_update_expense')),
   });
 
   const deleteMutation = useMutation({
@@ -75,22 +77,24 @@ const Accounting = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
-      notifySuccess('Expense deleted');
+      notifySuccess(t('expense_deleted'));
     },
-    onError: (err) => notifyError(err.friendlyMessage || 'Unable to delete expense'),
+    onError: (err) => notifyError(err.friendlyMessage || t('unable_delete_expense')),
   });
 
   const summary = summaryData?.data || {};
   const expenses = expensesData?.data || [];
 
   const summaryCards = useMemo(() => [
-    { label: 'Revenue', value: summary.totalIncome || 0, changePercent: summary.incomeChangePercent },
-    { label: 'Refunds', value: summary.totalRefunds || 0 },
-    { label: 'COGS', value: summary.totalCogs || 0 },
-    { label: 'Gross Profit', value: summary.grossProfit || 0 },
-    { label: 'Total Expenses', value: summary.totalExpenses || 0 },
-    { label: 'Net Profit', value: summary.netProfit || 0, highlight: true, changePercent: summary.profitChangePercent },
+    { id: 'revenue', label: t('revenue'), value: summary.totalIncome || 0, changePercent: summary.incomeChangePercent },
+    { id: 'refunds', label: t('refunds'), value: summary.totalRefunds || 0 },
+    { id: 'cogs', label: t('cogs'), value: summary.totalCogs || 0 },
+    { id: 'gross_profit', label: t('gross_profit'), value: summary.grossProfit || 0 },
+    { id: 'total_expenses', label: t('total_expenses'), value: summary.totalExpenses || 0 },
+    { id: 'net_profit', label: t('net_profit'), value: summary.netProfit || 0, highlight: true, changePercent: summary.profitChangePercent },
   ], [summary]);
+
+  const categoryLabel = (cat) => t(`category_${String(cat).toLowerCase()}`, { defaultValue: cat });
 
   const openCreate = () => { setEditingExpense(null); resetForm(); setDialogOpen(true); };
   const openEdit = (expense) => {
@@ -120,19 +124,19 @@ const Accounting = () => {
   return (
     <Box>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="right" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
-        <Button variant="contained" onClick={openCreate}>Add Expense</Button>
+        <Button variant="contained" onClick={openCreate}>{t('add_expense')}</Button>
       </Stack>
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
-            <TextField fullWidth label="Month" type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} inputProps={{ min: 1, max: 12 }} />
+            <TextField fullWidth label={t('month')} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} inputProps={{ min: 1, max: 12 }} />
           </Grid>
           <Grid item xs={12} md={4}>
-            <TextField fullWidth label="Year" type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+            <TextField fullWidth label={t('year')} type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
           </Grid>
           <Grid item xs={12} md={4}>
-            <Button fullWidth variant="outlined" sx={{ height: '56px' }} onClick={() => queryClient.invalidateQueries({ queryKey: ['accountingSummary'] })}>Refresh</Button>
+            <Button fullWidth variant="outlined" sx={{ height: '56px' }} onClick={() => queryClient.invalidateQueries({ queryKey: ['accountingSummary'] })}>{t('refresh')}</Button>
           </Grid>
         </Grid>
       </Paper>
@@ -145,12 +149,12 @@ const Accounting = () => {
               <Typography variant="h5" sx={{ fontWeight: 700 }}>{formatCurrency(card.value)}</Typography>
               {card.changePercent != null && (
                 <Typography variant="caption" color={card.changePercent >= 0 ? 'success.main' : 'error.main'} sx={{ display: 'block', mt: 0.5 }}>
-                  {card.changePercent >= 0 ? '\u25B2' : '\u25BC'} {Math.abs(Number(card.changePercent)).toFixed(1)}% vs previous period
+                  {card.changePercent >= 0 ? '\u25B2' : '\u25BC'} {t('change_vs_previous', { pct: Math.abs(Number(card.changePercent)).toFixed(1) })}
                 </Typography>
               )}
-              {card.changePercent == null && card.label === 'Revenue' && summary.incomeChangePercent == null && (
+              {card.changePercent == null && card.id === 'revenue' && summary.incomeChangePercent == null && (
                 <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
-                  N/A — no prior period data
+                  {t('no_prior_period_data')}
                 </Typography>
               )}
             </Paper>
@@ -163,9 +167,9 @@ const Accounting = () => {
       <Grid container spacing={3}>
         <Grid item xs={12} md={5}>
           <Paper sx={{ p: 3, height: 360 }}>
-            <Typography variant="h6" gutterBottom>Expense Breakdown</Typography>
+            <Typography variant="h6" gutterBottom>{t('expense_breakdown')}</Typography>
             {expenseBreakdown.length === 0 ? (
-              <Typography color="text.secondary">No expenses for this month.</Typography>
+              <Typography color="text.secondary">{t('no_expenses_month')}</Typography>
             ) : (
               <ResponsiveContainer width="100%" height="90%">
                 <PieChart>
@@ -182,31 +186,31 @@ const Accounting = () => {
 
         <Grid item xs={12} md={7}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Expense Log</Typography>
+            <Typography variant="h6" gutterBottom>{t('expense_log')}</Typography>
         {expensesLoading ? <CircularProgress /> : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Receipt</TableCell>
-                  <TableCell>Category</TableCell>
-                  <TableCell>Description</TableCell>
-                  <TableCell>Amount</TableCell>
-                  <TableCell>Date</TableCell>
-                  <TableCell align="right">Actions</TableCell>
+                  <TableCell>{t('receipt')}</TableCell>
+                  <TableCell>{t('category')}</TableCell>
+                  <TableCell>{t('description')}</TableCell>
+                  <TableCell>{t('amount')}</TableCell>
+                  <TableCell>{t('date')}</TableCell>
+                  <TableCell align="right">{t('actions')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {expenses.length === 0 ? <TableRow><TableCell colSpan={6} align="center">No expenses for this month.</TableCell></TableRow> : expenses.map((expense) => (
+                {expenses.length === 0 ? <TableRow><TableCell colSpan={6} align="center">{t('no_expenses_month')}</TableCell></TableRow> : expenses.map((expense) => (
                   <TableRow key={expense.id}>
                     <TableCell><ExpenseReceiptImage expenseId={expense.id} hasImage={expense.hasReceiptImage} /></TableCell>
-                    <TableCell>{expense.category}</TableCell>
+                    <TableCell>{categoryLabel(expense.category)}</TableCell>
                     <TableCell>{expense.description}</TableCell>
                     <TableCell>{formatCurrency(expense.amount)}</TableCell>
                     <TableCell>{expense.expenseDate}</TableCell>
                     <TableCell align="right">
-                      <Button size="small" onClick={() => openEdit(expense)}>Edit</Button>
-                      <Button size="small" color="error" onClick={() => deleteMutation.mutate(expense.id)}>Delete</Button>
+                      <Button size="small" onClick={() => openEdit(expense)}>{t('edit')}</Button>
+                      <Button size="small" color="error" onClick={() => deleteMutation.mutate(expense.id)}>{t('delete')}</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -219,30 +223,30 @@ const Accounting = () => {
       </Grid>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>{editingExpense ? 'Edit Expense' : 'Add Expense'}</DialogTitle>
+        <DialogTitle>{editingExpense ? t('edit_expense') : t('add_expense')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
-            <TextField select label="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              {categories.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
+            <TextField select label={t('category')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+              {categories.map((category) => <MenuItem key={category} value={category}>{categoryLabel(category)}</MenuItem>)}
             </TextField>
-            <TextField label="Description" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <TextField label="Amount" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
-            <TextField label="Expense Date" type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} />
+            <TextField label={t('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            <TextField label={t('expense_date')} type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} />
             {editingExpense?.hasReceiptImage && !removeReceiptImage && !receiptFile && (
               <Stack direction="row" spacing={2} alignItems="center">
                 <ExpenseReceiptImage expenseId={editingExpense.id} hasImage size={72} />
-                <Button color="error" onClick={() => setRemoveReceiptImage(true)}>Remove Receipt</Button>
+                <Button color="error" onClick={() => setRemoveReceiptImage(true)}>{t('remove_receipt')}</Button>
               </Stack>
             )}
             <Button variant="outlined" component="label">
-              {receiptFile ? receiptFile.name : 'Upload Receipt Photo'}
+              {receiptFile ? receiptFile.name : t('upload_receipt_photo')}
               <input hidden type="file" accept="image/*" onChange={(e) => setReceiptFile(e.target.files?.[0] || null)} />
             </Button>
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSubmit}>Save</Button>
+          <Button onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={handleSubmit}>{t('save')}</Button>
         </DialogActions>
       </Dialog>
     </Box>
@@ -250,6 +254,7 @@ const Accounting = () => {
 };
 
 const ExpenseReceiptImage = ({ expenseId, hasImage, size = 48 }) => {
+  const { t } = useTranslation('accounting');
   const [imageUrl, setImageUrl] = useState(null);
 
   useEffect(() => {
@@ -284,7 +289,7 @@ const ExpenseReceiptImage = ({ expenseId, hasImage, size = 48 }) => {
     <Box
       component="img"
       src={imageUrl}
-      alt="Receipt"
+      alt={t('receipt')}
       sx={{ width: size, height: size, objectFit: 'cover', borderRadius: 1 }}
     />
   );

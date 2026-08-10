@@ -9,8 +9,11 @@ import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+
 
 import java.util.List;
 
@@ -18,8 +21,18 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ReceiptService {
 
+
     private final SaleRepository saleRepository;
+
+
     private final UserRepository userRepository;
+
+//    // ✅ ADD THIS CONSTRUCTOR to make the red lines disappear
+//    public ReceiptService(SaleRepository saleRepository, UserRepository userRepository) {
+//        this.saleRepository = saleRepository;
+//        this.userRepository = userRepository;
+//    }
+
 
     @Transactional(readOnly = true)
     public ReceiptDto getReceiptByInvoiceNumber(String invoiceNumber) {
@@ -38,10 +51,7 @@ public class ReceiptService {
             }
         }
 
-        String customerName = "Walk-in Customer";
-        if (sale.getCustomer() != null) {
-            customerName = sale.getCustomer().getFirstName() + " " + sale.getCustomer().getLastName();
-        }
+        String customerName = resolveCustomerName(sale);
 
         List<ReceiptItemDto> items = sale.getItems().stream()
                 .map(this::toReceiptItemDto)
@@ -81,10 +91,7 @@ public class ReceiptService {
             }
         }
 
-        String customerName = "Walk-in Customer";
-        if (sale.getCustomer() != null) {
-            customerName = sale.getCustomer().getFirstName() + " " + sale.getCustomer().getLastName();
-        }
+        String customerName = resolveCustomerName(sale);
 
         List<ReceiptItemDto> items = sale.getItems().stream()
                 .map(this::toReceiptItemDto)
@@ -105,6 +112,23 @@ public class ReceiptService {
                 sale.getChangeGiven(),
                 sale.getPaymentMethod().name()
         );
+    }
+
+    private String resolveCustomerName(Sale sale) {
+        if (sale.getCustomer() != null) {
+            String displayName = sale.getCustomerDisplayName();
+            if (displayName != null && !displayName.isBlank()) {
+                return displayName;
+            }
+            return sale.getCustomer().getFirstName() + " " + sale.getCustomer().getLastName();
+        }
+        String displayName = sale.getCustomerDisplayName();
+        if (displayName == null || displayName.isBlank()
+                || "Walk-in".equalsIgnoreCase(displayName.trim())
+                || "Walk-in Customer".equalsIgnoreCase(displayName.trim())) {
+            return null;
+        }
+        return displayName;
     }
 
     private ReceiptItemDto toReceiptItemDto(SaleItem item) {

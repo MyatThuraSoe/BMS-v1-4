@@ -1,0 +1,37 @@
+{
+"group_overview": "အကျဉ်းချုပ်",
+"group_sales": "အရောင်း",
+"group_catalog": "ကုန်ပစ္စည်းစာရင်း",
+"group_procurement": "ဝယ်ယူမှု",
+"group_people": "အသုံးပြုသူနှင့် ဖောက်သည်",
+"group_insights": "အစီရင်ခံစာနှင့် ခွဲခြမ်းစိတ်ဖြာမှု",
+"group_administration": "စီမံခန့်ခွဲမှု",
+
+"dashboard": "Dashboard",
+"pos": "POS",
+"sales": "အရောင်း",
+"cash_shift": "ငွေသားဆိုင်း",
+"shift_history": "ဆိုင်းမှတ်တမ်း",
+
+"products": "ကုန်ပစ္စည်းများ",
+"categories": "အမျိုးအစားများ",
+
+"suppliers": "ပေးသွင်းသူများ",
+"purchases": "ဝယ်ယူမှုများ",
+
+"customers": "ဖောက်သည်များ",
+"users": "အသုံးပြုသူများ",
+
+"reports": "အစီရင်ခံစာများ",
+"analytics": "ခွဲခြမ်းစိတ်ဖြာမှု",
+
+"accounting": "စာရင်းကိုင်",
+"settings": "ဆက်တင်များ",
+"shop_info": "ဆိုင်အချက်အလက်",
+"backup_settings": "အရန်သိမ်းဆည်းမှု ဆက်တင်များ",
+"audit_logs": "စစ်ဆေးမှတ်တမ်းများ",
+
+"new_entity": "{{name}}အသစ်",
+"edit_entity": "{{name}} ပြင်ဆင်ရန်",
+"entity_details": "{{name}} အသေးစိတ်"
+}

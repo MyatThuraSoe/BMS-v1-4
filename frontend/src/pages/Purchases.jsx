@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Alert, Box,TextField, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Chip, Menu, MenuItem,
 } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Visibility as ViewIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, MoreVert as MoreVertIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { purchaseService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 
-import { notifyError } from '../utils/notify';
+import { notifyError, notifySuccess } from '../utils/notify';
 
 const Purchases = () => {
   const [page, setPage] = useState(0);
@@ -21,6 +22,7 @@ const Purchases = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager, isAdmin } = useAuth();
+  const { t } = useTranslation('purchases');
 
   const { data: purchasesData, isLoading } = useQuery({
     queryKey: ['purchases', page, size],
@@ -32,17 +34,17 @@ const Purchases = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       setDeleteDialogOpen(false);
-      notifySuccess('Purchase deleted');
+      notifySuccess(t('purchase_deleted'));
     },
     onError: (err) => {
       setDeleteDialogOpen(false);
-      notifyError(err.friendlyMessage || 'Failed to delete purchase');
+      notifyError(err.friendlyMessage || t('delete_purchase_failed'));
     },
   });
   const paymentStatusMutation = useMutation({
     mutationFn: ({ id, paymentStatus }) => purchaseService.updatePaymentStatus(id, paymentStatus),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['purchases'] }),
-    onError: (err) => notifyError(err.friendlyMessage || 'Failed to update payment status'),
+    onError: (err) => notifyError(err.friendlyMessage || t('update_payment_status_failed')),
   });
 
   const updatePaymentStatusMutation = useMutation({
@@ -76,7 +78,7 @@ const Purchases = () => {
       <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/purchases/new')}>
-            New Purchase
+            {t('new_purchase')}
           </Button>
         )}
       </Box>
@@ -85,61 +87,66 @@ const Purchases = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Purchase #</TableCell>
-              <TableCell>Supplier</TableCell>
-              <TableCell align="right">Total</TableCell>
-              <TableCell>Payment Status</TableCell>
-              <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Status</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Date</TableCell>
-              {isManager() && <TableCell align="right">Actions</TableCell>}
+              <TableCell>{t('purchase_number')}</TableCell>
+              <TableCell>{t('supplier')}</TableCell>
+              <TableCell align="right">{t('total')}</TableCell>
+              <TableCell>{t('payment_status')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t('status')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('date')}</TableCell>
+              {isManager() && <TableCell align="right">{t('actions')}</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('loading')}</TableCell></TableRow>
             ) : purchases.length === 0 ? (
-              <TableRow><TableCell colSpan={7} align="center">No purchases found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('no_purchases_found')}</TableCell></TableRow>
             ) : (
               purchases.map((p) => (
-                <TableRow key={p.id}>
+                <TableRow
+                  key={p.id}
+                  hover
+                  onClick={() => navigate(`/purchases/${p.id}`)}
+                  sx={{ cursor: 'pointer' }}
+                >
                   <TableCell>{p.purchaseNumber}</TableCell>
                   <TableCell>{p.supplierName || '-'}</TableCell>
                   <TableCell align="right">{formatCurrency(p.totalAmount)}</TableCell>
                   <TableCell>
                     <Chip 
-                      label={p.paymentStatus || 'PENDING'} 
+                      label={t((p.paymentStatus || 'PENDING').toLowerCase())} 
                       size="small" 
                       color={p.paymentStatus === 'PAID' ? 'success' : p.paymentStatus === 'PARTIAL' ? 'warning' : 'default'} 
                     />
                     {(isAdmin() || isManager()) && (
-                      <IconButton size="small" onClick={(e) => handlePaymentStatusClick(e, p)}>
+                      <IconButton size="small" onClick={(e) => { e.stopPropagation(); handlePaymentStatusClick(e, p); }}>
                         <MoreVertIcon fontSize="small" />
                       </IconButton>
                     )}
                   </TableCell>
                   <TableCell sx={{ display: { xs: 'none', sm: 'table-cell' } }}>
                     <Chip
-                      label={p.paymentStatus}
+                      label={t((p.paymentStatus || 'PENDING').toLowerCase())}
                       size="small"
                       color={p.paymentStatus === 'PAID' ? 'success' : p.paymentStatus === 'PARTIAL' ? 'warning' : 'error'}
                     />
                   </TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(p.purchaseDate)}</TableCell>
                   {isManager() && (
-                    <TableCell align="right">
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       <TextField
                         select
                         size="small"
                         value={p.paymentStatus}
-                        onChange={(e) => paymentStatusMutation.mutate({ id: p.id, paymentStatus: e.target.value })}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={(e) => { e.stopPropagation(); paymentStatusMutation.mutate({ id: p.id, paymentStatus: e.target.value }); }}
                         sx={{ width: 110, mr: 1 }}
                       >
-                        <MenuItem value="PENDING">Pending</MenuItem>
-                        <MenuItem value="PARTIAL">Partial</MenuItem>
-                        <MenuItem value="PAID">Paid</MenuItem>
+                        <MenuItem value="PENDING">{t('pending')}</MenuItem>
+                        <MenuItem value="PARTIAL">{t('partial')}</MenuItem>
+                        <MenuItem value="PAID">{t('paid')}</MenuItem>
                       </TextField>
-                      <IconButton size="small" onClick={() => navigate(`/purchases/${p.id}`)}><ViewIcon /></IconButton>
-                      <IconButton size="small" color="error" onClick={() => { setSelectedPurchase(p); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
+                      <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setSelectedPurchase(p); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
                     </TableCell>
                   )}
                 </TableRow>
@@ -151,23 +158,23 @@ const Purchases = () => {
       </TableContainer>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogTitle>{t('confirm_delete')}</DialogTitle>
         <DialogContent>
-          Are you sure you want to delete purchase "{selectedPurchase?.purchaseNumber}"?
+          {t('delete_purchase_confirm', { number: selectedPurchase?.purchaseNumber })}
           <Alert severity="warning" sx={{ mt: 2 }}>
-            This won't reverse the stock that was added by this purchase — inventory will stay as-is.
+            {t('stock_not_reversed_warning')}
           </Alert>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
         </DialogActions>
       </Dialog>
 
       <Menu anchorEl={paymentStatusMenuAnchor} open={Boolean(paymentStatusMenuAnchor)} onClose={() => setPaymentStatusMenuAnchor(null)}>
-        <MenuItem onClick={() => handlePaymentStatusChange('PENDING')}>Pending</MenuItem>
-        <MenuItem onClick={() => handlePaymentStatusChange('PARTIAL')}>Partial</MenuItem>
-        <MenuItem onClick={() => handlePaymentStatusChange('PAID')}>Paid</MenuItem>
+        <MenuItem onClick={() => handlePaymentStatusChange('PENDING')}>{t('pending')}</MenuItem>
+        <MenuItem onClick={() => handlePaymentStatusChange('PARTIAL')}>{t('partial')}</MenuItem>
+        <MenuItem onClick={() => handlePaymentStatusChange('PAID')}>{t('paid')}</MenuItem>
       </Menu>
     </Box>
   );

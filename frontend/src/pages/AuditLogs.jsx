@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -12,12 +12,14 @@ import {
   TextField,
   Button,
   Chip,
-  Alert,
+  CircularProgress,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { auditLogService } from '../api/services';
 
 const AuditLogs = () => {
+  const { t } = useTranslation('settings');
   const [page, setPage] = useState(0);
   const [size] = useState(20);
   const [filters, setFilters] = useState({
@@ -25,10 +27,22 @@ const AuditLogs = () => {
     startDate: '',
     endDate: '',
   });
+  const [debouncedFilters, setDebouncedFilters] = useState(filters);
+  const debounceRef = useRef(null);
 
-  const { data: logsData, isLoading } = useQuery({
-    queryKey: ['audit-logs', page, size, filters],
-    queryFn: () => auditLogService.getAll(page, size, filters),
+  // Debounce filter changes by 500ms so the query only fires after the user
+  // stops typing — prevents re-renders that unmount the input and lose focus.
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedFilters(filters);
+    }, 500);
+    return () => clearTimeout(debounceRef.current);
+  }, [filters]);
+
+  const { data: logsData, isFetching } = useQuery({
+    queryKey: ['audit-logs', page, size, debouncedFilters],
+    queryFn: () => auditLogService.getAll(page, size, debouncedFilters),
   });
 
   const logs = logsData?.data?.content || [];
@@ -48,30 +62,26 @@ const AuditLogs = () => {
     return 'default';
   };
 
-  if (isLoading) {
-    return <Typography>Loading...</Typography>;
-  }
-
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        Audit Logs
+        {t('audit_logs')}
       </Typography>
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <TextField
             size="small"
-            label="Action"
+            label={t('action')}
             name="action"
             value={filters.action}
             onChange={handleFilterChange}
-            placeholder="e.g., USER_CREATE"
+            placeholder={t('action_placeholder')}
             sx={{ minWidth: 200 }}
           />
           <TextField
             size="small"
-            label="Start Date"
+            label={t('start_date')}
             name="startDate"
             type="date"
             value={filters.startDate}
@@ -81,7 +91,7 @@ const AuditLogs = () => {
           />
           <TextField
             size="small"
-            label="End Date"
+            label={t('end_date')}
             name="endDate"
             type="date"
             value={filters.endDate}
@@ -93,22 +103,37 @@ const AuditLogs = () => {
             variant="outlined"
             onClick={() => setFilters({ action: '', startDate: '', endDate: '' })}
           >
-            Clear Filters
+            {t('clear_filters')}
           </Button>
         </Box>
       </Paper>
 
-      <TableContainer component={Paper}>
+      <TableContainer component={Paper} sx={{ position: 'relative' }}>
+        {isFetching && (
+          <Box
+            sx={{
+              position: 'absolute',
+              inset: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: 'rgba(255,255,255,0.5)',
+              zIndex: 1,
+            }}
+          >
+            <CircularProgress size={28} />
+          </Box>
+        )}
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>ID</TableCell>
-              <TableCell>Timestamp</TableCell>
-              <TableCell>User</TableCell>
-              <TableCell>Action</TableCell>
-              <TableCell>Entity</TableCell>
-              <TableCell>Description</TableCell>
-              <TableCell>IP Address</TableCell>
+              <TableCell>{t('col_id')}</TableCell>
+              <TableCell>{t('col_timestamp')}</TableCell>
+              <TableCell>{t('col_user')}</TableCell>
+              <TableCell>{t('action')}</TableCell>
+              <TableCell>{t('col_entity')}</TableCell>
+              <TableCell>{t('col_description')}</TableCell>
+              <TableCell>{t('col_ip')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -118,7 +143,7 @@ const AuditLogs = () => {
                 <TableCell>
                   {new Date(log.timestamp).toLocaleString()}
                 </TableCell>
-                <TableCell>{log.username || `ID: ${log.userId}`}</TableCell>
+                <TableCell>{log.username || t('user_id_fallback', { id: log.userId })}</TableCell>
                 <TableCell>
                   <Chip
                     label={log.action}
@@ -143,20 +168,20 @@ const AuditLogs = () => {
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          Showing {logs.length} of {totalElements} logs
+          {t('showing_logs', { shown: logs.length, total: totalElements })}
         </Typography>
         <Box>
           <Button
             disabled={page === 0}
             onClick={() => setPage(page - 1)}
           >
-            Previous
+            {t('previous')}
           </Button>
           <Button
             disabled={page >= totalPages - 1}
             onClick={() => setPage(page + 1)}
           >
-            Next
+            {t('next')}
           </Button>
         </Box>
       </Box>

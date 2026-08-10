@@ -26,8 +26,10 @@ import { useQuery } from '@tanstack/react-query';
 import { productService, reportService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import ProductImage from '../components/ProductImage';
+import { useTranslation } from 'react-i18next';
 
 const ProductDetail = () => {
+  const { t } = useTranslation('inventory');
   const { id } = useParams();
   const navigate = useNavigate();
   const [showAllCostHistory, setShowAllCostHistory] = useState(false);
@@ -89,18 +91,18 @@ const ProductDetail = () => {
   };
 
   if (productLoading) {
-    return <Typography>Loading product details...</Typography>;
+    return <Typography>{t('loading_product_details')}</Typography>;
   }
 
   if (!product) {
-    return <Typography color="error">Product not found.</Typography>;
+    return <Typography color="error">{t('product_not_found')}</Typography>;
   }
 
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, gap: 2 }}>
         <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/products')}>
-          Back to Products
+          {t('back_to_products')}
         </Button>
         <Box sx={{ flexGrow: 1 }} />
         <Button
@@ -108,7 +110,7 @@ const ProductDetail = () => {
           startIcon={<EditIcon />}
           onClick={() => navigate(`/products/${id}/edit`)}
         >
-          Edit Product
+          {t('edit_product')}
         </Button>
       </Box>
 
@@ -129,7 +131,7 @@ const ProductDetail = () => {
             </Typography>
 
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              SKU: {product.sku} | Unit: {product.unit || '-'}
+              {t('sku_unit', { sku: product.sku, unit: product.unit || '-' })}
             </Typography>
 
             {product.description && (
@@ -149,7 +151,7 @@ const ProductDetail = () => {
         <Grid container spacing={2}>
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Category
+              {t('category')}
             </Typography>
             <Typography variant="body1">
               {product.categoryName || '-'}
@@ -158,7 +160,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Unit Price
+              {t('unit_price')}
             </Typography>
             <Typography variant="body1" fontWeight="bold">
               {formatCurrency(product.unitPrice)}
@@ -167,7 +169,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Cost Price
+              {t('cost_price')}
             </Typography>
             <Typography variant="body1">
               {product.costPrice
@@ -178,7 +180,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Tax Rate
+              {t('tax_rate')}
             </Typography>
             <Typography variant="body1">
               {product.taxRate ? `${product.taxRate}%` : '0%'}
@@ -187,7 +189,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Stock Quantity
+              {t('stock_quantity')}
             </Typography>
             <Typography
               variant="body1"
@@ -204,7 +206,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Min Stock Level
+              {t('min_stock_level')}
             </Typography>
             <Typography variant="body1">
               {product.minStockLevel || 0}
@@ -213,7 +215,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Created
+              {t('created')}
             </Typography>
             <Typography variant="body1">
               {formatDateTime(product.createdAt)}
@@ -222,7 +224,7 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              Last Updated
+              {t('last_updated')}
             </Typography>
             <Typography variant="body1">
               {formatDateTime(product.updatedAt)}
@@ -235,25 +237,25 @@ const ProductDetail = () => {
       <Grid container spacing={2} sx={{ mb: 3 }}>
         <Grid item xs={6} md={3}>
           <Paper sx={{ p: 2 }}>
-            <Typography variant="caption" color="text.secondary">Total Sold</Typography>
+            <Typography variant="caption" color="text.secondary">{t('total_sold')}</Typography>
             <Typography variant="h5" fontWeight="bold">{salesSummary?.totalQuantitySold ?? 0}</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} md={3}>
           <Paper sx={{ p: 2 }}>
-            <Typography variant="caption" color="text.secondary">Total Revenue</Typography>
+            <Typography variant="caption" color="text.secondary">{t('total_revenue')}</Typography>
             <Typography variant="h5" fontWeight="bold">{formatCurrency(salesSummary?.totalRevenue)}</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} md={3}>
           <Paper sx={{ p: 2, bgcolor: 'success.50' }}>
-            <Typography variant="caption" color="text.secondary">Total Profit</Typography>
+            <Typography variant="caption" color="text.secondary">{t('total_profit')}</Typography>
             <Typography variant="h5" fontWeight="bold" color="success.main">{formatCurrency(salesSummary?.totalProfit)}</Typography>
           </Paper>
         </Grid>
         <Grid item xs={6} md={3}>
           <Paper sx={{ p: 2 }}>
-            <Typography variant="caption" color="text.secondary">Profit Margin</Typography>
+            <Typography variant="caption" color="text.secondary">{t('profit_margin')}</Typography>
             <Typography variant="h5" fontWeight="bold">
               {salesSummary?.profitMarginPercent != null ? `${salesSummary.profitMarginPercent.toFixed(1)}%` : '-'}
             </Typography>
@@ -264,27 +266,27 @@ const ProductDetail = () => {
       {/* Purchased From */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
-          Purchased From
+          {t('purchased_from')}
         </Typography>
 
         {suppliersLoading ? (
-          <Typography variant="body2" color="text.secondary">Loading supplier history...</Typography>
+          <Typography variant="body2" color="text.secondary">{t('loading_supplier_history')}</Typography>
         ) : suppliers.length === 0 ? (
           <Alert severity="info" sx={{ mt: 1 }}>
-            Not purchased yet — this product has no purchase history from any supplier.
+            {t('no_purchase_history')}
           </Alert>
         ) : (
           <TableContainer>
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Supplier</TableCell>
-                  <TableCell align="center">Times Purchased</TableCell>
-                  <TableCell align="right">Most Recent Unit Cost</TableCell>
-                  <TableCell align="right">Total Qty</TableCell>
-                  <TableCell align="right">Total Spent</TableCell>
-                  <TableCell>Last Purchase Date</TableCell>
-                  <TableCell align="center">Actions</TableCell>
+                  <TableCell>{t('supplier')}</TableCell>
+                  <TableCell align="center">{t('times_purchased')}</TableCell>
+                  <TableCell align="right">{t('most_recent_unit_cost')}</TableCell>
+                  <TableCell align="right">{t('total_qty')}</TableCell>
+                  <TableCell align="right">{t('total_spent')}</TableCell>
+                  <TableCell>{t('last_purchase_date')}</TableCell>
+                  <TableCell align="center">{t('actions')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -322,7 +324,7 @@ const ProductDetail = () => {
                             )
                           }
                         >
-                          Order More
+                          {t('order_more')}
                         </Button>
                         <Button
                           size="small"
@@ -330,7 +332,7 @@ const ProductDetail = () => {
                           startIcon={<ViewSupplierIcon />}
                           onClick={() => navigate(`/suppliers/${supplier.supplierId}`)}
                         >
-                          View Supplier
+                          {t('view_supplier')}
                         </Button>
                       </Box>
                     </TableCell>

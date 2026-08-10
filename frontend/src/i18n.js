@@ -1,37 +1,30 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import HttpBackend from 'i18next-http-backend';
 import LanguageDetector from 'i18next-browser-languagedetector';
 
-// Import translation files from src/locales/
-import en from './locales/en.json';
-import my from './locales/my.json';
-import th from './locales/th.json';
-import zh from './locales/zh.json';
-import ru from './locales/ru.json';
-import es from './locales/es.json'; 
-import ja from './locales/ja.json';
-
-const resources = {
-  en: { translation: en },
-  my: { translation: my },
-  th: { translation: th },
-  zh: { translation: zh },
-  ru: { translation: ru },
-  es: { translation: es },
-  ja: { translation: ja },
-};
-
 i18n
+  .use(HttpBackend)
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
     fallbackLng: 'en',
-    debug: import.meta.env.DEV,
-    interpolation: { escapeValue: false },
+    supportedLngs: ['en', 'my', 'ja', 'th', 'fr'],
+    ns: ['common', 'nav', 'pos', 'inventory', 'sales', 'purchases', 'customers', 'accounting', 'reports', 'dashboard', 'cash', 'settings', 'users', 'auth', 'errors'],
+    defaultNS: 'common',
+    backend: {
+      loadPath: '/locales/{{lng}}/{{ns}}.json',
+    },
     detection: {
       order: ['localStorage', 'navigator'],
       caches: ['localStorage'],
+      lookupLocalStorage: 'bms_language',
+    },
+    interpolation: {
+      escapeValue: false, // React already escapes output
+    },
+    react: {
+      useSuspense: true,
     },
   });
 

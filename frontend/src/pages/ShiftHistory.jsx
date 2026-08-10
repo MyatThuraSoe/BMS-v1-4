@@ -4,10 +4,12 @@ import {
   TableHead, TableRow, Chip, TextField, MenuItem, TablePagination,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { shiftService, userService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
 
 const ShiftHistory = () => {
+  const { t } = useTranslation('cash');
   const [page, setPage] = useState(0);
   const [size] = useState(20);
   const [cashierId, setCashierId] = useState('');
@@ -28,21 +30,21 @@ const ShiftHistory = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Shift History</Typography>
+      <Typography variant="h4" gutterBottom>{t('shift_history')}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Past cash drawer shifts across all cashiers.
+        {t('shift_history_subtitle')}
       </Typography>
 
       <Paper sx={{ p: 2, mb: 2 }}>
         <TextField
           select
           size="small"
-          label="Filter by Cashier"
+          label={t('filter_by_cashier')}
           value={cashierId}
           onChange={(e) => { setCashierId(e.target.value); setPage(0); }}
           sx={{ minWidth: 220 }}
         >
-          <MenuItem value="">All Cashiers</MenuItem>
+          <MenuItem value="">{t('all_cashiers')}</MenuItem>
           {cashiers.map((c) => (
             <MenuItem key={c.id} value={c.id}>{c.firstName} {c.lastName}</MenuItem>
           ))}
@@ -53,21 +55,21 @@ const ShiftHistory = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Cashier</TableCell>
-              <TableCell>Opened</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Closed</TableCell>
-              <TableCell align="right">Opening Amount</TableCell>
-              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Expected</TableCell>
-              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Actual</TableCell>
-              <TableCell align="right">Variance</TableCell>
-              <TableCell>Status</TableCell>
+              <TableCell>{t('cashier')}</TableCell>
+              <TableCell>{t('opened')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('closed')}</TableCell>
+              <TableCell align="right">{t('opening_amount')}</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t('expected')}</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t('actual')}</TableCell>
+              <TableCell align="right">{t('variance')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={8}>Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8}>{t('loading')}</TableCell></TableRow>
             ) : shifts.length === 0 ? (
-              <TableRow><TableCell colSpan={8}>No shifts found.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8}>{t('no_shifts_found')}</TableCell></TableRow>
             ) : (
               shifts.map((s) => (
                 <TableRow key={s.id}>
@@ -87,7 +89,7 @@ const ShiftHistory = () => {
                     ) : '-'}
                   </TableCell>
                   <TableCell>
-                    <Chip size="small" label={s.status} color={s.status === 'OPEN' ? 'info' : 'default'} />
+                    <Chip size="small" label={s.status === 'OPEN' ? t('status_open') : t('status_closed')} color={s.status === 'OPEN' ? 'info' : 'default'} />
                   </TableCell>
                 </TableRow>
               ))

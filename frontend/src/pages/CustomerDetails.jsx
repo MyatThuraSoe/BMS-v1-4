@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Grid, Card, CardContent, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, CircularProgress, Divider
@@ -13,6 +14,7 @@ import CustomerSpendingHeatmap from '../components/CustomerSpendingHeatmap';
 const CustomerDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation('customers');
 
   const { data: customerData, isLoading: customerLoading } = useQuery({
     queryKey: ['customer', id],
@@ -60,65 +62,65 @@ const CustomerDetails = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
           <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/customers')}>
-            Back
+            {t('back')}
           </Button>
           <Typography variant="h4" sx={{ minWidth: 0 }}>
             {customer.firstName} {customer.lastName}
-            {customer.isQuickAdd && <Chip label="Quick Add" size="small" color="warning" sx={{ ml: 1 }} />}
+            {customer.isQuickAdd && <Chip label={t('quick_add')} size="small" color="warning" sx={{ ml: 1 }} />}
           </Typography>
         </Box>
         <Button variant="contained" startIcon={<EditIcon />} onClick={() => navigate(`/customers/${id}/edit`)}>
-          Edit Customer
+          {t('edit_customer')}
         </Button>
       </Box>
 
       {/* Customer Info */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>Contact & Address Information</Typography>
+          <Typography variant="h6" gutterBottom>{t('contact_address_info')}</Typography>
           <Divider sx={{ mb: 2 }} />
           <Grid container spacing={3}>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">Phone</Typography>
-              <Typography variant="body1">{customer.phone || 'N/A'}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('phone')}</Typography>
+              <Typography variant="body1">{customer.phone || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">Email</Typography>
-              <Typography variant="body1">{customer.email || 'N/A'}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('email')}</Typography>
+              <Typography variant="body1">{customer.email || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">Address</Typography>
-              <Typography variant="body1">{customer.address || 'N/A'}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('address')}</Typography>
+              <Typography variant="body1">{customer.address || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">Customer Code</Typography>
-              <Typography variant="body1">{customer.customerCode || 'N/A'}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('customer_code')}</Typography>
+              <Typography variant="body1">{customer.customerCode || t('n_a')}</Typography>
             </Grid>
           </Grid>
         </CardContent>
       </Card>
 
       {/* Stats */}
-      <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>Spending Overview</Typography>
+      <Typography variant="h6" gutterBottom sx={{ mb: 2 }}>{t('spending_overview')}</Typography>
       <Grid container spacing={2} sx={{ mb: 4 }}>
         <Grid item xs={12} sm={6} md={2.4}>
-          <StatCard title="All Time" value={stats.totalSpentAllTime} icon={<ShoppingCartIcon color="primary" />} color="primary.main" />
+          <StatCard title={t('all_time')} value={stats.totalSpentAllTime} icon={<ShoppingCartIcon color="primary" />} color="primary.main" />
         </Grid>
         <Grid item xs={12} sm={6} md={2.4}>
-          <StatCard title="This Year" value={stats.totalSpentThisYear} icon={<ShoppingCartIcon color="info" />} color="info.main" />
+          <StatCard title={t('this_year')} value={stats.totalSpentThisYear} icon={<ShoppingCartIcon color="info" />} color="info.main" />
         </Grid>
         <Grid item xs={12} sm={6} md={2.4}>
-          <StatCard title="This Month" value={stats.totalSpentThisMonth} icon={<ShoppingCartIcon color="success" />} color="success.main" />
+          <StatCard title={t('this_month')} value={stats.totalSpentThisMonth} icon={<ShoppingCartIcon color="success" />} color="success.main" />
         </Grid>
         <Grid item xs={12} sm={6} md={2.4}>
-          <StatCard title="This Week" value={stats.totalSpentThisWeek} icon={<ShoppingCartIcon color="warning" />} color="warning.main" />
+          <StatCard title={t('this_week')} value={stats.totalSpentThisWeek} icon={<ShoppingCartIcon color="warning" />} color="warning.main" />
         </Grid>
         <Grid item xs={12} sm={6} md={2.4}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
               <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
                 <ReceiptIcon color="secondary" />
-                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>Total Invoices</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ ml: 1 }}>{t('total_invoices')}</Typography>
               </Box>
               <Typography variant="h5" fontWeight="bold" color="secondary.main">
                 {stats.totalInvoices || 0}
@@ -138,18 +140,18 @@ const CustomerDetails = () => {
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Top 10 Favorite Products</Typography>
+              <Typography variant="h6" gutterBottom>{t('top_products')}</Typography>
               <Divider sx={{ mb: 2 }} />
               {topProductsLoading ? <CircularProgress size={24} /> : topProducts.length === 0 ? (
-                <Typography color="text.secondary">No purchase history yet.</Typography>
+                <Typography color="text.secondary">{t('no_purchase_history')}</Typography>
               ) : (
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell>Product</TableCell>
-                        <TableCell align="right">Qty</TableCell>
-                        <TableCell align="right">Total Spent</TableCell>
+                        <TableCell>{t('product')}</TableCell>
+                        <TableCell align="right">{t('qty')}</TableCell>
+                        <TableCell align="right">{t('total_spent')}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -174,19 +176,19 @@ const CustomerDetails = () => {
         <Grid item xs={12} md={6}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom>Recent Invoices</Typography>
+              <Typography variant="h6" gutterBottom>{t('recent_invoices')}</Typography>
               <Divider sx={{ mb: 2 }} />
               {salesLoading ? <CircularProgress size={24} /> : sales.length === 0 ? (
-                <Typography color="text.secondary">No invoices found.</Typography>
+                <Typography color="text.secondary">{t('no_invoices_found')}</Typography>
               ) : (
                 <TableContainer>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                        <TableCell>Invoice</TableCell>
-                        <TableCell>Date</TableCell>
-                        <TableCell align="right">Amount</TableCell>
-                        <TableCell align="center">Status</TableCell>
+                        <TableCell>{t('invoice')}</TableCell>
+                        <TableCell>{t('date')}</TableCell>
+                        <TableCell align="right">{t('amount')}</TableCell>
+                        <TableCell align="center">{t('status')}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -197,7 +199,7 @@ const CustomerDetails = () => {
                           <TableCell align="right">{formatCurrency(sale.totalAmount)}</TableCell>
                           <TableCell align="center">
                             <Chip 
-                              label={sale.isVoided ? 'Voided' : 'Completed'} 
+                              label={sale.isVoided ? t('status_voided') : t('status_completed')} 
                               size="small" 
                               color={sale.isVoided ? 'error' : 'success'} 
                               variant="outlined" 

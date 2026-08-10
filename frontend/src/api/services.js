@@ -620,6 +620,11 @@ export const userService = {
     const response = await apiClient.delete(`/users/${id}`);
     return response.data;
   },
+
+  updateLanguage: async (lang) => {
+    const response = await apiClient.patch(`/users/me/language?lang=${lang}`);
+    return response.data;
+  },
 };
 
 export const systemSettingService = {

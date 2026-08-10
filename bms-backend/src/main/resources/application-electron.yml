@@ -43,8 +43,8 @@ logging:
 
 google:
   oauth:
-    client-id: haha
-    client-secret: k
+    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
+    client-secret: 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
     redirect-uri: http://127.0.0.1:8080/api/backups/google/callback
     frontend-redirect-base: http://127.0.0.1:8080
 

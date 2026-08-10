@@ -60,7 +60,7 @@ public class AuthService {
             Object principal = authentication.getPrincipal();
             if (!(principal instanceof User user)) {
                 log.error("Unexpected authentication principal type: {}", principal == null ? "null" : principal.getClass().getName());
-                throw new BusinessException("Invalid credentials");
+                throw new BusinessException("auth.login.failed");
             }
 
             String jwtToken = jwtUtil.generateToken(user.getUsername());
@@ -93,17 +93,17 @@ public class AuthService {
             }
 
             // Keep frontend behavior consistent
-            throw new BusinessException("Invalid credentials");
+            throw new BusinessException("auth.login.failed");
         }
     }
 
 
     public User registerUser(RegisterRequest registerRequest) {
         if (userRepository.existsByUsername(registerRequest.getUsername())) {
-            throw new BusinessException("Username already exists");
+            throw new BusinessException("validation.duplicate.username");
         }
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new BusinessException("Email already exists");
+            throw new BusinessException("validation.duplicate.email");
         }
 
         Role defaultRole = roleRepository.findByName(Role.RoleName.ROLE_CASHIER)
@@ -122,13 +122,13 @@ public class AuthService {
 
     public User registerFirstAdmin(RegisterRequest registerRequest) {
         if (userRepository.count() > 0) {
-            throw new BusinessException("First admin registration is only allowed when no users exist");
+            throw new BusinessException("auth.firstadmin.notallowed");
         }
         if (userRepository.existsByUsername(registerRequest.getUsername())) {
-            throw new BusinessException("Username already exists");
+            throw new BusinessException("validation.duplicate.username");
         }
         if (userRepository.existsByEmail(registerRequest.getEmail())) {
-            throw new BusinessException("Email already exists");
+            throw new BusinessException("validation.duplicate.email");
         }
 
         Role adminRole = roleRepository.findByName(Role.RoleName.ROLE_ADMIN)
@@ -168,6 +168,7 @@ public class AuthService {
         response.setPhone(user.getPhone());
         response.setRoleName(user.getRole().getName().name());
         response.setIsActive(user.getIsActive());
+        response.setPreferredLanguage(user.getPreferredLanguage());
         response.setCreatedAt(user.getCreatedAt());
         response.setUpdatedAt(user.getUpdatedAt());
         return response;

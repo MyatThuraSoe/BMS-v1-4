@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService } from '../api/services';
 import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { useTranslation } from 'react-i18next';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 import SetupChecklist from '../components/SetupChecklist';
@@ -38,6 +39,7 @@ const StatCard = ({ title, value, icon, color, onClick }) => (
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation('dashboard');
   const today = new Date().toISOString().split('T')[0];
 
   const [period, setPeriod] = useState('today');
@@ -96,14 +98,14 @@ const Dashboard = () => {
   return (
     <Box>
       <Box sx={{ mb: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Today at a glance</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t('today_at_glance')}</Typography>
       </Box>
       {/* Placed at the top to naturally span full width without breaking Grid */}
       <SetupChecklist />
       
       <Paper sx={{ p: 3, mb: 3 }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Typography variant="h6">Financial Summary</Typography>
+          <Typography variant="h6">{t('financial_summary')}</Typography>
           <PeriodToggle period={period} onChange={handlePeriodChange} />
         </Box>
         <FinancialSummaryCards
@@ -118,7 +120,7 @@ const Dashboard = () => {
       <Grid container spacing={3}>
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
-            title="Sales This Period"
+            title={t('sales_this_period')}
             value={dailySales.totalTransactions || 0}
             icon={<ShoppingCart />}
             color="primary.main"
@@ -127,7 +129,7 @@ const Dashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
-            title="Products in Stock"
+            title={t('products_in_stock')}
             value={inventory.totalProducts || 0}
             icon={<Inventory />}
             color="info.main"
@@ -136,7 +138,7 @@ const Dashboard = () => {
         </Grid>
         <Grid item xs={12} sm={6} md={5}>
           <StatCard
-            title="Low Stock Alerts"
+            title={t('low_stock_alerts')}
             value={inventory.lowStockProductsCount || 0}
             icon={<TrendingUp />}
             color="warning.main"
@@ -148,19 +150,19 @@ const Dashboard = () => {
       <Grid container spacing={3} sx={{ mt: 2 }}>
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Quick Actions</Typography>
+            <Typography variant="h6" gutterBottom>{t('quick_actions')}</Typography>
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
               <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/pos')}>
-                New Sale
+                {t('new_sale')}
               </Button>
               <Button variant="outlined" startIcon={<AddIcon />} onClick={() => navigate('/products/new')}>
-                New Product
+                {t('new_product')}
               </Button>
               <Button variant="outlined" startIcon={<AddIcon />} onClick={() => navigate('/purchases/new')}>
-                New Purchase
+                {t('new_purchase')}
               </Button>
               <Button variant="outlined" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
-                New Customer
+                {t('new_customer')}
               </Button>
             </Box>
           </Paper>
@@ -168,10 +170,10 @@ const Dashboard = () => {
 
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Recent Activity</Typography>
+            <Typography variant="h6" gutterBottom>{t('recent_activity')}</Typography>
             {recentSales.length === 0 ? (
               <Typography variant="body2" color="text.secondary">
-                No recent activity to display.
+                {t('no_recent_activity')}
               </Typography>
             ) : (
               <Box>
@@ -191,7 +193,7 @@ const Dashboard = () => {
 
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Sales Trend (Last 7 Days)</Typography>
+            <Typography variant="h6" gutterBottom>{t('sales_trend_last_7_days')}</Typography>
             <Box sx={{ width: '100%', height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={salesTrend}>

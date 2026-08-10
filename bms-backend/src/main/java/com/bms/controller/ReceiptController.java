@@ -68,7 +68,7 @@ public class ReceiptController {
         html.append(".header { text-align: center; margin-bottom: 10px; }");
         html.append(".line { border-bottom: 1px dashed #000; margin: 5px 0; }");
         html.append(".item { display: flex; justify-content: space-between; margin: 3px 0; }");
-        html.append(".item-name { flex: 2; }");
+        html.append(".item-name { flex: 2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }");
         html.append(".item-qty { text-align: center; width: 40px; }");
         html.append(".item-price { text-align: right; width: 70px; }");
         html.append(".totals { margin-top: 10px; }");
@@ -97,8 +97,13 @@ public class ReceiptController {
         html.append("<div class='line'></div>");
         html.append("<p style='margin: 2px 0;'><strong>Invoice:</strong> ").append(receipt.getInvoiceNumber()).append("</p>");
         html.append("<p style='margin: 2px 0;'><strong>Date:</strong> ").append(receipt.getSaleDate()).append("</p>");
-        html.append("<p style='margin: 2px 0;'><strong>Cashier:</strong> ").append(receipt.getCashierName()).append("</p>");
-        html.append("<p style='margin: 2px 0;'><strong>Customer:</strong> ").append(receipt.getCustomerName()).append("</p>");
+        // ❌ REMOVED Cashier from physical print
+        // html.append("<p style='margin: 2px 0;'><strong>Cashier:</strong> ").append(escapeHtml(receipt.getCashierName())).append("</p>");
+
+        // ✅ Customer is only printed if it's a real name (ReceiptService already filters out "Walk-in")
+        if (receipt.getCustomerName() != null && !receipt.getCustomerName().isBlank()) {
+            html.append("<p style='margin: 2px 0;'><strong>Customer:</strong> ").append(escapeHtml(receipt.getCustomerName())).append("</p>");
+        }
         html.append("<div class='line'></div>");
 
         for (var item : receipt.getItems()) {
@@ -208,8 +213,13 @@ public class ReceiptController {
 
             document.add(new com.lowagie.text.Paragraph("Invoice: " + receipt.getInvoiceNumber(), normalFont));
             document.add(new com.lowagie.text.Paragraph("Date: " + receipt.getSaleDate(), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Cashier: " + receipt.getCashierName(), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Customer: " + receipt.getCustomerName(), normalFont));
+            // ❌ REMOVED Cashier from physical print
+            // document.add(new com.lowagie.text.Paragraph("Cashier: " + receipt.getCashierName(), normalFont));
+
+            // ✅ Customer is only printed if it's a real name
+            if (receipt.getCustomerName() != null && !receipt.getCustomerName().isBlank()) {
+                document.add(new com.lowagie.text.Paragraph("Customer: " + receipt.getCustomerName(), normalFont));
+            }
             document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
 
             com.lowagie.text.pdf.PdfPTable table = new com.lowagie.text.pdf.PdfPTable(4);

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'; // ✅ 1. Added useEffect to imports
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert,
 } from '@mui/material';
@@ -22,6 +23,7 @@ const Suppliers = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const { t } = useTranslation('purchases');
 
   // ✅ 3. Debounce useEffect (waits 300ms after typing stops)
   useEffect(() => {
@@ -65,7 +67,7 @@ const Suppliers = () => {
       <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/suppliers/new')}>
-            Add Supplier
+            {t('add_supplier')}
           </Button>
         )}
       </Box>
@@ -74,7 +76,7 @@ const Suppliers = () => {
         {/* This correctly updates the immediate 'search' state, which triggers the debounce timer */}
         <TextField 
           fullWidth 
-          placeholder="Search suppliers..." 
+          placeholder={t('search_suppliers')} 
           value={search} 
           onChange={(e) => setSearch(e.target.value)} 
           InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }} 
@@ -86,19 +88,19 @@ const Suppliers = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Contact</TableCell>
-              <TableCell>Phone</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Email</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Created</TableCell>
-              {isManager() && <TableCell align="right">Actions</TableCell>}
+              <TableCell>{t('name')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('contact')}</TableCell>
+              <TableCell>{t('phone')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('created')}</TableCell>
+              {isManager() && <TableCell align="right">{t('actions')}</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} align="center">{t('loading')}</TableCell></TableRow>
             ) : suppliers.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center">No suppliers found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} align="center">{t('no_suppliers_found')}</TableCell></TableRow>
             ) : (
               suppliers.map((s) => (
                 <TableRow 
@@ -148,11 +150,11 @@ const Suppliers = () => {
       </TableContainer>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>Are you sure you want to delete "{selectedSupplier?.name}"?</DialogContent>
+        <DialogTitle>{t('confirm_delete')}</DialogTitle>
+        <DialogContent>{t('delete_supplier_confirm', { name: selectedSupplier?.name })}</DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

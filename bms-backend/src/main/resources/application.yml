@@ -5,14 +5,19 @@ server:
 spring:
   application:
     name: bms-backend
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          no-cache: true
   datasource:
-    url: jdbc:mysql://localhost:3306/bms_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    url: jdbc:mysql://localhost:3306/bms_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
     username: root
     password: myat
     driver-class-name: com.mysql.cj.jdbc.Driver
   jpa:
     hibernate:
-      ddl-auto: validate   # Hibernate only checks the schema matches entities — never changes it
+      ddl-auto: validate # Hibernate only checks the schema matches entities — never changes it
     show-sql: false
     properties:
       hibernate:
@@ -37,14 +42,11 @@ logging:
     com.bms: DEBUG
     org.springframework.security: INFO
 
-
 google:
   oauth:
-    client-id: haha
-    client-secret: 123
+    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
+    client-secret: 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
     redirect-uri: http://localhost:8080/api/backups/google/callback
     # Change redirect-uri to your production URL in production!
     frontend-redirect-base: http://localhost:5173
     # Change this too — it's where the browser lands after Google auth completes.
-
-

@@ -200,7 +200,7 @@ function createWindow() {
 
 // Get icon path
 function getIconPath() {
-    const iconPath = path.join(__dirname, 'icon.ico');
+    const iconPath = path.join(__dirname, 'LumiPOS.ico');
     try {
         require('fs').accessSync(iconPath);
         return iconPath;
@@ -297,6 +297,73 @@ ipcMain.on('quit-app', () => {
     console.log('[Electron] Quit requested from renderer');
     quitApp();
 });
+
+// =====================================================
+// DIRECT SILENT PRINTING (Technique #4 - webContents.print)
+// Offline, no QZ Tray, no print dialog, works with any installed Windows printer
+// =====================================================
+
+ipcMain.handle('get-printers', async () => {
+    try {
+        // Use an existing window or create a temporary one to access getPrintersAsync
+        let win = BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w !== splashWindow);
+        let tempWin = null;
+        if (!win) {
+            tempWin = new BrowserWindow({ show: false });
+            win = tempWin;
+        }
+        const printers = await win.webContents.getPrintersAsync();
+        if (tempWin) tempWin.close();
+        return printers.map(p => ({
+            name: p.name,
+            displayName: p.displayName || p.name,
+            isDefault: p.isDefault
+        }));
+    } catch (e) {
+        console.error('[Print] Failed to list printers:', e);
+        return [];
+    }
+});
+
+ipcMain.handle('print-receipt', async (event, html, printerName) => {
+    return new Promise((resolve) => {
+        const printWindow = new BrowserWindow({
+            show: false,
+            width: 400,
+            height: 600,
+            webPreferences: { contextIsolation: true, nodeIntegration: false }
+        });
+
+        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+        printWindow.loadURL(dataUrl);
+
+        printWindow.webContents.on('did-finish-load', () => {
+            const options = {
+                silent: true,            // No print dialog
+                printBackground: true,   // Keep colors and backgrounds
+                margins: { marginType: 'none' },
+                pageSize: 'A4'
+            };
+            if (printerName) options.deviceName = printerName;
+
+            printWindow.webContents.print(options, (success, failureReason) => {
+                printWindow.close();
+                if (success) {
+                    resolve({ success: true });
+                } else {
+                    console.error('[Print] Failed:', failureReason);
+                    resolve({ success: false, error: failureReason || 'Unknown error' });
+                }
+            });
+        });
+
+        printWindow.webContents.on('did-fail-load', () => {
+            printWindow.close();
+            resolve({ success: false, error: 'Failed to load receipt HTML' });
+        });
+    });
+});
+
 // Create splash/loading window
 let splashWindow = null;
 
@@ -457,3 +524,4 @@ app.on('activate', () => {
         mainWindow.show();
     }
 });
+

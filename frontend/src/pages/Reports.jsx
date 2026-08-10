@@ -5,6 +5,7 @@ import {
   Stack, CircularProgress, Chip, TableSortLabel,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { reportService } from '../api/services';
 import { formatCurrency, formatDate } from '../utils/helpers';
 
@@ -13,6 +14,7 @@ import { useNavigate } from 'react-router-dom';
 const toDateStr = (date) => date.toISOString().split('T')[0];
 
 const Reports = () => {
+  const { t } = useTranslation('reports');
   const [dateRange, setDateRange] = useState({ start: new Date().toISOString().split('T')[0], end: new Date().toISOString().split('T')[0] });
   const [reportType, setReportType] = useState('daily');
   const navigate = useNavigate();
@@ -61,33 +63,33 @@ const Reports = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>Reports</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>Operational reports — daily sales, inventory, cashier performance</Typography>
+      <Typography variant="h4" gutterBottom>{t('reports_title')}</Typography>
+      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t('reports_subtitle')}</Typography>
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={3}>
-            <TextField fullWidth select label="Report Type" value={reportType} onChange={(e) => setReportType(e.target.value)} SelectProps={{ native: true }}>
-              <option value="daily">Daily Sales</option>
-              <option value="inventory">Inventory</option>
-              <option value="cashier">Cashier Performance</option>
+            <TextField fullWidth select label={t('report_type')} value={reportType} onChange={(e) => setReportType(e.target.value)} SelectProps={{ native: true }}>
+              <option value="daily">{t('report_type_daily')}</option>
+              <option value="inventory">{t('report_type_inventory')}</option>
+              <option value="cashier">{t('report_type_cashier')}</option>
             </TextField>
           </Grid>
           <Grid item xs={12} md={3}>
-            <TextField fullWidth label="Start Date" type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth label={t('start_date')} type="date" value={dateRange.start} onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Grid>
           <Grid item xs={12} md={3}>
-            <TextField fullWidth label="End Date" type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} InputLabelProps={{ shrink: true }} />
+            <TextField fullWidth label={t('end_date')} type="date" value={dateRange.end} onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })} InputLabelProps={{ shrink: true }} />
           </Grid>
           <Grid item xs={12} md={3}>
-            <Button fullWidth variant="contained" sx={{ height: '100%' }}>Generate</Button>
+            <Button fullWidth variant="contained" sx={{ height: '100%' }}>{t('generate')}</Button>
           </Grid>
         </Grid>
       </Paper>
 
       {reportType === 'daily' && (
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>Daily Sales Report - {formatDate(dateRange.start)}</Typography>
+          <Typography variant="h6" gutterBottom>{t('daily_sales_report_date', { date: formatDate(dateRange.start) })}</Typography>
           <Grid container spacing={3} sx={{ mt: 1 }}>
           <Grid item xs={12} md={4}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
@@ -95,7 +97,7 @@ const Reports = () => {
                 {dailySales.totalTransactions || 0}
               </Typography>
               <Typography color="text.secondary">
-                Sales Today
+                {t('sales_today')}
               </Typography>
             </Paper>
           </Grid>
@@ -103,9 +105,9 @@ const Reports = () => {
           <Grid item xs={12} md={4}>
             <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
               <Typography variant="body2" color="text.secondary">
-                For Revenue and Profit, see the Dashboard
+                {t('see_dashboard_revenue')}
               </Typography>
-              <Typography variant="caption" color="primary">Go to Dashboard →</Typography>
+              <Typography variant="caption" color="primary">{t('go_to_dashboard')}</Typography>
             </Paper>
           </Grid>
 
@@ -115,7 +117,7 @@ const Reports = () => {
                 {formatCurrency(dailySales.averageTransactionValue || 0)}
               </Typography>
               <Typography color="text.secondary">
-                Average Sale
+                {t('average_sale')}
               </Typography>
             </Paper>
           </Grid>
@@ -125,7 +127,7 @@ const Reports = () => {
 
       {reportType === 'inventory' && (
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>Inventory Report</Typography>
+          <Typography variant="h6" gutterBottom>{t('inventory_report_title')}</Typography>
           <Grid container spacing={3} sx={{ mt: 1 }}>
           <Grid item xs={12} md={4}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
@@ -133,7 +135,7 @@ const Reports = () => {
                 {inventory.totalProducts || 0}
               </Typography>
               <Typography color="text.secondary">
-                Total Products
+                {t('total_products')}
               </Typography>
             </Paper>
           </Grid>
@@ -144,7 +146,7 @@ const Reports = () => {
                 {formatCurrency(inventory.totalInventoryValue || 0)}
               </Typography>
               <Typography color="text.secondary">
-                Total Inventory Value
+                {t('total_inventory_value')}
               </Typography>
             </Paper>
           </Grid>
@@ -155,7 +157,7 @@ const Reports = () => {
                 {inventory.lowStockProductsCount || 0}
               </Typography>
               <Typography color="text.secondary">
-                Low Stock Products
+                {t('low_stock_products')}
               </Typography>
             </Paper>
           </Grid>
@@ -170,9 +172,9 @@ const Reports = () => {
         <Paper sx={{ p: 3 }}>
           <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 2 }}>
             <Box>
-              <Typography variant="h6">Cashier Performance</Typography>
+              <Typography variant="h6">{t('cashier_performance_title')}</Typography>
               <Typography variant="body2" color="text.secondary">
-                Click column headers to re-sort. "Avg Transaction Value" is the fairness-adjusted view — it's not affected by hours worked.
+                {t('cashier_sort_hint')}
               </Typography>
             </Box>
           </Stack>
@@ -180,20 +182,20 @@ const Reports = () => {
           {cashierLoading ? (
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
           ) : cashierRows.length === 0 ? (
-            <Typography color="text.secondary">No sales data for this period.</Typography>
+            <Typography color="text.secondary">{t('no_sales_data')}</Typography>
           ) : (
             <TableContainer>
               <Table size="small">
                 <TableHead>
                   <TableRow>
-                    <TableCell>Cashier ID</TableCell>
+                    <TableCell>{t('cashier_id')}</TableCell>
                     <TableCell align="right">
                       <TableSortLabel
                         active={cashierSort === 'totalSales'}
                         direction={cashierSort === 'totalSales' ? cashierSortDir : 'desc'}
                         onClick={() => handleCashierSort('totalSales')}
                       >
-                        Total Sales
+                        {t('total_sales')}
                       </TableSortLabel>
                     </TableCell>
                     <TableCell align="right">
@@ -202,7 +204,7 @@ const Reports = () => {
                         direction={cashierSort === 'transactionCount' ? cashierSortDir : 'desc'}
                         onClick={() => handleCashierSort('transactionCount')}
                       >
-                        Transactions
+                        {t('transactions')}
                       </TableSortLabel>
                     </TableCell>
                     <TableCell align="right">
@@ -211,7 +213,7 @@ const Reports = () => {
                         direction={cashierSort === 'averageTransactionValue' ? cashierSortDir : 'desc'}
                         onClick={() => handleCashierSort('averageTransactionValue')}
                       >
-                        Avg Transaction Value
+                        {t('avg_transaction_value')}
                       </TableSortLabel>
                     </TableCell>
                     <TableCell align="right">
@@ -220,17 +222,17 @@ const Reports = () => {
                         direction={cashierSort === 'averageItemsPerSale' ? cashierSortDir : 'desc'}
                         onClick={() => handleCashierSort('averageItemsPerSale')}
                       >
-                        Avg Items / Sale
+                        {t('avg_items_per_sale')}
                       </TableSortLabel>
                     </TableCell>
-                    <TableCell align="right">Total Items</TableCell>
+                    <TableCell align="right">{t('total_items')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {cashierRows.map((row, idx) => (
                     <TableRow key={row.cashierId ?? idx} hover>
                       <TableCell>
-                        <Chip label={`Cashier #${row.cashierId}`} size="small" variant="outlined" />
+                        <Chip label={t('cashier_label', { id: row.cashierId })} size="small" variant="outlined" />
                       </TableCell>
                       <TableCell align="right">{formatCurrency(row.totalSales)}</TableCell>
                       <TableCell align="right">{row.transactionCount}</TableCell>

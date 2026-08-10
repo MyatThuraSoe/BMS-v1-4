@@ -1,0 +1,15 @@
+{
+  "today_at_glance": "ภาพรวมวันนี้",
+  "financial_summary": "สรุปยอดการเงิน",
+  "sales_this_period": "ยอดขายช่วงนี้",
+  "products_in_stock": "สินค้าในคลัง",
+  "low_stock_alerts": "การแจ้งเตือนสต็อกใกล้หมด",
+  "quick_actions": "การดำเนินการด่วน",
+  "new_sale": "ขายใหม่",
+  "new_product": "สินค้าใหม่",
+  "new_purchase": "ซื้อใหม่",
+  "new_customer": "ลูกค้าใหม่",
+  "recent_activity": "กิจกรรมล่าสุด",
+  "no_recent_activity": "ไม่มีกิจกรรมล่าสุดที่จะแสดง",
+  "sales_trend_last_7_days": "แนวโน้มยอดขาย (7 วันที่ผ่านมา)"
+}

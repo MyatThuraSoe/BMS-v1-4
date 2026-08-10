@@ -13,17 +13,19 @@ import {
 
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { backupService } from '../api/services';
 
 
 
 // Helper to format date (replace with your existing helper if you have one)
-const formatDateTime = (dateString) => {
-  if (!dateString) return 'Never';
+const formatDateTime = (dateString, fallback = 'Never') => {
+  if (!dateString) return fallback;
   return new Date(dateString).toLocaleString();
 };
 
 const BackupSettings = () => {
+  const { t } = useTranslation('settings');
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   
@@ -64,24 +66,24 @@ const BackupSettings = () => {
   useEffect(() => {
     const status = searchParams.get('status');
     if (status === 'success') {
-      setMessage({ type: 'success', text: 'Google Drive connected successfully!' });
+      setMessage({ type: 'success', text: t('drive_connected') });
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
       window.history.replaceState({}, document.title, window.location.pathname); // Clean URL
     } else if (status === 'error') {
-      setMessage({ type: 'error', text: 'Failed to connect Google Drive. Please try again.' });
+      setMessage({ type: 'error', text: t('drive_connect_failed') });
       window.history.replaceState({}, document.title, window.location.pathname);
     }
-  }, [searchParams, queryClient]);
+  }, [searchParams, queryClient, t]);
 
   // 4. Mutations
   const updateMutation = useMutation({
     mutationFn: backupService.updateSettings,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
-      setMessage({ type: 'success', text: 'Backup settings saved successfully.' });
+      setMessage({ type: 'success', text: t('settings_saved') });
     },
     onError: () => {
-      setMessage({ type: 'error', text: 'Failed to save settings.' });
+      setMessage({ type: 'error', text: t('settings_save_failed') });
     }
   });
 
@@ -95,18 +97,18 @@ const BackupSettings = () => {
       // Redirect user to Google's consent screen
       window.location.href = authUrl;
     } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to get connection URL.' });
+      setMessage({ type: 'error', text: t('connection_url_failed') });
     }
   };
 
   const handleDisconnect = async () => {
-    if (window.confirm("Are you sure you want to disconnect Google Drive? Automated backups will stop.")) {
+    if (window.confirm(t('disconnect_confirm'))) {
       try {
         await backupService.disconnect();
         queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
-        setMessage({ type: 'info', text: 'Google Drive disconnected.' });
+        setMessage({ type: 'info', text: t('drive_disconnected') });
       } catch (error) {
-        setMessage({ type: 'error', text: 'Failed to disconnect.' });
+        setMessage({ type: 'error', text: t('disconnect_failed') });
       }
     }
   };
@@ -117,10 +119,10 @@ const BackupSettings = () => {
     setMessage(null);
     try {
       const res = await backupService.runNow(dateRange.startDate || null, dateRange.endDate || null);
-      setMessage({ type: 'success', text: `${res.message} Saved to: ${res.data}` });
+      setMessage({ type: 'success', text: `${res.message} ${t('backup_saved_to', { location: res.data })}` });
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
     } catch (error) {
-      setMessage({ type: 'error', text: error.response?.data?.message || 'Backup failed. Check backend logs.' });
+      setMessage({ type: 'error', text: error.response?.data?.message || t('backup_failed') });
     } finally {
       setIsRunning(false);
     }
@@ -138,10 +140,10 @@ const BackupSettings = () => {
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
       <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', mb: 1 }}>
-        Backup & Restore
+        {t('backup_and_restore')}
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Automatically back up your entire database to your personal Google Drive as an Excel file.
+        {t('backup_description')}
       </Typography>
 
       {message && (
@@ -154,23 +156,23 @@ const BackupSettings = () => {
       <Card sx={{ mb: 3, border: isConnected ? '2px solid #4caf50' : '1px solid #e0e0e0' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Google Drive Connection</Typography>
-            {isConnected && <Chip label="Connected" color="success" size="small" />}
+            <Typography variant="h6">{t('google_drive_connection')}</Typography>
+            {isConnected && <Chip label={t('connected')} color="success" size="small" />}
           </Box>
           
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             {isConnected 
-              ? "Your database backups will be automatically saved to your connected Google Drive account." 
-              : "Connect your Google account to enable automated cloud backups. (You will be asked to grant permission to create files)."}
+              ? t('drive_connected_description')
+              : t('drive_disconnected_description')}
           </Typography>
 
           {isConnected ? (
             <Button variant="outlined" color="error" startIcon={<LinkOffIcon />} onClick={handleDisconnect}>
-              Disconnect Google Drive
+              {t('disconnect_google_drive')}
             </Button>
           ) : (
             <Button variant="contained" color="primary" startIcon={<LinkIcon />} onClick={handleConnect}>
-              Connect Google Drive
+              {t('connect_google_drive')}
             </Button>
           )}
         </CardContent>
@@ -179,7 +181,7 @@ const BackupSettings = () => {
       {/* Backup Settings Card */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>Automation Settings</Typography>
+          <Typography variant="h6" gutterBottom>{t('automation_settings')}</Typography>
           <Divider sx={{ mb: 3 }} />
 
           <FormControlLabel
@@ -190,47 +192,47 @@ const BackupSettings = () => {
                 disabled={!isConnected}
               />
             }
-            label={<Typography variant="subtitle1">Enable Automated Backups</Typography>}
+            label={<Typography variant="subtitle1">{t('enable_automated_backups')}</Typography>}
             sx={{ mb: 3 }}
           />
 
           <FormControl fullWidth sx={{ mb: 3 }}>
-            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>Backup Frequency</Typography>
+            <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary' }}>{t('backup_frequency')}</Typography>
             <Select
               value={settings.frequency}
               onChange={(e) => setSettings({ ...settings, frequency: e.target.value })}
               disabled={!settings.isEnabled || !isConnected}
             >
-              <MenuItem value="DAILY">Daily</MenuItem>
-              <MenuItem value="WEEKLY">Weekly</MenuItem>
-              <MenuItem value="MONTHLY">Monthly</MenuItem>
-              <MenuItem value="YEARLY">Yearly</MenuItem>
-              <MenuItem value="CUSTOM">Custom (Cron Expression)</MenuItem>
+              <MenuItem value="DAILY">{t('frequency_daily')}</MenuItem>
+              <MenuItem value="WEEKLY">{t('frequency_weekly')}</MenuItem>
+              <MenuItem value="MONTHLY">{t('frequency_monthly')}</MenuItem>
+              <MenuItem value="YEARLY">{t('frequency_yearly')}</MenuItem>
+              <MenuItem value="CUSTOM">{t('frequency_custom')}</MenuItem>
             </Select>
           </FormControl>
 
           {settings.frequency === 'CUSTOM' && (
             <TextField
               fullWidth
-              label="Custom Cron Expression"
-              placeholder="e.g., 0 0 2 * * ? (Every day at 2 AM)"
+              label={t('custom_cron_expression')}
+              placeholder={t('cron_placeholder')}
               value={settings.customCronExpression}
               onChange={(e) => setSettings({ ...settings, customCronExpression: e.target.value })}
               disabled={!settings.isEnabled || !isConnected}
               sx={{ mb: 3 }}
-              helperText="Format: Seconds Minutes Hours Day-of-Month Month Day-of-Week"
+              helperText={t('cron_format_helper')}
             />
           )}
 
           <Divider sx={{ my: 3 }} />
-            <Typography variant="subtitle1" gutterBottom>Custom Date Range (Optional)</Typography>
+            <Typography variant="subtitle1" gutterBottom>{t('custom_date_range')}</Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Leave blank to backup ALL data. Select a range to backup only transactions within these dates.
+              {t('custom_date_range_helper')}
             </Typography>
 
             <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
               <TextField
-                label="Start Date"
+                label={t('start_date')}
                 type="date"
                 value={dateRange.startDate}
                 onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
@@ -239,7 +241,7 @@ const BackupSettings = () => {
                 sx={{ flex: 1, minWidth: '150px' }}
               />
               <TextField
-                label="End Date"
+                label={t('end_date')}
                 type="date"
                 value={dateRange.endDate}
                 onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
@@ -255,7 +257,7 @@ const BackupSettings = () => {
                   onClick={() => setDateRange({ startDate: '', endDate: '' })}
                   sx={{ alignSelf: 'center' }}
                 >
-                  Clear Range
+                  {t('clear_range')}
                 </Button>
               )}
             </Box>
@@ -267,7 +269,7 @@ const BackupSettings = () => {
               onClick={handleSave}
               disabled={updateMutation.isPending || !isConnected}
             >
-              {updateMutation.isPending ? 'Saving...' : 'Save Settings'}
+              {updateMutation.isPending ? t('saving') : t('save_settings')}
             </Button>
             
             <Button
@@ -276,7 +278,7 @@ const BackupSettings = () => {
               onClick={handleRunNow}
               disabled={isRunning || !isConnected}
             >
-              {isRunning ? 'Running Backup...' : 'Run Backup Now'}
+              {isRunning ? t('running_backup') : t('run_backup_now')}
             </Button>
           </Box>
         </CardContent>
@@ -285,18 +287,18 @@ const BackupSettings = () => {
       {/* Status Card */}
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>Backup Status</Typography>
+          <Typography variant="h6" gutterBottom>{t('backup_status')}</Typography>
           <Divider sx={{ mb: 2 }} />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-            <Typography variant="body2" color="text.secondary">Last Successful Backup:</Typography>
+            <Typography variant="body2" color="text.secondary">{t('last_successful_backup')}</Typography>
             <Typography variant="body2" fontWeight="medium">
-              {formatDateTime(lastBackup)}
+              {formatDateTime(lastBackup, t('never'))}
             </Typography>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" color="text.secondary">Next Scheduled Backup:</Typography>
+            <Typography variant="body2" color="text.secondary">{t('next_scheduled_backup')}</Typography>
             <Typography variant="body2" fontWeight="medium" color={settings.isEnabled && isConnected ? 'success.main' : 'text.disabled'}>
-              {settings.isEnabled && isConnected ? formatDateTime(nextBackup) : 'Not scheduled'}
+              {settings.isEnabled && isConnected ? formatDateTime(nextBackup, t('never')) : t('not_scheduled')}
             </Typography>
           </Box>
         </CardContent>

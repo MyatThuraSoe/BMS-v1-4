@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, CircularProgress } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, inventoryService } from '../api/services';
@@ -9,6 +10,7 @@ const StockAdjustment = () => {
   const { isManager } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const { t } = useTranslation('inventory');
 
   const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reason: '' });
   const [error, setError] = useState('');
@@ -24,27 +26,27 @@ const StockAdjustment = () => {
         reason: data.reason,
       }),
     onSuccess: () => {
-      setSuccess('Stock adjusted successfully');
+      setSuccess(t('stock_adjusted'));
       queryClient.invalidateQueries({ queryKey: ['inventory-products'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
       setTimeout(() => navigate(-1), 1500);
     },
-    onError: (err) => setError(err.response?.data?.message || 'Failed to adjust stock'),
+    onError: (err) => setError(err.response?.data?.message || t('failed_to_adjust_stock')),
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!formData.productId) { setError('Product is required'); return; }
-    if (!formData.quantityChange || parseInt(formData.quantityChange) <= 0) { setError('Quantity must be greater than 0'); return; }
-    if (!formData.reason) { setError('Reason is required'); return; }
+    if (!formData.productId) { setError(t('product_required')); return; }
+    if (!formData.quantityChange || parseInt(formData.quantityChange) <= 0) { setError(t('quantity_must_be_positive')); return; }
+    if (!formData.reason) { setError(t('reason_required')); return; }
     setError('');
     setSuccess('');
     adjustMutation.mutate(formData);
   };
 
-  if (!isManager()) return <Alert severity="error">Access denied</Alert>;
+  if (!isManager()) return <Alert severity="error">{t('access_denied')}</Alert>;
 
   return (
     <Box>
@@ -55,24 +57,24 @@ const StockAdjustment = () => {
         <form onSubmit={handleSubmit}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Product" select value={formData.productId} onChange={(e) => setFormData({ ...formData, productId: e.target.value })} required>
-                <MenuItem value="">Select Product</MenuItem>
-                {products?.data?.content?.map((p) => (<MenuItem key={p.id} value={p.id}>{p.name} (Stock: {p.stockQuantity})</MenuItem>))}
+              <TextField fullWidth label={t('product')} select value={formData.productId} onChange={(e) => setFormData({ ...formData, productId: e.target.value })} required>
+                <MenuItem value="">{t('select_product')}</MenuItem>
+                {products?.data?.content?.map((p) => (<MenuItem key={p.id} value={p.id}>{t('product_with_stock', { name: p.name, stock: p.stockQuantity })}</MenuItem>))}
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Adjustment Type" select value={formData.adjustmentType} onChange={(e) => {
+              <TextField fullWidth label={t('adjustment_type')} select value={formData.adjustmentType} onChange={(e) => {
                 const val = e.target.value;
                 setFormData({ ...formData, adjustmentType: val, quantityChange: val === 'REMOVE' ? (formData.quantityChange ? formData.quantityChange : '') : (formData.quantityChange ? Math.abs(formData.quantityChange) : '') });
               }} required>
-                <MenuItem value="ADD">Add Stock</MenuItem>
-                <MenuItem value="REMOVE">Remove Stock</MenuItem>
+                <MenuItem value="ADD">{t('add_stock')}</MenuItem>
+                <MenuItem value="REMOVE">{t('remove_stock')}</MenuItem>
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField 
                 fullWidth 
-                label="Quantity" 
+                label={t('quantity')} 
                 type="number" 
                 value={formData.quantityChange} 
                 onChange={(e) => {
@@ -94,13 +96,13 @@ const StockAdjustment = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth label="Reason" multiline rows={3} value={formData.reason} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} required />
+              <TextField fullWidth label={t('reason')} multiline rows={3} value={formData.reason} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} required />
             </Grid>
             <Grid item xs={12}>
               <Button type="submit" variant="contained" disabled={adjustMutation.isPending}>
-                {adjustMutation.isPending ? <CircularProgress size={24} /> : 'Adjust Stock'}
+                {adjustMutation.isPending ? <CircularProgress size={24} /> : t('adjust_stock')}
               </Button>
-              <Button onClick={() => navigate(-1)} sx={{ ml: 1 }}>Cancel</Button>
+              <Button onClick={() => navigate(-1)} sx={{ ml: 1 }}>{t('cancel')}</Button>
             </Grid>
           </Grid>
         </form>

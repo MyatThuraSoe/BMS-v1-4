@@ -13,13 +13,29 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Set;
 
 @RestController
 @RequestMapping("/api/users")
 public class UserController {
 
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("en", "my", "ja", "th", "fr");
+
     @Autowired
     private UserService userService;
+
+    @PatchMapping("/me/language")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<ApiResponse<UserResponse>> updateMyLanguage(
+            @RequestParam String lang,
+            @org.springframework.security.core.annotation.AuthenticationPrincipal User user) {
+        if (!SUPPORTED_LANGUAGES.contains(lang)) {
+            return ResponseEntity.badRequest().build();
+        }
+        User updated = userService.updatePreferredLanguage(user.getUsername(), lang);
+        UserResponse response = convertToResponse(updated);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Language updated successfully", response));
+    }
 
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
@@ -80,6 +96,7 @@ public class UserController {
         response.setPhone(user.getPhone());
         response.setRoleName(user.getRole().getName().name());
         response.setIsActive(user.getIsActive());
+        response.setPreferredLanguage(user.getPreferredLanguage());
         response.setCreatedAt(user.getCreatedAt());
         response.setUpdatedAt(user.getUpdatedAt());
         return response;

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -30,6 +31,7 @@ const Users = () => {
   const [selectedUser, setSelectedUser] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { t } = useTranslation('users');
   const { user: currentUser } = useAuth();
 
   const { data: usersData, isLoading } = useQuery({
@@ -63,6 +65,12 @@ const Users = () => {
     }
   };
 
+  const roleKeyMap = {
+    ROLE_ADMIN: 'role_admin',
+    ROLE_MANAGER: 'role_manager',
+    ROLE_CASHIER: 'role_cashier',
+  };
+
   const getRoleChip = (roleName) => {
     const roleColors = {
       ROLE_ADMIN: 'error',
@@ -71,7 +79,7 @@ const Users = () => {
     };
     return (
       <Chip
-        label={roleName?.replace('ROLE_', '')}
+        label={roleName ? t(roleKeyMap[roleName] || roleName) : undefined}
         color={roleColors[roleName] || 'default'}
         size="small"
       />
@@ -79,19 +87,19 @@ const Users = () => {
   };
 
   if (isLoading) {
-    return <Typography>Loading...</Typography>;
+    return <Typography>{t('loading')}</Typography>;
   }
 
   return (
     <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Typography variant="h4">User Management</Typography>
+        <Typography variant="h4">{t('title')}</Typography>
         <Button
           variant="contained"
           startIcon={<PersonAddIcon />}
           onClick={() => navigate('/users/new')}
         >
-          Add User
+          {t('add_user')}
         </Button>
       </Box>
 
@@ -99,14 +107,14 @@ const Users = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>ID</TableCell>
-              <TableCell>Username</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Name</TableCell>
-              <TableCell>Phone</TableCell>
-              <TableCell>Role</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell>Actions</TableCell>
+              <TableCell>{t('id')}</TableCell>
+              <TableCell>{t('username')}</TableCell>
+              <TableCell>{t('email')}</TableCell>
+              <TableCell>{t('name')}</TableCell>
+              <TableCell>{t('phone')}</TableCell>
+              <TableCell>{t('role')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
+              <TableCell>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -120,7 +128,7 @@ const Users = () => {
                 <TableCell>{getRoleChip(user.roleName)}</TableCell>
                 <TableCell>
                   <Chip
-                    label={user.isActive ? 'Active' : 'Inactive'}
+                    label={user.isActive ? t('active') : t('inactive')}
                     color={user.isActive ? 'success' : 'default'}
                     size="small"
                   />
@@ -148,36 +156,36 @@ const Users = () => {
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
         <Typography variant="body2" color="text.secondary">
-          Showing {users.length} of {totalElements} users
+          {t('showing_users', { shown: users.length, total: totalElements })}
         </Typography>
         <Box>
           <Button
             disabled={page === 0}
             onClick={() => setPage(page - 1)}
           >
-            Previous
+            {t('previous')}
           </Button>
           <Button
             disabled={page >= totalPages - 1}
             onClick={() => setPage(page + 1)}
           >
-            Next
+            {t('next')}
           </Button>
         </Box>
       </Box>
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogTitle>{t('delete_title')}</DialogTitle>
         <DialogContent>
           <Typography>
-            Are you sure you want to delete user "{selectedUser?.username}"? This action cannot be undone.
+            {t('delete_confirm', { username: selectedUser?.username })}
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
           <Button onClick={confirmDelete} variant="contained" color="error">
-            Delete
+            {t('delete')}
           </Button>
         </DialogActions>
       </Dialog>

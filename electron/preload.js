@@ -3,5 +3,10 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     platform: process.platform,
     version: process.versions.electron,
-    quitApp: () => ipcRenderer.send('quit-app')
+    isElectron: true,
+    quitApp: () => ipcRenderer.send('quit-app'),
+
+    // ===== Direct silent printing (Technique #4 from PDF) =====
+    getPrinters: () => ipcRenderer.invoke('get-printers'),
+    printReceipt: (html, printerName) => ipcRenderer.invoke('print-receipt', html, printerName)
 });

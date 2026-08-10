@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete,
 } from '@mui/material';
@@ -12,6 +13,7 @@ import { formatCurrency } from '../utils/helpers';
 const ProductSearchField = ({ value, onSelect }) => {
   const [inputValue, setInputValue] = useState('');
   const [debounced, setDebounced] = useState('');
+  const { t } = useTranslation('purchases');
 
   useEffect(() => {
     const timer = setTimeout(() => setDebounced(inputValue), 300);
@@ -34,8 +36,8 @@ const ProductSearchField = ({ value, onSelect }) => {
       onChange={(e, selected) => onSelect(selected)}
       inputValue={inputValue}
       onInputChange={(e, newVal) => setInputValue(newVal)}
-      noOptionsText={inputValue.length < 2 ? 'Type to search...' : 'No products found'}
-      renderInput={(params) => <TextField {...params} placeholder="Search by name or SKU" />}
+      noOptionsText={inputValue.length < 2 ? t('type_to_search') : t('no_products_found')}
+      renderInput={(params) => <TextField {...params} placeholder={t('search_by_name_or_sku')} />}
       sx={{ minWidth: 220 }}
     />
   );
@@ -47,6 +49,7 @@ const PurchaseForm = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const { t } = useTranslation('purchases');
   const isEdit = !!id;
 
   const preselectSupplierId = searchParams.get('supplierId') || '';
@@ -95,21 +98,21 @@ const PurchaseForm = () => {
   const saveMutation = useMutation({
     mutationFn: async (data) => purchaseService.create(data),
     onSuccess: () => {
-      setSuccess('Purchase created');
+      setSuccess(t('purchase_created'));
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
       setTimeout(() => navigate('/purchases'), 1500);
     },
-    onError: (err) => setError(err.response?.data?.message || 'Failed to save'),
+    onError: (err) => setError(err.response?.data?.message || t('save_failed')),
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isEdit) { navigate('/purchases'); return; } // existing purchases are view-only
-    if (!formData.supplierId) { setError('Supplier is required'); return; }
-    if (items.length === 0) { setError('At least one item is required'); return; }
+    if (!formData.supplierId) { setError(t('supplier_required')); return; }
+    if (items.length === 0) { setError(t('at_least_one_item_required')); return; }
     setError('');
     setSuccess('');
     
@@ -118,12 +121,12 @@ const PurchaseForm = () => {
     saveMutation.mutate({ ...formData, items: cleanItems });
   };
 
-  if (!isManager()) return <Alert severity="error">Access denied</Alert>;
+  if (!isManager()) return <Alert severity="error">{t('access_denied')}</Alert>;
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{isEdit ? 'Purchase Details' : 'Adding Products to Inventory'}</Typography>
-      {isEdit && <Alert severity="info" sx={{ mb: 2 }}>Purchases can't be edited after creation, since stock has already been updated. Use payment status to track payment, or delete and recreate if the details were wrong.</Alert>}
+      <Typography variant="h4" gutterBottom>{isEdit ? t('purchase_details') : t('add_products_to_inventory')}</Typography>
+      {isEdit && <Alert severity="info" sx={{ mb: 2 }}>{t('purchase_view_only_info')}</Alert>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
       <Paper sx={{ p: 3 }}>
@@ -132,7 +135,7 @@ const PurchaseForm = () => {
             <Grid item xs={12} md={6}>
               <TextField 
                 fullWidth 
-                label="Supplier" 
+                label={t('supplier')} 
                 select 
                 name="supplierId" 
                 value={formData.supplierId} 
@@ -140,14 +143,14 @@ const PurchaseForm = () => {
                 required 
                 disabled={isEdit}
               >
-                <MenuItem value="">No Supplier</MenuItem>
+                <MenuItem value="">{t('no_supplier')}</MenuItem>
                 {suppliers?.data?.content?.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField 
                 fullWidth 
-                label="Date" 
+                label={t('date')} 
                 type="date" 
                 name="purchaseDate" 
                 value={formData.purchaseDate} 
@@ -158,16 +161,16 @@ const PurchaseForm = () => {
               />
             </Grid>
             <Grid item xs={12}>
-              <Typography variant="h6" gutterBottom>Items</Typography>
+              <Typography variant="h6" gutterBottom>{t('items')}</Typography>
               <TableContainer sx={{ overflowX: 'auto' }}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Product</TableCell>
-                      <TableCell align="right">Quantity</TableCell>
-                      <TableCell align="right">Cost Price</TableCell>
-                      <TableCell align="right">Line Total</TableCell>
-                      {!isEdit && <TableCell align="right">Action</TableCell>}
+                      <TableCell>{t('product')}</TableCell>
+                      <TableCell align="right">{t('quantity')}</TableCell>
+                      <TableCell align="right">{t('cost_price')}</TableCell>
+                      <TableCell align="right">{t('line_total')}</TableCell>
+                      {!isEdit && <TableCell align="right">{t('action')}</TableCell>}
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -177,7 +180,7 @@ const PurchaseForm = () => {
                           {isEdit ? (
                             // Read-only view for existing purchase
                             <Typography variant="body2">
-                              {item.productName || item.product?.name || `Product ID: ${item.productId}`}
+                              {item.productName || item.product?.name || t('product_id', { id: item.productId })}
                             </Typography>
                           ) : (
                             <ProductSearchField
@@ -215,7 +218,7 @@ const PurchaseForm = () => {
                     {isEdit && (
                       <TableRow>
                         <TableCell colSpan={3} align="right">
-                          <Typography variant="h6" fontWeight="bold">Grand Total:</Typography>
+                          <Typography variant="h6" fontWeight="bold">{t('grand_total')}</Typography>
                         </TableCell>
                         <TableCell align="right">
                           <Typography variant="h6" fontWeight="bold">
@@ -228,13 +231,13 @@ const PurchaseForm = () => {
                 </Table>
               </TableContainer>
               {!isEdit && (
-                <Button startIcon={<AddIcon />} onClick={addItem} sx={{ mt: 1 }}>Add Item</Button>
+                <Button startIcon={<AddIcon />} onClick={addItem} sx={{ mt: 1 }}>{t('add_item')}</Button>
               )}
             </Grid>
             <Grid item xs={12}>
               <TextField 
                 fullWidth 
-                label="Notes" 
+                label={t('notes')} 
                 name="notes" 
                 multiline 
                 rows={2} 
@@ -245,10 +248,10 @@ const PurchaseForm = () => {
             </Grid>
             <Grid item xs={12}>
               <Button type="submit" variant="contained" disabled={saveMutation.isPending && !isEdit}>
-                {saveMutation.isPending && !isEdit ? <CircularProgress size={24} /> : (isEdit ? 'Close' : 'Create')}
+                {saveMutation.isPending && !isEdit ? <CircularProgress size={24} /> : (isEdit ? t('close') : t('create'))}
               </Button>
               {!isEdit && (
-                <Button onClick={() => navigate('/purchases')} sx={{ ml: 1 }}>Cancel</Button>
+                <Button onClick={() => navigate('/purchases')} sx={{ ml: 1 }}>{t('cancel')}</Button>
               )}
             </Grid>
           </Grid>

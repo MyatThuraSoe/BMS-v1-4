@@ -6,6 +6,7 @@ import {
 } from '@mui/material';
 import { InfoOutlined } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import {
   BarChart, Bar, PieChart, Pie, Cell, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
@@ -15,7 +16,6 @@ import { reportService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
 
 const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#9c27b0', '#d32f2f'];
-const DAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 const toDateString = (date) => date.toISOString().split('T')[0];
 
@@ -34,6 +34,7 @@ const getPeriodRange = (period) => {
 
 // ─── Top Movers Component ───────────────────────────────────────────────────
 const TopMovers = ({ products }) => {
+  const { t } = useTranslation('reports');
   const withChange = products.filter((p) => p.changePercent != null);
   const gainers = [...withChange].sort((a, b) => b.changePercent - a.changePercent).slice(0, 3);
   const decliners = [...withChange].sort((a, b) => a.changePercent - b.changePercent).slice(0, 3);
@@ -51,9 +52,9 @@ const TopMovers = ({ products }) => {
     <Grid container spacing={2} sx={{ mt: 2 }}>
       <Grid item xs={12} md={6}>
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom>📈 Biggest Gainers</Typography>
+          <Typography variant="subtitle2" color="text.secondary" gutterBottom>📈 {t('biggest_gainers')}</Typography>
           {gainers.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">Not enough data yet</Typography>
+            <Typography variant="body2" color="text.secondary">{t('not_enough_data')}</Typography>
           ) : (
             gainers.map((p) => <MoverRow key={p.productId} p={p} positive />)
           )}
@@ -61,9 +62,9 @@ const TopMovers = ({ products }) => {
       </Grid>
       <Grid item xs={12} md={6}>
         <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="subtitle2" color="text.secondary" gutterBottom>📉 Biggest Decliners</Typography>
+          <Typography variant="subtitle2" color="text.secondary" gutterBottom>📉 {t('biggest_decliners')}</Typography>
           {decliners.length === 0 ? (
-            <Typography variant="body2" color="text.secondary">Not enough data yet</Typography>
+            <Typography variant="body2" color="text.secondary">{t('not_enough_data')}</Typography>
           ) : (
             decliners.map((p) => <MoverRow key={p.productId} p={p} positive={false} />)
           )}
@@ -75,6 +76,8 @@ const TopMovers = ({ products }) => {
 
 // ─── Sales Timing Heatmap ───────────────────────────────────────────────────
 const SalesHeatmap = ({ data }) => {
+  const { t } = useTranslation('reports');
+  const dayLabels = [t('day_mon'), t('day_tue'), t('day_wed'), t('day_thu'), t('day_fri'), t('day_sat'), t('day_sun')];
   const grid = useMemo(() => {
     const g = {};
     for (let d = 1; d <= 7; d++) {
@@ -112,8 +115,8 @@ const SalesHeatmap = ({ data }) => {
       <table style={{ borderCollapse: 'collapse', width: '100%' }}>
         <thead>
           <tr>
-            <th style={{ width: 40, fontSize: 11, color: '#666', textAlign: 'right', paddingRight: 8 }}>Hour</th>
-            {DAY_LABELS.map((d) => (
+            <th style={{ width: 40, fontSize: 11, color: '#666', textAlign: 'right', paddingRight: 8 }}>{t('hour')}</th>
+            {dayLabels.map((d) => (
               <th key={d} style={{ fontSize: 11, color: '#666', textAlign: 'center', padding: '4px 2px' }}>{d}</th>
             ))}
           </tr>
@@ -129,7 +132,7 @@ const SalesHeatmap = ({ data }) => {
                 return (
                   <MuiTooltip
                     key={d}
-                    title={`${DAY_LABELS[d - 1]} ${h.toString().padStart(2, '0')}:00 — ${count} transaction${count !== 1 ? 's' : ''}`}
+                    title={t('heatmap_transactions', { day: dayLabels[d - 1], time: h.toString().padStart(2, '0'), count })}
                   >
                     <td
                       style={{
@@ -153,11 +156,11 @@ const SalesHeatmap = ({ data }) => {
         </tbody>
       </table>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1, justifyContent: 'flex-end' }}>
-        <Typography variant="caption" color="text.secondary">Low</Typography>
+        <Typography variant="caption" color="text.secondary">{t('low')}</Typography>
         {[0.1, 0.3, 0.5, 0.7, 0.9].map((v) => (
           <Box key={v} sx={{ width: 16, height: 16, backgroundColor: getColor(v * maxCount), border: '1px solid #eee', borderRadius: 0.5 }} />
         ))}
-        <Typography variant="caption" color="text.secondary">High</Typography>
+        <Typography variant="caption" color="text.secondary">{t('high')}</Typography>
       </Box>
     </Box>
   );
@@ -165,6 +168,7 @@ const SalesHeatmap = ({ data }) => {
 
 // ─── Main Analytics Page ─────────────────────────────────────────────────────
 const Analytics = () => {
+  const { t } = useTranslation('reports');
   const [period, setPeriod] = useState('MONTH');
   const [compareMode, setCompareMode] = useState('PREVIOUS_PERIOD');
   const [compareCategoryIds, setCompareCategoryIds] = useState([]);
@@ -262,32 +266,32 @@ const Analytics = () => {
   };
 
   const summaryCards = useMemo(() => [
-    { label: 'Total Revenue', value: summary.revenue || 0 },
-    { label: 'Total COGS', value: summary.cogs || 0 },
-    { label: 'Gross Profit', value: summary.grossProfit || 0 },
-    { label: 'Gross Margin %', value: summary.grossMarginPercent || 0, formatter: (value) => `${value}%` },
+    { label: t('total_revenue'), value: summary.revenue || 0 },
+    { label: t('total_cogs'), value: summary.cogs || 0 },
+    { label: t('gross_profit'), value: summary.grossProfit || 0 },
+    { label: t('gross_margin_percent'), value: summary.grossMarginPercent || 0, formatter: (value) => `${value}%` },
   ], [summary]);
 
   const renderChartState = (loading) => loading
     ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>
-    : <Typography color="text.secondary">No sales data for this period.</Typography>;
+    : <Typography color="text.secondary">{t('no_sales_data')}</Typography>;
 
   return (
     <Box>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
         <Box>
-          <Typography variant="h4">Analytics</Typography>
-          <Typography variant="body2" color="text.secondary">Business trends and deeper analysis (Admin)</Typography>
+          <Typography variant="h4">{t('analytics_title')}</Typography>
+          <Typography variant="body2" color="text.secondary">{t('analytics_subtitle')}</Typography>
         </Box>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <ToggleButtonGroup value={period} exclusive onChange={(_, value) => value && setPeriod(value)}>
-            <ToggleButton value="WEEK">Week</ToggleButton>
-            <ToggleButton value="MONTH">Month</ToggleButton>
-            <ToggleButton value="YEAR">Year</ToggleButton>
+            <ToggleButton value="WEEK">{t('period_week')}</ToggleButton>
+            <ToggleButton value="MONTH">{t('period_month')}</ToggleButton>
+            <ToggleButton value="YEAR">{t('period_year')}</ToggleButton>
           </ToggleButtonGroup>
           <ToggleButtonGroup value={compareMode} exclusive onChange={(e, v) => v && setCompareMode(v)} size="small">
-            <ToggleButton value="PREVIOUS_PERIOD">vs Previous Period</ToggleButton>
-            <ToggleButton value="YEAR_AGO">vs Same Period Last Year</ToggleButton>
+            <ToggleButton value="PREVIOUS_PERIOD">{t('compare_previous_period')}</ToggleButton>
+            <ToggleButton value="YEAR_AGO">{t('compare_year_ago')}</ToggleButton>
           </ToggleButtonGroup>
         </Stack>
       </Stack>
@@ -309,7 +313,7 @@ const Analytics = () => {
         {/* Top Products + Top Movers */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Top Products</Typography>
+            <Typography variant="h6" gutterBottom>{t('top_products')}</Typography>
             {topProductsLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : topProducts.length === 0 ? renderChartState(false) : (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={topProducts} layout="vertical" margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
@@ -327,8 +331,8 @@ const Analytics = () => {
 
         {/* Top Categories */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, height: 360 }}>
-            <Typography variant="h6" gutterBottom>Top Categories</Typography>
+          <Paper sx={{ p: 3, height: 360, pb: '5px' }}>
+            <Typography variant="h6" gutterBottom>{t('top_categories')}</Typography>
             {topCategoriesLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : topCategories.length === 0 ? renderChartState(false) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -346,17 +350,17 @@ const Analytics = () => {
         {/* Compare Categories */}
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Compare Categories</Typography>
+            <Typography variant="h6" gutterBottom>{t('compare_categories')}</Typography>
             <Autocomplete
               multiple
               options={availableCategories}
               getOptionLabel={(c) => c.name}
               onChange={(e, selected) => setCompareCategoryIds(selected.map((c) => c.id))}
-              renderInput={(params) => <TextField {...params} label="Select 2 or more categories" size="small" />}
+              renderInput={(params) => <TextField {...params} label={t('select_2_or_more_categories')} size="small" />}
               sx={{ mb: 2 }}
             />
             {compareCategoryIds.length < 2 ? (
-              <Typography variant="body2" color="text.secondary">Pick at least two categories to compare.</Typography>
+              <Typography variant="body2" color="text.secondary">{t('pick_at_least_two_categories')}</Typography>
             ) : categoryComparisonLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
             ) : (
@@ -372,7 +376,7 @@ const Analytics = () => {
                       key={id}
                       type="monotone"
                       dataKey={`category_${id}`}
-                      name={availableCategories.find((c) => c.id === id)?.name || `Category ${id}`}
+                      name={availableCategories.find((c) => c.id === id)?.name || t('category_label', { id })}
                       stroke={COLORS[idx % COLORS.length]}
                       strokeWidth={2}
                     />
@@ -386,7 +390,7 @@ const Analytics = () => {
         {/* Profit Trend */}
         <Grid item xs={12}>
           <Paper sx={{ p: 3, height: 360 }}>
-            <Typography variant="h6" gutterBottom>Profit Trend</Typography>
+            <Typography variant="h6" gutterBottom>{t('profit_trend')}</Typography>
             {profitTrendLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : profitTrend.length === 0 ? renderChartState(false) : (
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={profitTrend}>
@@ -408,14 +412,14 @@ const Analytics = () => {
           <Paper sx={{ p: 3 }}>
             <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={2} sx={{ mb: 2 }}>
               <Box>
-                <Typography variant="h6">Sales Timing Heatmap</Typography>
+                <Typography variant="h6">{t('sales_timing_heatmap')}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  Transaction count by day of week and hour — darker = busier
+                  {t('heatmap_description')}
                 </Typography>
               </Box>
               <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                 <TextField
-                  label="From"
+                  label={t('from')}
                   type="date"
                   size="small"
                   value={heatmapStart}
@@ -424,7 +428,7 @@ const Analytics = () => {
                   sx={{ width: 150 }}
                 />
                 <TextField
-                  label="To"
+                  label={t('to')}
                   type="date"
                   size="small"
                   value={heatmapEnd}
@@ -437,7 +441,7 @@ const Analytics = () => {
             {salesTimingLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
             ) : salesTiming.length === 0 ? (
-              <Alert severity="info">No sales data found for this period. Try a wider date range.</Alert>
+              <Alert severity="info">{t('no_sales_data_wider_range')}</Alert>
             ) : (
               <SalesHeatmap data={salesTiming} />
             )}
@@ -448,25 +452,25 @@ const Analytics = () => {
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-              <Typography variant="h6">Profit by Supplier (Estimate)</Typography>
-              <MuiTooltip title="Based on blended average cost, not exact per-batch tracking. Actual recorded sale profit uses weighted-average costPriceAtSale.">
+              <Typography variant="h6">{t('profit_by_supplier_estimate')}</Typography>
+              <MuiTooltip title={t('profit_by_supplier_tooltip')}>
                 <IconButton size="small"><InfoOutlined fontSize="small" /></IconButton>
               </MuiTooltip>
             </Box>
             {profitBySupplierLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
             ) : profitBySupplier.length === 0 ? (
-              <Typography color="text.secondary">No supplier data for this period.</Typography>
+              <Typography color="text.secondary">{t('no_supplier_data')}</Typography>
             ) : (
               <TableContainer>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell>Supplier</TableCell>
-                      <TableCell align="right">Supplied (Cost)</TableCell>
-                      <TableCell align="right">Est. Revenue</TableCell>
-                      <TableCell align="right">Est. Profit</TableCell>
-                      <TableCell align="right">Est. Margin</TableCell>
+                      <TableCell>{t('supplier')}</TableCell>
+                      <TableCell align="right">{t('supplied_cost')}</TableCell>
+                      <TableCell align="right">{t('est_revenue')}</TableCell>
+                      <TableCell align="right">{t('est_profit')}</TableCell>
+                      <TableCell align="right">{t('est_margin')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
@@ -492,39 +496,39 @@ const Analytics = () => {
         {/* Customer Retention */}
         <Grid item xs={12} md={4}>
           <Paper sx={{ p: 3, height: '100%' }}>
-            <Typography variant="h6" gutterBottom>Customer Retention</Typography>
+            <Typography variant="h6" gutterBottom>{t('customer_retention')}</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Only counts sales tied to registered customers. Walk-in / quick-typed names have no stable identity across visits.
+              {t('retention_description')}
             </Typography>
             {retentionLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
             ) : !retention ? (
-              <Typography color="text.secondary">No retention data available.</Typography>
+              <Typography color="text.secondary">{t('no_retention_data')}</Typography>
             ) : (
               <>
                 <Grid container spacing={2} sx={{ mb: 3 }}>
                   <Grid item xs={6}>
                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                       <Typography variant="h4" color="success.main" fontWeight="bold">{retention.returningCount}</Typography>
-                      <Typography variant="body2" color="text.secondary">Returning This Month</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('returning_this_month')}</Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={6}>
                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                       <Typography variant="h4" color="warning.main" fontWeight="bold">{retention.lapsedCount}</Typography>
-                      <Typography variant="body2" color="text.secondary">Lapsed This Month</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('lapsed_this_month')}</Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={6}>
                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                       <Typography variant="h5">{retention.activeLastMonth}</Typography>
-                      <Typography variant="body2" color="text.secondary">Active Last Month</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('active_last_month')}</Typography>
                     </Paper>
                   </Grid>
                   <Grid item xs={6}>
                     <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
                       <Typography variant="h5">{retention.activeThisMonth}</Typography>
-                      <Typography variant="body2" color="text.secondary">Active This Month</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('active_this_month')}</Typography>
                     </Paper>
                   </Grid>
                 </Grid>
@@ -532,16 +536,16 @@ const Analytics = () => {
                 {retention.lapsedCustomers?.length > 0 && (
                   <>
                     <Typography variant="subtitle2" gutterBottom>
-                      Lapsed Customers — sorted by value (follow up first)
+                      {t('lapsed_customers_sorted')}
                     </Typography>
                     <TableContainer sx={{ maxHeight: 300 }}>
                       <Table size="small" stickyHeader>
                         <TableHead>
                           <TableRow>
-                            <TableCell>Customer</TableCell>
-                            <TableCell>Phone</TableCell>
-                            <TableCell align="right">Total Spend</TableCell>
-                            <TableCell>Last Purchase</TableCell>
+                            <TableCell>{t('customer')}</TableCell>
+                            <TableCell>{t('phone')}</TableCell>
+                            <TableCell align="right">{t('total_spend')}</TableCell>
+                            <TableCell>{t('last_purchase')}</TableCell>
                           </TableRow>
                         </TableHead>
                         <TableBody>
@@ -568,37 +572,37 @@ const Analytics = () => {
         {/* Customer Lifetime Value */}
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>Customer Lifetime Value</Typography>
+            <Typography variant="h6" gutterBottom>{t('customer_lifetime_value')}</Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-              Only counts registered customers. Click column headers to sort.
+              {t('ltv_description')}
             </Typography>
             {ltvLoading ? (
               <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>
             ) : sortedLtv.length === 0 ? (
-              <Typography color="text.secondary">No registered-customer purchase data yet.</Typography>
+              <Typography color="text.secondary">{t('no_ltv_data')}</Typography>
             ) : (
               <TableContainer sx={{ maxHeight: 400 }}>
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
-                      <TableCell>Customer</TableCell>
+                      <TableCell>{t('customer')}</TableCell>
                       <TableCell align="right">
                         <TableSortLabel active={ltvSort === 'totalSpent'} direction={ltvSort === 'totalSpent' ? ltvSortDir : 'desc'} onClick={() => handleLtvSort('totalSpent')}>
-                          Total Spent
+                          {t('total_spent')}
                         </TableSortLabel>
                       </TableCell>
                       <TableCell align="right">
                         <TableSortLabel active={ltvSort === 'visitCount'} direction={ltvSort === 'visitCount' ? ltvSortDir : 'desc'} onClick={() => handleLtvSort('visitCount')}>
-                          Visits
+                          {t('visits')}
                         </TableSortLabel>
                       </TableCell>
                       <TableCell align="right">
                         <TableSortLabel active={ltvSort === 'averageBasketSize'} direction={ltvSort === 'averageBasketSize' ? ltvSortDir : 'desc'} onClick={() => handleLtvSort('averageBasketSize')}>
-                          Avg Basket
+                          {t('avg_basket')}
                         </TableSortLabel>
                       </TableCell>
-                      <TableCell>First Purchase</TableCell>
-                      <TableCell>Last Purchase</TableCell>
+                      <TableCell>{t('first_purchase')}</TableCell>
+                      <TableCell>{t('last_purchase')}</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

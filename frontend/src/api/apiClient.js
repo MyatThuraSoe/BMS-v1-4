@@ -1,6 +1,7 @@
 // frontend/src/api/apiClient.jsx
 
 import axios from 'axios';
+import i18n from '../i18n';
 
 const API_BASE_URL = '/api';
 
@@ -11,13 +12,16 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor to add JWT token
+// Request interceptor to add JWT token + Accept-Language header
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    // Tell the backend which language to use for server-side messages
+    const lang = i18n.language?.split('-')[0] || localStorage.getItem('bms_language') || 'en';
+    config.headers['Accept-Language'] = lang;
     return config;
   },
   (error) => {
@@ -46,15 +50,15 @@ apiClient.interceptors.response.use(
     // 2. Handle other known errors with friendly messages
     let friendlyMessage;
     if (!error.response) {
-      friendlyMessage = 'Cannot reach the server. Check your connection and try again.';
+      friendlyMessage = i18n.t('errors:cannot_reach_server');
     } else if (status === 409) {
-      friendlyMessage = backendMessage || 'That action conflicts with existing data (e.g., a duplicate).';
+      friendlyMessage = backendMessage || i18n.t('errors:conflict');
     } else if (status === 400) {
-      friendlyMessage = backendMessage || 'Please check the form for errors.';
+      friendlyMessage = backendMessage || i18n.t('errors:check_form');
     } else if (status >= 500) {
-      friendlyMessage = 'Something went wrong on our end. Please try again in a moment.';
+      friendlyMessage = i18n.t('errors:unexpected_error');
     } else {
-      friendlyMessage = backendMessage || 'Something went wrong.';
+      friendlyMessage = backendMessage || i18n.t('errors:generic');
     }
 
     error.friendlyMessage = friendlyMessage;

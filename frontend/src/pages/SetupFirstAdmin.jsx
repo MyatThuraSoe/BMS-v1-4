@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   Container,
@@ -25,6 +26,7 @@ const SetupFirstAdmin = () => {
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { t } = useTranslation('auth');
 
   const setField = (key) => (e) => setForm((p) => ({ ...p, [key]: e.target.value }));
 
@@ -34,7 +36,7 @@ const SetupFirstAdmin = () => {
     setSuccess('');
 
     if (form.password !== form.confirmPassword) {
-      setError('Passwords do not match');
+      setError(t('passwords_not_match'));
       return;
     }
 
@@ -47,10 +49,10 @@ const SetupFirstAdmin = () => {
         firstName: form.firstName,
         lastName: form.lastName,
       });
-      setSuccess('First admin registered successfully. You can now sign in.');
+      setSuccess(t('first_admin_registered'));
       setTimeout(() => navigate('/login'), 2000);
     } catch (err) {
-      setError(err?.response?.data?.message || err?.friendlyMessage || 'Failed to register first admin');
+      setError(err?.response?.data?.message || err?.friendlyMessage || t('failed_to_register_admin'));
     } finally {
       setLoading(false);
     }
@@ -90,10 +92,10 @@ const SetupFirstAdmin = () => {
               S
             </Box>
             <Typography variant="h4" component="h1" sx={{ fontWeight: 600 }}>
-              First-time setup
+              {t('setup_title')}
             </Typography>
             <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Create the initial admin account
+              {t('setup_subtitle')}
             </Typography>
           </Box>
 
@@ -112,7 +114,7 @@ const SetupFirstAdmin = () => {
           <Box component="form" onSubmit={handleSubmit} sx={{ width: '100%' }}>
             <TextField
               fullWidth
-              label="First name"
+              label={t('first_name')}
               value={form.firstName}
               onChange={setField('firstName')}
               margin="normal"
@@ -123,7 +125,7 @@ const SetupFirstAdmin = () => {
             />
             <TextField
               fullWidth
-              label="Last name"
+              label={t('last_name')}
               value={form.lastName}
               onChange={setField('lastName')}
               margin="normal"
@@ -133,7 +135,7 @@ const SetupFirstAdmin = () => {
             />
             <TextField
               fullWidth
-              label="Username"
+              label={t('username')}
               value={form.username}
               onChange={setField('username')}
               margin="normal"
@@ -144,7 +146,7 @@ const SetupFirstAdmin = () => {
             />
             <TextField
               fullWidth
-              label="Email"
+              label={t('email')}
               type="email"
               value={form.email}
               onChange={setField('email')}
@@ -156,7 +158,7 @@ const SetupFirstAdmin = () => {
             />
             <TextField
               fullWidth
-              label="Password"
+              label={t('password')}
               type="password"
               value={form.password}
               onChange={setField('password')}
@@ -168,7 +170,7 @@ const SetupFirstAdmin = () => {
             />
             <TextField
               fullWidth
-              label="Confirm password"
+              label={t('confirm_password')}
               type="password"
               value={form.confirmPassword}
               onChange={setField('confirmPassword')}
@@ -186,7 +188,7 @@ const SetupFirstAdmin = () => {
               sx={{ mt: 3, py: 1.5 }}
               disabled={loading}
             >
-              {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : 'Create admin account'}
+              {loading ? <CircularProgress size={24} sx={{ color: 'white' }} /> : t('create_admin_account')}
             </Button>
           </Box>
         </Paper>

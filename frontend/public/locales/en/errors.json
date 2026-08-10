@@ -1,0 +1,8 @@
+{
+  "cannot_reach_server": "Cannot reach the server. Check your connection and try again.",
+  "session_expired": "Your session has expired. Please log in again.",
+  "unexpected_error": "Something went wrong on our end. Please try again in a moment.",
+  "conflict": "That action conflicts with existing data (e.g., a duplicate).",
+  "check_form": "Please check the form for errors.",
+  "generic": "Something went wrong."
+}

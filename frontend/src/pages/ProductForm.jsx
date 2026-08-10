@@ -7,10 +7,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, categoryService } from '../api/services';
 import apiClient from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 import ProductImage from '../components/ProductImage';
 
 const ProductForm = () => {
+  const { t } = useTranslation('inventory');
   const { id } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -80,15 +82,15 @@ const ProductForm = () => {
 
     },
     onSuccess: () => {
-      setSuccess(isEdit ? 'Product updated successfully' : 'Product created successfully');
+      setSuccess(isEdit ? t('product_updated') : t('product_created'));
       queryClient.invalidateQueries({ queryKey: ['products'] });
       setTimeout(() => navigate('/products'), 1500);
     },
     onError: (err) => {
       if (err.response?.status === 409) {
-        setError('This product was changed by someone else while you were editing it. Please refresh and try again.');
+        setError(t('conflict_error'));
       } else {
-        setError(err.response?.data?.message || 'Failed to save product');
+        setError(err.response?.data?.message || t('failed_to_save_product'));
       }
     },
   });
@@ -124,67 +126,67 @@ const ProductForm = () => {
   };
 
   if (!isManager()) {
-    return <Alert severity="error">Access denied</Alert>;
+    return <Alert severity="error">{t('access_denied')}</Alert>;
   }
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{isEdit ? 'Edit Product' : 'Add Product'}</Typography>
+      <Typography variant="h4" gutterBottom>{isEdit ? t('edit_product') : t('add_product')}</Typography>
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
       <Paper sx={{ p: 3 }}>
         <form onSubmit={handleSubmit}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Name" name="name" value={formData.name} onChange={handleChange} required />
+              <TextField fullWidth label={t('name')} name="name" value={formData.name} onChange={handleChange} required />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="SKU" name="sku" value={formData.sku} onChange={handleChange} required />
+              <TextField fullWidth label={t('sku')} name="sku" value={formData.sku} onChange={handleChange} required />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth select label="Unit" name="unit" value={formData.unit} onChange={handleChange}>
-                <MenuItem value="">Not specified</MenuItem>
-                <MenuItem value="PC">Piece (pc)</MenuItem>
-                <MenuItem value="KG">Kilogram (kg)</MenuItem>
-                <MenuItem value="G">Gram (g)</MenuItem>
-                <MenuItem value="LB">Pound (lb)</MenuItem>
-                <MenuItem value="L">Liter (L)</MenuItem>
-                <MenuItem value="ML">Milliliter (mL)</MenuItem>
-                <MenuItem value="BOX">Box</MenuItem>
-                <MenuItem value="PACK">Pack</MenuItem>
-                <MenuItem value="DOZEN">Dozen</MenuItem>
+              <TextField fullWidth select label={t('unit')} name="unit" value={formData.unit} onChange={handleChange}>
+                <MenuItem value="">{t('not_specified')}</MenuItem>
+                <MenuItem value="PC">{t('unit_piece')}</MenuItem>
+                <MenuItem value="KG">{t('unit_kilogram')}</MenuItem>
+                <MenuItem value="G">{t('unit_gram')}</MenuItem>
+                <MenuItem value="LB">{t('unit_pound')}</MenuItem>
+                <MenuItem value="L">{t('unit_liter')}</MenuItem>
+                <MenuItem value="ML">{t('unit_milliliter')}</MenuItem>
+                <MenuItem value="BOX">{t('unit_box')}</MenuItem>
+                <MenuItem value="PACK">{t('unit_pack')}</MenuItem>
+                <MenuItem value="DOZEN">{t('unit_dozen')}</MenuItem>
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Category" name="categoryId" select value={formData.categoryId} onChange={handleChange}>
-                <MenuItem value="">None</MenuItem>
+              <TextField fullWidth label={t('category')} name="categoryId" select value={formData.categoryId} onChange={handleChange}>
+                <MenuItem value="">{t('none')}</MenuItem>
                 {categories?.data?.content?.map((c) => (<MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>))}
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Price" name="price" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.price} onChange={handleChange} required />
+              <TextField fullWidth label={t('price')} name="price" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.price} onChange={handleChange} required />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Cost" name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} />
+              <TextField fullWidth label={t('cost')} name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Stock Quantity" name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} />
+              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label="Low Stock Threshold" name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} />
+              <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} />
             </Grid>
             <Grid item xs={12}>
-              <TextField fullWidth label="Description" name="description" multiline rows={3} value={formData.description} onChange={handleChange} />
+              <TextField fullWidth label={t('description')} name="description" multiline rows={3} value={formData.description} onChange={handleChange} />
             </Grid>
             <Grid item xs={12}>
               {imagePreview ? (
-                <Box component="img" src={imagePreview} alt="New" sx={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 1, mb: 1 }} />
+                <Box component="img" src={imagePreview} alt={t('new_image_alt')} sx={{ width: 100, height: 100, objectFit: 'cover', borderRadius: 1, mb: 1 }} />
               ) : (isEdit && existingProduct?.data?.hasImage && !removeExistingImage) ? (
                 <ProductImage productId={id} hasImage={true} size={100} />
               ) : null}
               {((isEdit && existingProduct?.data?.hasImage && !removeExistingImage) || image) && (
                 <Button size="small" color="error" onClick={handleRemoveImage} sx={{ display: 'block', mt: 1 }}>
-                  Remove Image
+                  {t('remove_image')}
                 </Button>
               )}
               <input
@@ -192,13 +194,13 @@ const ProductForm = () => {
                   accept="image/*"
                   onChange={handleImageChange}
               />
-              <Typography variant="caption">Upload product images</Typography>
+              <Typography variant="caption">{t('upload_product_images')}</Typography>
             </Grid>
             <Grid item xs={12}>
               <Button type="submit" variant="contained" disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? <CircularProgress size={24} /> : (isEdit ? 'Update' : 'Create')}
+                {saveMutation.isPending ? <CircularProgress size={24} /> : (isEdit ? t('update') : t('create'))}
               </Button>
-              <Button onClick={() => navigate('/products')} sx={{ ml: 1 }}>Cancel</Button>
+              <Button onClick={() => navigate('/products')} sx={{ ml: 1 }}>{t('cancel')}</Button>
             </Grid>
           </Grid>
         </form>

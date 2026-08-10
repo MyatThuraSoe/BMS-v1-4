@@ -1,0 +1,15 @@
+{
+  "today_at_glance": "今日の概況",
+  "financial_summary": "財務サマリー",
+  "sales_this_period": "この期間の売上",
+  "products_in_stock": "在庫の商品数",
+  "low_stock_alerts": "在庫切れ間近のアラート",
+  "quick_actions": "クイックアクション",
+  "new_sale": "新規売上",
+  "new_product": "新規商品",
+  "new_purchase": "新規仕入れ",
+  "new_customer": "新規顧客",
+  "recent_activity": "最近のアクティビティ",
+  "no_recent_activity": "表示する最近のアクティビティはありません。",
+  "sales_trend_last_7_days": "売上トレンド（直近7日間）"
+}

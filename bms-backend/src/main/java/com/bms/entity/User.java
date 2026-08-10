@@ -49,7 +49,10 @@ public class User implements UserDetails {
     
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
-    
+
+    @Column(name = "preferred_language", nullable = false)
+    private String preferredLanguage = "en";
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
@@ -100,6 +103,9 @@ public class User implements UserDetails {
     
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public String getPreferredLanguage() { return preferredLanguage; }
+    public void setPreferredLanguage(String preferredLanguage) { this.preferredLanguage = preferredLanguage; }
     
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

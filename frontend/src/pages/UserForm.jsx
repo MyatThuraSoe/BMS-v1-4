@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -23,6 +24,7 @@ const UserForm = () => {
   const { user: currentUser } = useAuth();
   const isEdit = !!id;
   const queryClient = useQueryClient();
+  const { t } = useTranslation('users');
 
   const [formData, setFormData] = useState({
     username: '',
@@ -79,22 +81,22 @@ const UserForm = () => {
       navigate('/users');
     },
     onError: (err) => {
-      setError(err.response?.data?.message || 'Failed to save user');
+      setError(err.response?.data?.message || t('failed_to_save_user'));
     },
   });
 
   const validate = () => {
     const newErrors = {};
-    if (!formData.username.trim()) newErrors.username = 'Username is required';
-    if (!formData.email.trim()) newErrors.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = 'Invalid email format';
-    if (!isEdit && !formData.password) newErrors.password = 'Password is required';
+    if (!formData.username.trim()) newErrors.username = t('username_required');
+    if (!formData.email.trim()) newErrors.email = t('email_required');
+    else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = t('email_invalid');
+    if (!isEdit && !formData.password) newErrors.password = t('password_required');
     if (!isEdit && formData.password && formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+      newErrors.password = t('password_min_length');
     }
-    if (!formData.firstName.trim()) newErrors.firstName = 'First name is required';
-    if (!formData.lastName.trim()) newErrors.lastName = 'Last name is required';
-    if (!formData.roleId) newErrors.roleId = 'Role is required';
+    if (!formData.firstName.trim()) newErrors.firstName = t('first_name_required');
+    if (!formData.lastName.trim()) newErrors.lastName = t('last_name_required');
+    if (!formData.roleId) newErrors.roleId = t('role_required');
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -128,7 +130,7 @@ const UserForm = () => {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        {isEdit ? 'Edit User' : 'Add User'}
+        {isEdit ? t('edit_user') : t('add_user')}
       </Typography>
 
       {error && (
@@ -143,7 +145,7 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Username"
+                label={t('username')}
                 name="username"
                 value={formData.username}
                 onChange={handleChange}
@@ -156,7 +158,7 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Email"
+                label={t('email')}
                 name="email"
                 type="email"
                 value={formData.email}
@@ -169,28 +171,28 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Password"
+                label={t('password')}
                 name="password"
                 type="password"
                 value={formData.password}
                 onChange={handleChange}
                 error={!!errors.password}
-                helperText={errors.password || (isEdit ? 'Leave blank to keep current' : '')}
+                helperText={errors.password || (isEdit ? t('password_keep_current') : '')}
                 required={!isEdit}
               />
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth error={!!errors.roleId}>
-                <InputLabel required>Role</InputLabel>
+                <InputLabel required>{t('role')}</InputLabel>
                 <Select
                   name="roleId"
                   value={formData.roleId}
                   onChange={handleChange}
-                  label="Role"
+                  label={t('role')}
                 >
-                  <MenuItem value={1}>Admin</MenuItem>
-                  <MenuItem value={2}>Manager</MenuItem>
-                  <MenuItem value={3}>Cashier</MenuItem>
+                  <MenuItem value={1}>{t('role_admin')}</MenuItem>
+                  <MenuItem value={2}>{t('role_manager')}</MenuItem>
+                  <MenuItem value={3}>{t('role_cashier')}</MenuItem>
                 </Select>
                 {errors.roleId && <Typography color="error">{errors.roleId}</Typography>}
               </FormControl>
@@ -198,7 +200,7 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="First Name"
+                label={t('first_name')}
                 name="firstName"
                 value={formData.firstName}
                 onChange={handleChange}
@@ -210,7 +212,7 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Last Name"
+                label={t('last_name')}
                 name="lastName"
                 value={formData.lastName}
                 onChange={handleChange}
@@ -222,7 +224,7 @@ const UserForm = () => {
             <Grid item xs={12} sm={6}>
               <TextField
                 fullWidth
-                label="Phone"
+                label={t('phone')}
                 name="phone"
                 value={formData.phone}
                 onChange={handleChange}
@@ -230,17 +232,17 @@ const UserForm = () => {
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
-                <InputLabel>Status</InputLabel>
+                <InputLabel>{t('status')}</InputLabel>
                 <Select
                   name="active"
                   value={formData.active ? 'true' : 'false'}
                   onChange={(e) =>
                     setFormData((prev) => ({ ...prev, active: e.target.value === 'true' }))
                   }
-                  label="Status"
+                  label={t('status')}
                 >
-                  <MenuItem value="true">Active</MenuItem>
-                  <MenuItem value="false">Inactive</MenuItem>
+                  <MenuItem value="true">{t('active')}</MenuItem>
+                  <MenuItem value="false">{t('inactive')}</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -248,14 +250,14 @@ const UserForm = () => {
 
           <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
             <Button type="submit" variant="contained" disabled={mutation.isPending}>
-              {isEdit ? 'Update' : 'Create'}
+              {isEdit ? t('update') : t('create')}
             </Button>
             <Button
               type="button"
               variant="outlined"
               onClick={() => navigate('/users')}
             >
-              Cancel
+              {t('cancel')}
             </Button>
           </Box>
         </form>

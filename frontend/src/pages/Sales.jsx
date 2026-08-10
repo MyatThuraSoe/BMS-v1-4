@@ -3,11 +3,12 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete,
 } from '@mui/material';
-import { Delete as DeleteIcon, Visibility as ViewIcon, Print as PrintIcon, Search as SearchIcon } from '@mui/icons-material';
+import { Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { saleService, customerService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import { useTranslation } from 'react-i18next';
 
 const RANGE_PRESETS = [
   { value: 'today', label: 'Today' },
@@ -36,6 +37,7 @@ const Sales = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const { t } = useTranslation('sales');
 
   const range = searchParams.get('range') || 'today';
 
@@ -163,7 +165,7 @@ const Sales = () => {
           {RANGE_PRESETS.map((preset) => (
             <Chip
               key={preset.value}
-              label={preset.label}
+              label={t(`range_${preset.value.toLowerCase()}`)}
               onClick={() => handleRangeChange(preset.value)}
               color={range === preset.value ? 'primary' : 'default'}
               variant={range === preset.value ? 'filled' : 'outlined'}
@@ -177,7 +179,7 @@ const Sales = () => {
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', alignItems: 'center' }}>
           <TextField
             size="small"
-            placeholder="Search by invoice..."
+            placeholder={t('search_by_invoice')}
             value={invoiceSearch}
             onChange={(e) => setInvoiceSearch(e.target.value)}
             sx={{ minWidth: 220 }}
@@ -194,7 +196,7 @@ const Sales = () => {
             onChange={(e, newValue) => { setSelectedCustomer(newValue); setPage(0); }}
             inputValue={customerInput}
             onInputChange={(e, newValue) => setCustomerInput(newValue)}
-            renderInput={(params) => <TextField {...params} label="Filter by Customer" />}
+            renderInput={(params) => <TextField {...params} label={t('filter_by_customer')} />}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
           {range === 'CUSTOM' && (
@@ -202,7 +204,7 @@ const Sales = () => {
               <TextField
                 size="small"
                 type="date"
-                label="Start Date"
+                label={t('start_date')}
                 value={customStartDate}
                 onChange={(e) => { setCustomStartDate(e.target.value); setPage(0); }}
                 InputLabelProps={{ shrink: true }}
@@ -211,7 +213,7 @@ const Sales = () => {
               <TextField
                 size="small"
                 type="date"
-                label="End Date"
+                label={t('end_date')}
                 value={customEndDate}
                 onChange={(e) => { setCustomEndDate(e.target.value); setPage(0); }}
                 InputLabelProps={{ shrink: true }}
@@ -220,7 +222,7 @@ const Sales = () => {
             </>
           )}
           {hasActiveFilters && (
-            <Button size="small" onClick={clearFilters}>Clear Filters</Button>
+            <Button size="small" onClick={clearFilters}>{t('clear_filters')}</Button>
           )}
         </Box>
       </Paper>
@@ -229,39 +231,42 @@ const Sales = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Invoice #</TableCell>
-              <TableCell>Customer</TableCell>
-              <TableCell align="right">Total</TableCell>
-              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>Paid</TableCell>
-              <TableCell>Status</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Date</TableCell>
-              <TableCell align="right">Actions</TableCell>
+              <TableCell>{t('invoice_number')}</TableCell>
+              <TableCell>{t('customer')}</TableCell>
+              <TableCell align="right">{t('total')}</TableCell>
+              <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t('paid')}</TableCell>
+              <TableCell>{t('status')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('date')}</TableCell>
+              <TableCell align="right" sx={{ width: 100 }}>{t('actions')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('loading')}</TableCell></TableRow>
             ) : sales.length === 0 ? (
-              <TableRow><TableCell colSpan={7} align="center">No sales found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('no_sales_found')}</TableCell></TableRow>
             ) : (
               sales.map((s) => {
                 const status = getSaleStatus(s);
                 return (
-                  <TableRow key={s.id}>
+                  <TableRow
+                    key={s.id}
+                    hover
+                    onClick={() => navigate(`/sales/${s.id}`)}
+                    sx={{ cursor: 'pointer' }}
+                  >
                     <TableCell>{s.invoiceNumber}</TableCell>
-                    <TableCell>{s.customerName || 'Walk-in'}</TableCell>
+                    <TableCell>{s.customerName || t('walk_in')}</TableCell>
                     <TableCell align="right">{formatCurrency(s.totalAmount)}</TableCell>
                     <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{formatCurrency(s.amountPaid)}</TableCell>
-                    <TableCell><Chip label={status} size="small" color={getStatusColor(status)} /></TableCell>
+                    <TableCell><Chip label={t(`status_${status.toLowerCase().replace(/\s+/g, '_')}`)} size="small" color={getStatusColor(status)} /></TableCell>
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.saleDate)}</TableCell>
-                    <TableCell align="right">
-                      <IconButton size="small" onClick={() => navigate(`/receipt/${s.invoiceNumber}`)}><PrintIcon /></IconButton>
-                      <IconButton size="small" onClick={() => navigate(`/sales/${s.id}`)}><ViewIcon /></IconButton>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {isManager() && status !== 'VOIDED' && (
-                        <IconButton size="small" color="warning" onClick={() => { setSelectedSale(s); setVoidDialogOpen(true); }}>Void</IconButton>
+                        <IconButton size="small" color="warning" onClick={(e) => { e.stopPropagation(); setSelectedSale(s); setVoidDialogOpen(true); }}>{t('void')}</IconButton>
                       )}
                       {isManager() && (
-                        <IconButton size="small" color="error" onClick={() => { setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
+                        <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
                       )}
                     </TableCell>
                   </TableRow>
@@ -274,23 +279,23 @@ const Sales = () => {
       </TableContainer>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>Are you sure you want to delete sale "{selectedSale?.invoiceNumber}"?</DialogContent>
+        <DialogTitle>{t('confirm_delete')}</DialogTitle>
+        <DialogContent>{t('delete_sale_confirm', { number: selectedSale?.invoiceNumber })}</DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
         </DialogActions>
       </Dialog>
 
       <Dialog open={voidDialogOpen} onClose={() => setVoidDialogOpen(false)}>
-        <DialogTitle>Void Sale</DialogTitle>
+        <DialogTitle>{t('void_sale')}</DialogTitle>
         <DialogContent>
-          <Typography sx={{ mb: 2 }}>Sale: {selectedSale?.invoiceNumber}</Typography>
-          <TextField fullWidth label="Reason" multiline rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} required />
+          <Typography sx={{ mb: 2 }}>{t('sale_number', { number: selectedSale?.invoiceNumber })}</Typography>
+          <TextField fullWidth label={t('reason')} multiline rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} required />
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setVoidDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleVoid} color="warning" variant="contained" disabled={!voidReason}>Void</Button>
+          <Button onClick={() => setVoidDialogOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={handleVoid} color="warning" variant="contained" disabled={!voidReason}>{t('void')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

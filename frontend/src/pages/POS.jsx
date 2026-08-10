@@ -1,4 +1,5 @@
 import { useState,useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Box,
   Typography,
@@ -26,6 +27,7 @@ import {
   ListItem,
   ListItemButton,
   Switch,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -34,6 +36,7 @@ import {
   Search as SearchIcon,
   ShoppingCart as CartIcon,
   PersonAdd as CustomerIcon,
+  FlashOn as DirectPrintIcon,
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -48,9 +51,11 @@ import ShopLogo from '../components/ShopLogo';
 
 import { productService, customerService, saleService, categoryService, receiptService, shopInfoService } from '../api/services';
 import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter'; // Add QZ Tray import
+import directPrint from '../services/directPrintService';
 
 const POS = () => {
 
+  const { t } = useTranslation('pos');
 
   const [customerSearch, setCustomerSearch] = useState('');
   const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState('');
@@ -73,6 +78,8 @@ const POS = () => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [verifiedTotals, setVerifiedTotals] = useState(null); // { subtotal, taxAmount, totalAmount } from last successful verify
+
+    const [isDirectPrinting, setIsDirectPrinting] = useState(false); // ✅ NEW
 
   // Shop info (for receipt branding)
   const { data: shopInfoData } = useQuery({
@@ -129,7 +136,7 @@ const filteredProducts = products.filter(
     if (existingItem) {
       const currentQty = parseInt(existingItem.quantity, 10) || 0;
       if (currentQty >= product.stockQuantity) {
-        setError(`Cannot add more. Only ${product.stockQuantity} available.`);
+        setError(t('cannot_add_more', { count: product.stockQuantity }));
         return;
       }
       setCart(
@@ -161,7 +168,7 @@ const filteredProducts = products.filter(
             const newQty = currentQty + delta;
             if (newQty <= 0) return null;
             if (newQty > item.stockQuantity) {
-              setError(`Cannot exceed available stock: ${item.stockQuantity}`);
+              setError(t('exceed_stock', { count: item.stockQuantity }));
               return { ...item, quantity: item.stockQuantity };
             }
             setError('');
@@ -269,11 +276,11 @@ const filteredProducts = products.filter(
     onError: (err) => {
       const message = err.response?.data?.message || '';
       if (message.includes('Insufficient stock') || message.includes('less than total amount')) {
-        notifyWarning('Prices or stock changed while you were checking out. Re-checking your cart...');
+        notifyWarning(t('prices_changed_warning'));
         setShowCheckoutDialog(false);
         verifyCartMutation.mutate(cart); // re-verify and refresh in place, same pattern as above
       } else {
-        notifyError(err.friendlyMessage || message || 'Failed to create sale');
+        notifyError(err.friendlyMessage || message || t('failed_create_sale'));
       }
     },
   });
@@ -319,17 +326,17 @@ const filteredProducts = products.filter(
         })
       );
 
-      notifyWarning(`Some items changed: ${result.messages.join(' | ')}. Please review and checkout again.`);
+      notifyWarning(t('items_changed_warning', { messages: result.messages.join(' | ') }));
       // Do NOT open the confirm dialog yet — let them see the corrected cart first.
     },
     onError: (err) => {
-      notifyError(err.friendlyMessage || 'Could not verify cart. Please try again.');
+      notifyError(err.friendlyMessage || t('verify_cart_failed'));
     },
   });
 
   const handleCheckout = () => {
     if (cart.length === 0) {
-      setError('Cart is empty');
+      setError(t('empty_cart'));
       return;
     }
 
@@ -344,7 +351,7 @@ const filteredProducts = products.filter(
     setCart(sanitizedCart);
 
     if (!cashAmount || parseFloat(cashAmount) <= 0) {
-      setError('Enter a cash amount');
+      setError(t('enter_cash_amount'));
       return;
     }
     verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
@@ -381,7 +388,7 @@ const filteredProducts = products.filter(
           };
         }
       } catch (err) {
-        notifyError('Failed to load print view. Please try again.');
+        notifyError(t('load_print_failed'));
       }
     }
   };
@@ -394,7 +401,7 @@ const filteredProducts = products.filter(
         const url = window.URL.createObjectURL(new Blob([blob]));
         window.open(url, '_blank');
       } catch (err) {
-        notifyError('Failed to download PDF.');
+        notifyError(t('download_pdf_failed'));
       }
     }
   };
@@ -405,17 +412,46 @@ const filteredProducts = products.filter(
       try {
         // lastSale contains the exact same data structure as the receipt
         await printReceiptViaQZ(lastSale, shopInfo || {});
-        notifySuccess('Receipt sent to printer!');
+        notifySuccess(t('receipt_sent_printer'));
       } catch (err) {
         // Error is already handled inside the utility
       }
     }
   };
 
+    // ✅ NEW: Smart Direct Print (Electron silent -> QZ Tray -> Browser fallback)
+  const handleDirectPrint = async () => {
+    if (!lastSale?.invoiceNumber) return;
+    setIsDirectPrinting(true);
+    try {
+      if (directPrint.isAvailable()) {
+        // Fetch the formatted HTML from the backend (same as handlePrintReceipt)
+        const htmlContent = await receiptService.getPrintHtml(lastSale.invoiceNumber);
+        // Send directly to Electron's silent printer (null = use system default printer)
+        const result = await directPrint.print(htmlContent, null); 
+        if (result.success) {
+          notifySuccess(t('receipt_sent_printer'));
+        } else {
+          notifyError(result.error || t('print_failed'));
+        }
+      } else if (isQZSupported()) {
+        await printReceiptViaQZ(lastSale, shopInfo || {});
+        notifySuccess(t('receipt_sent_printer'));
+      } else {
+        // Plain browser fallback
+        handlePrintReceipt(); 
+      }
+    } catch (err) {
+      notifyError(err.message || t('print_failed'));
+    } finally {
+      setIsDirectPrinting(false);
+    }
+  };
+
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        Available Products
+      <Typography variant="h5"  sx={{ color:'primary.main'}} gutterBottom>
+        {t('available_products')}
       </Typography>
 
       {error && (
@@ -430,7 +466,7 @@ const filteredProducts = products.filter(
           <Paper sx={{ p: 2, mb: 2 }}>
             <TextField
               fullWidth
-              placeholder="Search by name or SKU..."
+              placeholder={t('search_placeholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               InputProps={{
@@ -441,7 +477,7 @@ const filteredProducts = products.filter(
             />
             <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap' }}>
               <Chip
-                label="All"
+                label={t('all_categories')}
                 clickable
                 sx={{ px: 0.5 }}
                 color={!selectedCategory ? 'primary' : 'default'}
@@ -492,7 +528,7 @@ const filteredProducts = products.filter(
                           fontSize: '0.65rem', fontWeight: 700, letterSpacing: 0.5,
                           transform: 'rotate(35deg)', py: 0.3, zIndex: 1,
                         }}>
-                          OUT OF STOCK
+                          {t('out_of_stock')}
                         </Box>
                       )}
                       <Box sx={{ p: 1.5, pb: 1, display: 'flex', justifyContent: 'center', bgcolor: 'background.default' }}>
@@ -561,30 +597,31 @@ const filteredProducts = products.filter(
               backgroundPosition: 'top left',
               backgroundRepeat: 'repeat-x',
               pt: '14px',
+              pb: '5px',
             }}
           >
             <Box sx={{ px: 2, pb: 1 }}>
               <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 <CartIcon fontSize="small" />
-                Cart
+                {t('cart')}
               </Typography>
             </Box>
             <Box sx={{ px: 2, flexGrow: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
             <Box sx={{ flexGrow: 1, overflow: 'auto' }}>
               {cart.length === 0 ? (
                 <Typography color="text.secondary" align="center" sx={{ py: 4 }}>
-                  Cart is empty
+                  {t('empty_cart')}
                 </Typography>
               ) : (
                 <TableContainer sx={{ overflowX: 'auto' }}>
                   <Table size="small">
                     <TableHead>
                       <TableRow>
-                          <TableCell>Item</TableCell>
-                          <TableCell align="center">Qty</TableCell>
-                          <TableCell align="right">Price</TableCell>
-                          <TableCell align="right">Total</TableCell>
-                          <TableCell align="center">Action</TableCell>
+                          <TableCell>{t('item')}</TableCell>
+                          <TableCell align="center">{t('quantity')}</TableCell>
+                          <TableCell align="right">{t('price')}</TableCell>
+                          <TableCell align="right">{t('total')}</TableCell>
+                          <TableCell align="center">{t('action')}</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -653,10 +690,10 @@ const filteredProducts = products.filter(
             </Box>
 
             <Box sx={{ borderTop: 1, borderColor: 'divider', pt: 2, mt: 2 }}>
-              <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', gap: 1, mb: 2, alignItems: 'center' }}>
                 {registeredMode ? (
                   <Autocomplete
-                    fullWidth
+                    sx={{ flex: 1, minWidth: 0 }}
                     options={customers}
                     getOptionLabel={(c) => `${c.firstName} ${c.lastName}${c.phone ? ' (' + c.phone + ')' : ''}`}
                     value={selectedCustomer}
@@ -666,7 +703,7 @@ const filteredProducts = products.filter(
                     renderInput={(params) => (
                       <TextField
                         {...params}
-                        label="Search registered customer"
+                        label={t('search_registered_customer')}
                         size="small"
                         InputProps={{
                           ...params.InputProps,
@@ -676,19 +713,19 @@ const filteredProducts = products.filter(
                     )}
                     noOptionsText={
                       <Box sx={{ p: 1 }}>
-                        <Typography variant="body2" color="text.secondary">No match found.</Typography>
+                        <Typography variant="body2" color="text.secondary">{t('no_match_found')}</Typography>
                         <Button size="small" onClick={() => setRegisteredMode(false)}>
-                          Add as unregistered instead
+                          {t('add_as_unregistered')}
                         </Button>
                       </Box>
                     }
                   />
                 ) : (
                   <TextField
-                    fullWidth
+                    sx={{ flex: 1, minWidth: 0 }}
                     size="small"
-                    label="Customer name (optional)"
-                    placeholder="Leave blank for Walk-in"
+                    label={t('customer_name_optional')}
+                    placeholder={t('walkin_hint')}
                     value={customerNameInput}
                     onChange={(e) => setCustomerNameInput(e.target.value)}
                     InputProps={{
@@ -708,7 +745,7 @@ const filteredProducts = products.filter(
                     size="small"
                   />
                   <Typography variant="caption" color="text.secondary">
-                    {registeredMode ? 'Registered' : 'Unregistered'}
+                    {registeredMode ? t('registered') : t('unregistered')}
                   </Typography>
                 </Box>
               </Box>
@@ -723,15 +760,15 @@ const filteredProducts = products.filter(
               )}
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography>Subtotal:</Typography>
+                <Typography>{t('subtotal')}</Typography>
                 <Typography>{formatCurrency(subtotal)}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                <Typography>Tax:</Typography>
+                <Typography>{t('tax')}</Typography>
                 <Typography>{formatCurrency(displayTax)}</Typography>
             </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                <Typography variant="h6">Total:</Typography>
+                <Typography variant="h6">{t('total')}</Typography>
                 <Typography variant="h6" color="primary">
                   {formatCurrency(displayTotal)}
                 </Typography>
@@ -739,7 +776,7 @@ const filteredProducts = products.filter(
 
               <TextField
                 fullWidth
-                label="Cash Amount"
+                label={t('cash_amount')}
                 type="number"
                 value={cashAmount}
                 onChange={(e) => setCashAmount(e.target.value)}
@@ -749,7 +786,7 @@ const filteredProducts = products.filter(
 
               {cashAmount && (
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography>Change:</Typography>
+                  <Typography>{t('change')}</Typography>
                   <Typography color={change < 0 ? 'error' : 'success'}>
                     {formatCurrency(displayChange)}
                   </Typography>
@@ -764,7 +801,7 @@ const filteredProducts = products.filter(
                 disabled={cart.length === 0}
                 sx={{ py: 1.75, fontSize: '1.05rem', mt: 1 }}
               >
-                Checkout
+                {t('checkout')}
               </Button>
               <Button
                 fullWidth
@@ -772,7 +809,7 @@ const filteredProducts = products.filter(
                 onClick={clearCart}
                 sx={{ mt: 1 }}
               >
-                Clear Cart
+                {t('clear_cart')}
               </Button>
             </Box>
             </Box>
@@ -782,30 +819,30 @@ const filteredProducts = products.filter(
 
       {/* Checkout Confirmation Dialog */}
       <Dialog open={showCheckoutDialog} onClose={() => setShowCheckoutDialog(false)}>
-        <DialogTitle>Confirm Checkout</DialogTitle>
+        <DialogTitle>{t('confirm_checkout')}</DialogTitle>
         <DialogContent>
-          <Typography>Items: {cart.length}</Typography>
-          <Typography>Total: {formatCurrency(displayTotal)}</Typography>
-          <Typography>Cash: {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
-          <Typography>Change: {formatCurrency(displayChange)}</Typography>
+          <Typography>{t('items_count', { count: cart.length })}</Typography>
+          <Typography>{t('total')}: {formatCurrency(displayTotal)}</Typography>
+          <Typography>{t('cash_label')} {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
+          <Typography>{t('change')} {formatCurrency(displayChange)}</Typography>
           {selectedCustomer && (
-            <Typography>Customer: {selectedCustomer.firstName} {selectedCustomer.lastName}</Typography>
+            <Typography>{t('customer_label', { name: `${selectedCustomer.firstName} ${selectedCustomer.lastName}` })}</Typography>
           )}
           {parseFloat(cashAmount) < displayTotal && (
             <Alert severity="error" sx={{ mt: 2 }}>
-              Cash amount is less than the total. Please collect {formatCurrency(displayTotal - (parseFloat(cashAmount) || 0))} more.
+              {t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) })}
             </Alert>
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowCheckoutDialog(false)}>Cancel</Button>
+          <Button onClick={() => setShowCheckoutDialog(false)}>{t('cancel')}</Button>
           <Button
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
             disabled={parseFloat(cashAmount) < displayTotal}
           >
-            Confirm
+            {t('confirm')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -814,16 +851,16 @@ const filteredProducts = products.filter(
 
       {/* Receipt Dialog */}
       <Dialog open={showReceiptDialog} onClose={() => setShowReceiptDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Receipt</DialogTitle>
+        <DialogTitle>{t('receipt')}</DialogTitle>
         <DialogContent>
           {lastSale && (
             <Box sx={{ p: 2, fontFamily: 'monospace', bgcolor: '#f5f5f5' }}>
               <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
                 <ShopLogo size={56} />
               </Box>
-              <Typography variant="h6" align="center">{shopInfo?.shopName || 'Shop'}</Typography>
+              <Typography variant="h6" align="center">{shopInfo?.shopName || t('shop')}</Typography>
 
-              <Typography variant="body2" align="center">Invoice: {lastSale.invoiceNumber}</Typography>
+              <Typography variant="body2" align="center">{t('invoice_label', { invoice: lastSale.invoiceNumber })}</Typography>
 
               <Typography variant="body2" align="center">
                 {new Date(lastSale.saleDate).toLocaleString()}
@@ -831,66 +868,99 @@ const filteredProducts = products.filter(
               {/* <Typography variant="body2" align="center">
                 Cashier: {user?.username}
               </Typography> */}
-              <Typography variant="body2" align="center">
-                Customer: {lastSale.customerName || 'Walk-in'}
-              </Typography>
+              {lastSale.customerName && lastSale.customerName !== 'Walk-in' && (
+                <Typography variant="body2" align="center">
+                  {t('customer_label', { name: lastSale.customerName })}
+                </Typography>
+              )}
               <br />
               {lastSale.items?.map((item, idx) => (
-                <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2">
+                <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5, alignItems: 'center' }}>
+                  <Typography variant="body2" noWrap sx={{ minWidth: 0, pr: 1 }}>
                     {item.productName} x{item.quantity}
                   </Typography>
-                  <Typography
-                    sx={{ fontFamily: '"Fraunces", serif', fontWeight: 600, fontSize: '1.75rem' }}
-                    color="primary.dark"
-                  >
-                    {formatCurrency(displayTotal)}
+                  <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0 }}>
+                    {formatCurrency(item.totalPrice)}
                   </Typography>
                 </Box>
               ))}
               <br />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Total:</Typography>
-                <Typography variant="body2">{formatCurrency(lastSale.totalAmount)}</Typography>
+                <Typography variant="body2">{t('subtotal')}</Typography>
+                <Typography variant="body2">{formatCurrency(lastSale.subtotal)}</Typography>
+              </Box>
+              {Number(lastSale.taxAmount) > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body2">{t('tax')}</Typography>
+                  <Typography variant="body2">{formatCurrency(lastSale.taxAmount)}</Typography>
+                </Box>
+              )}
+              {Number(lastSale.discountAmount) > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Typography variant="body2">{t('discount')}</Typography>
+                  <Typography variant="body2">-{formatCurrency(lastSale.discountAmount)}</Typography>
+                </Box>
+              )}
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('total')}</Typography>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(lastSale.totalAmount)}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Paid:</Typography>
+                <Typography variant="body2">{t('paid')}</Typography>
                 <Typography variant="body2">{formatCurrency(lastSale.amountPaid)}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">Change:</Typography>
+                <Typography variant="body2">{t('change')}</Typography>
                 <Typography variant="body2">
-                  {formatCurrency(lastSale.amountPaid - lastSale.totalAmount)}
+                  {formatCurrency(lastSale.changeGiven ?? (lastSale.amountPaid - lastSale.totalAmount))}
                 </Typography>
               </Box>
             </Box>
           )}
         </DialogContent>
                 <DialogActions sx={{ p: 2, flexDirection: 'column', gap: 1 }}>
+          
+          {/* ✅ NEW: Smart Direct Print Button (Always visible!) */}
+          <Button 
+            onClick={handleDirectPrint} 
+            variant="contained" 
+            color="primary" 
+            fullWidth 
+            startIcon={isDirectPrinting ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <DirectPrintIcon />}
+            disabled={isDirectPrinting}
+            sx={{ py: 1.2, fontSize: '1rem' }}
+          >
+            {isDirectPrinting 
+              ? t('printing') 
+              : directPrint.isAvailable() 
+                ? '⚡ Direct Print (Silent)' 
+                : '⚡ Direct Print'}
+          </Button>
+
           <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
             <Button onClick={handleDownloadPdf} variant="outlined" fullWidth>
-              Download PDF
+              {t('download_pdf')}
             </Button>
             <Button onClick={handlePrintReceipt} variant="outlined" fullWidth>
-              Print (Browser)
+              {t('print_browser')}
             </Button>
           </Box>
           
-          {/* 👇 QZ Tray Thermal Printer Button */}
+          {/* QZ Tray Thermal Printer Button */}
           {isQZSupported() && (
             <Button 
               onClick={handleQZPrint} 
-              variant="contained" 
+              variant="outlined" 
               color="primary" 
               fullWidth 
-              startIcon={<CartIcon />} // Or import a PrinterIcon
+              startIcon={<CartIcon />}
             >
-              Print to Thermal Printer (QZ)
+              {t('print_thermal_qz')}
             </Button>
           )}
 
           <Button onClick={() => setShowReceiptDialog(false)} variant="text" fullWidth>
-            Close
+            {t('close')}
           </Button>
         </DialogActions>
       </Dialog>

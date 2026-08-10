@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, Paper, TextField, MenuItem, Button, Alert, CircularProgress } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { shopInfoService } from '../api/services';
 import { setCurrencyCode } from '../utils/helpers';
 
@@ -21,7 +22,8 @@ const CURRENCIES = [
 
 const ShopInfo = () => {
 
-  
+  const { t } = useTranslation('settings');
+
   const [logoPreview, setLogoPreview] = useState(null);
   const [logoRefresh, setLogoRefresh] = useState(0);
 
@@ -66,7 +68,7 @@ const ShopInfo = () => {
   });
 
   const updateError = updateMutation.error?.response?.status === 409
-    ? 'Shop information was changed by someone else while you were editing it. Please refresh and try again.'
+    ? t('shop_info_conflict')
     : updateMutation.error?.response?.data?.message || null;
 
   const uploadLogoMutation = useMutation({
@@ -127,7 +129,7 @@ const ShopInfo = () => {
   };
 
   if (!isAdmin()) {
-    return <Typography color="text.secondary">Not authorized</Typography>;
+    return <Typography color="text.secondary">{t('not_authorized')}</Typography>;
   }
 
   if (isLoading) {
@@ -139,7 +141,7 @@ const ShopInfo = () => {
   }
 
   if (error) {
-    return <Alert severity="error">Failed to load shop info</Alert>;
+    return <Alert severity="error">{t('load_shop_info_failed')}</Alert>;
   }
 
   return (
@@ -147,23 +149,23 @@ const ShopInfo = () => {
       {/* // banner appear telling shop info has been changed  */}
       {updateMutation.isSuccess && (
         <Alert severity="success" sx={{ mb: 2 }}>
-          Shop information updated successfully!
+          {t('shop_info_updated')}
         </Alert>
       )}
       <Typography variant="h4" gutterBottom>
-        Edit Shop Information
+        {t('edit_shop_info')}
       </Typography>
 
       <GridLayout>
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Shop Details
+            {t('shop_details')}
           </Typography>
 
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField
               required
-              label="Shop Name"
+              label={t('shop_name')}
               value={form.shopName}
               onChange={(e) => setForm((p) => ({ ...p, shopName: e.target.value }))}
               fullWidth
@@ -171,7 +173,7 @@ const ShopInfo = () => {
 
             <TextField
               select
-              label="Shop Type"
+              label={t('shop_type')}
               value={form.shopType}
               onChange={(e) => setForm((p) => ({ ...p, shopType: e.target.value }))}
               fullWidth
@@ -185,11 +187,11 @@ const ShopInfo = () => {
 
             <TextField
               select
-              label="Currency"
+              label={t('currency')}
               value={form.currency}
               onChange={(e) => setForm((p) => ({ ...p, currency: e.target.value }))}
               fullWidth
-              helperText="Used to display all prices and amounts across the app"
+              helperText={t('currency_helper')}
             >
               {CURRENCIES.map((c) => (
                 <MenuItem key={c.code} value={c.code}>
@@ -199,7 +201,7 @@ const ShopInfo = () => {
             </TextField>
 
             <TextField
-              label="Address"
+              label={t('address')}
               value={form.address}
               onChange={(e) => setForm((p) => ({ ...p, address: e.target.value }))}
               fullWidth
@@ -208,14 +210,14 @@ const ShopInfo = () => {
             />
 
             <TextField
-              label="Phone"
+              label={t('phone')}
               value={form.phone}
               onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
               fullWidth
             />
 
             <TextField
-              label="Email"
+              label={t('email')}
               value={form.email}
               onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
               fullWidth
@@ -228,7 +230,7 @@ const ShopInfo = () => {
                 onClick={handleSave}
                 disabled={updateMutation.isPending || !form.shopName?.trim()}
               >
-                Save
+                {t('save')}
               </Button>
             </Box>
 
@@ -240,7 +242,7 @@ const ShopInfo = () => {
 
         <Paper sx={{ p: 3 }}>
           <Typography variant="h6" gutterBottom>
-            Logo
+            {t('logo')}
           </Typography>
 
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -259,7 +261,7 @@ const ShopInfo = () => {
                 startIcon={<UploadIcon />}
                 disabled={uploadLogoMutation.isPending}
               >
-                Upload Logo
+                {t('upload_logo')}
                 <input
                     hidden
                     type="file"
@@ -289,7 +291,7 @@ const ShopInfo = () => {
                 disabled={!logoFile || uploadLogoMutation.isPending}
                 onClick={() => logoFile && uploadLogoMutation.mutate(logoFile)}
               >
-                {uploadLogoMutation.isPending ? 'Uploading...' : 'Replace Logo'}
+                {uploadLogoMutation.isPending ? t('uploading') : t('replace_logo')}
               </Button>
 
               <Button
@@ -299,14 +301,14 @@ const ShopInfo = () => {
                 disabled={deleteLogoMutation.isPending}
                 onClick={() => deleteLogoMutation.mutate()}
               >
-                Delete Logo
+                {t('delete_logo')}
               </Button>
 
               {uploadLogoMutation.isError && (
-                <Alert severity="error">Failed to upload logo</Alert>
+                <Alert severity="error">{t('upload_logo_failed')}</Alert>
               )}
               {deleteLogoMutation.isError && (
-                <Alert severity="error">Failed to delete logo</Alert>
+                <Alert severity="error">{t('delete_logo_failed')}</Alert>
               )}
             </Box>
           </Box>

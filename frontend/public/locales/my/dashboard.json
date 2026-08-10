@@ -1,0 +1,15 @@
+{
+"today_at_glance": "ယနေ့အခြေအနေ",
+"financial_summary": "ငွေကြေးအကျဉ်းချုပ်",
+"sales_this_period": "ဤကာလအတွင်း အရောင်း",
+"products_in_stock": "လက်ကျန်ကုန်ပစ္စည်း",
+"low_stock_alerts": "လက်ကျန်နည်းသော ကုန်ပစ္စည်းများ",
+"quick_actions": "အမြန်လုပ်ဆောင်ရန်",
+"new_sale": "အရောင်းအသစ်",
+"new_product": "ကုန်ပစ္စည်းအသစ်",
+"new_purchase": "အဝယ်အသစ်",
+"new_customer": "ဖောက်သည်အသစ်",
+"recent_activity": "လတ်တလောလုပ်ဆောင်ချက်များ",
+"no_recent_activity": "လတ်တလောလုပ်ဆောင်ချက် မရှိပါ။",
+"sales_trend_last_7_days": "၇ ရက်တာ အရောင်းအခြေအနေ"
+}

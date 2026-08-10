@@ -1,0 +1,15 @@
+{
+  "today_at_glance": "Aperçu du jour",
+  "financial_summary": "Résumé financier",
+  "sales_this_period": "Ventes de la période",
+  "products_in_stock": "Produits en stock",
+  "low_stock_alerts": "Alertes de stock faible",
+  "quick_actions": "Actions rapides",
+  "new_sale": "Nouvelle vente",
+  "new_product": "Nouveau produit",
+  "new_purchase": "Nouvel achat",
+  "new_customer": "Nouveau client",
+  "recent_activity": "Activité récente",
+  "no_recent_activity": "Aucune activité récente à afficher.",
+  "sales_trend_last_7_days": "Tendance des ventes (7 derniers jours)"
+}

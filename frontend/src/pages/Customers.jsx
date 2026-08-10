@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'; // ✅ 1. Added useEffect to imports
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
   Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip,
@@ -22,6 +23,7 @@ const Customers = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  const { t } = useTranslation('customers');
 
   // ✅ 3. Debounce useEffect (waits 300ms after typing stops)
   useEffect(() => {
@@ -63,7 +65,7 @@ const Customers = () => {
       <Box sx={{ display: 'flex', justifyContent: 'right', alignItems: 'center', mb: 3 }}>
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/customers/new')}>
-            Add Customer
+            {t('add_customer')}
           </Button>
         )}
       </Box>
@@ -72,7 +74,7 @@ const Customers = () => {
         {/* This correctly updates the immediate 'search' state, which triggers the debounce timer */}
         <TextField 
           fullWidth 
-          placeholder="Search customers..." 
+          placeholder={t('search_placeholder')} 
           value={search} 
           onChange={(e) => setSearch(e.target.value)} 
           InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }} 
@@ -84,19 +86,19 @@ const Customers = () => {
         <Table>
           <TableHead>
             <TableRow>
-              <TableCell>Name</TableCell>
-              <TableCell>Phone</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Email</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Address</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>Created</TableCell>
-              {isManager() && <TableCell align="right">Actions</TableCell>}
+              <TableCell>{t('name')}</TableCell>
+              <TableCell>{t('phone')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('address')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('created')}</TableCell>
+              {isManager() && <TableCell align="right">{t('actions')}</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center">Loading...</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} align="center">{t('loading')}</TableCell></TableRow>
             ) : customers.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center">No customers found</TableCell></TableRow>
+              <TableRow><TableCell colSpan={6} align="center">{t('no_customers_found')}</TableCell></TableRow>
             ) : (
               customers.map((c) => (
                 <TableRow 
@@ -108,7 +110,7 @@ const Customers = () => {
                   <TableCell>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                       {`${c.firstName || ''} ${c.lastName || ''}`.trim()}
-                      {c.isQuickAdd && <Chip label="Quick Add" size="small" color="warning" variant="outlined" icon={<QuickAddIcon />} />}
+                      {c.isQuickAdd && <Chip label={t('quick_add')} size="small" color="warning" variant="outlined" icon={<QuickAddIcon />} />}
                     </Box>
                   </TableCell>
                   <TableCell>{c.phone || '-'}</TableCell>
@@ -124,7 +126,7 @@ const Customers = () => {
                           onClick={(e) => { e.stopPropagation(); navigate(`/customers/${c.id}/edit`); }} 
                           sx={{ mr: 1 }}
                         >
-                          Complete Profile
+                          {t('complete_profile')}
                         </Button>
                       )}
                       {!c.isQuickAdd && (
@@ -161,13 +163,13 @@ const Customers = () => {
       </TableContainer>
 
       <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogTitle>{t('confirm_delete')}</DialogTitle>
         <DialogContent>
-          Are you sure you want to delete "{selectedCustomer ? `${selectedCustomer.firstName} ${selectedCustomer.lastName}`.trim() : ''}"?
+          {t('delete_confirm', { name: selectedCustomer ? `${selectedCustomer.firstName} ${selectedCustomer.lastName}`.trim() : '' })}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>Cancel</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">Delete</Button>
+          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
+          <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -1,15 +1,15 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, TextField, Divider, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { receiptService, saleService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
-import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon, LocalPrintshop as PrinterIcon } from '@mui/icons-material';
+import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon, LocalPrintshop as PrinterIcon, FlashOn as DirectPrintIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShopLogo from '../components/ShopLogo';
 import { useAuth } from '../context/AuthContext';
-// 👇 Replace Bluetooth imports with QZ Tray imports
 import { connectQZ, printReceiptViaQZ, isQZSupported, getAvailablePrinters } from '../utils/bluetoothPrinter';
+import directPrint from '../services/directPrintService';
 
 const ReceiptPreview = () => {
   const { invoiceNumber } = useParams();
@@ -22,6 +22,8 @@ const ReceiptPreview = () => {
   const [isPrinting, setIsPrinting] = useState(false);
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
+  
+  const receiptRef = useRef();
 
   const { data, isLoading } = useQuery({
     queryKey: ['receipt', invoiceNumber],
@@ -33,10 +35,24 @@ const ReceiptPreview = () => {
     queryFn: () => shopInfoService.get(),
   });
 
-  // 👇 Load available printers on mount
-  useState(() => {
+  useEffect(() => {
     if (isQZSupported()) {
-      getAvailablePrinters().then(setPrinters);
+      // ✅ FIX: Connect to QZ Tray FIRST, then get printers
+      connectQZ()
+        .then(() => getAvailablePrinters())
+        .then(setPrinters)
+        .catch((err) => {
+          console.error("QZ Tray connection failed:", err);
+          // notifyError("Could not connect to QZ Tray. Is the app running?");
+        });
+    } else if (directPrint.isAvailable()) {
+      directPrint.getPrinters().then(list => {
+        setPrinters(list.map(p => p.name));
+        if (list.length > 0) {
+          const def = list.find(p => p.isDefault) || list[0];
+          setSelectedPrinter(def.name);
+        }
+      });
     }
   }, []);
 
@@ -85,13 +101,38 @@ const ReceiptPreview = () => {
     }
   };
 
-  // 👇 Replace Bluetooth print with QZ Tray print
-  const handleQZPrint = async () => {
+     const handleQZPrint = async () => {
     setIsPrinting(true);
     try {
+      await connectQZ(); // ✅ Ensure connection is active
       await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null);
     } catch (err) {
       // Error is already handled and notified inside printReceiptViaQZ
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleDirectPrint = async () => {
+    if (!receiptRef.current) return;
+    setIsPrinting(true);
+    try {
+      if (directPrint.isAvailable()) {
+        const receiptHtml = receiptRef.current.innerHTML;
+        const result = await directPrint.print(receiptHtml, selectedPrinter || null);
+        if (result.success) {
+          notifySuccess('Receipt sent to printer');
+        } else {
+          notifyError(result.error || 'Print failed');
+        }
+      } else if (isQZSupported()) {
+        await connectQZ(); // ✅ Ensure connection is active
+        await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null);
+      } else {
+        window.print();
+      }
+    } catch (err) {
+      notifyError(err.message || 'Print failed');
     } finally {
       setIsPrinting(false);
     }
@@ -120,57 +161,56 @@ const ReceiptPreview = () => {
 
   return (
     <Box sx={{ p: 3, maxWidth: 400, mx: 'auto' }}>
-      <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
-        <ReceiptHeader
-            shopName={shopInfoData?.data?.shopName}
-            hasLogo={shopInfoData?.data?.hasLogo}
-        />
-        <Typography variant="body2">Invoice: {receipt.invoiceNumber}</Typography>
-        <Typography variant="body2">{formatDateTime(receipt.saleDate)}</Typography>
-        <Typography variant="body2">Customer: {receipt.customerName || 'Walk-in'}</Typography>
-      </Box>
+      <Box ref={receiptRef}>
+        <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
+          <ReceiptHeader
+              shopName={shopInfoData?.data?.shopName}
+              hasLogo={shopInfoData?.data?.hasLogo}
+          />
+          <Typography variant="body2">Invoice: {receipt.invoiceNumber}</Typography>
+          <Typography variant="body2">{formatDateTime(receipt.saleDate)}</Typography>
+          {/* Show Cashier on screen */}
+          <Typography variant="body2">Cashier: {receipt.cashierName || 'Unknown'}</Typography>
+          {/* Show Customer on screen (even if Walk-in) */}
+          <Typography variant="body2">Customer: {receipt.customerName || 'Walk-in'}</Typography>
+        </Box>
 
-      <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 2, fontFamily: 'monospace' }}>
-        {receipt.items?.map((item, idx) => (
-          <Box key={idx} sx={{ mb: 1 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography variant="body2">{item.productName} x{item.quantity}</Typography>
-              <Typography variant="body2">{formatCurrency(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</Typography>
+        <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 2, fontFamily: 'monospace' }}>
+          {receipt.items?.map((item, idx) => (
+            <Box key={idx} sx={{ mb: 1 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Typography variant="body2" noWrap sx={{ minWidth: 0, pr: 1 }}>{item.productName} x{item.quantity}</Typography>
+                <Typography variant="body2" sx={{ flexShrink: 0 }}>{formatCurrency(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</Typography>
+              </Box>
+              {(item.quantityRefunded || 0) > 0 && (
+                <Typography variant="caption" color="warning.main">Refunded: {item.quantityRefunded}</Typography>
+              )}
             </Box>
-            {(item.quantityRefunded || 0) > 0 && (
-              <Typography variant="caption" color="warning.main">Refunded: {item.quantityRefunded}</Typography>
-            )}
+          ))}
+        </Box>
+
+        <Box sx={{ fontFamily: 'monospace', mt: 2 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2">Total:</Typography>
+            <Typography variant="body2">{formatCurrency(receipt.totalAmount)}</Typography>
           </Box>
-        ))}
-      </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2">Paid:</Typography>
+            <Typography variant="body2">{formatCurrency(receipt.amountPaid)}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+            <Typography variant="body2">Change:</Typography>
+            <Typography variant="body2">{formatCurrency(receipt.amountPaid - receipt.totalAmount)}</Typography>
+          </Box>
+        </Box>
 
-      <Box sx={{ fontFamily: 'monospace', mt: 2 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Typography variant="body2">Total:</Typography>
-          <Typography variant="body2">{formatCurrency(receipt.totalAmount)}</Typography>
-        </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Typography variant="body2">Paid:</Typography>
-          <Typography variant="body2">{formatCurrency(receipt.amountPaid)}</Typography>
-        </Box>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-          <Typography variant="body2">Change:</Typography>
-          <Typography variant="body2">{formatCurrency(receipt.amountPaid - receipt.totalAmount)}</Typography>
+        <Box sx={{ mt: 3, textAlign: 'center' }}>
+          <Typography variant="caption">Thank you for your business!</Typography>
         </Box>
       </Box>
 
-      <Box sx={{ mt: 3, textAlign: 'center' }}>
-        <Typography variant="caption">Thank you for your business!</Typography>
-      </Box>
-
-      {/* 👇 QZ Tray Printer Selection and Print Button */}
-      {!isQZSupported() && (
-        <Box sx={{ mt: 2, p: 2, bgcolor: 'error.light', color: 'error.dark', borderRadius: 1, textAlign: 'center' }}>
-          QZ Tray is not detected. Please ensure QZ Tray is installed and running.
-        </Box>
-      )}
-
-      {isQZSupported() && printers.length > 0 && (
+      {/* Printer Selection */}
+      {(isQZSupported() || directPrint.isAvailable()) && printers.length > 0 && (
         <FormControl fullWidth size="small" sx={{ mt: 2 }}>
           <InputLabel>Printer</InputLabel>
           <Select
@@ -185,13 +225,37 @@ const ReceiptPreview = () => {
         </FormControl>
       )}
 
-      <Box sx={{ mt: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <Button fullWidth sx={{ flex: { xs: '1 1 100%', sm: '1 1 0' } }} variant="contained" startIcon={<PrintIcon />} onClick={handlePrint}>Print (Browser)</Button>
+      {/* Direct Print Button (Always visible) */}
+      <Box sx={{ mt: 2 }}>
+        <Button
+          fullWidth
+          variant="contained"
+          color="primary"
+          size="large"
+          startIcon={isPrinting ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <DirectPrintIcon />}
+          onClick={handleDirectPrint}
+          disabled={isPrinting}
+          sx={{ py: 1.2, fontSize: '1rem' }}
+        >
+          {isPrinting
+            ? 'Printing...'
+            : directPrint.isAvailable()
+              ? '⚡ Direct Print (Silent)'
+              : '⚡ Direct Print'}
+        </Button>
+      </Box>
+
+      {/* Browser Print & Downloads */}
+      <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+        {/* Hide Browser Print in Electron to prevent stuck windows */}
+        {!directPrint.isAvailable() && (
+          <Button fullWidth sx={{ flex: { xs: '1 1 100%', sm: '1 1 0' } }} variant="outlined" startIcon={<PrintIcon />} onClick={handlePrint}>Print (Browser)</Button>
+        )}
         <Button fullWidth sx={{ flex: { xs: '1 1 100%', sm: '1 1 0' } }} variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('pdf')}>PDF</Button>
         <Button fullWidth sx={{ flex: { xs: '1 1 100%', sm: '1 1 0' } }} variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('png')}>PNG</Button>
       </Box>
 
-      {/* 👇 QZ Tray Print Button (replaces Bluetooth) */}
+      {/* QZ Tray Print Button */}
       {isQZSupported() && (
         <Box sx={{ mt: 1 }}>
           <Button
@@ -217,7 +281,7 @@ const ReceiptPreview = () => {
         <Button fullWidth variant="text" onClick={() => window.close()}>Close</Button>
       </Box>
 
-      {/* Refund Dialog remains exactly the same */}
+      {/* Refund Dialog */}
       <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Refund Items</DialogTitle>
         <DialogContent>

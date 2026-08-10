@@ -1,0 +1,15 @@
+{
+  "today_at_glance": "Today at a glance",
+  "financial_summary": "Financial Summary",
+  "sales_this_period": "Sales This Period",
+  "products_in_stock": "Products in Stock",
+  "low_stock_alerts": "Low Stock Alerts",
+  "quick_actions": "Quick Actions",
+  "new_sale": "New Sale",
+  "new_product": "New Product",
+  "new_purchase": "New Purchase",
+  "new_customer": "New Customer",
+  "recent_activity": "Recent Activity",
+  "no_recent_activity": "No recent activity to display.",
+  "sales_trend_last_7_days": "Sales Trend (Last 7 Days)"
+}

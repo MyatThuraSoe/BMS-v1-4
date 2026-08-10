@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../api/services';
+import i18n from '../i18n';
+
+const SUPPORTED_LANGS = ['en', 'my', 'ja', 'th', 'fr'];
 
 const AuthContext = createContext(null);
 
@@ -25,6 +28,11 @@ export const AuthProvider = ({ children }) => {
     const response = await authService.login(username, password);
     if (response.success) {
       setUser(response.data.user);
+      // Restore the user's saved language preference (server is source of truth on login)
+      const preferred = response.data.user?.preferredLanguage;
+      if (preferred && SUPPORTED_LANGS.includes(preferred)) {
+        i18n.changeLanguage(preferred);
+      }
       return response;
     }
     throw new Error(response.message || 'Login failed');
