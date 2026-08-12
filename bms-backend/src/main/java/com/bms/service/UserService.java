@@ -1,10 +1,12 @@
 package com.bms.service;
 
 import com.bms.dto.request.UserUpdateRequest;
+import com.bms.dto.response.UserStatsDto;
 import com.bms.entity.Role;
 import com.bms.entity.User;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.RoleRepository;
+import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -14,6 +16,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -22,6 +26,7 @@ public class UserService implements UserDetailsService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final SaleRepository saleRepository;
 
     private final PasswordEncoder passwordEncoder;
 
@@ -29,10 +34,12 @@ public class UserService implements UserDetailsService {
 
     public UserService(UserRepository userRepository,
                         RoleRepository roleRepository,
+                        SaleRepository saleRepository,
                         PasswordEncoder passwordEncoder,
                         AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.saleRepository = saleRepository;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
     }
@@ -157,5 +164,22 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setPreferredLanguage(lang);
         return userRepository.save(user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserStatsDto getUserSalesStats(Long userId) {
+        userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        SaleRepository.CashierStats allTime = saleRepository.findCashierStats(userId);
+        SaleRepository.CashierStats today = saleRepository.findCashierStatsSince(userId, todayStart);
+
+        return new UserStatsDto(
+                allTime.getTotalSales(),
+                allTime.getTotalRevenue(),
+                today.getTotalSales(),
+                today.getTotalRevenue()
+        );
     }
 }

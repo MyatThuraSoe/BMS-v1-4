@@ -32,6 +32,7 @@ import Accounting from './pages/Accounting';
 import StockAdjustment from './pages/StockAdjustment';
 import Users from './pages/Users';
 import UserForm from './pages/UserForm';
+import UserUpdate from './pages/UserUpdate';
 import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
 import ShopInfo from './pages/ShopInfo';
@@ -185,7 +186,7 @@ function AppRoutes() {
         {/* Users (Admin only) */}
         <Route path="users" element={<ProtectedRoute allowedRoles={['ADMIN']}><Users /></ProtectedRoute>} />
         <Route path="users/new" element={<ProtectedRoute allowedRoles={['ADMIN']}><UserForm /></ProtectedRoute>} />
-        <Route path="users/:id" element={<ProtectedRoute allowedRoles={['ADMIN']}><UserForm /></ProtectedRoute>} />
+        <Route path="users/:id" element={<ProtectedRoute allowedRoles={['ADMIN']}><UserUpdate /></ProtectedRoute>} />
         
         {/* Settings (Admin only) */}
         <Route path="settings" element={<ProtectedRoute allowedRoles={['ADMIN']}><Settings /></ProtectedRoute>} />

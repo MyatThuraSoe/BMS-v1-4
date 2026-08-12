@@ -4,6 +4,7 @@ import com.bms.dto.request.UserCreateRequest;
 import com.bms.dto.request.UserUpdateRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.UserResponse;
+import com.bms.dto.response.UserStatsDto;
 import com.bms.entity.User;
 import com.bms.service.UserService;
 import jakarta.validation.Valid;
@@ -43,6 +44,13 @@ public class UserController {
         User user = userService.findById(id);
         UserResponse response = convertToResponse(user);
         return ResponseEntity.ok(new ApiResponse<>(true, "User retrieved successfully", response));
+    }
+
+    @GetMapping("/{id}/stats")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<UserStatsDto>> getUserStats(@PathVariable Long id) {
+        UserStatsDto stats = userService.getUserSalesStats(id);
+        return ResponseEntity.ok(new ApiResponse<>(true, "User sales stats retrieved successfully", stats));
     }
 
     @PostMapping

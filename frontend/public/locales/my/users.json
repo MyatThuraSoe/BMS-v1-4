@@ -42,5 +42,11 @@
 "first_name_required": "အမည် ဖြည့်ရန် လိုအပ်ပါသည်",
 "last_name_required": "မျိုးရိုးအမည် ဖြည့်ရန် လိုအပ်ပါသည်",
 "role_required": "တာဝန် ရွေးချယ်ရန် လိုအပ်ပါသည်",
-"failed_to_save_user": "အသုံးပြုသူကို သိမ်းဆည်း၍ မရပါ"
+"failed_to_save_user": "အသုံးပြုသူကို သိမ်းဆည်း၍ မရပါ",
+
+"sales_performance": "ရောင်းအား စွမ်းဆောင်ရည်",
+"sales_performance_total_sales": "စုစုပေါင်း အရောင်းအရေအတွက်",
+"sales_performance_total_revenue": "စုစုပေါင်း ဝင်ငွေ",
+"sales_performance_today_sales": "ယနေ့ အရောင်းအရေအတွက်",
+"sales_performance_today_revenue": "ယနေ့ ဝင်ငွေ"
 }

@@ -37,5 +37,10 @@
   "first_name_required": "Le prénom est requis",
   "last_name_required": "Le nom de famille est requis",
   "role_required": "Le rôle est requis",
-  "failed_to_save_user": "Échec de l'enregistrement de l'utilisateur"
+  "failed_to_save_user": "Échec de l'enregistrement de l'utilisateur",
+  "sales_performance": "Performance des ventes",
+  "sales_performance_total_sales": "Ventes totales",
+  "sales_performance_total_revenue": "Revenu total",
+  "sales_performance_today_sales": "Ventes du jour",
+  "sales_performance_today_revenue": "Revenu du jour"
 }

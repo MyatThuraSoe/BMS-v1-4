@@ -119,7 +119,12 @@ const Users = () => {
           </TableHead>
           <TableBody>
             {users.map((user) => (
-              <TableRow key={user.id}>
+              <TableRow
+                key={user.id}
+                hover
+                onClick={() => navigate(`/users/${user.id}`)}
+                sx={{ cursor: 'pointer', '&:last-child td, &:last-child th': { border: 0 } }}
+              >
                 <TableCell>{user.id}</TableCell>
                 <TableCell>{user.username}</TableCell>
                 <TableCell>{user.email}</TableCell>
@@ -136,13 +141,13 @@ const Users = () => {
                 <TableCell>
                   <IconButton
                     size="small"
-                    onClick={() => navigate(`/users/${user.id}`)}
+                    onClick={(e) => { e.stopPropagation(); navigate(`/users/${user.id}`); }}
                   >
                     <EditIcon />
                   </IconButton>
                   <IconButton
                     size="small"
-                    onClick={() => handleDelete(user)}
+                    onClick={(e) => { e.stopPropagation(); handleDelete(user); }}
                     color="error"
                   >
                     <DeleteIcon />

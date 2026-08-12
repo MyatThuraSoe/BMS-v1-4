@@ -37,5 +37,10 @@
   "first_name_required": "กรุณากรอกชื่อจริง",
   "last_name_required": "กรุณากรอกนามสกุล",
   "role_required": "กรุณาเลือกบทบาท",
-  "failed_to_save_user": "ไม่สามารถบันทึกผู้ใช้ได้"
+  "failed_to_save_user": "ไม่สามารถบันทึกผู้ใช้ได้",
+  "sales_performance": "ประสิทธิภาพการขาย",
+  "sales_performance_total_sales": "ยอดขายทั้งหมด",
+  "sales_performance_total_revenue": "รายได้รวม",
+  "sales_performance_today_sales": "ยอดขายวันนี้",
+  "sales_performance_today_revenue": "รายได้วันนี้"
 }

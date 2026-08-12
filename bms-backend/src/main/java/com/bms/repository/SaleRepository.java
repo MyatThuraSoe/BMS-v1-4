@@ -142,4 +142,23 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         @Param("startDate") java.time.LocalDateTime startDate,
         @Param("endDate") java.time.LocalDateTime endDate
     );
+
+    interface CashierStats {
+        long getTotalSales();
+        BigDecimal getTotalRevenue();
+    }
+
+    @Query("""
+        SELECT COUNT(s) AS totalSales, COALESCE(SUM(s.totalAmount), 0) AS totalRevenue
+        FROM Sale s
+        WHERE s.cashierId = :cashierId AND s.isVoided = false
+        """)
+    CashierStats findCashierStats(@Param("cashierId") Long cashierId);
+
+    @Query("""
+        SELECT COUNT(s) AS totalSales, COALESCE(SUM(s.totalAmount), 0) AS totalRevenue
+        FROM Sale s
+        WHERE s.cashierId = :cashierId AND s.isVoided = false AND s.saleDate >= :since
+        """)
+    CashierStats findCashierStatsSince(@Param("cashierId") Long cashierId, @Param("since") LocalDateTime since);
 }

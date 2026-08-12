@@ -37,5 +37,10 @@
   "first_name_required": "名は必須です",
   "last_name_required": "姓は必須です",
   "role_required": "役割は必須です",
-  "failed_to_save_user": "ユーザーの保存に失敗しました"
+  "failed_to_save_user": "ユーザーの保存に失敗しました",
+  "sales_performance": "販売実績",
+  "sales_performance_total_sales": "総売上数",
+  "sales_performance_total_revenue": "総売上高",
+  "sales_performance_today_sales": "本日の売上数",
+  "sales_performance_today_revenue": "本日の売上高"
 }

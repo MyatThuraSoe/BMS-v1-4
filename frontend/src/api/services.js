@@ -630,6 +630,11 @@ export const userService = {
     const response = await apiClient.patch(`/users/me/language?lang=${lang}`);
     return response.data;
   },
+
+  getStats: async (id) => {
+    const response = await apiClient.get(`/users/${id}/stats`);
+    return response.data;
+  },
 };
 
 export const systemSettingService = {

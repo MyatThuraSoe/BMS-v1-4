@@ -37,5 +37,10 @@
   "first_name_required": "First name is required",
   "last_name_required": "Last name is required",
   "role_required": "Role is required",
-  "failed_to_save_user": "Failed to save user"
+  "failed_to_save_user": "Failed to save user",
+  "sales_performance": "Sales Performance",
+  "sales_performance_total_sales": "Total Sales",
+  "sales_performance_total_revenue": "Total Revenue",
+  "sales_performance_today_sales": "Today's Sales",
+  "sales_performance_today_revenue": "Today's Revenue"
 }
