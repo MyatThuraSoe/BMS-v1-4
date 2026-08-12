@@ -331,7 +331,7 @@ const Analytics = () => {
 
         {/* Top Categories */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, height: 360, pb: '5px' }}>
+          <Paper sx={{ p: 3, height: 360, pb: 8 }}>
             <Typography variant="h6" gutterBottom>{t('top_categories')}</Typography>
             {topCategoriesLoading ? <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box> : topCategories.length === 0 ? renderChartState(false) : (
               <ResponsiveContainer width="100%" height="100%">

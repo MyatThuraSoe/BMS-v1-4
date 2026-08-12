@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 17234
   # [CHANGE 1] Security: Restrict to localhost only.
   address: 0.0.0.0
 
@@ -51,9 +51,9 @@ google:
     client-id: haha
     client-secret: k
     # [CHANGE 5] Google redirects back to the local Spring Boot server
-    redirect-uri: http://127.0.0.1:8080/api/backups/google/callback
+    redirect-uri: http://192.168.1.100:17234/api/backups/google/callback
     # [CHANGE 6] Frontend is now served by Spring Boot on 8080, NOT Vite on 5173!
-    frontend-redirect-base: http://127.0.0.1:8080
+    frontend-redirect-base: http://192.168.1.100:17234
 
 # [CHANGE 7] Custom property for saving product images and expense receipts locally
 app:

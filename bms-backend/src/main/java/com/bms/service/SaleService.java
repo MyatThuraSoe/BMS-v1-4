@@ -14,10 +14,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -54,6 +57,9 @@ public class SaleService {
 
     @Autowired
     private CashShiftRepository cashShiftRepository;
+
+    @PersistenceContext
+    private EntityManager entityManager;
 
     public Page<Sale> getAllSales(Pageable pageable) {
         return saleRepository.findActiveSales(pageable);
@@ -264,19 +270,19 @@ public class SaleService {
     }
 
     private String generateInvoiceNumber() {
-        String prefix = "INV-";
-        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String prefix = "INV";
+        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyMMdd"));
 
         List<Sale> matches = saleRepository.findLastInvoicesByPrefix(
                 prefix + datePart, org.springframework.data.domain.PageRequest.of(0, 1));
 
         if (matches.isEmpty()) {
-            return prefix + datePart + "-0001";
+            return prefix + datePart + "001";
         }
 
         String lastNumber = matches.get(0).getInvoiceNumber();
-        int seqNum = Integer.parseInt(lastNumber.substring(lastNumber.lastIndexOf("-") + 1));
-        return prefix + datePart + "-" + String.format("%04d", seqNum + 1);
+        int seqNum = Integer.parseInt(lastNumber.substring((prefix + datePart).length()));
+        return prefix + datePart + String.format("%03d", seqNum + 1);
     }
 
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
@@ -430,6 +436,78 @@ public class SaleService {
         auditLogService.logAction(userId, "SALE_DELETE", 
             "Sale deleted: " + sale.getInvoiceNumber(), 
             "Sale", sale.getId(), sale.toString(), null);
+    }
+
+    public Map<String, Object> deleteSalesOlderThanYears(int years, Long userId) {
+        if (years < 1) {
+            throw new BusinessException("Years must be at least 1");
+        }
+
+        LocalDateTime cutoff = LocalDate.now().minusYears(years).atStartOfDay();
+        List<Long> saleIds = entityManager.createQuery("""
+                SELECT s.id
+                FROM Sale s
+                WHERE s.saleDate < :cutoff
+                """, Long.class)
+            .setParameter("cutoff", cutoff)
+            .getResultList();
+
+        if (saleIds.isEmpty()) {
+            return Map.of(
+                "deletedSales", 0,
+                "cutoffDate", cutoff.toLocalDate().toString()
+            );
+        }
+
+        entityManager.createQuery("""
+                DELETE FROM RefundItem ri
+                WHERE ri.refund.sale.id IN :saleIds
+                   OR ri.saleItem.sale.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        entityManager.createQuery("""
+                DELETE FROM Refund r
+                WHERE r.sale.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        entityManager.createQuery("""
+                DELETE FROM StockMovement sm
+                WHERE sm.referenceId IN :saleIds
+                  AND sm.referenceType IN (:referenceTypes)
+                """)
+            .setParameter("saleIds", saleIds)
+            .setParameter("referenceTypes", List.of(
+                StockMovement.ReferenceType.SALE,
+                StockMovement.ReferenceType.RETURN
+            ))
+            .executeUpdate();
+
+        entityManager.createQuery("""
+                DELETE FROM SaleItem si
+                WHERE si.sale.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        int deletedSales = entityManager.createQuery("""
+                DELETE FROM Sale s
+                WHERE s.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        auditLogService.logAction(userId, "SALE_DELETE_OLD",
+            "Deleted sales older than " + cutoff.toLocalDate() + ". Count: " + deletedSales,
+            "Sale", null, null, null);
+
+        return Map.of(
+            "deletedSales", deletedSales,
+            "cutoffDate", cutoff.toLocalDate().toString()
+        );
     }
 
     public SaleResponse convertToResponse(Sale sale) {

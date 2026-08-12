@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/sales")
@@ -112,6 +113,18 @@ public class SaleController {
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
         saleService.deleteSale(id, userId);
         return ResponseEntity.ok(new ApiResponse<>(true, "Sale deleted successfully", null));
+    }
+
+    @DeleteMapping("/old")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> deleteOldSales(
+            @RequestParam(defaultValue = "1") int olderThanYears,
+            Authentication authentication) {
+        org.springframework.security.core.userdetails.UserDetails userDetails =
+            (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+        Map<String, Object> result = saleService.deleteSalesOlderThanYears(olderThanYears, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Old sales deleted successfully", result));
     }
 
     @GetMapping("/date-range")

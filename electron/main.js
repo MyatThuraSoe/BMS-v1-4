@@ -8,7 +8,7 @@ let tray = null;
 let serverProcess = null;
 let isQuitting = false;
 
-const APP_PORT = 8080;
+const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 
 // Find Java executable - bundled JRE first, then system Java as fallback

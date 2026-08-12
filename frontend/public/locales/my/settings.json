@@ -12,6 +12,13 @@
 "download_full_backup": "ဒေတာအပြည့်အစုံ အရန်ကူးဖိုင် ဒေါင်းလုဒ်လုပ်ရန်",
 "backup_downloaded": "အရန်ကူးဖိုင်ကို အောင်မြင်စွာ ဒေါင်းလုဒ်လုပ်ပြီးပါပြီ။",
 "backup_download_failed": "အရန်ကူးဖိုင် ဒေါင်းလုဒ်လုပ်၍ မရပါ။",
+"old_sales_cleanup": "Old Sales Cleanup",
+"old_sales_cleanup_description": "After you have backed up your data, permanently delete sale records older than one year to keep the local database smaller.",
+"delete_sales_older_than_one_year": "Delete Sales Older Than 1 Year",
+"deleting_old_sales": "Deleting Old Sales...",
+"delete_old_sales_confirm": "This will permanently delete sale records older than one year. Please make sure you downloaded a backup first. Continue?",
+"old_sales_deleted": "Deleted {{count}} sale records older than {{date}}.",
+"delete_old_sales_failed": "Failed to delete old sale records",
 
 "system_shutdown": "စနစ်ပိတ်ခြင်း",
 "system_shutdown_description": "အောက်ပါခလုတ်ကို အသုံးပြု၍ စနစ်ကို ဘေးကင်းစွာ ပိတ်နိုင်ပါသည်။ ဆက်လက်မလုပ်ဆောင်မီ လုပ်ဆောင်နေသောအလုပ်များအားလုံးကို သိမ်းဆည်းထားပါ။",

@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: 17234
   address: 0.0.0.0
 
 spring:
@@ -46,7 +46,7 @@ google:
   oauth:
     client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
     client-secret: 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
-    redirect-uri: http://localhost:8080/api/backups/google/callback
+    redirect-uri: http://localhost:17234/api/backups/google/callback
     # Change redirect-uri to your production URL in production!
-    frontend-redirect-base: http://localhost:5173
+    frontend-redirect-base: http://localhost:17234
     # Change this too — it's where the browser lands after Google auth completes.

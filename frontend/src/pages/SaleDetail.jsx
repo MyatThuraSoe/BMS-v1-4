@@ -1,25 +1,67 @@
 import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Box, Typography, Paper, Table, TableHead, TableBody, TableCell, TableContainer, TableRow, Button, CircularProgress, Grid, Chip, Divider, Stack } from '@mui/material';
+import { 
+  Box, Typography, Paper, Table, TableHead, TableBody, TableCell, 
+  TableContainer, TableRow, Button, CircularProgress, Grid, Chip, 
+  Divider, Stack, IconButton, Menu, MenuItem, Tooltip, Avatar, ListItemIcon
+} from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { saleService, receiptService, shopInfoService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
-import { ArrowBack as BackIcon, Person as PersonIcon, AccessTime as TimeIcon, FlashOn as DirectPrintIcon, Download as DownloadIcon } from '@mui/icons-material';
+import { 
+  ArrowBack as BackIcon, 
+  Person as PersonIcon, 
+  AccessTime as TimeIcon, 
+  FlashOn as DirectPrintIcon, 
+  Download as DownloadIcon,
+  ShoppingCart as CartIcon,
+  LocalOffer as TagIcon,
+  Payments as PaymentsIcon,
+  History as HistoryIcon,
+  Receipt as ReceiptIcon,
+  Info as InfoIcon
+} from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { notifySuccess, notifyError } from '../utils/notify';
 import directPrint from '../services/directPrintService';
-
-// Add connectQZ to the import
 import { printReceiptViaQZ, isQZSupported, connectQZ } from '../utils/bluetoothPrinter';
 
-
-const StatBlock = ({ label, value, color }) => (
-  <Box>
-    <Typography variant="caption" color="text.secondary">{label}</Typography>
-    <Typography variant="h6" fontWeight={600} color={color || 'text.primary'} sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+const StatCard = ({ label, value, color, icon, highlight, highlightColor = 'success' }) => (
+  <Paper 
+    elevation={0} 
+    sx={{ 
+      p: 2.5, 
+      borderRadius: 2, 
+      bgcolor: highlight ? `${highlightColor}.50` : 'background.paper', 
+      border: '1px solid', 
+      borderColor: highlight ? `${highlightColor}.200` : 'divider',
+      height: '100%',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'space-between',
+      transition: 'transform 0.2s',
+      '&:hover': { transform: 'translateY(-2px)' }
+    }}
+  >
+    <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1.5 }}>
+      {icon && (
+        <Avatar sx={{ bgcolor: `${highlightColor}.100`, color: `${highlightColor}.main`, width: 32, height: 32 }}>
+          {icon}
+        </Avatar>
+      )}
+      <Typography variant="caption" color="text.secondary" fontWeight={600} sx={{ textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+        {label}
+      </Typography>
+    </Stack>
+    <Typography 
+      variant="h5" 
+      fontWeight={700} 
+      color={color || 'text.primary'} 
+      sx={{ fontFamily: '"IBM Plex Mono", monospace', letterSpacing: '-0.5px' }}
+    >
       {value}
     </Typography>
-  </Box>
+  </Paper>
 );
 
 const SaleDetail = () => {
@@ -27,6 +69,7 @@ const SaleDetail = () => {
   const navigate = useNavigate();
   const { t } = useTranslation('sales');
   const [isDirectPrinting, setIsDirectPrinting] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ['sale', id],
@@ -48,12 +91,12 @@ const SaleDetail = () => {
   const isFullyRefunded = sale.totalRefunded > 0 && Math.abs(netTotal) < 0.01;
 
   const statusChip = sale.isVoided
-    ? <Chip label={t('status_voided')} color="error" />
+    ? <Chip label={t('status_voided')} color="error" variant="filled" sx={{ fontWeight: 600 }} />
     : isFullyRefunded
-    ? <Chip label={t('status_fully_refunded')} color="warning" />
+    ? <Chip label={t('status_fully_refunded')} color="warning" variant="filled" sx={{ fontWeight: 600 }} />
     : sale.totalRefunded > 0
-    ? <Chip label={t('status_partially_refunded')} color="warning" variant="outlined" />
-    : <Chip label={t('status_completed')} color="success" />;
+    ? <Chip label={t('status_partially_refunded')} color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+    : <Chip label={t('status_completed')} color="success" variant="filled" sx={{ fontWeight: 600 }} />;
 
   const handleViewReceipt = () => window.open(`/receipt/${sale.invoiceNumber}`, '_blank');
 
@@ -70,7 +113,7 @@ const SaleDetail = () => {
           notifyError(result.error || t('print_failed') || 'Print failed');
         }
       } else if (isQZSupported()) {
-        await connectQZ(); // ✅ FIX: Connect before attempting to print
+        await connectQZ();
         const receiptRes = await receiptService.getByInvoiceNumber(sale.invoiceNumber);
         await printReceiptViaQZ(receiptRes.data, shopInfo || {});
         notifySuccess(t('receipt_sent_printer') || 'Receipt sent to printer');
@@ -83,49 +126,122 @@ const SaleDetail = () => {
       setIsDirectPrinting(false);
     }
   };
+  // Helper function to safely convert Base64 strings to Blobs
+  const base64ToBlob = (base64, mimeType) => {
+    // Remove data URI prefix if it exists (e.g., "data:application/pdf;base64,")
+    const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
+    const byteCharacters = atob(base64Data);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  };
 
   const handleDownload = async (format) => {
     try {
-      const blob = await receiptService.downloadReceipt(sale.invoiceNumber, format);
-      const url = window.URL.createObjectURL(new Blob([blob]));
+      const response = await receiptService.downloadReceipt(sale.invoiceNumber, format);
+      const mimeType = format === 'pdf' ? 'application/pdf' : 'image/png';
+      let blob;
+
+      // 1. If the response is already a valid Blob (e.g. Axios with responseType: 'blob')
+      if (response instanceof Blob) {
+        blob = response;
+      } 
+      // 2. If the response is an Axios response object containing a Blob
+      else if (response?.data instanceof Blob) {
+        blob = response.data;
+      }
+      // 3. If the response is a raw Base64 string
+      else if (typeof response === 'string') {
+        blob = base64ToBlob(response, mimeType);
+      } 
+      // 4. If the response is a JSON object containing a Base64 string or file data
+      else if (response && typeof response === 'object') {
+        // Check common property names where backends hide the file data
+        const data = response.data || response.file || response.content || response.base64 || response;
+        if (typeof data === 'string') {
+          blob = base64ToBlob(data, mimeType);
+        } else if (data instanceof Blob) {
+          blob = data;
+        } else {
+          // Fallback
+          blob = new Blob([typeof data === 'string' ? data : JSON.stringify(data)], { type: mimeType });
+        }
+      }
+
+      if (!blob) {
+        throw new Error('Could not process file from server.');
+      }
+
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `receipt-${sale.invoiceNumber}.${format}`;
+      
+      // Append to body, click, and remove (Required for Firefox and Safari)
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
+      
       notifySuccess(t('receipt_downloaded', { format: format.toUpperCase() }) || `Downloaded ${format.toUpperCase()}`);
     } catch (err) {
-      notifyError(err.friendlyMessage || t('download_failed') || 'Download failed');
+      console.error("Download Error:", err);
+      notifyError(err?.friendlyMessage || err?.message || t('download_failed') || 'Download failed');
     }
   };
+  const handleMenuOpen = (event) => setAnchorEl(event.currentTarget);
+  const handleMenuClose = () => setAnchorEl(null);
 
   return (
-    <Box>
-      <Button startIcon={<BackIcon />} onClick={() => navigate('/sales')} sx={{ mb: 2 }}>{t('back_to_sales')}</Button>
+    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+      <Button 
+        startIcon={<BackIcon />} 
+        onClick={() => navigate('/sales')} 
+        sx={{ mb: 3, color: 'text.secondary', textTransform: 'none', fontWeight: 500 }}
+      >
+        {t('back_to_sales')}
+      </Button>
 
-      <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={2} sx={{ mb: 3 }}>
+      <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ md: 'flex-start' }} spacing={3} sx={{ mb: 4 }}>
         <Box>
-          <Typography variant="h4">{sale.invoiceNumber}</Typography>
-          <Stack direction="row" spacing={2} alignItems="center" sx={{ mt: 0.5 }}>
+          <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
+            <Typography variant="h4" fontWeight={800} sx={{ letterSpacing: '-0.5px', color: 'text.primary' }}>
+              {sale.invoiceNumber}
+            </Typography>
+            {statusChip}
+          </Stack>
+          <Stack direction="row" spacing={3} flexWrap="wrap">
             <Stack direction="row" spacing={0.5} alignItems="center">
-              <TimeIcon fontSize="small" color="disabled" />
-              <Typography variant="body2" color="text.secondary">{formatDateTime(sale.saleDate)}</Typography>
+              <TimeIcon fontSize="small" sx={{ color: 'success.main' }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                {formatDateTime(sale.saleDate)}
+              </Typography>
             </Stack>
             <Stack direction="row" spacing={0.5} alignItems="center">
-              <PersonIcon fontSize="small" color="disabled" />
-              <Typography variant="body2" color="text.secondary">{sale.cashierName || t('unknown_cashier')}</Typography>
+              <PersonIcon fontSize="small" sx={{ color: 'success.main' }} />
+              <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                {sale.cashierName || t('unknown_cashier')}
+              </Typography>
             </Stack>
           </Stack>
         </Box>
-        <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-          {statusChip}
-          
+
+        <Stack direction="row" spacing={1.5} alignItems="center">
           <Button 
             variant="contained" 
-            color="primary"
+            color="success"
             startIcon={isDirectPrinting ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <DirectPrintIcon />}
             onClick={handleDirectPrint}
             disabled={isDirectPrinting}
+            sx={{ 
+              textTransform: 'none', 
+              fontWeight: 600, 
+              px: 3, 
+              boxShadow: '0 4px 12px rgba(76, 175, 80, 0.3)' 
+            }}
           >
             {isDirectPrinting 
               ? (t('printing') || 'Printing...') 
@@ -134,38 +250,92 @@ const SaleDetail = () => {
                 : (t('print_receipt') || 'Print')}
           </Button>
 
-          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('pdf')}>PDF</Button>
-          <Button variant="outlined" startIcon={<DownloadIcon />} onClick={() => handleDownload('png')}>PNG</Button>
+          <Tooltip title={t('download') || 'Download'}>
+            <IconButton onClick={handleMenuOpen} sx={{ border: '1px solid', borderColor: 'divider', bgcolor: 'background.paper' }}>
+              <DownloadIcon />
+            </IconButton>
+          </Tooltip>
+          <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+            <MenuItem onClick={() => { handleDownload('pdf'); handleMenuClose(); }}>
+              <ListItemIcon><ReceiptIcon fontSize="small" /></ListItemIcon>
+              {t('download_pdf') || 'Download PDF'}
+            </MenuItem>
+            <MenuItem onClick={() => { handleDownload('png'); handleMenuClose(); }}>
+              <ListItemIcon><TagIcon fontSize="small" /></ListItemIcon>
+              {t('download_png') || 'Download PNG'}
+            </MenuItem>
+          </Menu>
         </Stack>
       </Stack>
 
       {sale.isVoided && sale.voidedReason && (
-        <Paper sx={{ p: 2, mb: 2, bgcolor: 'error.50', border: '1px solid', borderColor: 'error.light' }}>
-          <Typography variant="body2" color="error.dark"><strong>{t('void_reason_label')}</strong> {sale.voidedReason}</Typography>
+        <Paper sx={{ p: 2.5, mb: 4, bgcolor: 'error.50', border: '1px solid', borderColor: 'error.light', borderRadius: 2, display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Avatar sx={{ bgcolor: 'error.light', color: 'error.dark', width: 40, height: 40 }}>
+            <InfoIcon />
+          </Avatar>
+          <Box>
+            <Typography variant="subtitle2" color="error.dark" fontWeight={700}>{t('void_reason_label')}</Typography>
+            <Typography variant="body2" color="error.dark">{sale.voidedReason}</Typography>
+          </Box>
         </Paper>
       )}
 
-      <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-        <Grid container spacing={3}>
-          <Grid item xs={6} sm={3}><StatBlock label={t('subtotal')} value={formatCurrency(sale.subtotal)} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('tax')} value={formatCurrency(sale.taxAmount)} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('discount')} value={formatCurrency(sale.discountAmount)} color={sale.discountAmount > 0 ? 'success.main' : undefined} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('total')} value={formatCurrency(sale.totalAmount)} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('paid')} value={formatCurrency(sale.amountPaid)} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('change')} value={formatCurrency(sale.changeGiven)} /></Grid>
-          <Grid item xs={6} sm={3}><StatBlock label={t('customer')} value={sale.customerName || t('walk_in')} /></Grid>
-          <Grid item xs={6} sm={3}>
-            <StatBlock label={t('net_after_refunds')} value={formatCurrency(netTotal)} color={sale.totalRefunded > 0 ? 'warning.main' : undefined} />
-          </Grid>
+      <Typography variant="h6" fontWeight={700} sx={{ mb: 2.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <PaymentsIcon color="success" /> {t('financial_summary') || 'Financial Summary'}
+      </Typography>
+      <Grid container spacing={2.5} sx={{ mb: 5 }}>
+        <Grid item xs={6} md={3}>
+          <StatCard label={t('subtotal')} value={formatCurrency(sale.subtotal)} icon={<CartIcon />} />
         </Grid>
-      </Paper>
+        <Grid item xs={6} md={3}>
+          <StatCard label={t('tax')} value={formatCurrency(sale.taxAmount)} icon={<TagIcon />} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard 
+            label={t('discount')} 
+            value={formatCurrency(sale.discountAmount)} 
+            color={sale.discountAmount > 0 ? 'success.main' : undefined} 
+            icon={<TagIcon />} 
+          />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard 
+            label={t('total')} 
+            value={formatCurrency(sale.totalAmount)} 
+            icon={<PaymentsIcon />} 
+            highlight 
+          />
+        </Grid>
+        
+        <Grid item xs={6} md={3}>
+          <StatCard label={t('paid')} value={formatCurrency(sale.amountPaid)} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard label={t('change')} value={formatCurrency(sale.changeGiven)} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard label={t('customer')} value={sale.customerName || t('walk_in')} icon={<PersonIcon />} />
+        </Grid>
+        <Grid item xs={6} md={3}>
+          <StatCard 
+            label={t('net_after_refunds')} 
+            value={formatCurrency(netTotal)} 
+            color={sale.totalRefunded > 0 ? 'warning.main' : 'success.main'} 
+            highlight={sale.totalRefunded > 0}
+            highlightColor={sale.totalRefunded > 0 ? 'warning' : 'success'}
+            icon={<HistoryIcon />}
+          />
+        </Grid>
+      </Grid>
 
-      <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-        <Typography variant="h6" gutterBottom>{t('items')}</Typography>
+      <Paper elevation={0} sx={{ p: 3, mb: 4, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
+        <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <CartIcon color="success" /> {t('items')}
+        </Typography>
         <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
-              <TableRow>
+              <TableRow sx={{ '& th': { bgcolor: 'grey.50', fontWeight: 700, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider' } }}>
                 <TableCell>{t('product')}</TableCell>
                 <TableCell align="right">{t('qty')}</TableCell>
                 <TableCell align="right">{t('refunded')}</TableCell>
@@ -175,16 +345,16 @@ const SaleDetail = () => {
             </TableHead>
             <TableBody>
               {sale.items?.map((item, idx) => (
-                <TableRow key={idx}>
-                  <TableCell>{item.productName}</TableCell>
+                <TableRow key={idx} sx={{ '&:last-child td': { border: 0 }, '&:hover': { bgcolor: 'grey.50' } }}>
+                  <TableCell sx={{ fontWeight: 500 }}>{item.productName}</TableCell>
                   <TableCell align="right">{item.quantity}</TableCell>
                   <TableCell align="right">
                     {item.quantityRefunded > 0
-                      ? <Chip size="small" label={item.quantityRefunded} color="warning" variant="outlined" />
-                      : '-'}
+                      ? <Chip size="small" label={item.quantityRefunded} color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+                      : <Typography variant="body2" color="text.disabled">-</Typography>}
                   </TableCell>
                   <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{formatCurrency(item.unitPrice)}</TableCell>
-                  <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{formatCurrency(item.totalPrice)}</TableCell>
+                  <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600 }}>{formatCurrency(item.totalPrice)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -194,11 +364,13 @@ const SaleDetail = () => {
 
       {sale.refunds?.length > 0 && (
         <Paper elevation={0} sx={{ p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-          <Typography variant="h6" gutterBottom>{t('refund_history')}</Typography>
+          <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+            <HistoryIcon color="success" /> {t('refund_history')}
+          </Typography>
           <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
-                <TableRow>
+                <TableRow sx={{ '& th': { bgcolor: 'grey.50', fontWeight: 700, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider' } }}>
                   <TableCell>{t('date')}</TableCell>
                   <TableCell>{t('reason')}</TableCell>
                   <TableCell>{t('processed_by')}</TableCell>
@@ -207,19 +379,23 @@ const SaleDetail = () => {
               </TableHead>
               <TableBody>
                 {sale.refunds.map((r) => (
-                  <TableRow key={r.id}>
+                  <TableRow key={r.id} sx={{ '&:last-child td': { border: 0 }, '&:hover': { bgcolor: 'grey.50' } }}>
                     <TableCell>{formatDateTime(r.refundDate)}</TableCell>
                     <TableCell>{r.reason}</TableCell>
                     <TableCell>{r.refundedByName || '-'}</TableCell>
-                    <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{formatCurrency(r.totalRefundAmount)}</TableCell>
+                    <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: 'warning.main' }}>{formatCurrency(r.totalRefundAmount)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
-          <Divider sx={{ my: 1.5 }} />
+          <Divider sx={{ my: 2.5 }} />
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <Typography fontWeight={600}>{t('total_refunded', { amount: formatCurrency(sale.totalRefunded) })}</Typography>
+            <Paper sx={{ px: 3, py: 1.5, bgcolor: 'warning.50', border: '1px solid', borderColor: 'warning.light', borderRadius: 2 }}>
+              <Typography fontWeight={700} color="warning.dark" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                {t('total_refunded', { amount: formatCurrency(sale.totalRefunded) })}
+              </Typography>
+            </Paper>
           </Box>
         </Paper>
       )}

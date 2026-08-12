@@ -11,10 +11,10 @@ import {
   Paper,
   CircularProgress,
 } from '@mui/material';
-import { Backup as BackupIcon } from '@mui/icons-material';
+import { Backup as BackupIcon, DeleteSweep as DeleteSweepIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { systemSettingService, backupService } from '../api/services';
+import { systemSettingService, backupService, saleService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShutdownButton from '../components/ShutdownButton';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -24,6 +24,7 @@ const Settings = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [backupLoading, setBackupLoading] = useState(false);
+  const [deleteOldSalesLoading, setDeleteOldSalesLoading] = useState(false);
   const queryClient = useQueryClient();
 
   const { data: settingsData, isLoading } = useQuery({
@@ -84,6 +85,25 @@ const Settings = () => {
       notifyError(err.friendlyMessage || t('backup_download_failed'));
     } finally {
       setBackupLoading(false);
+    }
+  };
+
+  const handleDeleteOldSales = async () => {
+    if (!window.confirm(t('delete_old_sales_confirm'))) {
+      return;
+    }
+
+    setDeleteOldSalesLoading(true);
+    try {
+      const response = await saleService.deleteOld(1);
+      const deletedSales = response?.data?.deletedSales ?? 0;
+      const cutoffDate = response?.data?.cutoffDate;
+      notifySuccess(t('old_sales_deleted', { count: deletedSales, date: cutoffDate }));
+      queryClient.invalidateQueries({ queryKey: ['sales'] });
+    } catch (err) {
+      notifyError(err.friendlyMessage || t('delete_old_sales_failed'));
+    } finally {
+      setDeleteOldSalesLoading(false);
     }
   };
 
@@ -176,6 +196,24 @@ const Settings = () => {
           disabled={backupLoading}
         >
           {t('download_full_backup')}
+        </Button>
+      </Paper>
+
+      <Paper sx={{ p: 3, mb: 3 }}>
+        <Typography variant="h6" gutterBottom color="error.main">
+          {t('old_sales_cleanup')}
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          {t('old_sales_cleanup_description')}
+        </Typography>
+        <Button
+          variant="contained"
+          color="error"
+          startIcon={deleteOldSalesLoading ? <CircularProgress size={18} color="inherit" /> : <DeleteSweepIcon />}
+          onClick={handleDeleteOldSales}
+          disabled={deleteOldSalesLoading}
+        >
+          {deleteOldSalesLoading ? t('deleting_old_sales') : t('delete_sales_older_than_one_year')}
         </Button>
       </Paper>
 

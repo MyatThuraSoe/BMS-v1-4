@@ -37,6 +37,7 @@ import {
   ShoppingCart as CartIcon,
   PersonAdd as CustomerIcon,
   FlashOn as DirectPrintIcon,
+  FlashOn,
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -393,16 +394,32 @@ const filteredProducts = products.filter(
     }
   };
 
-  // 👇 FIXED: Fetches PDF as a blob with JWT token, then opens it
+  // 👇 FIXED: Uses anchor tag trick to bypass popup blockers
   const handleDownloadPdf = async () => {
-    if (lastSale?.invoiceNumber) {
-      try {
-        const blob = await receiptService.downloadReceipt(lastSale.invoiceNumber, 'pdf');
-        const url = window.URL.createObjectURL(new Blob([blob]));
-        window.open(url, '_blank');
-      } catch (err) {
-        notifyError(t('download_pdf_failed'));
-      }
+    if (!lastSale?.invoiceNumber) return;
+    
+    try {
+      const blob = await receiptService.downloadReceipt(lastSale.invoiceNumber, 'pdf');
+      
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      
+      // Create a temporary anchor element
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `receipt-${lastSale.invoiceNumber}.pdf`);
+      
+      // Append to body, click it, and clean up
+      document.body.appendChild(link);
+      link.click();
+      
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+    } catch (err) {
+      console.error("PDF Download Error:", err);
+      notifyError(t('download_pdf_failed'));
     }
   };
 
@@ -597,7 +614,7 @@ const filteredProducts = products.filter(
               backgroundPosition: 'top left',
               backgroundRepeat: 'repeat-x',
               pt: '14px',
-              pb: '5px',
+              pb: 2,
             }}
           >
             <Box sx={{ px: 2, pb: 1 }}>
@@ -953,7 +970,7 @@ const filteredProducts = products.filter(
               variant="outlined" 
               color="primary" 
               fullWidth 
-              startIcon={<CartIcon />}
+            
             >
               {t('print_thermal_qz')}
             </Button>

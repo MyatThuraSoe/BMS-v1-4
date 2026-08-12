@@ -1,5 +1,25 @@
 import { Box, Typography, Paper, Button, Chip, Divider, Stack, Link as MuiLink } from '@mui/material';
-import { Info as InfoIcon, Facebook as FacebookIcon, LinkedIn as LinkedInIcon, Email as EmailIcon, Update as UpdateIcon } from '@mui/icons-material';
+import { 
+  Info as InfoIcon, 
+  Facebook as FacebookIcon, 
+  LinkedIn as LinkedInIcon, 
+  Update as UpdateIcon,
+  Telegram as TelegramIcon
+} from '@mui/icons-material';
+
+// TikTok SVG Icon - MUI v5 compatible
+const TikTokIcon = (props) => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="currentColor"
+    width="1em"
+    height="1em"
+    xmlns="http://www.w3.org/2000/svg"
+    {...props}
+  >
+    <path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93v6.16c0 2.52-1.12 4.84-2.97 6.39-1.48 1.26-3.42 2.03-5.36 2.03-4.14 0-7.5-3.36-7.5-7.5 0-2.97 1.74-5.64 4.38-6.88v4.18c-.87.46-1.52 1.29-1.72 2.28-.34 1.61.51 3.27 2.02 3.93 1.49.66 3.27.13 4.18-1.24.42-.63.58-1.37.58-2.12V.02z" />
+  </svg>
+);
 
 const About = () => {
   const appVersion = '1.0.0';
@@ -20,7 +40,6 @@ const About = () => {
           background: 'linear-gradient(135deg, rgba(43, 110, 79, 0.03) 0%, rgba(184, 134, 46, 0.03) 100%)',
         }}
       >
-        {/* App Icon */}
         <Box
           component="img"
           src="/LumiPOS-logo.png"
@@ -52,7 +71,7 @@ const About = () => {
         </Typography>
 
         <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 2 }}>
-          POS + Retial System
+          POS + Retail System
         </Typography>
 
         <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap" useFlexGap>
@@ -147,6 +166,56 @@ const About = () => {
 
           <Button
             component={MuiLink}
+            href="https://www.tiktok.com/@megacodemm"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="outlined"
+            size="large"
+            startIcon={<TikTokIcon />}
+            sx={{
+              justifyContent: 'flex-start',
+              py: 1.5,
+              px: 3,
+              borderColor: '#000000',
+              color: '#000000',
+              '&:hover': {
+                borderColor: '#000000',
+                bgcolor: 'rgba(0, 0, 0, 0.04)',
+              },
+            }}
+          >
+            <Typography variant="body1" sx={{ fontWeight: 500, ml: 1 }}>
+              tiktok.com/@megacodemm
+            </Typography>
+          </Button>
+
+          <Button
+            component={MuiLink}
+            href="https://t.me/megacodemm"
+            target="_blank"
+            rel="noopener noreferrer"
+            variant="outlined"
+            size="large"
+            startIcon={<TelegramIcon />}
+            sx={{
+              justifyContent: 'flex-start',
+              py: 1.5,
+              px: 3,
+              borderColor: '#229ED9',
+              color: '#229ED9',
+              '&:hover': {
+                borderColor: '#229ED9',
+                bgcolor: 'rgba(34, 158, 217, 0.04)',
+              },
+            }}
+          >
+            <Typography variant="body1" sx={{ fontWeight: 500, ml: 1 }}>
+              t.me/megacodemm
+            </Typography>
+          </Button>
+
+          <Button
+            component={MuiLink}
             href="https://www.linkedin.com/company/megacode-software-development"
             target="_blank"
             rel="noopener noreferrer"
@@ -167,29 +236,6 @@ const About = () => {
           >
             <Typography variant="body1" sx={{ fontWeight: 500, ml: 1 }}>
               LinkedIn / MegaCode Software Development
-            </Typography>
-          </Button>
-
-          <Button
-            component={MuiLink}
-            href="mailto:megacode.mm@gmail.com"
-            variant="outlined"
-            size="large"
-            startIcon={<EmailIcon />}
-            sx={{
-              justifyContent: 'flex-start',
-              py: 1.5,
-              px: 3,
-              borderColor: 'primary.main',
-              color: 'primary.main',
-              '&:hover': {
-                borderColor: 'primary.main',
-                bgcolor: 'rgba(43, 110, 79, 0.04)',
-              },
-            }}
-          >
-            <Typography variant="body1" sx={{ fontWeight: 500, ml: 1 }}>
-              megacode.mm@gmail.com
             </Typography>
           </Button>
         </Stack>
