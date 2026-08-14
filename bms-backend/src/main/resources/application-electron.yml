@@ -7,7 +7,7 @@ spring:
     name: bms-electron
 
   datasource:
-    url: jdbc:h2:file:C:/BMS_Data/bms_db;AUTO_SERVER=TRUE
+    url: jdbc:h2:file:C:/LumiPOS/bms_db;AUTO_SERVER=TRUE
     username: sa
     password:
     driver-class-name: org.h2.Driver
@@ -20,6 +20,7 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.H2Dialect
         format_sql: false
+        default_batch_fetch_size: 50
 
   servlet:
     multipart:
@@ -32,6 +33,10 @@ spring:
       settings:
         web-allow-others: false
 
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+
 jwt:
   secret: c2VjcmV0S2V5Rm9yQk1TT2ZmbGluZUFwcENyZWF0ZWRGb3JNeWF0VGh1cmFTb2UyMDI2
   expiration: 86400000
@@ -43,11 +48,11 @@ logging:
 
 google:
   oauth:
-    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
-    client-secret: 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
+    client-id: haha
+    client-secret: 123
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
-    frontend-redirect-base: http://127.0.0.1:8080
+    frontend-redirect-base: http://127.0.0.1:17234
 
 app:
-  upload-dir: C:/BMS_Data/uploads
+  upload-dir: C:/LumiPOS/uploads
   open-browser: false

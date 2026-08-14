@@ -11,7 +11,6 @@ const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
 });
-
 // Request interceptor to add JWT token + Accept-Language header
 apiClient.interceptors.request.use(
   (config) => {
@@ -35,8 +34,18 @@ apiClient.interceptors.response.use(
   (error) => {
     const status = error.response?.status;
     const backendMessage = error.response?.data?.message;
+    const code = error.response?.data?.code;
 
-    // 1. Handle JWT Expiration / Unauthorized Access
+    // 1. License required: hard redirect to activation, never to login
+    if (status === 403 && code === 'LICENSE_REQUIRED') {
+      if (!window.location.pathname.startsWith('/activate')) {
+        window.location.href = '/activate';
+      }
+      error.friendlyMessage = backendMessage || i18n.t('errors:license_required');
+      return Promise.reject(error);
+    }
+
+    // 2. Handle JWT Expiration / Unauthorized Access
     if (status === 401 || status === 403) {
       // Prevent infinite redirect loop if already on the login page
       if (!window.location.pathname.includes('/login')) {
@@ -47,7 +56,7 @@ apiClient.interceptors.response.use(
       return Promise.reject(error);
     }
 
-    // 2. Handle other known errors with friendly messages
+    // 3. Handle other known errors with friendly messages
     let friendlyMessage;
     if (!error.response) {
       friendlyMessage = i18n.t('errors:cannot_reach_server');

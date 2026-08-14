@@ -4,6 +4,7 @@ import com.bms.entity.Sale;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
@@ -20,27 +21,33 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     Optional<Sale> findByInvoiceNumber(String invoiceNumber);
     boolean existsByInvoiceNumber(String invoiceNumber);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate DESC")
     Page<Sale> findActiveSales(Pageable pageable);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "LOWER(s.invoiceNumber) LIKE LOWER(CONCAT('%', :keyword, '%'))")
     Page<Sale> searchActiveSales(@Param("keyword") String keyword, Pageable pageable);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "s.cashierId = :cashierId ORDER BY s.saleDate DESC")
     Page<Sale> findByCashierId(@Param("cashierId") Long cashierId, Pageable pageable);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "s.customer.id = :customerId ORDER BY s.saleDate DESC")
     Page<Sale> findByCustomerId(@Param("customerId") Long customerId, Pageable pageable);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "s.saleDate BETWEEN :startDate AND :endDate ORDER BY s.saleDate DESC")
     Page<Sale> findByDateRange(@Param("startDate") LocalDateTime startDate, 
                                @Param("endDate") LocalDateTime endDate, 
                                Pageable pageable);
     
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "s.isVoided = false ORDER BY s.saleDate DESC")
     Page<Sale> findNonVoidedSales(Pageable pageable);
@@ -54,6 +61,15 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     """)
     List<Sale> findLastInvoicesByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
 
+    @Query("""
+    SELECT s.invoiceNumber
+    FROM Sale s
+    WHERE s.invoiceNumber LIKE CONCAT(:prefix, '%')
+    ORDER BY s.invoiceNumber DESC
+    """)
+    List<String> findInvoiceNumbersByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
+
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("""
     SELECT s FROM Sale s
     WHERE s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false
@@ -98,12 +114,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     List<Sale> findByInvoiceNumberContainingIgnoreCase(String invoiceNumber, Pageable pageable);
 
+    @Query("SELECT s FROM Sale s WHERE s.cashShiftId = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
     List<Sale> findByCashShiftId(Long cashShiftId);
 
     @Query("""
         SELECT COALESCE(SUM(s.totalAmount), 0)
         FROM Sale s
         WHERE s.cashShiftId = :shiftId AND s.paymentMethod = 'CASH' AND s.isVoided = false
+          AND s.isActive = true AND s.deletedAt IS NULL
         """)
     BigDecimal sumNetCashSalesByShiftId(@Param("shiftId") Long shiftId);
 
@@ -111,6 +129,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         SELECT COALESCE(SUM(r.totalRefundAmount), 0)
         FROM Refund r
         WHERE r.sale.cashShiftId = :shiftId AND r.refundDate >= :shiftStart
+          AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
         """)
     BigDecimal sumRefundsDuringShift(@Param("shiftId") Long shiftId, @Param("shiftStart") LocalDateTime shiftStart);
 
@@ -152,6 +171,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         SELECT COUNT(s) AS totalSales, COALESCE(SUM(s.totalAmount), 0) AS totalRevenue
         FROM Sale s
         WHERE s.cashierId = :cashierId AND s.isVoided = false
+          AND s.isActive = true AND s.deletedAt IS NULL
         """)
     CashierStats findCashierStats(@Param("cashierId") Long cashierId);
 
@@ -159,6 +179,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         SELECT COUNT(s) AS totalSales, COALESCE(SUM(s.totalAmount), 0) AS totalRevenue
         FROM Sale s
         WHERE s.cashierId = :cashierId AND s.isVoided = false AND s.saleDate >= :since
+          AND s.isActive = true AND s.deletedAt IS NULL
         """)
     CashierStats findCashierStatsSince(@Param("cashierId") Long cashierId, @Param("since") LocalDateTime since);
 }

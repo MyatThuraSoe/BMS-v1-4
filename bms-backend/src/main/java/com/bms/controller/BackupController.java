@@ -5,12 +5,21 @@ import com.bms.repository.BackupSettingRepository;
 import com.bms.service.BackupService;
 import com.bms.service.GoogleDriveService;
 import com.bms.dto.response.ApiResponse;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/backups")
@@ -20,7 +29,13 @@ public class BackupController {
     private final BackupService backupService;
     private final GoogleDriveService googleDriveService;
 
-    @org.springframework.beans.factory.annotation.Value("${google.oauth.frontend-redirect-base}")
+    @Value("${google.oauth.client-id}")
+    private String clientId;
+
+    @Value("${google.oauth.redirect-uri}")
+    private String redirectUri;
+
+    @Value("${google.oauth.frontend-redirect-base}")
     private String frontendRedirectBase;
 
     public BackupController(BackupSettingRepository backupSettingRepository,
@@ -32,7 +47,7 @@ public class BackupController {
     }
 
     @GetMapping("/settings")
-    @PreAuthorize("hasRole('ADMIN')") // 👈 Moved here
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<BackupSetting>> getSettings() {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> backupSettingRepository.save(new BackupSetting()));
@@ -40,7 +55,7 @@ public class BackupController {
     }
 
     @PutMapping("/settings")
-    @PreAuthorize("hasRole('ADMIN')") // 👈 Moved here
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<BackupSetting>> updateSettings(@RequestBody BackupSetting setting) {
         BackupSetting existing = backupSettingRepository.findFirstByOrderByIdAsc().orElse(new BackupSetting());
         existing.setEnabled(setting.isEnabled());
@@ -63,28 +78,81 @@ public class BackupController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Settings updated", backupSettingRepository.save(existing)));
     }
 
-    @GetMapping("/google/connect")
-    @PreAuthorize("hasRole('ADMIN')") // 👈 Moved here (Frontend calls this with JWT)
-    public ResponseEntity<String> connectGoogleDrive() throws Exception {
-        return ResponseEntity.ok(googleDriveService.getAuthorizationUrl());
+    // ✅ NEW: Returns the Google OAuth URL so the frontend can open it in the browser
+    @GetMapping("/google/auth-url")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, String>>> getAuthUrl() {
+        String scope = "https://www.googleapis.com/auth/drive.file";
+        String authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
+                + "?client_id=" + clientId
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
+                + "&response_type=code"
+                + "&scope=" + URLEncoder.encode(scope, StandardCharsets.UTF_8)
+                + "&access_type=offline"
+                + "&prompt=consent";
+        return ResponseEntity.ok(new ApiResponse<>(true, "ok", Map.of("authUrl", authUrl)));
     }
 
-    // Intentionally has no @PreAuthorize: Google redirects the user's browser directly to this
-    // URL after they approve access — it's not an API call from our frontend, so there's no
-    // Bearer token to check here. Security is enforced upstream: only an Admin could reach this
-    // flow at all, since starting it requires hitting the Admin-only /google/connect endpoint first.
+    // ✅ NEW: Status endpoint for polling
+    @GetMapping("/google/status")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getStatus() {
+        BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc().orElse(new BackupSetting());
+        Map<String, Object> status = new HashMap<>();
+        status.put("connected", setting.getGoogleRefreshToken() != null && !setting.getGoogleRefreshToken().isEmpty());
+        return ResponseEntity.ok(new ApiResponse<>(true, "ok", status));
+    }
+
+    // Callback from Google (NO @PreAuthorize - Google redirects browser directly here)
     @GetMapping("/google/callback")
     public ResponseEntity<Void> handleGoogleCallback(@RequestParam("code") String code) {
         try {
             googleDriveService.handleCallback(code);
-            return ResponseEntity.status(302).header("Location", frontendRedirectBase + "/settings/backup?status=success").build();
+            // Redirect to friendly success page
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create("/api/backups/google/success"))
+                    .build();
         } catch (Exception e) {
-            return ResponseEntity.status(302).header("Location", frontendRedirectBase + "/settings/backup?status=error").build();
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(frontendRedirectBase + "/settings/backup?status=error"))
+                    .build();
         }
     }
 
+    // ✅ NEW: Friendly "you can close this tab" page
+    @GetMapping("/google/success")
+    public ResponseEntity<String> successPage() {
+        String html = """
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>LumiPOS — Google Drive Connected</title>
+                <style>
+                    body { font-family: 'Segoe UI', sans-serif; display: flex; align-items: center;
+                           justify-content: center; min-height: 100vh; margin: 0; background: #F3F5F1; }
+                    .card { background: #fff; padding: 48px; border-radius: 16px; text-align: center;
+                            box-shadow: 0 8px 30px rgba(0,0,0,0.08); max-width: 420px; }
+                    .icon { font-size: 64px; margin-bottom: 16px; }
+                    h1 { color: #2B6E4F; font-size: 22px; margin: 0 0 12px; }
+                    p { color: #5B655D; line-height: 1.6; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <div class="icon">✅</div>
+                    <h1>Google Drive Connected!</h1>
+                    <p>Your backups are now linked to Google Drive.<br>
+                       You can close this tab and return to <strong>LumiPOS</strong>.</p>
+                </div>
+            </body>
+            </html>
+            """;
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    }
+
     @PostMapping("/google/disconnect")
-    @PreAuthorize("hasRole('ADMIN')") // 👈 Moved here
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> disconnectGoogleDrive() {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc().orElse(null);
         if (setting != null) {
@@ -109,6 +177,25 @@ public class BackupController {
             return ResponseEntity.ok(new ApiResponse<>(true, msg, link));
         } catch (Exception e) {
             return ResponseEntity.internalServerError().body(new ApiResponse<>(false, "Backup failed: " + e.getMessage(), null));
+        }
+    }
+
+    // Local .xlsx download of all business data (no Google Drive needed)
+    @GetMapping("/export")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<byte[]> exportManualBackup() {
+        try {
+            java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
+            backupService.exportBackup(baos, null, null);
+            String filename = "LumiPOS_Backup_" + LocalDate.now() + ".xlsx";
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                    .contentType(org.springframework.http.MediaType.parseMediaType(
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                    .body(baos.toByteArray());
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError()
+                    .body(null);
         }
     }
 }

@@ -45,8 +45,8 @@ public class SaleController {
             @RequestParam(required = false) Long customerId,
             @RequestParam(required = false) String invoice) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy).descending());
-        Page<SaleResponse> sales = saleService.getFilteredSales(range, startDate, endDate, customerId, invoice, pageable)
-                .map(saleService::convertToResponse);
+        Page<SaleResponse> sales = saleService.convertToResponses(
+                saleService.getFilteredSales(range, startDate, endDate, customerId, invoice, pageable));
         return ResponseEntity.ok(new ApiResponse<>(true, "Sales retrieved successfully", sales));
     }
 
@@ -135,10 +135,9 @@ public class SaleController {
         Pageable pageable = PageRequest.of(0, 1000, Sort.by("saleDate").descending());
         Page<Sale> sales = saleService.getAllSales(pageable);
         
-        List<SaleResponse> filteredSales = sales.stream()
+        List<SaleResponse> filteredSales = saleService.convertToResponses(sales).stream()
             .filter(sale -> !sale.getSaleDate().toLocalDate().isBefore(startDate) && 
                            !sale.getSaleDate().toLocalDate().isAfter(endDate))
-            .map(saleService::convertToResponse)
             .toList();
         
         return ResponseEntity.ok(new ApiResponse<>(true, "Sales retrieved successfully", filteredSales));

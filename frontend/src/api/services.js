@@ -145,6 +145,11 @@ export const productService = {
     return response.data;
   },
 };
+export const licenseService = {
+    getMachineId: () => apiClient.get('/license/machine-id'),
+    getStatus: () => apiClient.get('/license/status'),
+    activate: (licenseKey) => apiClient.post('/license/activate', { licenseKey }),
+};
 
 export const categoryService = {
   getAll: async (page = 0, size = 20) => {
@@ -644,12 +649,12 @@ export const systemSettingService = {
   },
 
   getByKey: async (key) => {
-    const response = await apiClient.get(`/settings/${key}`);
+    const response = await apiClient.get(`/settings/key/${key}`);
     return response.data;
   },
 
   update: async (key, data) => {
-    const response = await apiClient.put(`/settings/${key}`, data);
+    const response = await apiClient.put(`/settings/key/${key}`, data);
     return response.data;
   },
 };
@@ -669,7 +674,7 @@ export const auditLogService = {
 
 export const backupService = {
   downloadFullBackup: async () => {
-    const response = await apiClient.get('/backup/export', { responseType: 'blob' });
+    const response = await apiClient.get('/backups/export', { responseType: 'blob' });
     return response.data;
   },
 
@@ -706,6 +711,12 @@ export const backupService = {
   }
 };
 
+export const googleDriveService = {
+  getAuthUrl: () => apiClient.get('/backups/google/auth-url'),
+  getStatus: () => apiClient.get('/backups/google/status'),
+  disconnect: () => apiClient.post('/backups/google/disconnect'),
+};
+
 export const shiftService = {
   openShift: async (openingAmount) => {
     const response = await apiClient.post('/shifts/open', { openingAmount });
@@ -737,4 +748,9 @@ export const shiftService = {
     const response = await apiClient.get(`/shifts/${id}`);
     return response.data;
   },
+};
+
+export const dataService = {
+    exportAll: () => apiClient.get('/data/export', { responseType: 'blob' }),
+    importAll: (backupJson, mode) => apiClient.post(`/data/import?mode=${mode}`, backupJson),
 };

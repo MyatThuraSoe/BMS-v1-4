@@ -22,8 +22,12 @@ public class AuditLogViewService {
     @Autowired
     private AuditLogRepository auditLogRepository;
 
-    public Page<AuditLog> getAllAuditLogs(Pageable pageable) {
-        return auditLogRepository.findAll(pageable);
+    public Page<AuditLog> getAllAuditLogs(Long userId, String action, LocalDateTime startDate, LocalDateTime endDate, Pageable pageable) {
+        return auditLogRepository.findFiltered(userId, normalize(action), startDate, endDate, pageable);
+    }
+
+    private String normalize(String value) {
+        return (value == null || value.isBlank()) ? null : value.trim();
     }
 
     public Page<AuditLog> getAuditLogsByUserId(Long userId, Pageable pageable) {

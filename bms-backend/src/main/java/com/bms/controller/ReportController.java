@@ -98,6 +98,15 @@ public class ReportController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Top categories report retrieved successfully", report));
     }
 
+    @GetMapping("/compare-categories")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<List<Map<String, Object>>>> getCompareCategories(
+            @RequestParam(value = "categoryIds") List<Long> categoryIds,
+            @RequestParam(defaultValue = "MONTH") String period) {
+        List<Map<String, Object>> report = reportService.getCategoryComparison(categoryIds, period);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Category comparison retrieved successfully", report));
+    }
+
     @GetMapping("/profit-summary")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getProfitSummary(

@@ -50,6 +50,9 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     Optional<Purchase> findTopByPurchaseNumberStartingWithOrderByIdDesc(String prefix);
 
+    @Query("SELECT p.purchaseNumber FROM Purchase p WHERE p.purchaseNumber LIKE CONCAT(:prefix, '%') ORDER BY p.purchaseNumber DESC")
+    List<String> findPurchaseNumbersByPrefix(@Param("prefix") String prefix, Pageable pageable);
+
     @Query("SELECT SUM(p.totalAmount) FROM Purchase p WHERE p.supplier.id = :supplierId AND p.isActive = true AND p.deletedAt IS NULL AND CAST(p.purchaseDate AS DATE) >= CAST(:startDate AS DATE)")
     BigDecimal sumTotalAmountBySupplierIdAndDateAfter(@Param("supplierId") Long supplierId, @Param("startDate") LocalDateTime startDate);
 

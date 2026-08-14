@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Box, Typography, Card, CardContent, FormControl, FormControlLabel, Switch,
@@ -8,13 +8,12 @@ import {
   CloudUpload as CloudUploadIcon, 
   Refresh as RefreshIcon, 
   Save as SaveIcon,
-  Link as LinkIcon,
   LinkOff as LinkOffIcon,
-
+  Google as GoogleIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { backupService } from '../api/services';
+import { backupService, googleDriveService } from '../api/services';
 
 
 
@@ -31,6 +30,8 @@ const BackupSettings = () => {
   
   const [isRunning, setIsRunning] = useState(false);
   const [message, setMessage] = useState(null);
+  const [connecting, setConnecting] = useState(false);
+  const pollRef = useRef(null);
 
   // Inside the BackupSettings component, add state for dates:
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
@@ -92,14 +93,48 @@ const BackupSettings = () => {
   };
 
   const handleConnect = async () => {
+    setConnecting(true);
     try {
-      const authUrl = await backupService.getConnectUrl();
-      // Redirect user to Google's consent screen
-      window.location.href = authUrl;
-    } catch (error) {
+      const res = await googleDriveService.getAuthUrl();
+      const authUrl = res.data.data.authUrl;
+
+      if (window.electronAPI?.openExternal) {
+        // Electron → open the real browser
+        await window.electronAPI.openExternal(authUrl);
+      } else {
+        // Plain browser fallback → new tab (has a back button)
+        window.open(authUrl, '_blank');
+      }
+
+      startPolling(); // watch for the connection to complete
+    } catch (err) {
       setMessage({ type: 'error', text: t('connection_url_failed') });
+      setConnecting(false);
     }
   };
+
+    // Poll the settings endpoint until Google Drive is connected
+  const startPolling = () => {
+    clearInterval(pollRef.current);
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await backupService.getSettings();
+        const hasToken = res.data.data?.googleRefreshToken;
+        if (hasToken) {
+          clearInterval(pollRef.current);
+          setConnecting(false);
+          setMessage({ type: 'success', text: t('drive_connected') });
+          queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
+        }
+      } catch (e) { /* ignore transient errors */ }
+    }, 2000);
+
+    // Safety: stop polling after 5 minutes
+    setTimeout(() => clearInterval(pollRef.current), 5 * 60 * 1000);
+  };
+
+  // Clean up polling when the page unmounts
+  useEffect(() => () => clearInterval(pollRef.current), []);
 
   const handleDisconnect = async () => {
     if (window.confirm(t('disconnect_confirm'))) {
@@ -171,8 +206,14 @@ const BackupSettings = () => {
               {t('disconnect_google_drive')}
             </Button>
           ) : (
-            <Button variant="contained" color="primary" startIcon={<LinkIcon />} onClick={handleConnect}>
-              {t('connect_google_drive')}
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={connecting ? <CircularProgress size={18} sx={{ color: 'white' }} /> : <GoogleIcon />}
+              onClick={handleConnect}
+              disabled={connecting}
+            >
+              {connecting ? 'Waiting for Google sign-in…' : t('connect_google_drive')}
             </Button>
           )}
         </CardContent>

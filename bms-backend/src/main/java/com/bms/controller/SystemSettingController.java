@@ -45,6 +45,19 @@ public class SystemSettingController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Setting retrieved successfully", setting));
     }
 
+    @PutMapping("/key/{key}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<SystemSettingResponse>> updateSettingByKey(
+            @PathVariable String key,
+            @RequestBody com.bms.dto.request.SystemSettingValueUpdateRequest request,
+            Authentication authentication) {
+        org.springframework.security.core.userdetails.UserDetails userDetails =
+            (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+        SystemSettingResponse setting = systemSettingService.updateSettingByKey(key, request.getSettingValue(), userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Setting updated successfully", setting));
+    }
+
     @PostMapping
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<SystemSettingResponse>> createSetting(

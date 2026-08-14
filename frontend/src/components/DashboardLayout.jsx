@@ -53,7 +53,10 @@ import {
   Inventory as InventoryIcon,
   Category as CategoryIcon,
   Info as InfoIcon,
+  Storage as StorageIcon,
+
 } from '@mui/icons-material';
+
 import { useAuth } from '../context/AuthContext';
 import { authService, shopInfoService, shiftService } from '../api/services';
 import { useQuery } from '@tanstack/react-query';
@@ -113,6 +116,7 @@ const menuGroups = [
       { textKey: 'shop_info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
       { textKey: 'backup_settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
       { textKey: 'audit_logs', icon: <AuditIcon />, path: '/audit-logs', roles: ['ADMIN'], color: 'error.main' },
+      { textKey: 'data_management', icon: <StorageIcon />, path: '/data', roles: ['ADMIN'], color: 'info.main' },
     ],
   },
   {
@@ -181,6 +185,13 @@ const DashboardLayout = ({ children }) => {
 
   const currentShift = currentShiftData?.data;
   const shopName = shopInfoData?.data?.shopName;
+
+
+  const { data: licData } = useQuery({
+    queryKey: ['license-status'],
+    queryFn: () => licenseService.getStatus(),
+});
+const lic = licData?.data;
 
   // Keep the app-wide currency sign in sync with the Shop Info setting
   useEffect(() => {
@@ -436,6 +447,13 @@ const DashboardLayout = ({ children }) => {
       >
         {children || <Outlet />}
       </Box>
+
+      {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
+      <Alert severity="info" sx={{ mb: 2 }}>
+          ⏳ Your trial ends in <strong>{lic.daysLeft} days</strong>.
+          Contact MegaCode to upgrade — your data stays safe.
+      </Alert>
+  )}
 
       <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>{t('common:change_password')}</DialogTitle>

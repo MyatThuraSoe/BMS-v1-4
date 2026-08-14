@@ -38,6 +38,10 @@ import AuditLogs from './pages/AuditLogs';
 import ShopInfo from './pages/ShopInfo';
 import NotFound from './pages/NotFound';
 
+import Activate from './pages/Activate';
+
+import DataManagement from './pages/DataManagement';
+
 import BackupSettings from './pages/BackupSettings';
 import SupplierDetails from './pages/SupplierDetails';
 import CashShift from './pages/CashShift';
@@ -132,6 +136,9 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={!user ? <Login /> : <Navigate to={defaultRoute} />} />
       <Route path="/setup" element={!user ? <SetupFirstAdmin /> : <Navigate to={defaultRoute} />} />
+
+      {/* liscene key  */}
+        <Route path="/activate" element={<Activate />} />
       
       <Route path="/" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
         <Route index element={<Navigate to={defaultRoute} replace />} />
@@ -198,6 +205,8 @@ function AppRoutes() {
             </ProtectedRoute>
           } 
         />
+        
+        <Route path="data" element={<ProtectedRoute allowedRoles={['ADMIN']}><DataManagement /></ProtectedRoute>} />
         <Route path="shop-info" element={<ProtectedRoute allowedRoles={['ADMIN']}><ShopInfo /></ProtectedRoute>} />
         
         {/* Audit Logs (Admin only) */}
@@ -209,6 +218,10 @@ function AppRoutes() {
 
         {/* About Page (all roles) */}
         <Route path="about" element={<About />} />
+
+
+        
+
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

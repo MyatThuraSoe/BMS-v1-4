@@ -1,4 +1,9 @@
-import { Box, Typography, Paper, Button, Chip, Divider, Stack, Link as MuiLink } from '@mui/material';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { 
+  Box, Typography, Paper, Button, Chip, Divider, Stack, Link as MuiLink,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField 
+} from '@mui/material';
 import { 
   Info as InfoIcon, 
   Facebook as FacebookIcon, 
@@ -6,6 +11,9 @@ import {
   Update as UpdateIcon,
   Telegram as TelegramIcon
 } from '@mui/icons-material';
+
+import { licenseService } from '../api/services';
+import { notifySuccess, notifyError } from '../utils/notify';
 
 // TikTok SVG Icon - MUI v5 compatible
 const TikTokIcon = (props) => (
@@ -21,9 +29,31 @@ const TikTokIcon = (props) => (
   </svg>
 );
 
+
+
 const About = () => {
   const appVersion = '1.0.0';
   const buildDate = 'August 2025';
+
+  const { data: statusData, refetch } = useQuery({
+    queryKey: ['license-status'],
+    queryFn: () => licenseService.getStatus(),
+});
+const lic = statusData?.data?.data;
+const [keyDialog, setKeyDialog] = useState(false);
+const [newKey, setNewKey] = useState('');
+
+const handleActivateNewKey = async () => {
+    const res = await licenseService.activate(newKey.trim());
+    if (res.data.data.activated) {
+        notifySuccess('✅ License updated!');
+        setKeyDialog(false);
+        setNewKey('');
+        refetch();
+    } else {
+        notifyError(res.data.message || 'Invalid key for this machine');
+    }
+};
 
   return (
     <Box sx={{ maxWidth: 800, mx: 'auto', p: { xs: 2, md: 4 } }}>
@@ -89,6 +119,59 @@ const About = () => {
           />
         </Stack>
       </Paper>
+
+      {lic && (
+    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
+        <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
+            <Box>
+                <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    🎫 {lic.plan === 'trial' ? '1-Month Trial' : lic.plan === 'year' ? '1-Year License' : 'Lifetime License'}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                    Licensed to: {lic.customer || '—'}
+                </Typography>
+            </Box>
+            <Box sx={{ textAlign: 'right' }}>
+                <Chip
+                  color={
+                      lic.plan === 'lifetime' ? 'success' : 
+                      lic.expired ? 'error' :
+                      lic.plan === 'year' ? 'primary' : 
+                      'warning'
+                  }
+                  label={
+                      lic.plan === 'lifetime' ? '∞ Lifetime' : 
+                      lic.expired ? 'Expired' :
+                      lic.daysLeft <= 7 ? `${lic.daysLeft} days left ⚠️` :
+                      `${lic.daysLeft} days left`
+                  }
+              />
+                <Box>
+                    <Button size="small" sx={{ mt: 1 }} onClick={() => setKeyDialog(true)}>
+                        Enter new license key
+                    </Button>
+                </Box>
+            </Box>
+        </Stack>
+
+        <Dialog open={keyDialog} onClose={() => setKeyDialog(false)} fullWidth maxWidth="sm">
+            <DialogTitle>Upgrade / Renew License</DialogTitle>
+            <DialogContent>
+                <TextField
+                    autoFocus fullWidth multiline minRows={4} sx={{ mt: 1 }}
+                    placeholder="Paste your new license key..."
+                    value={newKey} onChange={(e) => setNewKey(e.target.value)}
+                />
+            </DialogContent>
+            <DialogActions>
+                <Button onClick={() => setKeyDialog(false)}>Cancel</Button>
+                <Button variant="contained" onClick={handleActivateNewKey} disabled={!newKey.trim()}>
+                    Activate
+                </Button>
+            </DialogActions>
+        </Dialog>
+    </Paper>
+)}
 
       {/* Company Info Card */}
       <Paper

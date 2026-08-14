@@ -88,6 +88,23 @@ public class SystemSettingService {
         return convertToResponse(updatedSetting);
     }
 
+    public SystemSettingResponse updateSettingByKey(String key, String settingValue, Long userId) {
+        SystemSetting setting = systemSettingRepository.findBySettingKey(key)
+                .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
+
+        String oldValues = setting.toString();
+
+        setting.setSettingValue(settingValue);
+
+        SystemSetting updatedSetting = systemSettingRepository.save(setting);
+
+        auditLogService.logAction(userId, "SETTING_UPDATE",
+            "System setting updated: " + updatedSetting.getSettingKey(),
+            "SystemSetting", updatedSetting.getId(), oldValues, updatedSetting.toString());
+
+        return convertToResponse(updatedSetting);
+    }
+
     public void deleteSetting(Long id, Long userId) {
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));

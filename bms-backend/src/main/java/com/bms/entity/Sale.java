@@ -1,5 +1,6 @@
 package com.bms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -8,6 +9,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Table(name = "sales", indexes = {
     @Index(name = "idx_invoice_number", columnList = "invoiceNumber"),
     @Index(name = "idx_sale_date", columnList = "saleDate"),

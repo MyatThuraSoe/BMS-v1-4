@@ -55,7 +55,7 @@ public class ExpenseService {
         Expense expense = new Expense();
         expense.setCategory(parseCategory(request.getCategory()));
         expense.setDescription(request.getDescription());
-        expense.setAmount(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
+        expense.setAmount(requirePositive(request.getAmount()));
         expense.setExpenseDate(request.getExpenseDate());
         expense.setCreatedBy(userId);
         return ExpenseResponse.fromEntity(expenseRepository.save(expense));
@@ -70,10 +70,18 @@ public class ExpenseService {
 
         expense.setCategory(parseCategory(request.getCategory()));
         expense.setDescription(request.getDescription());
-        expense.setAmount(request.getAmount() != null ? request.getAmount() : BigDecimal.ZERO);
+        expense.setAmount(requirePositive(request.getAmount()));
         expense.setExpenseDate(request.getExpenseDate());
         expense.setCreatedBy(userId);
         return ExpenseResponse.fromEntity(expenseRepository.save(expense));
+    }
+
+    private BigDecimal requirePositive(BigDecimal amount) {
+        BigDecimal value = amount != null ? amount : BigDecimal.ZERO;
+        if (value.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Expense amount cannot be negative");
+        }
+        return value;
     }
 
     public void deleteExpense(Long id) {

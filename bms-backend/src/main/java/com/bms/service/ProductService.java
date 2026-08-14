@@ -123,6 +123,8 @@ public class ProductService {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
 
+        validateNonNegativeValues(request);
+
         Product product = new Product();
         product.setSku(request.getSku());
         product.setName(request.getName());
@@ -156,6 +158,8 @@ public class ProductService {
         }
 
         String oldValues = product.toString();
+
+        validateNonNegativeValues(request);
 
 if (!product.getSku().equals(request.getSku()) && productRepository.existsBySku(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
@@ -256,7 +260,7 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
 
     @Transactional
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason) {
-        Product product = productRepository.findById(productId)
+        Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
         int newQuantity = product.getStockQuantity() + quantityChange;
@@ -454,5 +458,23 @@ response.setTaxRate(product.getTaxRate());
             return "unknown";
         }
         return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase();
+    }
+
+    private void validateNonNegativeValues(ProductCreateRequest request) {
+        if (request.getUnitPrice() != null && request.getUnitPrice().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Unit price cannot be negative");
+        }
+        if (request.getCostPrice() != null && request.getCostPrice().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Cost price cannot be negative");
+        }
+        if (request.getTaxRate() != null && request.getTaxRate().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Tax rate cannot be negative");
+        }
+        if (request.getStockQuantity() != null && request.getStockQuantity() < 0) {
+            throw new BusinessException("Stock quantity cannot be negative");
+        }
+        if (request.getMinStockLevel() != null && request.getMinStockLevel() < 0) {
+            throw new BusinessException("Min stock level cannot be negative");
+        }
     }
 }

@@ -69,7 +69,9 @@ public class CashShiftService {
     }
 
     public CashShiftResponse closeShift(Long shiftId, CloseShiftRequest request, Long userId) {
-        CashShift shift = cashShiftRepository.findById(shiftId)
+        // PESSIMISTIC_WRITE lock: only one concurrent close succeeds.
+        // The second caller blocks here, then sees status != OPEN and is rejected.
+        CashShift shift = cashShiftRepository.findByIdForUpdate(shiftId)
                 .orElseThrow(() -> new ResourceNotFoundException("Shift not found"));
         if (!"OPEN".equals(shift.getStatus())) {
             throw new BusinessException("Shift is already closed");

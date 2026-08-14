@@ -77,21 +77,20 @@ public class SecurityConfig {
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
                 .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .authorizeHttpRequests(authz -> authz
+                                .authorizeHttpRequests(authz -> authz
                         // 1. Public API endpoints (No authentication required)
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register-first-admin").permitAll()
+                        .requestMatchers("/api/license/**").permitAll()   
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/backups/google/callback").permitAll()
+                        .requestMatchers("/api/backups/google/success").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
 
                         // 2. ALL OTHER API endpoints strictly require a valid JWT token
                         .requestMatchers("/api/**").authenticated()
-                        .requestMatchers("/h2-console/**").permitAll()
-
-                        // 3. EVERYTHING ELSE is public.
-                        // This allows static files (JS/CSS) AND React Router URLs (like /setup, /login, /dashboard)
-                        // to pass through. SpaWebController will catch them and forward them to index.html!
+                        
+                        // 3. EVERYTHING ELSE is public (React Router URLs)
                         .anyRequest().permitAll()
                 )
                 .authenticationProvider(authenticationProvider)

@@ -61,8 +61,14 @@ public class CashShiftController {
             @Valid @RequestBody CloseShiftRequest request,
             Authentication authentication) {
         Long userId = getUserId(authentication);
-        CashShiftResponse shift = cashShiftService.closeShift(id, request, userId);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Shift closed successfully", shift));
+        boolean isManagerOrAdmin = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN") || a.getAuthority().equals("ROLE_MANAGER"));
+        CashShiftResponse shift = cashShiftService.getShiftById(id);
+        if (!isManagerOrAdmin && !shift.getCashierId().equals(userId)) {
+            throw new com.bms.exception.BusinessException("You can only close your own shift");
+        }
+        CashShiftResponse closed = cashShiftService.closeShift(id, request, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Shift closed successfully", closed));
     }
 
     @GetMapping

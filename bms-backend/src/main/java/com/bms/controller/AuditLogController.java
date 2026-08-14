@@ -27,9 +27,17 @@ public class AuditLogController {
     public ResponseEntity<ApiResponse<Page<AuditLog>>> getAllAuditLogs(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
-            @RequestParam(defaultValue = "timestamp") String sortBy) {
+            @RequestParam(defaultValue = "timestamp") String sortBy,
+            @RequestParam(required = false) Long userId,
+            @RequestParam(required = false) String action,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) java.time.LocalDate endDate) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy).descending());
-        Page<AuditLog> logs = auditLogViewService.getAllAuditLogs(pageable);
+        Page<AuditLog> logs = auditLogViewService.getAllAuditLogs(
+                userId, action,
+                startDate != null ? startDate.atStartOfDay() : null,
+                endDate != null ? endDate.plusDays(1).atStartOfDay() : null,
+                pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Audit logs retrieved successfully", logs));
     }
 

@@ -27,4 +27,17 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
                                                    @Param("startDate") LocalDateTime startDate,
                                                    @Param("endDate") LocalDateTime endDate,
                                                    Pageable pageable);
+
+    @Query("""
+        SELECT al FROM AuditLog al
+        WHERE (:userId IS NULL OR al.userId = :userId)
+          AND (:action IS NULL OR LOWER(al.action) LIKE LOWER(CONCAT('%', :action, '%')))
+          AND (:startDate IS NULL OR al.timestamp >= :startDate)
+          AND (:endDate IS NULL OR al.timestamp < :endDate)
+        """)
+    Page<AuditLog> findFiltered(@Param("userId") Long userId,
+                                @Param("action") String action,
+                                @Param("startDate") LocalDateTime startDate,
+                                @Param("endDate") LocalDateTime endDate,
+                                Pageable pageable);
 }

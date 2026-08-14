@@ -1,5 +1,7 @@
 package com.bms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -8,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Table(name = "suppliers", indexes = {
     @Index(name = "idx_supplier_name", columnList = "name"),
     @Index(name = "idx_supplier_tax_id", columnList = "taxId"),
@@ -58,6 +61,7 @@ public class Supplier {
     private LocalDateTime updatedAt;
 
     @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @JsonIgnore
     private List<Purchase> purchases = new ArrayList<>();
 
     @PrePersist

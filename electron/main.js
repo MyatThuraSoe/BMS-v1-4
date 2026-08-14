@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
@@ -7,6 +7,7 @@ let mainWindow = null;
 let tray = null;
 let serverProcess = null;
 let isQuitting = false;
+let serverPid = null;
 
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
@@ -86,6 +87,9 @@ function startServer() {
         detached: false,
         windowsHide: true
     });
+    // ✅ Store the PID for later
+    serverPid = serverProcess.pid;
+    console.log(`[Server] Started Java process with PID: ${serverPid}`);
 
     // Log server output (useful for debugging)
     serverProcess.stdout.on('data', (data) => {
@@ -255,40 +259,102 @@ function createTray() {
     });
 }
 
-// Quit the application gracefully
-function quitApp() {
-    isQuitting = true;
+function cleanupZombieProcesses() {
+    console.log('[Startup] Cleaning up any zombie processes...');
     
-    // Kill the Java server process
-    if (serverProcess) {
+    if (process.platform === 'win32') {
         try {
-            // On Windows, we need to kill the process tree
-            if (process.platform === 'win32') {
-                spawn('taskkill', ['/pid', serverProcess.pid, '/f', '/t'], {
-                    stdio: 'ignore',
-                    windowsHide: true
-                });
-            } else {
-                serverProcess.kill('SIGTERM');
+            // Find any process LISTENING on our port. We only ever kill the
+            // LISTENING owner of :17234 (our own server from a crashed run).
+            // ESTABLISHED peers (e.g. a browser tab pointed at the API) are
+            // never touched, so we can't kill an unrelated app.
+            const result = require('child_process').spawnSync(
+                'cmd',
+                ['/c', `netstat -ano | findstr :${APP_PORT}`],
+                { encoding: 'utf8', windowsHide: true }
+            );
+            
+            const pids = new Set();
+            const lines = result.stdout.trim().split('\n');
+            for (const line of lines) {
+                const parts = line.trim().split(/\s+/);
+                const state = parts.length >= 4 ? parts[3] : '';
+                const pid = parts[parts.length - 1];
+                // Only kill the process that actually LISTENS on the port.
+                // 'LISTENING' is Windows' state label; some platforms show '*' or the raw number.
+                if (state === 'LISTENING' && pid && pid !== '0') {
+                    pids.add(pid);
+                }
             }
-        } catch (e) {
-            console.error('Error killing server process:', e);
+
+            for (const pid of pids) {
+                console.log(`[Startup] Killing zombie process on port ${APP_PORT} (PID: ${pid})`);
+                require('child_process').spawnSync(
+                    'taskkill',
+                    ['/F', '/T', '/PID', pid],
+                    { stdio: 'ignore', windowsHide: true }
+                );
+            }
+        } catch (err) {
+            console.warn('[Startup] Cleanup warning:', err.message);
         }
-        serverProcess = null;
     }
-    
-    // Destroy tray and window
-    if (tray) {
-        tray.destroy();
-        tray = null;
+}
+
+function killServerProcess() {
+    if (!serverPid) {
+        console.log('[Shutdown] No server PID to kill');
+        return;
     }
-    
-    if (mainWindow) {
-        mainWindow.destroy();
-        mainWindow = null;
+
+    console.log(`[Shutdown] Killing Java process (PID: ${serverPid})...`);
+
+    try {
+        if (process.platform === 'win32') {
+            // ✅ /F = Force kill, /T = Kill entire process tree (including child processes)
+            const result = require('child_process').spawnSync(
+                'taskkill',
+                ['/F', '/T', '/PID', String(serverPid)],
+                { stdio: 'ignore', windowsHide: true }
+            );
+            console.log(`[Shutdown] taskkill exit code: ${result.status}`);
+        } else {
+            // macOS/Linux
+            process.kill(serverPid, 'SIGKILL');
+        }
+    } catch (err) {
+        console.error('[Shutdown] Error killing process:', err.message);
     }
-    
-    app.quit();
+
+    serverProcess = null;
+    serverPid = null;
+}
+
+function quitApp() {
+    if (isQuitting) return; // ✅ Prevent double-execution
+    isQuitting = true;
+
+    console.log('[Shutdown] Quitting LumiPOS...');
+
+    // ✅ Kill Java server FIRST (most important)
+    killServerProcess();
+
+    // ✅ Small delay to ensure process is dead before destroying windows
+    setTimeout(() => {
+        if (tray) {
+            tray.destroy();
+            tray = null;
+        }
+        if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.destroy();
+            mainWindow = null;
+        }
+        if (splashWindow && !splashWindow.isDestroyed()) {
+            splashWindow.destroy();
+            splashWindow = null;
+        }
+        app.quit();
+    }, 300);
 }
 
 
@@ -377,8 +443,8 @@ function createSplashWindow() {
         alwaysOnTop: true,
         skipTaskbar: true,
         webPreferences: {
-            nodeIntegration: true,
-            contextIsolation: false
+            nodeIntegration: false,
+            contextIsolation: true
         }
     });
 
@@ -400,8 +466,26 @@ function closeSplashWindow() {
     }
 }
 
-// App lifecycle
-app.whenReady().then(async () => {
+// Ensure only ONE LumiPOS instance runs. The second launch focuses the
+// existing window instead of starting a second Java server on the same port.
+const gotTheLock = app.requestSingleInstanceLock();
+
+if (!gotTheLock) {
+    console.log('[Startup] Another LumiPOS instance is already running. Exiting.');
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+
+    // App lifecycle
+    app.whenReady().then(async () => {
+
+    cleanupZombieProcesses();
     // Show splash screen immediately
     createSplashWindow();
     updateSplash(5, 'Initializing LumiPOS...');
@@ -418,7 +502,7 @@ app.whenReady().then(async () => {
 
     try {
         // Wait for server with progress updates
-        await waitForServerWithProgress(30, 1000);
+        await waitForServerWithProgress(120, 1000);
         
         updateSplash(95, 'Preparing interface...');
         await new Promise(resolve => setTimeout(resolve, 300));
@@ -436,11 +520,12 @@ app.whenReady().then(async () => {
         closeSplashWindow();
         dialog.showErrorBox(
             'Startup Error',
-            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. Port 8080 is not in use\n3. The application files are not corrupted'
+            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. Port 17234 is not in use\n3. The application files are not corrupted'
         );
         quitApp();
     }
-});
+    });
+}
 
 // Enhanced wait with progress updates
 function waitForServerWithProgress(retries = 30, interval = 1000) {
@@ -525,3 +610,54 @@ app.on('activate', () => {
     }
 });
 
+
+
+// ✅ NEW: Open URLs in the system's default browser
+ipcMain.handle('open-external', async (event, url) => {
+    // Security: only allow http/https URLs
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+        await shell.openExternal(url);
+        return true;
+    }
+    return false;
+});
+
+// ✅ Ensure cleanup happens no matter HOW the app exits
+
+// When user clicks the X button
+app.on('window-all-closed', () => {
+    console.log('[Shutdown] All windows closed');
+    quitApp();
+});
+
+// Before the app starts quitting
+app.on('before-quit', () => {
+    console.log('[Shutdown] before-quit triggered');
+    isQuitting = true;
+    killServerProcess();
+});
+
+// Final cleanup before process exits
+app.on('will-quit', () => {
+    console.log('[Shutdown] will-quit triggered');
+    killServerProcess();
+});
+
+// If the app crashes or is force-closed
+process.on('exit', () => {
+    console.log('[Shutdown] process.exit triggered');
+    killServerProcess();
+});
+
+// Handle unexpected errors
+process.on('uncaughtException', (err) => {
+    console.error('[Shutdown] Uncaught exception:', err);
+    killServerProcess();
+    app.quit();
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[Shutdown] Unhandled rejection:', reason);
+    killServerProcess();
+    app.quit();
+});

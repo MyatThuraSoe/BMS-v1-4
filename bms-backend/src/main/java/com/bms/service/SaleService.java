@@ -58,6 +58,9 @@ public class SaleService {
     @Autowired
     private CashShiftRepository cashShiftRepository;
 
+    @Autowired
+    private SequenceService sequenceService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -151,10 +154,13 @@ public class SaleService {
         sale.setNotes(request.getNotes());
         sale.setIsVoided(false);
 
-        // Tag to open cash shift if this is a cash sale
+        // Cash sales MUST belong to an open cash shift — otherwise shift
+        // totals and closing amounts can never reconcile.
         if (sale.getPaymentMethod() == Sale.PaymentMethod.CASH) {
-            cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
-                .ifPresent(shift -> sale.setCashShiftId(shift.getId()));
+            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
+                .orElseThrow(() -> new BusinessException(
+                    "No open cash shift. Please open a shift before recording cash sales."));
+            sale.setCashShiftId(openShift.getId());
         }
 
         // Set customer: registered (by ID), quick-typed name, or Walk-in — exactly one of these three
@@ -270,19 +276,7 @@ public class SaleService {
     }
 
     private String generateInvoiceNumber() {
-        String prefix = "INV";
-        String datePart = LocalDate.now().format(DateTimeFormatter.ofPattern("yyMMdd"));
-
-        List<Sale> matches = saleRepository.findLastInvoicesByPrefix(
-                prefix + datePart, org.springframework.data.domain.PageRequest.of(0, 1));
-
-        if (matches.isEmpty()) {
-            return prefix + datePart + "001";
-        }
-
-        String lastNumber = matches.get(0).getInvoiceNumber();
-        int seqNum = Integer.parseInt(lastNumber.substring((prefix + datePart).length()));
-        return prefix + datePart + String.format("%03d", seqNum + 1);
+        return sequenceService.nextInvoiceNumber();
     }
 
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
@@ -307,16 +301,22 @@ public class SaleService {
         User user = userRepository.findById(userId).orElse(null);
 
         for (SaleItem item : sale.getItems()) {
-            int alreadyRefunded = item.getQuantityRefunded() != null ? item.getQuantityRefunded() : 0;
-            int quantityToRestore = item.getQuantity() - alreadyRefunded;
+            // Lock the item row so a concurrent refund cannot restart/duplicate
+            // the quantityRefunded math below (void restore must be consistent
+            // with any refund that landed first).
+            SaleItem lockedItem = saleItemRepository.findByIdForUpdate(item.getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Sale item not found: " + item.getId()));
+
+            int alreadyRefunded = lockedItem.getQuantityRefunded() != null ? lockedItem.getQuantityRefunded() : 0;
+            int quantityToRestore = lockedItem.getQuantity() - alreadyRefunded;
 
             if (quantityToRestore <= 0) {
                 // This item was already fully refunded before the void — nothing left to restore
                 continue;
             }
 
-            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
+            Product product = productRepository.findByIdForUpdate(lockedItem.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + lockedItem.getProduct().getId()));
             product.setStockQuantity(product.getStockQuantity() + quantityToRestore);
             productRepository.save(product);
 
@@ -383,7 +383,14 @@ public class SaleService {
                         + ". Refundable quantity is " + refundableQuantity);
             }
 
-            BigDecimal refundAmount = saleItem.getUnitPrice()
+            // Refund the tax-inclusive price (tax was charged at sale time,
+            // so it must be returned too — otherwise refunds silently leak tax).
+            BigDecimal itemTotal = saleItem.getTotalPrice() != null ? saleItem.getTotalPrice() : BigDecimal.ZERO;
+            BigDecimal itemTax = saleItem.getTaxAmount() != null ? saleItem.getTaxAmount() : BigDecimal.ZERO;
+            int itemQty = saleItem.getQuantity() != null && saleItem.getQuantity() > 0 ? saleItem.getQuantity() : 1;
+            BigDecimal unitTotalInclTax = itemTotal.add(itemTax)
+                    .divide(BigDecimal.valueOf(itemQty), 4, java.math.RoundingMode.HALF_UP);
+            BigDecimal refundAmount = unitTotalInclTax
                     .multiply(BigDecimal.valueOf(requestedQuantity))
                     .setScale(2, java.math.RoundingMode.HALF_UP);
 
@@ -511,6 +518,11 @@ public class SaleService {
     }
 
     public SaleResponse convertToResponse(Sale sale) {
+        List<Refund> refunds = refundRepository.findBySaleIdOrderByRefundDateDesc(sale.getId());
+        return convertToResponse(sale, refunds);
+    }
+
+    public SaleResponse convertToResponse(Sale sale, List<Refund> refunds) {
         SaleResponse response = new SaleResponse();
         response.setId(sale.getId());
         response.setInvoiceNumber(sale.getInvoiceNumber());
@@ -541,13 +553,23 @@ public class SaleService {
                 .collect(Collectors.toList());
         response.setItems(itemResponses);
 
-        List<Refund> refunds = refundRepository.findBySaleIdOrderByRefundDateDesc(sale.getId());
         response.setRefunds(refunds.stream().map(this::convertRefundToResponse).collect(Collectors.toList()));
         response.setTotalRefunded(refunds.stream()
                 .map(Refund::getTotalRefundAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
 
         return response;
+    }
+
+    // Batch map a page of sales to DTOs so refunds reload in a single query instead of one per sale.
+    public Page<SaleResponse> convertToResponses(Page<Sale> salePage) {
+        List<Sale> sales = salePage.getContent();
+        List<Long> saleIds = sales.stream().map(Sale::getId).toList();
+        Map<Long, List<Refund>> refundsBySale = saleIds.isEmpty()
+                ? Map.of()
+                : refundRepository.findBySaleIdInOrderByRefundDateDesc(saleIds).stream()
+                        .collect(Collectors.groupingBy(r -> r.getSale().getId()));
+        return salePage.map(sale -> convertToResponse(sale, refundsBySale.getOrDefault(sale.getId(), List.of())));
     }
 
     public SaleItemResponse convertItemToResponse(SaleItem item) {
@@ -642,10 +664,13 @@ public class SaleService {
     }
 
     // Shared by both verifyCart() and createSale() so the math can never drift apart again.
-    // Returns [itemTotal, itemTax]
+    // Returns [itemTotal, itemTax], both rounded to 2dp BEFORE persisting so the
+    // ledger never stores uncompressed decimals.
     private BigDecimal[] calculateItemPricing(Product product, Integer quantity) {
-        BigDecimal itemTotal = product.getUnitPrice().multiply(new BigDecimal(quantity));
-        BigDecimal itemTax = itemTotal.multiply(product.getTaxRate().divide(BigDecimal.valueOf(100)));
+        BigDecimal itemTotal = product.getUnitPrice().multiply(new BigDecimal(quantity))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal itemTax = itemTotal.multiply(product.getTaxRate().divide(BigDecimal.valueOf(100)))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
         return new BigDecimal[]{itemTotal, itemTax};
     }
 

@@ -1,11 +1,13 @@
 package com.bms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Table(name = "products", indexes = {
         @Index(name = "idx_product_sku", columnList = "sku"),
         @Index(name = "idx_product_active_deleted", columnList = "is_active, deleted_at"),

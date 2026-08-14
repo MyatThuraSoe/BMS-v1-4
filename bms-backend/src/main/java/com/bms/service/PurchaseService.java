@@ -16,6 +16,7 @@ import com.bms.exception.BusinessException;
 import com.bms.service.CostCalculationUtils;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.PurchaseItemRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.StockMovementRepository;
 import com.bms.repository.SupplierRepository;
@@ -41,6 +42,9 @@ public class PurchaseService {
     private PurchaseRepository purchaseRepository;
 
     @Autowired
+    private PurchaseItemRepository purchaseItemRepository;
+
+    @Autowired
     private SupplierRepository supplierRepository;
 
     @Autowired
@@ -54,6 +58,9 @@ public class PurchaseService {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private SequenceService sequenceService;
 
     public Page<PurchaseResponse> getAllPurchases(Pageable pageable) {
         return purchaseRepository.findActivePurchases(pageable).map(this::mapToResponse);
@@ -137,8 +144,8 @@ public class PurchaseService {
         PurchaseResponse response = new PurchaseResponse();
         response.setId(purchase.getId());
         response.setPurchaseNumber(purchase.getPurchaseNumber());
-        response.setSupplierId(purchase.getSupplier().getId());
-        response.setSupplierName(purchase.getSupplier().getName());
+        response.setSupplierId(purchase.getSupplier() != null ? purchase.getSupplier().getId() : null);
+        response.setSupplierName(purchase.getSupplier() != null ? purchase.getSupplier().getName() : "Walk-in");
         response.setPurchaseDate(purchase.getPurchaseDate());
         response.setSubtotal(purchase.getSubtotal());
         response.setTaxAmount(purchase.getTaxAmount());
@@ -174,8 +181,11 @@ public class PurchaseService {
 
     private void processStockIncrease(Purchase purchase, Long userId) {
         for (PurchaseItem item : purchase.getItems()) {
-            Product product = item.getProduct();
-            
+            // Lock the product row so a concurrent purchase/sale can't read a
+            // stale stock/cost and silently lose inventory or cost updates (TOCTOU).
+            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
+
             BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
             int oldStock = product.getStockQuantity();
             int newStock = oldStock + item.getQuantity();
@@ -205,29 +215,7 @@ public class PurchaseService {
     }
 
     private String generatePurchaseNumber() {
-
-        String prefix = "PO-";
-        String datePart = LocalDate.now()
-                .format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-
-        String todayPrefix = prefix + datePart;
-
-        Purchase lastPurchase = purchaseRepository
-                .findTopByPurchaseNumberStartingWithOrderByIdDesc(todayPrefix)
-                .orElse(null);
-
-        int sequenceNumber = 1;
-
-        if (lastPurchase != null) {
-
-            String lastPurchaseNumber = lastPurchase.getPurchaseNumber();
-
-            sequenceNumber = Integer.parseInt(
-                    lastPurchaseNumber.substring(lastPurchaseNumber.lastIndexOf("-") + 1)
-            ) + 1;
-        }
-
-        return todayPrefix + "-" + String.format("%04d", sequenceNumber);
+        return sequenceService.nextPurchaseNumber();
     }
 
     public PurchaseResponse updatePaymentStatus(
@@ -305,18 +293,24 @@ public class PurchaseService {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
         }
 
-        Supplier supplier = supplierRepository.findById(request.getSupplierId())
-                .orElseThrow(() ->
-                        new ResourceNotFoundException("Supplier not found: " + request.getSupplierId()));
+        // Supplier is optional on create, so it must be optional here too
+        Supplier supplier = null;
+        if (request.getSupplierId() != null) {
+            supplier = supplierRepository.findById(request.getSupplierId())
+                    .orElseThrow(() ->
+                            new ResourceNotFoundException("Supplier not found: " + request.getSupplierId()));
+        }
 
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException("Purchase must have at least one item");
         }
 
-        // Reverse previous stock
+        // Reverse previous stock AND its weighted-average cost contribution
+        // (locked product rows so concurrent sales can't race the reversal).
         for (PurchaseItem oldItem : purchase.getItems()) {
 
-            Product product = oldItem.getProduct();
+            Product product = productRepository.findByIdForUpdate(oldItem.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + oldItem.getProduct().getId()));
 
             int newStock = product.getStockQuantity() - oldItem.getQuantity();
 
@@ -327,7 +321,21 @@ public class PurchaseService {
                 );
             }
 
+            // Remove the cost of the quantities being reversed, keeping the
+            // weighted average of whatever stock remains.
+            BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+            BigDecimal totalValueBefore = oldCostPrice.multiply(BigDecimal.valueOf(oldItem.getQuantity()));
+            int remainingStock = product.getStockQuantity();
+            BigDecimal newCostPrice = remainingStock > 0
+                    ? (oldCostPrice.multiply(BigDecimal.valueOf(remainingStock + oldItem.getQuantity()))
+                            .subtract(totalValueBefore))
+                            .divide(BigDecimal.valueOf(remainingStock), 2, java.math.RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+
             product.setStockQuantity(newStock);
+            if (newCostPrice.compareTo(BigDecimal.ZERO) >= 0) {
+                product.setCostPrice(newCostPrice);
+            }
 
             productRepository.save(product);
         }
@@ -339,9 +347,10 @@ public class PurchaseService {
         );
         purchase.setNotes(request.getNotes());
 
-        // Remove old purchase items
+        // Remove old purchase items (delete the orphaned rows instead of just
+        // detaching them, so no dangling purchase_items rows accumulate).
         for (PurchaseItem item : purchase.getItems()) {
-            item.setPurchase(null);
+            purchaseItemRepository.delete(item);
         }
         purchase.getItems().clear();
 

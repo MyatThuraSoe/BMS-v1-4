@@ -363,8 +363,51 @@ public class ReportService {
         return report;
     }
 
-    public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
+    /**
+     * Daily revenue per selected category over the current period, for the
+     * Analytics line chart. Each row is { date, category_<id>: amount }.
+     */
+    public List<Map<String, Object>> getCategoryComparison(List<Long> categoryIds, String period) {
+        if (categoryIds == null || categoryIds.size() < 2) {
+            return List.of();
+        }
+        Set<Long> wanted = new HashSet<>(categoryIds);
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = resolveStartDate(period, endDate);
+
+        List<Sale> sales = saleRepository.findByDateRange(
+                startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(),
+                PageRequest.of(0, 5000)).getContent();
+
+        // day -> (categoryId -> revenue)
+        Map<LocalDate, Map<Long, BigDecimal>> daily = new TreeMap<>();
+        for (Sale sale : sales) {
+            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
+            LocalDate day = sale.getSaleDate().toLocalDate();
+            for (var item : sale.getItems()) {
+                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
+                if (quantitySold <= 0) continue;
+                Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
+                if (!wanted.contains(categoryId)) continue;
+                BigDecimal itemRevenue = item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold));
+                daily.computeIfAbsent(day, k -> new HashMap<>())
+                        .merge(categoryId, itemRevenue, BigDecimal::add);
+            }
+        }
+
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (Map.Entry<LocalDate, Map<Long, BigDecimal>> dayEntry : daily.entrySet()) {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("date", dayEntry.getKey().toString());
+            for (Long id : categoryIds) {
+                row.put("category_" + id, dayEntry.getValue().getOrDefault(id, BigDecimal.ZERO));
+            }
+            result.add(row);
+        }
+        return result;
+    }
+
+    public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {        LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
         List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 1000)).getContent();
 
@@ -809,17 +852,21 @@ public class ReportService {
 
         for (var product : products) {
             totalProducts++;
-            BigDecimal value = product.getCostPrice().multiply(BigDecimal.valueOf(product.getStockQuantity()));
+            BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+            BigDecimal value = unitCost.multiply(BigDecimal.valueOf(product.getStockQuantity() == null ? 0 : product.getStockQuantity()));
             totalInventoryValue = totalInventoryValue.add(value);
-            
-            if (product.getStockQuantity() <= product.getMinStockLevel()) {
+
+            int stock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
+            int minStock = product.getMinStockLevel() == null ? 0 : product.getMinStockLevel();
+
+            if (stock <= minStock) {
                 lowStockProducts++;
                 Map<String, Object> item = new HashMap<>();
                 item.put("productId", product.getId());
                 item.put("productName", product.getName());
-                item.put("currentStock", product.getStockQuantity());
-                item.put("minStockLevel", product.getMinStockLevel());
-                item.put("shortage", product.getMinStockLevel() - product.getStockQuantity());
+                item.put("currentStock", stock);
+                item.put("minStockLevel", minStock);
+                item.put("shortage", minStock - stock);
                 lowStockList.add(item);
             }
         }
