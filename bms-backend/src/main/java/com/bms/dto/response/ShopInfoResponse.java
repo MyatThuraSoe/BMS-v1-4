@@ -9,6 +9,7 @@ public class ShopInfoResponse {
     private String phone;
     private String email;
     private String currency;
+    private String receiptPaperSize;
     private boolean hasLogo;
 
     public ShopInfoResponse() {
@@ -21,6 +22,7 @@ public class ShopInfoResponse {
                              String phone,
                              String email,
                              String currency,
+                             String receiptPaperSize,
                              boolean hasLogo) {
         this.id = id;
         this.shopName = shopName;
@@ -29,6 +31,7 @@ public class ShopInfoResponse {
         this.phone = phone;
         this.email = email;
         this.currency = currency;
+        this.receiptPaperSize = receiptPaperSize;
         this.hasLogo = hasLogo;
     }
 
@@ -86,6 +89,14 @@ public class ShopInfoResponse {
 
     public void setCurrency(String currency) {
         this.currency = currency;
+    }
+
+    public String getReceiptPaperSize() {
+        return receiptPaperSize;
+    }
+
+    public void setReceiptPaperSize(String receiptPaperSize) {
+        this.receiptPaperSize = receiptPaperSize;
     }
 
     public boolean isHasLogo() {

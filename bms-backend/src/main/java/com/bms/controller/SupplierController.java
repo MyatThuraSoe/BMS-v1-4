@@ -44,11 +44,17 @@ public class SupplierController {
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<Page<SupplierResponse>>> searchSuppliers(
-            @RequestParam String keyword,
+            @RequestParam(value = "keyword", required = false) String keyword,
+            @RequestParam(value = "query", required = false) String query,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
+        String term = (query != null && !query.isBlank()) ? query : keyword;
         Pageable pageable = PageRequest.of(page, size, Sort.by("name"));
-        Page<SupplierResponse> suppliers = supplierService.searchSuppliers(keyword, pageable);
+        if (term == null || term.isBlank()) {
+            Page<SupplierResponse> suppliers = supplierService.getAllSuppliers(pageable);
+            return ResponseEntity.ok(new ApiResponse<>(true, "Suppliers searched successfully", suppliers));
+        }
+        Page<SupplierResponse> suppliers = supplierService.searchSuppliers(term, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Suppliers searched successfully", suppliers));
     }
 

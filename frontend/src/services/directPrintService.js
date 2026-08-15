@@ -8,11 +8,11 @@ const directPrint = {
         return await window.electronAPI.getPrinters();
     },
 
-    print: async (html, printerName) => {
+    print: async (html, printerName, paperSizeMm) => {
         if (!directPrint.isAvailable()) {
             throw new Error('Direct printing only works in the desktop app.');
         }
-        return await window.electronAPI.printReceipt(html, printerName);
+        return await window.electronAPI.printReceipt(html, printerName, paperSizeMm);
     }
 };
 

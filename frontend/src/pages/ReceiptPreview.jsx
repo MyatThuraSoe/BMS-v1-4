@@ -8,7 +8,7 @@ import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as Downloa
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShopLogo from '../components/ShopLogo';
 import { useAuth } from '../context/AuthContext';
-import { connectQZ, printReceiptViaQZ, isQZSupported, getAvailablePrinters } from '../utils/bluetoothPrinter';
+import { connectQZ, printReceiptViaQZ, isQZSupported, getAvailablePrinters, getReceiptPreviewWidth } from '../utils/bluetoothPrinter';
 import directPrint from '../services/directPrintService';
 
 const ReceiptPreview = () => {
@@ -76,6 +76,8 @@ const ReceiptPreview = () => {
   if (!data?.data) return <Typography>Receipt not found</Typography>;
 
   const receipt = data.data;
+  const paperSize = shopInfoData?.data?.receiptPaperSize || '58MM';
+  const previewWidth = getReceiptPreviewWidth(paperSize);
   const refundableItems = receipt.items?.filter((item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0) || [];
   const refundTotal = refundableItems.reduce((sum, item) => {
     const quantity = Number(refundQuantities[item.saleItemId] || 0);
@@ -119,7 +121,7 @@ const ReceiptPreview = () => {
     try {
       if (directPrint.isAvailable()) {
         const receiptHtml = receiptRef.current.innerHTML;
-        const result = await directPrint.print(receiptHtml, selectedPrinter || null);
+        const result = await directPrint.print(receiptHtml, selectedPrinter || null, paperSize === '80MM' ? 80 : 58);
         if (result.success) {
           notifySuccess('Receipt sent to printer');
         } else {
@@ -160,7 +162,7 @@ const ReceiptPreview = () => {
   };
 
   return (
-    <Box sx={{ p: 3, maxWidth: 400, mx: 'auto' }}>
+    <Box sx={{ p: 3, maxWidth: previewWidth, mx: 'auto' }}>
       <Box ref={receiptRef}>
         <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
           <ReceiptHeader

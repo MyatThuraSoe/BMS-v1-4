@@ -115,7 +115,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Sale> findByInvoiceNumberContainingIgnoreCase(String invoiceNumber, Pageable pageable);
 
     @Query("SELECT s FROM Sale s WHERE s.cashShiftId = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
-    List<Sale> findByCashShiftId(Long cashShiftId);
+    List<Sale> findByCashShiftId(@Param("shiftId") Long shiftId);
 
     @Query("""
         SELECT COALESCE(SUM(s.totalAmount), 0)

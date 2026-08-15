@@ -153,5 +153,7 @@
   "reason_required": "Reason is required",
   "select_product": "Select Product",
   "product_with_stock": "{{name}} (Stock: {{stock}})",
-  "adjustment_type": "Adjustment Type"
+  "adjustment_type": "Adjustment Type",
+  "type_to_search": "Type to search...",
+  "search_by_name_or_sku": "Search by name or SKU"
 }

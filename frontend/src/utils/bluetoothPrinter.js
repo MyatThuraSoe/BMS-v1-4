@@ -1,4 +1,25 @@
-import { notifySuccess, notifyError } from './notify'; 
+import { notifySuccess, notifyError } from './notify';
+import { formatCurrency } from './helpers'; 
+
+// Receipt paper width in characters (12 dots/char for 58mm, 9-10 dots/char for 80mm).
+// Must match the paper size selected in Shop Info.
+const PAPER_LINE_WIDTH = {
+  '58MM': 32,
+  '80MM': 48,
+};
+
+const PAPER_PREVIEW_WIDTH = {
+  '58MM': 400,
+  '80MM': 576,
+};
+
+export function getReceiptLineWidth(paperSize) {
+  return PAPER_LINE_WIDTH[paperSize] || PAPER_LINE_WIDTH['58MM'];
+}
+
+export function getReceiptPreviewWidth(paperSize) {
+  return PAPER_PREVIEW_WIDTH[paperSize] || PAPER_PREVIEW_WIDTH['58MM'];
+} 
 
 // Ensure we reference the global qz object correctly if loaded via <script> tag
 const qz = window.qz;
@@ -96,7 +117,8 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     commands.push('\x1B\x45\x00'); // Bold off
     commands.push((shopInfo?.address || '') + '\n');
     commands.push((shopInfo?.phone || '') + '\n');
-    commands.push('--------------------------------\n');
+    const lineWidth = getReceiptLineWidth(shopInfo?.receiptPaperSize);
+    commands.push('-'.repeat(lineWidth) + '\n');
     
     // Left align
     commands.push('\x1B\x61\x00'); 
@@ -105,14 +127,13 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     if (receiptData.customerName && receiptData.customerName !== 'Walk-in') {
       commands.push(`Customer: ${receiptData.customerName}\n`);
     }
-    commands.push('--------------------------------\n');
+    commands.push('-'.repeat(lineWidth) + '\n');
 
     // Items (name and total on the SAME line, price right-aligned)
     (receiptData.items || []).forEach((item) => {
       const total = item.totalPrice != null ? Number(item.totalPrice) : (Number(item.unitPrice || 0) * Number(item.quantity || 0));
       const name = `${item.productName} x${item.quantity}`;
-      const price = `$${total.toFixed(2)}`;
-      const lineWidth = 32; // standard 58mm @ 12 dots/char
+      const price = formatCurrency(total);
       const pad = Math.max(1, lineWidth - name.length - price.length);
       commands.push(`${name}${' '.repeat(pad)}${price}\n`);
     });
@@ -121,13 +142,13 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     const amountPaid = Number(receiptData.amountPaid || 0);
     const change = amountPaid - totalAmount;
 
-    commands.push('--------------------------------\n');
+    commands.push('-'.repeat(lineWidth) + '\n');
     commands.push('\x1B\x61\x02'); // Right align
     commands.push('\x1B\x45\x01'); // Bold on
-    commands.push(`Total: $${totalAmount.toFixed(2)}\n`);
+    commands.push(`Total: ${formatCurrency(totalAmount)}\n`);
     commands.push('\x1B\x45\x00'); // Bold off
-    commands.push(`Paid: $${amountPaid.toFixed(2)}\n`);
-    commands.push(`Change: $${change.toFixed(2)}\n`);
+    commands.push(`Paid: ${formatCurrency(amountPaid)}\n`);
+    commands.push(`Change: ${formatCurrency(change)}\n`);
     commands.push('\x1B\x61\x00'); // Left align
     commands.push('\n\n');
     commands.push('Thank you!\n\n\n');

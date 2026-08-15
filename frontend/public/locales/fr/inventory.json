@@ -153,5 +153,7 @@
   "reason_required": "Une raison est requise",
   "select_product": "Sélectionner un produit",
   "product_with_stock": "{{name}} (Stock : {{stock}})",
-  "adjustment_type": "Type d'ajustement"
+  "adjustment_type": "Type d'ajustement",
+  "type_to_search": "Tapez pour rechercher...",
+  "search_by_name_or_sku": "Rechercher par nom ou SKU"
 }

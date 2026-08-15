@@ -20,6 +20,11 @@ const CURRENCIES = [
   { code: 'INR', label: 'Indian Rupee (₹)' },
 ];
 
+const PAPER_SIZES = [
+  { code: '58MM', label: '58mm (2" Thermal)' },
+  { code: '80MM', label: '80mm (3" Thermal)' },
+];
+
 const ShopInfo = () => {
 
   const { t } = useTranslation('settings');
@@ -43,6 +48,7 @@ const ShopInfo = () => {
     phone: '',
     email: '',
     currency: 'USD',
+    receiptPaperSize: '58MM',
   });
 
   useEffect(() => {
@@ -55,6 +61,7 @@ const ShopInfo = () => {
       phone: d.phone || '',
       email: d.email || '',
       currency: d.currency || 'USD',
+      receiptPaperSize: d.receiptPaperSize || '58MM',
     });
   }, [data]);
 
@@ -124,6 +131,7 @@ const ShopInfo = () => {
       phone: form.phone,
       email: form.email,
       currency: form.currency,
+      receiptPaperSize: form.receiptPaperSize,
     });
     setCurrencyCode(form.currency);
   };
@@ -196,6 +204,21 @@ const ShopInfo = () => {
               {CURRENCIES.map((c) => (
                 <MenuItem key={c.code} value={c.code}>
                   {c.label}
+                </MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              select
+              label={t('receipt_paper_size')}
+              value={form.receiptPaperSize}
+              onChange={(e) => setForm((p) => ({ ...p, receiptPaperSize: e.target.value }))}
+              fullWidth
+              helperText={t('receipt_paper_size_helper')}
+            >
+              {PAPER_SIZES.map((p) => (
+                <MenuItem key={p.code} value={p.code}>
+                  {p.label}
                 </MenuItem>
               ))}
             </TextField>

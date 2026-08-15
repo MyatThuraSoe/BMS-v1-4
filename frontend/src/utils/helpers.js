@@ -4,6 +4,11 @@ export const setCurrencyCode = (code) => { cachedCurrencyCode = code || 'USD'; }
 
 export const formatCurrency = (amount) => {
   try {
+    // Myanmar Kyat — display as "Ks" instead of the "MMK" code
+    if (cachedCurrencyCode === 'MMK') {
+      const formatted = new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(amount || 0);
+      return `${formatted} Ks`;
+    }
     return new Intl.NumberFormat(undefined, {
       style: 'currency',
       currency: cachedCurrencyCode,

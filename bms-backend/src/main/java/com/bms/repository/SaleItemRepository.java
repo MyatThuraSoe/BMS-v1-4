@@ -38,7 +38,7 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
         WHERE si.product.id = :productId
           AND si.sale.isVoided = false
         """)
-    Object[] getSalesSummaryForProduct(@Param("productId") Long productId);
+    List<Object[]> getSalesSummaryForProduct(@Param("productId") Long productId);
 
     @Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT si FROM SaleItem si WHERE si.id = :id")

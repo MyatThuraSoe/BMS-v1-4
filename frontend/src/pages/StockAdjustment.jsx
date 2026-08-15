@@ -1,10 +1,44 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, CircularProgress } from '@mui/material';
+import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, CircularProgress, Autocomplete } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, inventoryService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
+
+const ProductSearchField = ({ value, onSelect }) => {
+  const [inputValue, setInputValue] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const { t } = useTranslation('inventory');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(inputValue), 300);
+    return () => clearTimeout(timer);
+  }, [inputValue]);
+
+  const { data } = useQuery({
+    queryKey: ['stock-adjust-product-search', debounced],
+    queryFn: () => productService.search(debounced, 0, 10),
+    enabled: debounced.length >= 2,
+  });
+  const options = data?.data?.content || [];
+
+  return (
+    <Autocomplete
+      size="small"
+      options={options}
+      getOptionLabel={(p) => (p?.name ? t('product_with_stock', { name: p.name, stock: p.stockQuantity }) : '')}
+      isOptionEqualToValue={(option, val) => option.id === val?.id}
+      value={value}
+      onChange={(e, selected) => onSelect(selected)}
+      inputValue={inputValue}
+      onInputChange={(e, newVal) => setInputValue(newVal)}
+      noOptionsText={inputValue.length < 2 ? t('type_to_search') : t('no_products_found')}
+      renderInput={(params) => <TextField {...params} label={t('product')} placeholder={t('search_by_name_or_sku')} />}
+      sx={{ minWidth: 220 }}
+    />
+  );
+};
 
 const StockAdjustment = () => {
   const { isManager } = useAuth();
@@ -12,11 +46,10 @@ const StockAdjustment = () => {
   const queryClient = useQueryClient();
   const { t } = useTranslation('inventory');
 
+  const [selectedProduct, setSelectedProduct] = useState(null);
   const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reason: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-
-  const { data: products } = useQuery({ queryKey: ['products-all'], queryFn: () => productService.getAll(0, 100) });
 
   const adjustMutation = useMutation({
     mutationFn: (data) =>
@@ -57,10 +90,13 @@ const StockAdjustment = () => {
         <form onSubmit={handleSubmit}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('product')} select value={formData.productId} onChange={(e) => setFormData({ ...formData, productId: e.target.value })} required>
-                <MenuItem value="">{t('select_product')}</MenuItem>
-                {products?.data?.content?.map((p) => (<MenuItem key={p.id} value={p.id}>{t('product_with_stock', { name: p.name, stock: p.stockQuantity })}</MenuItem>))}
-              </TextField>
+              <ProductSearchField
+                value={selectedProduct}
+                onSelect={(product) => {
+                  setSelectedProduct(product);
+                  setFormData({ ...formData, productId: product ? product.id : '' });
+                }}
+              />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('adjustment_type')} select value={formData.adjustmentType} onChange={(e) => {

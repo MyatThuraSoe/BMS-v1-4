@@ -110,7 +110,7 @@ public class ProductService {
     }
 
     public ProductResponse getProductBySku(String sku) {
-        Product product = productRepository.findBySku(sku)
+        Product product = productRepository.findBySkuIgnoreCase(sku)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found with SKU: " + sku));
         if (!product.getIsActive() || product.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Product not found with SKU: " + sku);
@@ -119,7 +119,7 @@ public class ProductService {
     }
 
     public Product createProduct(ProductCreateRequest request) {
-        if (productRepository.existsBySku(request.getSku())) {
+        if (productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
 
@@ -161,7 +161,7 @@ public class ProductService {
 
         validateNonNegativeValues(request);
 
-if (!product.getSku().equals(request.getSku()) && productRepository.existsBySku(request.getSku())) {
+if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
 
@@ -364,11 +364,13 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        Object[] row = saleItemRepository.getSalesSummaryForProduct(productId);
+        List<Object[]> results = saleItemRepository.getSalesSummaryForProduct(productId);
 
-        if (row == null || row[0] == null) {
+        if (results.isEmpty() || results.get(0)[0] == null) {
             return new ProductSalesSummaryDto(0L, BigDecimal.ZERO, BigDecimal.ZERO, null);
         }
+
+        Object[] row = results.get(0);
 
         Long totalQty = ((Number) row[0]).longValue();
         BigDecimal totalRevenue = (BigDecimal) row[1];

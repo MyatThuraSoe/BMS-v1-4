@@ -40,8 +40,6 @@ import NotFound from './pages/NotFound';
 
 import Activate from './pages/Activate';
 
-import DataManagement from './pages/DataManagement';
-
 import BackupSettings from './pages/BackupSettings';
 import SupplierDetails from './pages/SupplierDetails';
 import CashShift from './pages/CashShift';
@@ -206,7 +204,7 @@ function AppRoutes() {
           } 
         />
         
-        <Route path="data" element={<ProtectedRoute allowedRoles={['ADMIN']}><DataManagement /></ProtectedRoute>} />
+        <Route path="data" element={<Navigate to="/settings/backup" replace />} />
         <Route path="shop-info" element={<ProtectedRoute allowedRoles={['ADMIN']}><ShopInfo /></ProtectedRoute>} />
         
         {/* Audit Logs (Admin only) */}

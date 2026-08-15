@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
+import java.text.DecimalFormat;
 import java.util.Base64;
 
 @RestController
@@ -63,8 +65,10 @@ public class ReceiptController {
         html.append("<html><head>");
         html.append("<meta charset='UTF-8'>");
         html.append("<style>");
-        html.append("@media print { @page { margin: 0; size: 58mm auto; } body { margin: 0; padding: 5px; } }");
-        html.append("body { font-family: 'Courier New', monospace; font-size: 12px; width: 58mm; margin: 0 auto; }");
+        html.append("@media print { @page { margin: 0; size: ").append(paperWidthMm(shopInfo.getReceiptPaperSize())).append("mm auto; } body { margin: 0; padding: 5px; } }");
+        html.append("body { font-family: 'Courier New', monospace; font-size: 12px; width: ")
+                .append(paperWidthMm(shopInfo.getReceiptPaperSize()))
+                .append("mm; margin: 0 auto; }");
         html.append(".header { text-align: center; margin-bottom: 10px; }");
         html.append(".line { border-bottom: 1px dashed #000; margin: 5px 0; }");
         html.append(".item { display: flex; justify-content: space-between; margin: 3px 0; }");
@@ -110,41 +114,41 @@ public class ReceiptController {
             html.append("<div class='item'>");
             html.append("<span class='item-name'>").append(escapeHtml(item.getProductName())).append("</span>");
             html.append("<span class='item-qty'>x").append(item.getQuantity()).append("</span>");
-            html.append("<span class='item-price'>").append(String.format("$%.2f", item.getSubtotal())).append("</span>");
+            html.append("<span class='item-price'>").append(fmt(item.getSubtotal(), shopInfo.getCurrency())).append("</span>");
             html.append("</div>");
-            html.append("<div style='font-size: 10px; margin-left: 5px;'>@ $")
-                    .append(String.format("%.2f", item.getUnitPrice()))
+            html.append("<div style='font-size: 10px; margin-left: 5px;'>@ ")
+                    .append(fmt(item.getUnitPrice(), shopInfo.getCurrency()))
                     .append("</div>");
         }
 
         html.append("<div class='line'></div>");
         html.append("<div class='totals'>");
 
-        html.append("<div class='total-row'><span>Subtotal:</span><span>$")
-                .append(String.format("%.2f", receipt.getSubtotal()))
+        html.append("<div class='total-row'><span>Subtotal:</span><span>")
+                .append(fmt(receipt.getSubtotal(), shopInfo.getCurrency()))
                 .append("</span></div>");
 
         if (receipt.getTaxAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-            html.append("<div class='total-row'><span>Tax:</span><span>$")
-                    .append(String.format("%.2f", receipt.getTaxAmount()))
+            html.append("<div class='total-row'><span>Tax:</span><span>")
+                    .append(fmt(receipt.getTaxAmount(), shopInfo.getCurrency()))
                     .append("</span></div>");
         }
         if (receipt.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-            html.append("<div class='total-row'><span>Discount:</span><span>-$")
-                    .append(String.format("%.2f", receipt.getDiscountAmount()))
+            html.append("<div class='total-row'><span>Discount:</span><span>-")
+                    .append(fmt(receipt.getDiscountAmount(), shopInfo.getCurrency()))
                     .append("</span></div>");
         }
 
-        html.append("<div class='total-row' style='font-weight: bold; font-size: 14px;'><span>TOTAL:</span><span>$")
-                .append(String.format("%.2f", receipt.getTotalAmount()))
+        html.append("<div class='total-row' style='font-weight: bold; font-size: 14px;'><span>TOTAL:</span><span>")
+                .append(fmt(receipt.getTotalAmount(), shopInfo.getCurrency()))
                 .append("</span></div>");
 
-        html.append("<div class='total-row'><span>Paid:</span><span>$")
-                .append(String.format("%.2f", receipt.getAmountPaid()))
+        html.append("<div class='total-row'><span>Paid:</span><span>")
+                .append(fmt(receipt.getAmountPaid(), shopInfo.getCurrency()))
                 .append("</span></div>");
 
-        html.append("<div class='total-row'><span>Change:</span><span>$")
-                .append(String.format("%.2f", receipt.getChangeGiven()))
+        html.append("<div class='total-row'><span>Change:</span><span>")
+                .append(fmt(receipt.getChangeGiven(), shopInfo.getCurrency()))
                 .append("</span></div>");
 
         html.append("</div>");
@@ -173,7 +177,9 @@ public class ReceiptController {
         LogoPayload logoPayload = shopInfoService.getLogoBytesOrNull();
 
         try {
-            com.lowagie.text.Document document = new com.lowagie.text.Document(com.lowagie.text.PageSize.A4, 20, 20, 20, 20);
+            int paperWidthPt = (int) Math.round(paperWidthMm(shopInfo.getReceiptPaperSize()) * 72.0 / 25.4);
+            com.lowagie.text.Rectangle pageSize = new com.lowagie.text.Rectangle(paperWidthPt, com.lowagie.text.PageSize.A4.getHeight());
+            com.lowagie.text.Document document = new com.lowagie.text.Document(pageSize, 20, 20, 20, 20);
             java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
             com.lowagie.text.pdf.PdfWriter.getInstance(document, baos);
 
@@ -234,27 +240,27 @@ public class ReceiptController {
             for (var item : receipt.getItems()) {
                 table.addCell(new com.lowagie.text.Phrase(item.getProductName(), smallFont));
                 table.addCell(new com.lowagie.text.Phrase(String.valueOf(item.getQuantity()), smallFont));
-                table.addCell(new com.lowagie.text.Phrase(String.format("$%.2f", item.getUnitPrice()), smallFont));
-                table.addCell(new com.lowagie.text.Phrase(String.format("$%.2f", item.getSubtotal()), smallFont));
+                table.addCell(new com.lowagie.text.Phrase(fmt(item.getUnitPrice(), shopInfo.getCurrency()), smallFont));
+                table.addCell(new com.lowagie.text.Phrase(fmt(item.getSubtotal(), shopInfo.getCurrency()), smallFont));
             }
 
             document.add(table);
             document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
 
-            document.add(new com.lowagie.text.Paragraph("Subtotal: $" + String.format("%.2f", receipt.getSubtotal()), normalFont));
+            document.add(new com.lowagie.text.Paragraph("Subtotal: " + fmt(receipt.getSubtotal(), shopInfo.getCurrency()), normalFont));
             if (receipt.getTaxAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                document.add(new com.lowagie.text.Paragraph("Tax: $" + String.format("%.2f", receipt.getTaxAmount()), normalFont));
+                document.add(new com.lowagie.text.Paragraph("Tax: " + fmt(receipt.getTaxAmount(), shopInfo.getCurrency()), normalFont));
             }
             if (receipt.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                document.add(new com.lowagie.text.Paragraph("Discount: -$" + String.format("%.2f", receipt.getDiscountAmount()), normalFont));
+                document.add(new com.lowagie.text.Paragraph("Discount: -" + fmt(receipt.getDiscountAmount(), shopInfo.getCurrency()), normalFont));
             }
 
             document.add(new com.lowagie.text.Paragraph(
-                    "TOTAL: $" + String.format("%.2f", receipt.getTotalAmount()),
+                    "TOTAL: " + fmt(receipt.getTotalAmount(), shopInfo.getCurrency()),
                     new com.lowagie.text.Font(com.lowagie.text.Font.HELVETICA, 12, com.lowagie.text.Font.BOLD)
             ));
-            document.add(new com.lowagie.text.Paragraph("Paid: $" + String.format("%.2f", receipt.getAmountPaid()), normalFont));
-            document.add(new com.lowagie.text.Paragraph("Change: $" + String.format("%.2f", receipt.getChangeGiven()), normalFont));
+            document.add(new com.lowagie.text.Paragraph("Paid: " + fmt(receipt.getAmountPaid(), shopInfo.getCurrency()), normalFont));
+            document.add(new com.lowagie.text.Paragraph("Change: " + fmt(receipt.getChangeGiven(), shopInfo.getCurrency()), normalFont));
 
             document.add(new com.lowagie.text.Paragraph("------------------------------------------------", smallFont));
 
@@ -284,7 +290,7 @@ public class ReceiptController {
         LogoPayload logoPayload = shopInfoService.getLogoBytesOrNull();
 
         try {
-            int width = 400;
+            int width = (int) Math.round(paperWidthMm(shopInfo.getReceiptPaperSize()) * 6.9);
             int lineHeight = 20;
             int padding = 20;
             int itemCount = receipt.getItems().size();
@@ -347,32 +353,32 @@ public class ReceiptController {
             for (var item : receipt.getItems()) {
                 g2d.drawString(item.getProductName(), padding, y);
                 g2d.drawString(String.valueOf(item.getQuantity()), width - 180, y);
-                g2d.drawString(String.format("$%.2f", item.getUnitPrice()), width - 120, y);
-                g2d.drawString(String.format("$%.2f", item.getSubtotal()), width - 70, y);
+                g2d.drawString(fmt(item.getUnitPrice(), shopInfo.getCurrency()), width - 120, y);
+                g2d.drawString(fmt(item.getSubtotal(), shopInfo.getCurrency()), width - 70, y);
                 y += lineHeight;
             }
 
             y += lineHeight;
 
-            g2d.drawString("Subtotal: $" + String.format("%.2f", receipt.getSubtotal()), padding, y);
+            g2d.drawString("Subtotal: " + fmt(receipt.getSubtotal(), shopInfo.getCurrency()), padding, y);
             y += lineHeight;
             if (receipt.getTaxAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                g2d.drawString("Tax: $" + String.format("%.2f", receipt.getTaxAmount()), padding, y);
+                g2d.drawString("Tax: " + fmt(receipt.getTaxAmount(), shopInfo.getCurrency()), padding, y);
                 y += lineHeight;
             }
             if (receipt.getDiscountAmount().compareTo(java.math.BigDecimal.ZERO) > 0) {
-                g2d.drawString("Discount: -$" + String.format("%.2f", receipt.getDiscountAmount()), padding, y);
+                g2d.drawString("Discount: -" + fmt(receipt.getDiscountAmount(), shopInfo.getCurrency()), padding, y);
                 y += lineHeight;
             }
 
             g2d.setFont(new java.awt.Font("Courier New", java.awt.Font.BOLD, 14));
-            g2d.drawString("TOTAL: $" + String.format("%.2f", receipt.getTotalAmount()), padding, y);
+            g2d.drawString("TOTAL: " + fmt(receipt.getTotalAmount(), shopInfo.getCurrency()), padding, y);
             y += lineHeight;
             g2d.setFont(new java.awt.Font("Courier New", java.awt.Font.PLAIN, 12));
 
-            g2d.drawString("Paid: $" + String.format("%.2f", receipt.getAmountPaid()), padding, y);
+            g2d.drawString("Paid: " + fmt(receipt.getAmountPaid(), shopInfo.getCurrency()), padding, y);
             y += lineHeight;
-            g2d.drawString("Change: $" + String.format("%.2f", receipt.getChangeGiven()), padding, y);
+            g2d.drawString("Change: " + fmt(receipt.getChangeGiven(), shopInfo.getCurrency()), padding, y);
             y += lineHeight * 2;
 
             g2d.drawString("Thank you for your business!", width / 2 - 80, y);
@@ -402,6 +408,39 @@ public class ReceiptController {
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;")
                 .replace("'", "&#39;");
+    }
+
+    // Format an amount using the shop's currency. MMK renders as "1,234.56 Ks",
+    // other currencies render with their standard symbol (e.g. "$1234.56").
+    private static String fmt(BigDecimal amount, String currencyCode) {
+        if (amount == null) amount = BigDecimal.ZERO;
+        DecimalFormat df = new DecimalFormat("#,##0.00");
+
+        if ("MMK".equalsIgnoreCase(currencyCode)) {
+            // Match frontend behaviour: "1,234.56 Ks"
+            return df.format(amount) + " Ks";
+        }
+
+        String code = currencyCode == null || currencyCode.isBlank() ? "USD" : currencyCode;
+        String symbol;
+        switch (code) {
+            case "THB": symbol = "฿"; break;
+            case "EUR": symbol = "€"; break;
+            case "GBP": symbol = "£"; break;
+            case "SGD": symbol = "S$"; break;
+            case "INR": symbol = "₹"; break;
+            default: symbol = "$"; break;
+        }
+        return symbol + df.format(amount);
+    }
+
+    // Receipt paper width in millimetres. Current default / 58mm remains the
+    // historical default; 80mm is the wider thermal size.
+    private static int paperWidthMm(String paperSize) {
+        if ("80MM".equalsIgnoreCase(paperSize)) {
+            return 80;
+        }
+        return 58;
     }
 }
 

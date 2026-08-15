@@ -14,6 +14,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { backupService, googleDriveService } from '../api/services';
+import DataManagement from './DataManagement';
 
 
 
@@ -213,7 +214,7 @@ const BackupSettings = () => {
               onClick={handleConnect}
               disabled={connecting}
             >
-              {connecting ? 'Waiting for Google sign-in…' : t('connect_google_drive')}
+              {connecting ? t('waiting_google_signin') : t('connect_google_drive')}
             </Button>
           )}
         </CardContent>
@@ -342,6 +343,15 @@ const BackupSettings = () => {
               {settings.isEnabled && isConnected ? formatDateTime(nextBackup, t('never')) : t('not_scheduled')}
             </Typography>
           </Box>
+        </CardContent>
+      </Card>
+
+      {/* Local Export & Import (former Data Management) */}
+      <Card sx={{ mt: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>{t('local_export_import')}</Typography>
+          <Divider sx={{ mb: 2 }} />
+          <DataManagement />
         </CardContent>
       </Card>
     </Box>

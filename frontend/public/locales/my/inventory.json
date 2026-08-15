@@ -153,5 +153,7 @@
 "reason_required": "အကြောင်းရင်း ဖြည့်သွင်းရန် လိုအပ်ပါသည်။",
 "select_product": "ကုန်ပစ္စည်း ရွေးချယ်ပါ",
 "product_with_stock": "{{name}} (လက်ကျန်: {{stock}})",
-"adjustment_type": "လက်ကျန်ချိန်ညှိမှု အမျိုးအစား"
+"adjustment_type": "လက်ကျန်ချိန်ညှိမှု အမျိုးအစား",
+"type_to_search": "ရှာရန် စာရိုက်ပါ...",
+"search_by_name_or_sku": "အမည် သို့မဟုတ် SKU ဖြင့် ရှာပါ"
 }

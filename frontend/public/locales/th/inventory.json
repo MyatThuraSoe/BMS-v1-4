@@ -153,5 +153,7 @@
   "reason_required": "ต้องระบุเหตุผล",
   "select_product": "เลือกสินค้า",
   "product_with_stock": "{{name}} (สต็อก: {{stock}})",
-  "adjustment_type": "ประเภทการปรับ"
+  "adjustment_type": "ประเภทการปรับ",
+  "type_to_search": "พิมพ์เพื่อค้นหา...",
+  "search_by_name_or_sku": "ค้นหาด้วยชื่อหรือ SKU"
 }

@@ -48,8 +48,8 @@ logging:
 
 google:
   oauth:
-    client-id: haha
-    client-secret: 123
+    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
+    client-secret: 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
     redirect-uri: http://localhost:17234/api/backups/google/callback
     # Change redirect-uri to your production URL in production!
     frontend-redirect-base: http://localhost:17234

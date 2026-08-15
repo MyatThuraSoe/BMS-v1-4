@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, MenuItem, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete,
+  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete,
 } from '@mui/material';
 import { Add as AddIcon, Remove as RemoveIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -43,6 +43,48 @@ const ProductSearchField = ({ value, onSelect }) => {
   );
 };
 
+const SupplierSearchField = ({ value, onSelect }) => {
+  const [inputValue, setInputValue] = useState('');
+  const [debounced, setDebounced] = useState('');
+  const { t } = useTranslation('purchases');
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebounced(inputValue), 300);
+    return () => clearTimeout(timer);
+  }, [inputValue]);
+
+  const { data } = useQuery({
+    queryKey: ['supplier-search', debounced],
+    queryFn: () => supplierService.search(debounced),
+    enabled: debounced.length >= 2,
+  });
+  const options = data?.data?.content || [];
+
+  const noSupplierOption = { id: null, name: t('no_supplier') };
+  const showNoSupplier = !inputValue.trim();
+  const displayOptions = showNoSupplier ? [noSupplierOption] : options;
+
+  return (
+    <Autocomplete
+      size="small"
+      options={displayOptions}
+      getOptionLabel={(s) => s?.name || ''}
+      isOptionEqualToValue={(option, val) => (option?.id ?? null) === (val?.id ?? null)}
+      value={value}
+      onChange={(e, selected) => {
+        onSelect(selected);
+        setInputValue(selected?.name || '');
+      }}
+      inputValue={inputValue}
+      onInputChange={(e, newVal) => setInputValue(newVal)}
+      noOptionsText={inputValue.length < 2 ? t('type_to_search') : t('no_suppliers_found')}
+      clearText={t('no_supplier')}
+      renderInput={(params) => <TextField {...params} label={t('supplier')} placeholder={t('search_suppliers')} />}
+      sx={{ minWidth: 220 }}
+    />
+  );
+};
+
 const PurchaseForm = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
@@ -55,24 +97,35 @@ const PurchaseForm = () => {
   const preselectSupplierId = searchParams.get('supplierId') || '';
   const preselectProductId = searchParams.get('productId') || '';
 
-  const [formData, setFormData] = useState({ 
-    supplierId: preselectSupplierId, 
-    purchaseDate: new Date().toISOString().split('T')[0], 
-    notes: '' 
+  const [formData, setFormData] = useState({
+    purchaseDate: new Date().toISOString().split('T')[0],
+    notes: ''
   });
+  const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [items, setItems] = useState(
     preselectProductId ? [{ productId: preselectProductId, quantity: 1, unitCost: 0, selectedProduct: null }] : []
   );
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
-  const { data: suppliers } = useQuery({ queryKey: ['suppliers-all'], queryFn: () => supplierService.getAll(0, 100) });
+  const { data: preselectSupplier } = useQuery({
+    queryKey: ['supplier', preselectSupplierId],
+    queryFn: () => supplierService.getById(preselectSupplierId),
+    enabled: !!preselectSupplierId && !isEdit,
+  });
   const { data: existingPurchase } = useQuery({ queryKey: ['purchase', id], queryFn: () => purchaseService.getById(id), enabled: isEdit });
+
+  useEffect(() => {
+    if (preselectSupplier?.data) {
+      setSelectedSupplier(preselectSupplier.data);
+    }
+  }, [preselectSupplier]);
 
   useEffect(() => {
     if (existingPurchase?.data) {
       const p = existingPurchase.data;
-      setFormData({ supplierId: p.supplierId || '', purchaseDate: p.purchaseDate?.split('T')[0] || '', notes: p.notes || '' });
+      setFormData({ purchaseDate: p.purchaseDate?.split('T')[0] || '', notes: p.notes || '' });
+      setSelectedSupplier(p.supplierId ? { id: p.supplierId, name: p.supplierName || '' } : null);
       setItems(p.items || []);
     }
   }, [existingPurchase]);
@@ -111,14 +164,13 @@ const PurchaseForm = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (isEdit) { navigate('/purchases'); return; } // existing purchases are view-only
-    if (!formData.supplierId) { setError(t('supplier_required')); return; }
     if (items.length === 0) { setError(t('at_least_one_item_required')); return; }
     setError('');
     setSuccess('');
     
     // Strip the frontend-only 'selectedProduct' object before sending to the API
     const cleanItems = items.map(({ selectedProduct, ...rest }) => rest);
-    saveMutation.mutate({ ...formData, items: cleanItems });
+    saveMutation.mutate({ ...formData, supplierId: selectedSupplier?.id ?? null, items: cleanItems });
   };
 
   if (!isManager()) return <Alert severity="error">{t('access_denied')}</Alert>;
@@ -133,19 +185,19 @@ const PurchaseForm = () => {
         <form onSubmit={handleSubmit}>
           <Grid container spacing={2}>
             <Grid item xs={12} md={6}>
-              <TextField 
-                fullWidth 
-                label={t('supplier')} 
-                select 
-                name="supplierId" 
-                value={formData.supplierId} 
-                onChange={(e) => setFormData({ ...formData, supplierId: e.target.value })} 
-                required 
-                disabled={isEdit}
-              >
-                <MenuItem value="">{t('no_supplier')}</MenuItem>
-                {suppliers?.data?.content?.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
-              </TextField>
+              {isEdit ? (
+                <TextField
+                  fullWidth
+                  label={t('supplier')}
+                  value={selectedSupplier?.name || t('no_supplier')}
+                  disabled
+                />
+              ) : (
+                <SupplierSearchField
+                  value={selectedSupplier}
+                  onSelect={(supplier) => setSelectedSupplier(supplier)}
+                />
+              )}
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField 

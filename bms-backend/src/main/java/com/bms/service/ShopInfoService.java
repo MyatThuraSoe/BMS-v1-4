@@ -31,6 +31,7 @@ public class ShopInfoService {
                     "",
                     "",
                     "USD",
+                    "58MM",
                     false
             );
         }
@@ -44,6 +45,7 @@ public class ShopInfoService {
                 info.getPhone(),
                 info.getEmail(),
                 info.getCurrency() != null ? info.getCurrency() : "USD",
+                info.getReceiptPaperSize() != null ? info.getReceiptPaperSize() : "58MM",
                 info.getLogoData() != null
         );
     }
@@ -58,6 +60,7 @@ public class ShopInfoService {
         info.setPhone(req.getPhone());
         info.setEmail(req.getEmail());
         info.setCurrency(req.getCurrency() != null ? req.getCurrency() : "USD");
+        info.setReceiptPaperSize(req.getReceiptPaperSize() != null ? req.getReceiptPaperSize() : "58MM");
 
         ShopInfo saved = shopInfoRepository.save(info);
         return getShopInfo();
@@ -95,6 +98,7 @@ public class ShopInfoService {
         private String phone;
         private String email;
         private String currency;
+        private String receiptPaperSize;
 
         public String getShopName() {
             return shopName;
@@ -142,6 +146,14 @@ public class ShopInfoService {
 
         public void setCurrency(String currency) {
             this.currency = currency;
+        }
+
+        public String getReceiptPaperSize() {
+            return receiptPaperSize;
+        }
+
+        public void setReceiptPaperSize(String receiptPaperSize) {
+            this.receiptPaperSize = receiptPaperSize;
         }
     }
 

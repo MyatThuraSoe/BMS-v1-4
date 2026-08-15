@@ -391,7 +391,7 @@ ipcMain.handle('get-printers', async () => {
     }
 });
 
-ipcMain.handle('print-receipt', async (event, html, printerName) => {
+ipcMain.handle('print-receipt', async (event, html, printerName, paperSizeMm) => {
     return new Promise((resolve) => {
         const printWindow = new BrowserWindow({
             show: false,
@@ -404,11 +404,14 @@ ipcMain.handle('print-receipt', async (event, html, printerName) => {
         printWindow.loadURL(dataUrl);
 
         printWindow.webContents.on('did-finish-load', () => {
+            const pageSize = paperSizeMm
+                ? { width: paperSizeMm * 1000, height: 297000 }   // microns (1mm = 1000µm)
+                : 'A4';
             const options = {
                 silent: true,            // No print dialog
                 printBackground: true,   // Keep colors and backgrounds
                 margins: { marginType: 'none' },
-                pageSize: 'A4'
+                pageSize
             };
             if (printerName) options.deviceName = printerName;
 
@@ -444,7 +447,8 @@ function createSplashWindow() {
         skipTaskbar: true,
         webPreferences: {
             nodeIntegration: false,
-            contextIsolation: true
+            contextIsolation: true,
+            preload: path.join(__dirname, 'splash-preload.js')
         }
     });
 

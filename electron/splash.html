@@ -141,10 +141,8 @@
     </div>
 
     <script>
-        // Listen for progress updates from Electron main process
-        const { ipcRenderer } = require('electron');
-        
-        ipcRenderer.on('splash-progress', (event, data) => {
+        // Listen for progress updates from Electron main process via preload bridge
+        window.splashAPI.onProgress((data) => {
             const bar = document.getElementById('progressBar');
             const text = document.getElementById('statusText');
             

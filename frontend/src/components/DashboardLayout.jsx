@@ -53,7 +53,6 @@ import {
   Inventory as InventoryIcon,
   Category as CategoryIcon,
   Info as InfoIcon,
-  Storage as StorageIcon,
 
 } from '@mui/icons-material';
 
@@ -116,7 +115,6 @@ const menuGroups = [
       { textKey: 'shop_info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
       { textKey: 'backup_settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
       { textKey: 'audit_logs', icon: <AuditIcon />, path: '/audit-logs', roles: ['ADMIN'], color: 'error.main' },
-      { textKey: 'data_management', icon: <StorageIcon />, path: '/data', roles: ['ADMIN'], color: 'info.main' },
     ],
   },
   {

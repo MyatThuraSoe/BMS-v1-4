@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Grid, Paper, Typography, Box, Button } from '@mui/material';
+import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService } from '../api/services';
 import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 import SetupChecklist from '../components/SetupChecklist';
 
@@ -39,6 +40,7 @@ const StatCard = ({ title, value, icon, color, onClick }) => (
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
   const { t } = useTranslation('dashboard');
   const today = new Date().toISOString().split('T')[0];
 
@@ -97,27 +99,25 @@ const Dashboard = () => {
 
   return (
     <Box>
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{t('today_at_glance')}</Typography>
-      </Box>
-      {/* Placed at the top to naturally span full width without breaking Grid */}
       <SetupChecklist />
-      
-      <Paper sx={{ p: 3, mb: 3 }}>
-        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Typography variant="h6">{t('financial_summary')}</Typography>
-          <PeriodToggle period={period} onChange={handlePeriodChange} />
-        </Box>
-        <FinancialSummaryCards
-          summary={financialSummary}
-          onCardClick={(key) => {
-            if (key === 'revenue') navigate(`/sales?range=${period}`);
-            else navigate(`/accounting?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
-          }}
-        />
-      </Paper>
 
       <Grid container spacing={3}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+              <Typography variant="h6">{t('financial_summary')}</Typography>
+              <PeriodToggle period={period} onChange={handlePeriodChange} />
+            </Box>
+            <FinancialSummaryCards
+              summary={financialSummary}
+              onCardClick={(key) => {
+                if (key === 'revenue') navigate(`/sales?range=${period}`);
+                else navigate(`/accounting?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+              }}
+            />
+          </Paper>
+        </Grid>
+
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title={t('sales_this_period')}
@@ -145,9 +145,36 @@ const Dashboard = () => {
             onClick={() => navigate('/products?view=low-stock')}
           />
         </Grid>
-      </Grid>
 
-      <Grid container spacing={3} sx={{ mt: 2 }}>
+        <Grid item xs={12}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>{t('sales_trend_last_7_days')}</Typography>
+            <Box sx={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={salesTrend} margin={{ top: 24, right: 8, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                  <YAxis tickLine={false} axisLine={false} />
+                  <Tooltip formatter={(value) => formatCurrency(value)} />
+                  <Bar
+                    dataKey="totalSales"
+                    fill={theme.palette.primary.main}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={48}
+                    label={{
+                      position: 'top',
+                      fill: theme.palette.text.primary,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      formatter: (value) => formatCurrency(value),
+                    }}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </Box>
+          </Paper>
+        </Grid>
+
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
             <Typography variant="h6" gutterBottom>{t('quick_actions')}</Typography>
@@ -188,23 +215,6 @@ const Dashboard = () => {
                 ))}
               </Box>
             )}
-          </Paper>
-        </Grid>
-
-        <Grid item xs={12}>
-          <Paper sx={{ p: 3 }}>
-            <Typography variant="h6" gutterBottom>{t('sales_trend_last_7_days')}</Typography>
-            <Box sx={{ width: '100%', height: 260 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={salesTrend}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip formatter={(value) => formatCurrency(value)} />
-                  <Line type="monotone" dataKey="totalSales" stroke="#1976d2" strokeWidth={2} />
-                </LineChart>
-              </ResponsiveContainer>
-            </Box>
           </Paper>
         </Grid>
       </Grid>

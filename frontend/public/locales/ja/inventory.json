@@ -153,5 +153,7 @@
   "reason_required": "理由を入力してください",
   "select_product": "商品を選択",
   "product_with_stock": "{{name}} (在庫: {{stock}})",
-  "adjustment_type": "調整タイプ"
+  "adjustment_type": "調整タイプ",
+  "type_to_search": "入力して検索...",
+  "search_by_name_or_sku": "名前または SKU で検索"
 }
