@@ -76,7 +76,8 @@ const ReceiptPreview = () => {
   if (!data?.data) return <Typography>Receipt not found</Typography>;
 
   const receipt = data.data;
-  const paperSize = shopInfoData?.data?.receiptPaperSize || '58MM';
+  const paperSize = shopInfoData?.data?.receiptPaperSize || '58';
+  const paperWidthMm = Math.max(20, parseInt(String(paperSize).replace(/\D/g, ''), 10) || 58);
   const previewWidth = getReceiptPreviewWidth(paperSize);
   const refundableItems = receipt.items?.filter((item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0) || [];
   const refundTotal = refundableItems.reduce((sum, item) => {
@@ -121,7 +122,7 @@ const ReceiptPreview = () => {
     try {
       if (directPrint.isAvailable()) {
         const receiptHtml = receiptRef.current.innerHTML;
-        const result = await directPrint.print(receiptHtml, selectedPrinter || null, paperSize === '80MM' ? 80 : 58);
+        const result = await directPrint.print(receiptHtml, selectedPrinter || null, paperWidthMm);
         if (result.success) {
           notifySuccess('Receipt sent to printer');
         } else {

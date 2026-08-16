@@ -48,7 +48,7 @@ public class ShopInfo {
     private String currency = "USD";
 
     @Column(name = "receipt_paper_size", length = 10)
-    private String receiptPaperSize = "58MM";
+    private String receiptPaperSize = "58";
 
     @Version
     private Long version;

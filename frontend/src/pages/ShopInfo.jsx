@@ -20,10 +20,13 @@ const CURRENCIES = [
   { code: 'INR', label: 'Indian Rupee (₹)' },
 ];
 
-const PAPER_SIZES = [
-  { code: '58MM', label: '58mm (2" Thermal)' },
-  { code: '80MM', label: '80mm (3" Thermal)' },
-];
+const COMMON_PAPER_WIDTHS = [57, 58, 60, 76, 80, 82, 100];
+
+const parsePaperWidth = (v) => {
+  if (v == null || v === '') return '';
+  const digits = String(v).replace(/\D/g, '');
+  return digits || '';
+};
 
 const ShopInfo = () => {
 
@@ -48,7 +51,7 @@ const ShopInfo = () => {
     phone: '',
     email: '',
     currency: 'USD',
-    receiptPaperSize: '58MM',
+    receiptPaperSize: '58',
   });
 
   useEffect(() => {
@@ -61,7 +64,7 @@ const ShopInfo = () => {
       phone: d.phone || '',
       email: d.email || '',
       currency: d.currency || 'USD',
-      receiptPaperSize: d.receiptPaperSize || '58MM',
+      receiptPaperSize: parsePaperWidth(d.receiptPaperSize) || '58',
     });
   }, [data]);
 
@@ -131,7 +134,7 @@ const ShopInfo = () => {
       phone: form.phone,
       email: form.email,
       currency: form.currency,
-      receiptPaperSize: form.receiptPaperSize,
+      receiptPaperSize: parsePaperWidth(form.receiptPaperSize) || '58',
     });
     setCurrencyCode(form.currency);
   };
@@ -209,19 +212,29 @@ const ShopInfo = () => {
             </TextField>
 
             <TextField
-              select
               label={t('receipt_paper_size')}
               value={form.receiptPaperSize}
-              onChange={(e) => setForm((p) => ({ ...p, receiptPaperSize: e.target.value }))}
+              onChange={(e) => setForm((p) => ({ ...p, receiptPaperSize: parsePaperWidth(e.target.value) }))}
               fullWidth
               helperText={t('receipt_paper_size_helper')}
-            >
-              {PAPER_SIZES.map((p) => (
-                <MenuItem key={p.code} value={p.code}>
-                  {p.label}
-                </MenuItem>
+              inputProps={{ inputMode: 'numeric', min: 20, max: 200 }}
+              InputProps={{
+                endAdornment: <span>mm</span>,
+              }}
+            />
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+              {COMMON_PAPER_WIDTHS.map((w) => (
+                <Button
+                  key={w}
+                  size="small"
+                  variant={form.receiptPaperSize === String(w) ? 'contained' : 'outlined'}
+                  onClick={() => setForm((p) => ({ ...p, receiptPaperSize: String(w) }))}
+                  sx={{ minWidth: 56, textTransform: 'none' }}
+                >
+                  {w}mm
+                </Button>
               ))}
-            </TextField>
+            </Box>
 
             <TextField
               label={t('address')}

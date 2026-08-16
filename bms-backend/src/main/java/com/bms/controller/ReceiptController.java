@@ -434,11 +434,21 @@ public class ReceiptController {
         return symbol + df.format(amount);
     }
 
-    // Receipt paper width in millimetres. Current default / 58mm remains the
-    // historical default; 80mm is the wider thermal size.
+    // Receipt paper width in millimetres. The value can be a plain number
+    // ("58", "80", "100") or a legacy code ("58MM"). Length is always auto,
+    // so only the width matters.
     private static int paperWidthMm(String paperSize) {
-        if ("80MM".equalsIgnoreCase(paperSize)) {
-            return 80;
+        if (paperSize != null && !paperSize.isBlank()) {
+            String digits = paperSize.replaceAll("[^0-9]", "");
+            if (!digits.isEmpty()) {
+                try {
+                    int mm = Integer.parseInt(digits);
+                    if (mm >= 20 && mm <= 200) {
+                        return mm;
+                    }
+                } catch (NumberFormatException ignored) {
+                }
+            }
         }
         return 58;
     }

@@ -31,7 +31,7 @@ public class ShopInfoService {
                     "",
                     "",
                     "USD",
-                    "58MM",
+                    "58",
                     false
             );
         }
@@ -45,7 +45,7 @@ public class ShopInfoService {
                 info.getPhone(),
                 info.getEmail(),
                 info.getCurrency() != null ? info.getCurrency() : "USD",
-                info.getReceiptPaperSize() != null ? info.getReceiptPaperSize() : "58MM",
+                info.getReceiptPaperSize() != null ? info.getReceiptPaperSize() : "58",
                 info.getLogoData() != null
         );
     }
@@ -60,7 +60,7 @@ public class ShopInfoService {
         info.setPhone(req.getPhone());
         info.setEmail(req.getEmail());
         info.setCurrency(req.getCurrency() != null ? req.getCurrency() : "USD");
-        info.setReceiptPaperSize(req.getReceiptPaperSize() != null ? req.getReceiptPaperSize() : "58MM");
+        info.setReceiptPaperSize(req.getReceiptPaperSize() != null ? req.getReceiptPaperSize() : "58");
 
         ShopInfo saved = shopInfoRepository.save(info);
         return getShopInfo();

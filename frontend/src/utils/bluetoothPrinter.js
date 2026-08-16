@@ -1,24 +1,26 @@
 import { notifySuccess, notifyError } from './notify';
 import { formatCurrency } from './helpers'; 
 
-// Receipt paper width in characters (12 dots/char for 58mm, 9-10 dots/char for 80mm).
-// Must match the paper size selected in Shop Info.
-const PAPER_LINE_WIDTH = {
-  '58MM': 32,
-  '80MM': 48,
-};
+// Receipt paper width in characters (12 dots/char @ 203dpi ≈ 1.47mm/char).
+// Derived from the paper width in mm set in Shop Info.
+const CHARS_PER_MM = 1 / 1.47;
 
-const PAPER_PREVIEW_WIDTH = {
-  '58MM': 400,
-  '80MM': 576,
-};
+function parsePaperWidthMm(paperSize) {
+  if (paperSize == null || paperSize === '') return 58;
+  const digits = String(paperSize).replace(/\D/g, '');
+  const mm = parseInt(digits, 10);
+  if (!Number.isFinite(mm) || mm < 20 || mm > 200) return 58;
+  return mm;
+}
 
 export function getReceiptLineWidth(paperSize) {
-  return PAPER_LINE_WIDTH[paperSize] || PAPER_LINE_WIDTH['58MM'];
+  const mm = parsePaperWidthMm(paperSize);
+  return Math.max(16, Math.round(mm * CHARS_PER_MM));
 }
 
 export function getReceiptPreviewWidth(paperSize) {
-  return PAPER_PREVIEW_WIDTH[paperSize] || PAPER_PREVIEW_WIDTH['58MM'];
+  const mm = parsePaperWidthMm(paperSize);
+  return Math.round(mm * (400 / 58));
 } 
 
 // Ensure we reference the global qz object correctly if loaded via <script> tag
