@@ -2,8 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { Box, Typography, Button, Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress, TextField, Divider, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { receiptService, saleService, shopInfoService } from '../api/services';
-import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { receiptService, saleService, shopInfoService, receiptCustomizationService } from '../api/services';
+import { formatReceiptDateTime, formatCurrency } from '../utils/helpers';
 import { AssignmentReturn as RefundIcon, Print as PrintIcon, Download as DownloadIcon, LocalPrintshop as PrinterIcon, FlashOn as DirectPrintIcon } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShopLogo from '../components/ShopLogo';
@@ -33,6 +33,11 @@ const ReceiptPreview = () => {
   const { data: shopInfoData } = useQuery({
     queryKey: ['shopInfo-preview'],
     queryFn: () => shopInfoService.get(),
+  });
+
+  const { data: customizationData } = useQuery({
+    queryKey: ['receipt-customization-preview'],
+    queryFn: () => receiptCustomizationService.get(),
   });
 
   useEffect(() => {
@@ -76,9 +81,14 @@ const ReceiptPreview = () => {
   if (!data?.data) return <Typography>Receipt not found</Typography>;
 
   const receipt = data.data;
-  const paperSize = shopInfoData?.data?.receiptPaperSize || '58';
+  const customPaperSize = customizationData?.data?.paperSize || shopInfoData?.data?.receiptPaperSize || '58';
+  const paperSize = customPaperSize;
   const paperWidthMm = Math.max(20, parseInt(String(paperSize).replace(/\D/g, ''), 10) || 58);
   const previewWidth = getReceiptPreviewWidth(paperSize);
+  const receiptHeaderText = customizationData?.data?.headerText ?? '';
+  const receiptMainMessage = customizationData?.data?.mainMessage || 'Please keep this receipt for your records.';
+  const receiptFooterText = customizationData?.data?.footerText || 'Thank you for your business!';
+  const receiptTimeFormat = customizationData?.data?.timeFormat || '12';
   const refundableItems = receipt.items?.filter((item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0) || [];
   const refundTotal = refundableItems.reduce((sum, item) => {
     const quantity = Number(refundQuantities[item.saleItemId] || 0);
@@ -108,7 +118,7 @@ const ReceiptPreview = () => {
     setIsPrinting(true);
     try {
       await connectQZ(); // ✅ Ensure connection is active
-      await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null);
+      await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null, receiptTimeFormat);
     } catch (err) {
       // Error is already handled and notified inside printReceiptViaQZ
     } finally {
@@ -130,7 +140,7 @@ const ReceiptPreview = () => {
         }
       } else if (isQZSupported()) {
         await connectQZ(); // ✅ Ensure connection is active
-        await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null);
+        await printReceiptViaQZ(receipt, shopInfoData?.data || {}, selectedPrinter || null, receiptTimeFormat);
       } else {
         window.print();
       }
@@ -165,50 +175,105 @@ const ReceiptPreview = () => {
   return (
     <Box sx={{ p: 3, maxWidth: previewWidth, mx: 'auto' }}>
       <Box ref={receiptRef}>
-        <Box sx={{ textAlign: 'center', mb: 2, fontFamily: 'monospace' }}>
+        <Box sx={{ textAlign: 'center', mb: 1, fontFamily: 'monospace', fontSize: '0.9rem' }}>
           <ReceiptHeader
               shopName={shopInfoData?.data?.shopName}
               hasLogo={shopInfoData?.data?.hasLogo}
           />
-          <Typography variant="body2">Invoice: {receipt.invoiceNumber}</Typography>
-          <Typography variant="body2">{formatDateTime(receipt.saleDate)}</Typography>
-          {/* Show Cashier on screen */}
-          <Typography variant="body2">Cashier: {receipt.cashierName || 'Unknown'}</Typography>
-          {/* Show Customer on screen (even if Walk-in) */}
-          <Typography variant="body2">Customer: {receipt.customerName || 'Walk-in'}</Typography>
         </Box>
 
-        <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 2, fontFamily: 'monospace' }}>
+        {/* Separator */}
+        {receiptHeaderText.trim() ? (
+          <Typography variant="body2" sx={{ textAlign: 'center', mb: 1, fontFamily: 'monospace', borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 0.5 }}>
+            {receiptHeaderText}
+          </Typography>
+        ) : (
+          <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', mb: 1 }} />
+        )}
+
+        {/* Invoice Details */}
+        <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+            <Typography variant="caption">Invoice No:</Typography>
+            <Typography variant="caption">{receipt.invoiceNumber}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+            <Typography variant="caption">Date:</Typography>
+            <Typography variant="caption">{formatReceiptDateTime(receipt.saleDate, receiptTimeFormat)}</Typography>
+          </Box>
+          {receipt.customerName && receipt.customerName !== 'Walk-in' && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+              <Typography variant="caption">Customer:</Typography>
+              <Typography variant="caption">{receipt.customerName}</Typography>
+            </Box>
+          )}
+        </Box>
+
+        {/* Separator */}
+        <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 1, fontFamily: 'monospace', fontSize: '0.85rem' }}>
           {receipt.items?.map((item, idx) => (
-            <Box key={idx} sx={{ mb: 1 }}>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Typography variant="body2" noWrap sx={{ minWidth: 0, pr: 1 }}>{item.productName} x{item.quantity}</Typography>
-                <Typography variant="body2" sx={{ flexShrink: 0 }}>{formatCurrency(Number(item.unitPrice || 0) * Number(item.quantity || 0))}</Typography>
+            <Box key={idx} sx={{ mb: 0.8 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <Typography variant="caption" noWrap sx={{ minWidth: 0, pr: 1, flex: 1 }}>
+                  {item.productName} x{item.quantity}
+                </Typography>
+                <Typography variant="caption" sx={{ flexShrink: 0, fontWeight: 600 }}>
+                  {formatCurrency(Number(item.unitPrice || 0) * Number(item.quantity || 0))}
+                </Typography>
               </Box>
+              <Typography variant="caption" sx={{ display: 'block', pl: 1, color: 'text.secondary' }}>
+                @ {formatCurrency(Number(item.unitPrice || 0))}
+              </Typography>
               {(item.quantityRefunded || 0) > 0 && (
-                <Typography variant="caption" color="warning.main">Refunded: {item.quantityRefunded}</Typography>
+                <Typography variant="caption" color="warning.main" sx={{ display: 'block', pl: 1 }}>
+                  Refunded: {item.quantityRefunded}
+                </Typography>
               )}
             </Box>
           ))}
         </Box>
 
-        <Box sx={{ fontFamily: 'monospace', mt: 2 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2">Total:</Typography>
-            <Typography variant="body2">{formatCurrency(receipt.totalAmount)}</Typography>
+        {/* Totals */}
+        <Box sx={{ fontFamily: 'monospace', fontSize: '0.85rem', mb: 1.5 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+            <Typography variant="caption">Subtotal:</Typography>
+            <Typography variant="caption">{formatCurrency(receipt.subTotal || receipt.totalAmount)}</Typography>
+          </Box>
+          {receipt.taxAmount && Number(receipt.taxAmount) > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+              <Typography variant="caption">Tax:</Typography>
+              <Typography variant="caption">{formatCurrency(receipt.taxAmount)}</Typography>
+            </Box>
+          )}
+          {receipt.discountAmount && Number(receipt.discountAmount) > 0 && (
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.3 }}>
+              <Typography variant="caption">Discount:</Typography>
+              <Typography variant="caption">-{formatCurrency(receipt.discountAmount)}</Typography>
+            </Box>
+          )}
+        </Box>
+
+        {/* Separator & Total */}
+        <Box sx={{ borderTop: '1px dashed #999', borderBottom: '1px dashed #999', py: 0.8, fontFamily: 'monospace' }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>TOTAL:</Typography>
+            <Typography variant="body2" sx={{ fontWeight: 700 }}>{formatCurrency(receipt.totalAmount)}</Typography>
+          </Box>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
+            <Typography variant="caption">Paid:</Typography>
+            <Typography variant="caption">{formatCurrency(receipt.amountPaid)}</Typography>
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2">Paid:</Typography>
-            <Typography variant="body2">{formatCurrency(receipt.amountPaid)}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2">Change:</Typography>
-            <Typography variant="body2">{formatCurrency(receipt.amountPaid - receipt.totalAmount)}</Typography>
+            <Typography variant="caption">Change:</Typography>
+            <Typography variant="caption">{formatCurrency(receipt.amountPaid - receipt.totalAmount)}</Typography>
           </Box>
         </Box>
 
-        <Box sx={{ mt: 3, textAlign: 'center' }}>
-          <Typography variant="caption">Thank you for your business!</Typography>
+        {/* Footer Message */}
+        <Box sx={{ mt: 1.5, textAlign: 'center' }}>
+          <Typography variant="caption" sx={{ fontFamily: 'monospace', display: 'block' }}>
+            {receiptFooterText}
+          </Typography>
         </Box>
       </Box>
 
@@ -288,7 +353,7 @@ const ReceiptPreview = () => {
       <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle>Refund Items</DialogTitle>
         <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2 }}>Invoice: {receipt.invoiceNumber}</Typography>
+          <Typography variant="body2" sx={{ mb: 2 }}>Invoice No: {receipt.invoiceNumber}</Typography>
           {refundableItems.map((item) => {
             const max = (item.quantity || 0) - (item.quantityRefunded || 0);
             return (

@@ -426,6 +426,16 @@ export const shopInfoService = {
     return response.data;
   },
 
+  getReceiptCustomization: async () => {
+    const response = await apiClient.get('/receipt-customization');
+    return response.data;
+  },
+
+  saveReceiptCustomization: async (data) => {
+    const response = await apiClient.put('/receipt-customization', data);
+    return response.data;
+  },
+
   getLogo: async () => {
     const response = await apiClient.get('/shop-info/logo', { responseType: 'blob' });
     return response.data;
@@ -442,6 +452,18 @@ export const shopInfoService = {
 
   deleteLogo: async () => {
     const response = await apiClient.delete('/shop-info/logo');
+    return response.data;
+  },
+};
+
+export const receiptCustomizationService = {
+  get: async () => {
+    const response = await apiClient.get('/receipt-customization');
+    return response.data;
+  },
+
+  upsert: async (data) => {
+    const response = await apiClient.put('/receipt-customization', data);
     return response.data;
   },
 };

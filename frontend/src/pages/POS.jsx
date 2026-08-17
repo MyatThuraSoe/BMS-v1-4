@@ -44,13 +44,13 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
-import { formatCurrency } from '../utils/helpers';
+import { formatCurrency, formatReceiptDateTime } from '../utils/helpers';
 
 import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService } from '../api/services';
 import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter'; // Add QZ Tray import
 import directPrint from '../services/directPrintService';
 
@@ -90,6 +90,14 @@ const POS = () => {
   });
 
   const shopInfo = shopInfoData?.data;
+
+  const { data: customizationData } = useQuery({
+    queryKey: ['receipt-customization-pos'],
+    queryFn: () => receiptCustomizationService.get(),
+    enabled: true,
+  });
+
+  const receiptTimeFormat = customizationData?.data?.timeFormat || '12';
 
   // Fetch products
 
@@ -152,7 +160,6 @@ const filteredProducts = products.filter(
         productId: product.id,
         name: product.name,
         price: product.unitPrice,
-        taxRate: product.taxRate,
         quantity: 1,
         stockQuantity: product.stockQuantity
     }]);
@@ -238,11 +245,9 @@ const filteredProducts = products.filter(
       0
   );
 
-  const tax = cart.reduce(
-      (sum, item) =>
-          sum + (item.price * (parseInt(item.quantity) || 0) * item.taxRate) / 100,
-      0
-  );
+  const shopTaxPercentage = Number(shopInfo?.taxPercentage) || 0;
+
+  const tax = subtotal * (shopTaxPercentage / 100);
 
   const total = subtotal + tax;
   const change = cashAmount ? parseFloat(cashAmount) - total : 0;
@@ -317,7 +322,6 @@ const filteredProducts = products.filter(
           return {
             ...cartItem,
             price: fresh.unitPrice,
-            taxRate: fresh.taxRate,
             stockQuantity: fresh.availableStock,
             // clamp quantity down if stock dropped below what's in the cart
             quantity: fresh.insufficientStock
@@ -428,7 +432,7 @@ const filteredProducts = products.filter(
     if (lastSale) {
       try {
         // lastSale contains the exact same data structure as the receipt
-        await printReceiptViaQZ(lastSale, shopInfo || {});
+        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat);
         notifySuccess(t('receipt_sent_printer'));
       } catch (err) {
         // Error is already handled inside the utility
@@ -452,7 +456,7 @@ const filteredProducts = products.filter(
           notifyError(result.error || t('print_failed'));
         }
       } else if (isQZSupported()) {
-        await printReceiptViaQZ(lastSale, shopInfo || {});
+        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat);
         notifySuccess(t('receipt_sent_printer'));
       } else {
         // Plain browser fallback
@@ -880,7 +884,7 @@ const filteredProducts = products.filter(
               <Typography variant="body2" align="center">{t('invoice_label', { invoice: lastSale.invoiceNumber })}</Typography>
 
               <Typography variant="body2" align="center">
-                {new Date(lastSale.saleDate).toLocaleString()}
+                {formatReceiptDateTime(lastSale.saleDate, receiptTimeFormat)}
               </Typography>
               {/* <Typography variant="body2" align="center">
                 Cashier: {user?.username}

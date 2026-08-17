@@ -2,6 +2,8 @@ package com.bms.entity;
 
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
+
 @Entity
 @Table(name = "shop_info")
 public class ShopInfo {
@@ -49,6 +51,9 @@ public class ShopInfo {
 
     @Column(name = "receipt_paper_size", length = 10)
     private String receiptPaperSize = "58";
+
+    @Column(name = "tax_percentage", precision = 6, scale = 4)
+    private BigDecimal taxPercentage = BigDecimal.ZERO;
 
     @Version
     private Long version;
@@ -131,6 +136,14 @@ public class ShopInfo {
 
     public void setReceiptPaperSize(String receiptPaperSize) {
         this.receiptPaperSize = receiptPaperSize;
+    }
+
+    public BigDecimal getTaxPercentage() {
+        return taxPercentage != null ? taxPercentage : BigDecimal.ZERO;
+    }
+
+    public void setTaxPercentage(BigDecimal taxPercentage) {
+        this.taxPercentage = taxPercentage;
     }
 
     public Long getVersion() {

@@ -11,6 +11,11 @@ import { useTranslation } from 'react-i18next';
 
 import ProductImage from '../components/ProductImage';
 
+const STANDARD_UNITS = ['PC', 'KG', 'G', 'LB', 'L', 'ML', 'BOX', 'PACK', 'DOZEN'];
+const CUSTOM_UNIT = '__custom__';
+
+const isStandardUnit = (unit) => unit == null || unit === '' || STANDARD_UNITS.includes(unit);
+
 const ProductForm = () => {
   const { t } = useTranslation('inventory');
   const { id } = useParams();
@@ -25,6 +30,7 @@ const ProductForm = () => {
   const [image, setImage] = useState(null);       // newly selected file, not yet uploaded
   const [imagePreview, setImagePreview] = useState(null); // local preview URL for the newly selected file
   const [removeExistingImage, setRemoveExistingImage] = useState(false);
+  const [customUnitMode, setCustomUnitMode] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -42,6 +48,7 @@ const ProductForm = () => {
   useEffect(() => {
     if (existingProduct?.data) {
       const p = existingProduct.data;
+      setCustomUnitMode(!isStandardUnit(p.unit));
       setFormData({
         name: p.name || '', sku: p.sku || '', unit: p.unit || '', description: p.description || '',
         price: p.unitPrice || '', cost: p.costPrice || '', stockQuantity: p.stockQuantity || '', lowStockThreshold: p.minStockLevel || '10',
@@ -106,6 +113,17 @@ const ProductForm = () => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
+  const handleUnitChange = (e) => {
+    const value = e.target.value;
+    if (value === CUSTOM_UNIT) {
+      setCustomUnitMode(true);
+      setFormData((p) => ({ ...p, unit: '' }));
+    } else {
+      setCustomUnitMode(false);
+      setFormData((p) => ({ ...p, unit: value }));
+    }
+  };
+
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     setImage(file);
@@ -144,7 +162,14 @@ const ProductForm = () => {
               <TextField fullWidth label={t('sku')} name="sku" value={formData.sku} onChange={handleChange} required />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth select label={t('unit')} name="unit" value={formData.unit} onChange={handleChange}>
+              <TextField
+                fullWidth
+                select
+                label={t('unit')}
+                name="unit"
+                value={customUnitMode && formData.unit && !isStandardUnit(formData.unit) ? CUSTOM_UNIT : formData.unit}
+                onChange={handleUnitChange}
+              >
                 <MenuItem value="">{t('not_specified')}</MenuItem>
                 <MenuItem value="PC">{t('unit_piece')}</MenuItem>
                 <MenuItem value="KG">{t('unit_kilogram')}</MenuItem>
@@ -155,8 +180,22 @@ const ProductForm = () => {
                 <MenuItem value="BOX">{t('unit_box')}</MenuItem>
                 <MenuItem value="PACK">{t('unit_pack')}</MenuItem>
                 <MenuItem value="DOZEN">{t('unit_dozen')}</MenuItem>
+                <MenuItem value={CUSTOM_UNIT}>{t('custom_unit')}</MenuItem>
               </TextField>
             </Grid>
+            {customUnitMode && (
+              <Grid item xs={12} md={6}>
+                <TextField
+                  fullWidth
+                  label={t('custom_unit_label')}
+                  name="unit"
+                  value={formData.unit}
+                  onChange={handleChange}
+                  placeholder={t('custom_unit_placeholder')}
+                  autoFocus
+                />
+              </Grid>
+            )}
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('category')} name="categoryId" select value={formData.categoryId} onChange={handleChange}>
                 <MenuItem value="">{t('none')}</MenuItem>

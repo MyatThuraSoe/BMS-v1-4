@@ -33,6 +33,24 @@ export const formatDateTime = (dateString) => {
   return new Date(dateString).toLocaleString('en-US');
 };
 
+export const formatReceiptDateTime = (dateString, timeFormat = '12') => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return '';
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const datePart = `${year}-${month}-${day}`;
+  const hours = date.getHours();
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  if (String(timeFormat) === '24') {
+    return `${datePart} ${String(hours).padStart(2, '0')}:${minutes}`;
+  }
+  const hour12 = (hours % 12 === 0) ? 12 : hours % 12;
+  const ampm = hours < 12 ? 'am' : 'pm';
+  return `${datePart} ${hour12}:${minutes}${ampm}`;
+};
+
 export const validateEmail = (email) => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return re.test(email);

@@ -47,7 +47,7 @@ public class Product {
     @Column(name = "min_stock_level")
     private Integer minStockLevel = 0;
 
-    @Column(name = "unit", length = 20)
+    @Column(name = "unit", length = 50)
     private String unit;
 
     @Version

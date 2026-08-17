@@ -113,6 +113,7 @@ const menuGroups = [
     items: [
       { textKey: 'settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'], color: 'text.secondary' },
       { textKey: 'shop_info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
+      { textKey: 'receipt_customization', icon: <ReceiptIcon />, path: '/receipt-customization', roles: ['ADMIN'], color: 'secondary.main' },
       { textKey: 'backup_settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
       { textKey: 'audit_logs', icon: <AuditIcon />, path: '/audit-logs', roles: ['ADMIN'], color: 'error.main' },
     ],

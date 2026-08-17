@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.math.BigDecimal;
 import java.util.Optional;
 
 @Service
@@ -32,6 +33,7 @@ public class ShopInfoService {
                     "",
                     "USD",
                     "58",
+                    BigDecimal.ZERO,
                     false
             );
         }
@@ -46,6 +48,7 @@ public class ShopInfoService {
                 info.getEmail(),
                 info.getCurrency() != null ? info.getCurrency() : "USD",
                 info.getReceiptPaperSize() != null ? info.getReceiptPaperSize() : "58",
+                info.getTaxPercentage(),
                 info.getLogoData() != null
         );
     }
@@ -61,6 +64,7 @@ public class ShopInfoService {
         info.setEmail(req.getEmail());
         info.setCurrency(req.getCurrency() != null ? req.getCurrency() : "USD");
         info.setReceiptPaperSize(req.getReceiptPaperSize() != null ? req.getReceiptPaperSize() : "58");
+        info.setTaxPercentage(req.getTaxPercentage() != null ? req.getTaxPercentage() : BigDecimal.ZERO);
 
         ShopInfo saved = shopInfoRepository.save(info);
         return getShopInfo();
@@ -99,6 +103,7 @@ public class ShopInfoService {
         private String email;
         private String currency;
         private String receiptPaperSize;
+        private BigDecimal taxPercentage;
 
         public String getShopName() {
             return shopName;
@@ -154,6 +159,14 @@ public class ShopInfoService {
 
         public void setReceiptPaperSize(String receiptPaperSize) {
             this.receiptPaperSize = receiptPaperSize;
+        }
+
+        public BigDecimal getTaxPercentage() {
+            return taxPercentage;
+        }
+
+        public void setTaxPercentage(BigDecimal taxPercentage) {
+            this.taxPercentage = taxPercentage;
         }
     }
 

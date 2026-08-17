@@ -36,6 +36,7 @@ import UserUpdate from './pages/UserUpdate';
 import Settings from './pages/Settings';
 import AuditLogs from './pages/AuditLogs';
 import ShopInfo from './pages/ShopInfo';
+import ReceiptCustomization from './pages/ReceiptCustomization';
 import NotFound from './pages/NotFound';
 
 import Activate from './pages/Activate';
@@ -206,6 +207,7 @@ function AppRoutes() {
         
         <Route path="data" element={<Navigate to="/settings/backup" replace />} />
         <Route path="shop-info" element={<ProtectedRoute allowedRoles={['ADMIN']}><ShopInfo /></ProtectedRoute>} />
+        <Route path="receipt-customization" element={<ProtectedRoute allowedRoles={['ADMIN']}><ReceiptCustomization /></ProtectedRoute>} />
         
         {/* Audit Logs (Admin only) */}
         <Route path="audit-logs" element={<ProtectedRoute allowedRoles={['ADMIN']}><AuditLogs /></ProtectedRoute>} />

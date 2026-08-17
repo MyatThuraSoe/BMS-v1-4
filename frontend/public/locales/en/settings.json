@@ -32,6 +32,8 @@
   "currency_helper": "Used to display all prices and amounts across the app",
   "receipt_paper_size": "Receipt Paper Width (mm)",
   "receipt_paper_size_helper": "Width in mm for thermal printing (common: 58, 80, 100). Length is automatic.",
+  "tax_percentage": "Tax Percentage (%)",
+  "tax_percentage_helper": "Percent added on top of the subtotal for every sale (0.00 = no tax).",
   "address": "Address",
   "phone": "Phone",
   "email": "Email",

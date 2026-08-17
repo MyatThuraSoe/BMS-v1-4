@@ -32,6 +32,8 @@
   "currency_helper": "アプリ全体で価格と金額を表示するために使用されます",
   "receipt_paper_size": "レシート用紙幅 (mm)",
   "receipt_paper_size_helper": "サーマル印刷用の幅(mm)（一般的：58、80、100）。長さは自動です。",
+  "tax_percentage": "税率 (%)",
+  "tax_percentage_helper": "各売上の小計に加算される割合（0.00 = 税なし）。",
   "address": "住所",
   "phone": "電話番号",
   "email": "メール",

@@ -32,6 +32,8 @@
   "currency_helper": "Utilisé pour afficher tous les prix et montants dans l'application",
   "receipt_paper_size": "Largeur du papier reçu (mm)",
   "receipt_paper_size_helper": "Largeur en mm pour l'impression thermique (courant : 58, 80, 100). La longueur est automatique.",
+  "tax_percentage": "Pourcentage de taxe (%)",
+  "tax_percentage_helper": "Pourcentage ajouté au sous-total de chaque vente (0,00 = aucune taxe).",
   "address": "Adresse",
   "phone": "Téléphone",
   "email": "E-mail",

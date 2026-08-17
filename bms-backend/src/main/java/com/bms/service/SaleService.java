@@ -59,6 +59,9 @@ public class SaleService {
     private CashShiftRepository cashShiftRepository;
 
     @Autowired
+    private ShopInfoRepository shopInfoRepository;
+
+    @Autowired
     private SequenceService sequenceService;
 
     @PersistenceContext
@@ -207,7 +210,7 @@ public class SaleService {
             item.setUnitPrice(product.getUnitPrice());
             item.setCostPriceAtSale(product.getCostPrice());
 
-            BigDecimal[] pricing = calculateItemPricing(product, itemRequest.getQuantity());
+            BigDecimal[] pricing = calculateItemPricing(product, itemRequest.getQuantity(), getShopTaxRate());
             BigDecimal itemTotal = pricing[0];
             BigDecimal itemTax = pricing[1];
             item.setTotalPrice(itemTotal);
@@ -626,7 +629,7 @@ public class SaleService {
             result.setProductName(product.getName());
             result.setQuantity(itemRequest.getQuantity());
             result.setUnitPrice(product.getUnitPrice());
-            result.setTaxRate(product.getTaxRate());
+            result.setTaxRate(getShopTaxRate());
             result.setAvailableStock(product.getStockQuantity());
 
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
@@ -646,7 +649,7 @@ public class SaleService {
                         product.getName(), product.getStockQuantity(), itemRequest.getQuantity()));
             }
 
-            BigDecimal[] linePricing = calculateItemPricing(product, itemRequest.getQuantity());
+            BigDecimal[] linePricing = calculateItemPricing(product, itemRequest.getQuantity(), getShopTaxRate());
             result.setLineTotal(linePricing[0]); // itemTotal (pre-tax)
             subtotal = subtotal.add(linePricing[0]);
             taxAmount = taxAmount.add(linePricing[1]);
@@ -666,12 +669,20 @@ public class SaleService {
     // Shared by both verifyCart() and createSale() so the math can never drift apart again.
     // Returns [itemTotal, itemTax], both rounded to 2dp BEFORE persisting so the
     // ledger never stores uncompressed decimals.
-    private BigDecimal[] calculateItemPricing(Product product, Integer quantity) {
+    private BigDecimal[] calculateItemPricing(Product product, Integer quantity, BigDecimal taxRate) {
         BigDecimal itemTotal = product.getUnitPrice().multiply(new BigDecimal(quantity))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal itemTax = itemTotal.multiply(product.getTaxRate().divide(BigDecimal.valueOf(100)))
+        BigDecimal itemTax = itemTotal.multiply(taxRate.divide(BigDecimal.valueOf(100)))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         return new BigDecimal[]{itemTotal, itemTax};
+    }
+
+    // Tax percentage comes from the Shop Info configuration (admin-controlled),
+    // applied uniformly on top of every line item total.
+    private BigDecimal getShopTaxRate() {
+        return shopInfoRepository.findTopByOrderByIdAsc()
+                .map(ShopInfo::getTaxPercentage)
+                .orElse(BigDecimal.ZERO);
     }
 
     public CustomerStatsResponse getCustomerStats(Long customerId) {

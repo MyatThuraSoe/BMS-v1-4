@@ -22,6 +22,7 @@
   "accounting": "Accounting",
   "settings": "Settings",
   "shop_info": "Shop Info",
+  "receipt_customization": "Receipt Customization",
   "backup_settings": "Backup Settings",
   "audit_logs": "Audit Logs",
   "new_entity": "New {{name}}",

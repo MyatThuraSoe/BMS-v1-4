@@ -1,5 +1,7 @@
 package com.bms.dto.response;
 
+import java.math.BigDecimal;
+
 public class ShopInfoResponse {
 
     private Long id;
@@ -10,6 +12,7 @@ public class ShopInfoResponse {
     private String email;
     private String currency;
     private String receiptPaperSize;
+    private BigDecimal taxPercentage;
     private boolean hasLogo;
 
     public ShopInfoResponse() {
@@ -23,6 +26,7 @@ public class ShopInfoResponse {
                              String email,
                              String currency,
                              String receiptPaperSize,
+                             BigDecimal taxPercentage,
                              boolean hasLogo) {
         this.id = id;
         this.shopName = shopName;
@@ -32,6 +36,7 @@ public class ShopInfoResponse {
         this.email = email;
         this.currency = currency;
         this.receiptPaperSize = receiptPaperSize;
+        this.taxPercentage = taxPercentage;
         this.hasLogo = hasLogo;
     }
 
@@ -97,6 +102,14 @@ public class ShopInfoResponse {
 
     public void setReceiptPaperSize(String receiptPaperSize) {
         this.receiptPaperSize = receiptPaperSize;
+    }
+
+    public BigDecimal getTaxPercentage() {
+        return taxPercentage;
+    }
+
+    public void setTaxPercentage(BigDecimal taxPercentage) {
+        this.taxPercentage = taxPercentage;
     }
 
     public boolean isHasLogo() {

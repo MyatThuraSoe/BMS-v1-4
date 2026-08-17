@@ -38,7 +38,7 @@
   "confirm": "Confirmer",
   "receipt": "Reçu",
   "shop": "Boutique",
-  "invoice_label": "Facture : {{invoice}}",
+  "invoice_label": "Facture n° : {{invoice}}",
   "walk_in": "Client de passage",
   "paid": "Payé :",
   "download_pdf": "Télécharger le PDF",

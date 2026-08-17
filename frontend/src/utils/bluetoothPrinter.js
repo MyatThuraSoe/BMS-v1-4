@@ -1,5 +1,5 @@
 import { notifySuccess, notifyError } from './notify';
-import { formatCurrency } from './helpers'; 
+import { formatCurrency, formatReceiptDateTime } from './helpers'; 
 
 // Receipt paper width in characters (12 dots/char @ 203dpi ≈ 1.47mm/char).
 // Derived from the paper width in mm set in Shop Info.
@@ -73,7 +73,7 @@ export async function getAvailablePrinters() {
   }
 }
 
-export async function printReceiptViaQZ(receiptData, shopInfo, printerName = null) {
+export async function printReceiptViaQZ(receiptData, shopInfo, printerName = null, timeFormat = '12') {
   if (!isQZSupported()) {
     notifyError("QZ Tray is not loaded.");
     return;
@@ -103,10 +103,10 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
       throw new Error("No printers found. Please install a printer and ensure QZ Tray is running.");
     }
 
-    // Create config (Use 'CP437' or 'GBK' instead of 'UTF-8' if special characters print weirdly)
+    // Create config
     const config = qz.configs.create(targetPrinter, { encoding: 'UTF-8' });
     
-    // Build ESC/POS commands as an array of strings
+    // Build ESC/POS commands as an array of strings (normalized receipt layout)
     let commands = [];
     
     // Initialize printer
@@ -117,27 +117,38 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     commands.push('\x1B\x45\x01'); // Bold on
     commands.push((shopInfo?.shopName || 'My Shop') + '\n');
     commands.push('\x1B\x45\x00'); // Bold off
-    commands.push((shopInfo?.address || '') + '\n');
-    commands.push((shopInfo?.phone || '') + '\n');
+    
+    if (shopInfo?.address) {
+      commands.push((shopInfo.address || '') + '\n');
+    }
+    if (shopInfo?.phone) {
+      commands.push((shopInfo.phone || '') + '\n');
+    }
+    
     const lineWidth = getReceiptLineWidth(shopInfo?.receiptPaperSize);
     commands.push('-'.repeat(lineWidth) + '\n');
     
     // Left align
-    commands.push('\x1B\x61\x00'); 
-    commands.push(`Invoice: ${receiptData.invoiceNumber}\n`);
-    commands.push(`Date: ${new Date(receiptData.saleDate).toLocaleString()}\n`);
+    commands.push('\x1B\x61\x00');
+    commands.push('Invoice No: ' + receiptData.invoiceNumber + '\n');
+    commands.push('Date: ' + formatReceiptDateTime(receiptData.saleDate, timeFormat) + '\n');
+    
     if (receiptData.customerName && receiptData.customerName !== 'Walk-in') {
-      commands.push(`Customer: ${receiptData.customerName}\n`);
+      commands.push('Customer: ' + receiptData.customerName + '\n');
     }
     commands.push('-'.repeat(lineWidth) + '\n');
 
-    // Items (name and total on the SAME line, price right-aligned)
+    // Items (name and total on same line, price right-aligned)
     (receiptData.items || []).forEach((item) => {
       const total = item.totalPrice != null ? Number(item.totalPrice) : (Number(item.unitPrice || 0) * Number(item.quantity || 0));
       const name = `${item.productName} x${item.quantity}`;
       const price = formatCurrency(total);
       const pad = Math.max(1, lineWidth - name.length - price.length);
       commands.push(`${name}${' '.repeat(pad)}${price}\n`);
+      
+      // Unit price on next line
+      const unitPrice = '@' + formatCurrency(item.unitPrice || 0);
+      commands.push('  ' + unitPrice + '\n');
     });
 
     const totalAmount = Number(receiptData.totalAmount || 0);
@@ -147,7 +158,7 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     commands.push('-'.repeat(lineWidth) + '\n');
     commands.push('\x1B\x61\x02'); // Right align
     commands.push('\x1B\x45\x01'); // Bold on
-    commands.push(`Total: ${formatCurrency(totalAmount)}\n`);
+    commands.push(`TOTAL: ${formatCurrency(totalAmount)}\n`);
     commands.push('\x1B\x45\x00'); // Bold off
     commands.push(`Paid: ${formatCurrency(amountPaid)}\n`);
     commands.push(`Change: ${formatCurrency(change)}\n`);

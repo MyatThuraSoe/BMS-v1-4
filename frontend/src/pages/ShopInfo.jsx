@@ -28,6 +28,12 @@ const parsePaperWidth = (v) => {
   return digits || '';
 };
 
+const parseTaxPercentage = (v) => {
+  if (v == null || v === '') return '';
+  const num = Number(v);
+  return Number.isFinite(num) ? String(num) : '';
+};
+
 const ShopInfo = () => {
 
   const { t } = useTranslation('settings');
@@ -52,6 +58,7 @@ const ShopInfo = () => {
     email: '',
     currency: 'USD',
     receiptPaperSize: '58',
+    taxPercentage: '0',
   });
 
   useEffect(() => {
@@ -65,6 +72,7 @@ const ShopInfo = () => {
       email: d.email || '',
       currency: d.currency || 'USD',
       receiptPaperSize: parsePaperWidth(d.receiptPaperSize) || '58',
+      taxPercentage: parseTaxPercentage(d.taxPercentage) || '0',
     });
   }, [data]);
 
@@ -135,6 +143,7 @@ const ShopInfo = () => {
       email: form.email,
       currency: form.currency,
       receiptPaperSize: parsePaperWidth(form.receiptPaperSize) || '58',
+      taxPercentage: parseTaxPercentage(form.taxPercentage) || '0',
     });
     setCurrencyCode(form.currency);
   };
@@ -235,6 +244,19 @@ const ShopInfo = () => {
                 </Button>
               ))}
             </Box>
+
+            <TextField
+              label={t('tax_percentage')}
+              type="number"
+              value={form.taxPercentage}
+              onChange={(e) => setForm((p) => ({ ...p, taxPercentage: parseTaxPercentage(e.target.value) }))}
+              fullWidth
+              helperText={t('tax_percentage_helper')}
+              inputProps={{ inputMode: 'decimal', min: 0, max: 100, step: '0.0001' }}
+              InputProps={{
+                endAdornment: <span>%</span>,
+              }}
+            />
 
             <TextField
               label={t('address')}
