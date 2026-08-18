@@ -55,5 +55,7 @@
   "load_print_failed": "印刷画面を読み込めませんでした。もう一度お試しください。",
   "download_pdf_failed": "PDFをダウンロードできませんでした。",
   "receipt_sent_printer": "レシートをプリンターに送信しました!",
-  "discount": "割引"
+  "discount": "割引",
+  "print_failed": "印刷に失敗しました",
+  "printing": "印刷中"
 }

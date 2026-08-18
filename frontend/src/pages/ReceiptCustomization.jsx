@@ -1,90 +1,153 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import {
   Alert,
   Box,
   Button,
   CircularProgress,
   Divider,
+  FormControlLabel,
   Grid,
   Paper,
+  Slider,
   Stack,
+  Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import { Save as SaveIcon, Preview as PreviewIcon } from '@mui/icons-material';
+import {
+  Save as SaveIcon,
+  FormatAlignLeft,
+  FormatAlignCenter,
+  FormatAlignRight,
+  TextFields as FontSizeIcon,
+  Image as LogoIcon,
+  Tune as TuneIcon,
+  ReceiptLong as ReceiptIcon,
+} from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { receiptCustomizationService, shopInfoService } from '../api/services';
-import { formatReceiptDateTime } from '../utils/helpers';
+import ReceiptDocument from '../components/ReceiptDocument';
+import { getReceiptPreviewWidth } from '../utils/bluetoothPrinter';
 
 const PAPER_SIZES = ['58', '80', '100'];
 const TIME_FORMATS = [
-  { value: '12', label: '12-hour (1:30 pm)' },
-  { value: '24', label: '24-hour (13:30)' },
+  { value: '12', label: '12h' },
+  { value: '24', label: '24h' },
+];
+const FONT_SIZES = [
+  { value: 'small',  label: 'S' },
+  { value: 'normal', label: 'M' },
+  { value: 'large',  label: 'L' },
+];
+const DIVIDER_STYLES = [
+  { value: 'dashed', label: 'rc_divider_dashed' },
+  { value: 'solid',  label: 'rc_divider_solid'  },
+  { value: 'dotted', label: 'rc_divider_dotted' },
+  { value: 'none',   label: 'rc_divider_none'   },
 ];
 
 const defaultCustomization = {
-  headerText: 'Thank you for shopping with us',
-  mainMessage: 'Please keep this receipt for your records.',
-  footerText: 'Thank you for your business!',
-  paperSize: '58',
-  timeFormat: '12',
+  headerText:   'Thank you for shopping with us',
+  mainMessage:  'Please keep this receipt for your records.',
+  footerText:   'Thank you for your business!',
+  paperSize:    '58',
+  timeFormat:   '12',
+  // advanced
+  logoSize:     80,
+  showLogo:     true,
+  showShopName: true,
+  showAddress:  true,
+  showPhone:    true,
+  headerAlign:  'center',
+  fontSize:     'normal',
+  dividerStyle: 'dashed',
+  boldShopName: true,
+  showQRCode:   false,
 };
 
+// ─── Section wrapper ─────────────────────────────────────────────────────────
+const Section = ({ icon, title, children }) => (
+  <Box>
+    <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1.5 }}>
+      <Box sx={{ color: 'primary.main', display: 'flex' }}>{icon}</Box>
+      <Typography variant="subtitle1" fontWeight={600}>{title}</Typography>
+    </Stack>
+    {children}
+  </Box>
+);
+
+// ─── Main component ───────────────────────────────────────────────────────────
 const ReceiptCustomization = () => {
+  const { t } = useTranslation('settings');
   const { isAdmin } = useAuth();
   const queryClient = useQueryClient();
 
   const { data: customizationData, isLoading: loadingCustomization } = useQuery({
     queryKey: ['receipt-customization'],
-    queryFn: () => receiptCustomizationService.get(),
-    enabled: isAdmin(),
+    queryFn:  () => receiptCustomizationService.get(),
+    enabled:  isAdmin(),
   });
 
   const { data: shopInfoData, isLoading: loadingShopInfo } = useQuery({
     queryKey: ['shopInfo-preview'],
-    queryFn: () => shopInfoService.get(),
-    enabled: isAdmin(),
+    queryFn:  () => shopInfoService.get(),
+    enabled:  isAdmin(),
   });
 
   const [form, setForm] = useState(defaultCustomization);
 
+  // populate from server
   useEffect(() => {
     if (customizationData?.data) {
+      const d = customizationData.data;
       setForm({
-        headerText: customizationData.data.headerText ?? defaultCustomization.headerText,
-        mainMessage: customizationData.data.mainMessage || defaultCustomization.mainMessage,
-        footerText: customizationData.data.footerText || defaultCustomization.footerText,
-        paperSize: customizationData.data.paperSize || defaultCustomization.paperSize,
-        timeFormat: customizationData.data.timeFormat || defaultCustomization.timeFormat,
+        headerText:   d.headerText   ?? defaultCustomization.headerText,
+        mainMessage:  d.mainMessage  ?? defaultCustomization.mainMessage,
+        footerText:   d.footerText   ?? defaultCustomization.footerText,
+        paperSize:    d.paperSize    || defaultCustomization.paperSize,
+        timeFormat:   d.timeFormat   || defaultCustomization.timeFormat,
+        logoSize:     d.logoSize     ?? defaultCustomization.logoSize,
+        showLogo:     d.showLogo     ?? defaultCustomization.showLogo,
+        showShopName: d.showShopName ?? defaultCustomization.showShopName,
+        showAddress:  d.showAddress  ?? defaultCustomization.showAddress,
+        showPhone:    d.showPhone    ?? defaultCustomization.showPhone,
+        headerAlign:  d.headerAlign  || defaultCustomization.headerAlign,
+        fontSize:     d.fontSize     || defaultCustomization.fontSize,
+        dividerStyle: d.dividerStyle || defaultCustomization.dividerStyle,
+        boldShopName: d.boldShopName ?? defaultCustomization.boldShopName,
+        showQRCode:   d.showQRCode   ?? defaultCustomization.showQRCode,
       });
     }
   }, [customizationData]);
 
   const upsertMutation = useMutation({
     mutationFn: (payload) => receiptCustomizationService.upsert(payload),
-    onSuccess: async () => {
+    onSuccess:  async () => {
       await queryClient.invalidateQueries({ queryKey: ['receipt-customization'] });
+      await queryClient.invalidateQueries({ queryKey: ['receipt-customization-preview'] });
+      await queryClient.invalidateQueries({ queryKey: ['receipt-customization-pos'] });
     },
   });
 
-  const shopInfo = shopInfoData?.data || {};
-  const bannerText = form.headerText?.trim() ?? '';
-  const mainText = form.mainMessage?.trim() || defaultCustomization.mainMessage;
-  const footerText = form.footerText?.trim() || defaultCustomization.footerText;
-  const paperWidth = Number.parseInt(String(form.paperSize || '58').replace(/\D/g, ''), 10) || 58;
+  const set = useCallback((key, value) => setForm((prev) => ({ ...prev, [key]: value })), []);
 
-  const receiptPreview = useMemo(() => ({
-    shopName: shopInfo.shopName || 'Your Shop',
-    address: shopInfo.address || '123 Market Street',
-    phone: shopInfo.phone || '+1 234 567 890',
-    headerText: bannerText,
-    mainMessage: mainText,
-    footerText: footerText,
-  }), [shopInfo, bannerText, mainText, footerText]);
+  const shopInfo = useMemo(() => shopInfoData?.data || {}, [shopInfoData]);
+
+  // Compute preview container width based on paper size
+  const paperWidthMm  = Math.max(40, parseInt(String(form.paperSize || '58').replace(/\D/g, ''), 10) || 58);
+  const previewPxFull = getReceiptPreviewWidth(form.paperSize);   // full pixel width at 1:1 scale
+  // Clamp to max 360px on screen; use CSS scale transform for accurate sizing
+  const MAX_PREVIEW   = 360;
+  const previewScale  = previewPxFull > MAX_PREVIEW ? MAX_PREVIEW / previewPxFull : 1;
+  const previewContainerW = Math.min(previewPxFull, MAX_PREVIEW);
 
   if (!isAdmin()) {
-    return <Typography color="text.secondary">Not authorized</Typography>;
+    return <Typography color="text.secondary">{t('not_authorized')}</Typography>;
   }
 
   if (loadingCustomization || loadingShopInfo) {
@@ -96,180 +159,304 @@ const ReceiptCustomization = () => {
   }
 
   return (
-    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
-      <Typography variant="h4" gutterBottom>
-        Receipt Customization
-      </Typography>
+    <Box sx={{ maxWidth: 1280, mx: 'auto' }}>
+      <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mb: 0.5 }}>
+        <ReceiptIcon sx={{ color: 'primary.main', fontSize: 28 }} />
+        <Typography variant="h4" fontWeight={700}>{t('rc_title')}</Typography>
+      </Stack>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        Customize the text that appears on printed invoices and preview it before saving.
+        {t('rc_subtitle')}
       </Typography>
 
       <Grid container spacing={3}>
+        {/* ===== LEFT: Controls ===== */}
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>
-            <Stack spacing={2}>
-              <TextField
-                label="Header text"
-                value={form.headerText}
-                onChange={(e) => setForm((prev) => ({ ...prev, headerText: e.target.value }))}
-                fullWidth
-                helperText="Appears above the invoice details. Leave blank to hide."
-              />
+            <Stack spacing={3}>
 
-              <TextField
-                label="Main message"
-                value={form.mainMessage}
-                onChange={(e) => setForm((prev) => ({ ...prev, mainMessage: e.target.value }))}
-                fullWidth
-                multiline
-                minRows={2}
-                helperText="Added near the middle of the receipt"
-              />
-
-              <TextField
-                label="Footer text"
-                value={form.footerText}
-                onChange={(e) => setForm((prev) => ({ ...prev, footerText: e.target.value }))}
-                fullWidth
-                helperText="Shown at the bottom of the receipt"
-              />
-
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Paper size
-                </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {PAPER_SIZES.map((size) => (
-                    <Button
-                      key={size}
-                      variant={form.paperSize === size ? 'contained' : 'outlined'}
-                      onClick={() => setForm((prev) => ({ ...prev, paperSize: size }))}
-                    >
-                      {size} mm
-                    </Button>
-                  ))}
+              {/* --- Text Content --- */}
+              <Section icon={<FontSizeIcon fontSize="small" />} title={t('rc_text_section')}>
+                <Stack spacing={2}>
+                  <TextField
+                    label={t('rc_header_label')}
+                    value={form.headerText}
+                    onChange={(e) => set('headerText', e.target.value)}
+                    fullWidth
+                    helperText={t('rc_header_helper')}
+                  />
+                  <TextField
+                    label={t('rc_main_label')}
+                    value={form.mainMessage}
+                    onChange={(e) => set('mainMessage', e.target.value)}
+                    fullWidth
+                    multiline
+                    minRows={2}
+                    helperText={t('rc_main_helper')}
+                  />
+                  <TextField
+                    label={t('rc_footer_label')}
+                    value={form.footerText}
+                    onChange={(e) => set('footerText', e.target.value)}
+                    fullWidth
+                    helperText={t('rc_footer_helper')}
+                  />
                 </Stack>
-              </Box>
-
-              <Box>
-                <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                  Time format
-                </Typography>
-                <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                  {TIME_FORMATS.map((fmt) => (
-                    <Button
-                      key={fmt.value}
-                      variant={form.timeFormat === fmt.value ? 'contained' : 'outlined'}
-                      onClick={() => setForm((prev) => ({ ...prev, timeFormat: fmt.value }))}
-                    >
-                      {fmt.label}
-                    </Button>
-                  ))}
-                </Stack>
-              </Box>
+              </Section>
 
               <Divider />
 
-              <Button
-                variant="contained"
-                startIcon={upsertMutation.isPending ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
-                onClick={() => upsertMutation.mutate(form)}
-                disabled={upsertMutation.isPending}
-                sx={{ alignSelf: 'flex-start' }}
-              >
-                {upsertMutation.isPending ? 'Saving...' : 'Save customization'}
-              </Button>
+              {/* --- Logo & Header --- */}
+              <Section icon={<LogoIcon fontSize="small" />} title={t('rc_logo_section')}>
+                <Stack spacing={2}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={form.showLogo}
+                        onChange={(e) => set('showLogo', e.target.checked)}
+                        color="primary"
+                      />
+                    }
+                    label={t('rc_show_logo')}
+                  />
 
-              {upsertMutation.isSuccess && (
-                <Alert severity="success">Receipt customization saved.</Alert>
-              )}
-              {upsertMutation.isError && (
-                <Alert severity="error">Failed to save receipt customization.</Alert>
-              )}
+                  {form.showLogo && (
+                    <Box>
+                      <Typography variant="body2" color="text.secondary" gutterBottom>
+                        {t('rc_logo_size')} <strong>{form.logoSize}px</strong>
+                      </Typography>
+                      <Slider
+                        value={form.logoSize}
+                        min={20}
+                        max={160}
+                        step={4}
+                        onChange={(_, val) => set('logoSize', val)}
+                        marks={[
+                          { value: 20, label: '20' },
+                          { value: 80, label: '80' },
+                          { value: 160, label: '160' },
+                        ]}
+                        valueLabelDisplay="auto"
+                      />
+                    </Box>
+                  )}
+
+                  <FormControlLabel
+                    control={<Switch checked={form.showShopName} onChange={(e) => set('showShopName', e.target.checked)} color="primary" />}
+                    label={t('rc_show_shop_name')}
+                  />
+
+                  <FormControlLabel
+                    control={<Switch checked={form.boldShopName} onChange={(e) => set('boldShopName', e.target.checked)} color="primary" />}
+                    label={t('rc_bold_shop_name')}
+                  />
+
+                  <FormControlLabel
+                    control={<Switch checked={form.showQRCode} onChange={(e) => set('showQRCode', e.target.checked)} color="primary" />}
+                    label={t('rc_show_qr')}
+                  />
+
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_header_align')}</Typography>
+                    <ToggleButtonGroup
+                      exclusive
+                      value={form.headerAlign}
+                      onChange={(_, val) => val && set('headerAlign', val)}
+                      size="small"
+                    >
+                      <ToggleButton value="left"   aria-label="align left">  <FormatAlignLeft />  </ToggleButton>
+                      <ToggleButton value="center" aria-label="align center"><FormatAlignCenter /></ToggleButton>
+                      <ToggleButton value="right"  aria-label="align right"> <FormatAlignRight /> </ToggleButton>
+                    </ToggleButtonGroup>
+                  </Box>
+
+                  <FormControlLabel
+                    control={<Switch checked={form.showAddress} onChange={(e) => set('showAddress', e.target.checked)} color="primary" />}
+                    label={t('rc_show_address')}
+                  />
+                  <FormControlLabel
+                    control={<Switch checked={form.showPhone} onChange={(e) => set('showPhone', e.target.checked)} color="primary" />}
+                    label={t('rc_show_phone')}
+                  />
+                </Stack>
+              </Section>
+
+              <Divider />
+
+              {/* --- Layout & Format --- */}
+              <Section icon={<TuneIcon fontSize="small" />} title={t('rc_layout_section')}>
+                <Stack spacing={2}>
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_paper_size')}</Typography>
+                    <Stack direction="row" spacing={1}>
+                      {PAPER_SIZES.map((size) => (
+                        <Button
+                          key={size}
+                          variant={form.paperSize === size ? 'contained' : 'outlined'}
+                          size="small"
+                          onClick={() => set('paperSize', size)}
+                        >
+                          {size} mm
+                        </Button>
+                      ))}
+                    </Stack>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_font_size')}</Typography>
+                    <ToggleButtonGroup
+                      exclusive
+                      value={form.fontSize}
+                      onChange={(_, val) => val && set('fontSize', val)}
+                      size="small"
+                    >
+                      {FONT_SIZES.map((f) => (
+                        <ToggleButton key={f.value} value={f.value} sx={{ px: 2 }}>
+                          {f.label}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_divider_style')}</Typography>
+                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                      {DIVIDER_STYLES.map((s) => (
+                        <Button
+                          key={s.value}
+                          variant={form.dividerStyle === s.value ? 'contained' : 'outlined'}
+                          size="small"
+                          onClick={() => set('dividerStyle', s.value)}
+                        >
+                          {t(s.label)}
+                        </Button>
+                      ))}
+                    </Stack>
+                  </Box>
+
+                  <Box>
+                    <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_time_format')}</Typography>
+                    <ToggleButtonGroup
+                      exclusive
+                      value={form.timeFormat}
+                      onChange={(_, val) => val && set('timeFormat', val)}
+                      size="small"
+                    >
+                      {TIME_FORMATS.map((fmt) => (
+                        <ToggleButton key={fmt.value} value={fmt.value} sx={{ px: 2 }}>
+                          {fmt.label}
+                        </ToggleButton>
+                      ))}
+                    </ToggleButtonGroup>
+                  </Box>
+                </Stack>
+              </Section>
+
+              <Divider />
+
+              {/* --- Save --- */}
+              <Stack spacing={1}>
+                <Button
+                  variant="contained"
+                  size="large"
+                  startIcon={upsertMutation.isPending ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+                  onClick={() => upsertMutation.mutate(form)}
+                  disabled={upsertMutation.isPending}
+                  sx={{ alignSelf: 'flex-start', px: 3 }}
+                >
+                  {upsertMutation.isPending ? t('rc_saving') : t('rc_save')}
+                </Button>
+                {upsertMutation.isSuccess && <Alert severity="success">{t('rc_saved')}</Alert>}
+                {upsertMutation.isError   && <Alert severity="error">{t('rc_save_failed')}</Alert>}
+              </Stack>
+
             </Stack>
           </Paper>
         </Grid>
 
+        {/* ===== RIGHT: Live WYSIWYG Preview ===== */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3 }}>
+          <Paper sx={{ p: 3, position: { md: 'sticky' }, top: { md: 24 } }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
-              <Typography variant="h6">Preview</Typography>
-              <Typography variant="caption" color="text.secondary">{form.paperSize} mm</Typography>
+              <Typography variant="h6" fontWeight={700}>{t('rc_live_preview')}</Typography>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Typography variant="caption" color="text.secondary">
+                  {t('rc_mm_paper', { size: form.paperSize })}
+                </Typography>
+                {previewScale < 1 && (
+                  <Tooltip title={t('rc_scaled_tooltip')}>
+                    <Typography variant="caption" color="warning.main" sx={{ cursor: 'help' }}>
+                      {t('rc_scale_percent', { percent: Math.round(previewScale * 100) })}
+                    </Typography>
+                  </Tooltip>
+                )}
+              </Stack>
             </Stack>
 
+            {/* Paper shadow container */}
             <Box
               sx={{
-                mx: 'auto',
-                width: '100%',
-                maxWidth: `${Math.min(420, (paperWidth / 100) * 300)}px`,
-                border: '1px solid',
-                borderColor: 'divider',
-                borderRadius: 2,
-                background: '#fff',
-                color: '#111',
-                p: 2,
-                fontFamily: 'monospace',
-                fontSize: '0.8rem',
-                boxShadow: 1,
+                display: 'flex',
+                justifyContent: 'center',
+                overflowX: 'auto',
+                pb: 1,
               }}
             >
-              <Box sx={{ textAlign: 'center', mb: 2 }}>
-                <Typography variant="h6" sx={{ fontWeight: 700, fontFamily: 'inherit' }}>
-                  {receiptPreview.shopName}
-                </Typography>
-                <Typography sx={{ fontFamily: 'inherit' }}>{receiptPreview.address}</Typography>
-                <Typography sx={{ fontFamily: 'inherit' }}>{receiptPreview.phone}</Typography>
-                <Typography sx={{ fontFamily: 'inherit', mt: 1, fontWeight: 700 }}>RECEIPT</Typography>
-              </Box>
-
-              <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-
-              {receiptPreview.headerText && (
-                <Typography sx={{ my: 1, fontFamily: 'inherit', textAlign: 'center', fontWeight: 700 }}>
-                  {receiptPreview.headerText}
-                </Typography>
-              )}
-
-              <Typography sx={{ my: 1, fontFamily: 'inherit', textAlign: 'center' }}>
-                {receiptPreview.mainMessage}
-              </Typography>
-
-              <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography sx={{ fontFamily: 'inherit' }}>Invoice No:</Typography>
-                <Typography sx={{ fontFamily: 'inherit' }}>INV-1001</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5 }}>
-                <Typography sx={{ fontFamily: 'inherit' }}>Date</Typography>
-                <Typography sx={{ fontFamily: 'inherit' }}>{formatReceiptDateTime(new Date(), form.timeFormat)}</Typography>
-              </Box>
-
-              <Box sx={{ my: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontFamily: 'inherit' }}>Item</Typography>
-                  <Typography sx={{ fontFamily: 'inherit' }}>Price</Typography>
+              {/* Outer wrapper: controls the visible container width */}
+              <Box
+                sx={{
+                  width:        previewContainerW,
+                  flexShrink:   0,
+                  position:     'relative',
+                }}
+              >
+                {/* Inner content: rendered at full receipt width, then scaled down */}
+                <Box
+                  sx={{
+                    transformOrigin: 'top left',
+                    transform:       `scale(${previewScale})`,
+                    width:           previewPxFull,
+                    height:          `${1 / previewScale * 100}%`,
+                    background:      '#fff',
+                    border:          '1px solid #ccc',
+                    borderRadius:    '2px',
+                    boxShadow:       '0 4px 24px rgba(0,0,0,0.13), 0 1px 4px rgba(0,0,0,0.08)',
+                    px:              '12px',
+                    py:              '16px',
+                    // Simulate receipt paper top/bottom jagged edge via gradient
+                    '&::before': {
+                      content:    '""',
+                      display:    'block',
+                      height:     '8px',
+                      mx:         '-12px',
+                      mb:         '10px',
+                      background: 'repeating-linear-gradient(90deg, #fff 0, #fff 6px, #e0e0e0 6px, #e0e0e0 7px)',
+                    },
+                    '&::after': {
+                      content:    '""',
+                      display:    'block',
+                      height:     '8px',
+                      mx:         '-12px',
+                      mt:         '10px',
+                      background: 'repeating-linear-gradient(90deg, #fff 0, #fff 6px, #e0e0e0 6px, #e0e0e0 7px)',
+                    },
+                  }}
+                >
+                  <ReceiptDocument
+                    receipt={{}}
+                    shopInfo={shopInfo}
+                    customization={form}
+                    isMockPreview={true}
+                  />
                 </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontFamily: 'inherit' }}>Coffee</Typography>
-                  <Typography sx={{ fontFamily: 'inherit' }}>$10.00</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography sx={{ fontFamily: 'inherit' }}>Tea</Typography>
-                  <Typography sx={{ fontFamily: 'inherit' }}>$8.00</Typography>
-                </Box>
-              </Box>
-
-              <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }}>TOTAL</Typography>
-                <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }}>$18.00</Typography>
-              </Box>
-
-              <Box sx={{ textAlign: 'center', mt: 2 }}>
-                <Typography sx={{ fontFamily: 'inherit', fontWeight: 700 }}>{receiptPreview.footerText}</Typography>
               </Box>
             </Box>
+
+            {/* Scale info footnote */}
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', mt: 1 }}>
+              {previewScale >= 1
+                ? t('rc_preview_1to1')
+                : t('rc_preview_scaled', { width: paperWidthMm })}
+            </Typography>
           </Paper>
         </Grid>
       </Grid>

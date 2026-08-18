@@ -32,5 +32,10 @@
   "password_min": "新しいパスワードは6文字以上である必要があります",
   "failed_to_change_password": "パスワードの変更に失敗しました",
   "shop_name_fallback": "BMS",
-  "not_authorized": "権限がありません"
+  "not_authorized": "権限がありません",
+  "printer": "プリンター",
+  "no_printers": "プリンターが見つかりません",
+  "default_chip": "既定",
+  "sent_printer": "レシートをプリンターに送信しました",
+  "print_failed": "印刷に失敗しました"
 }

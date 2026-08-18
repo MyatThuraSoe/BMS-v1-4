@@ -32,5 +32,10 @@
   "password_min": "Le nouveau mot de passe doit contenir au moins 6 caractères",
   "failed_to_change_password": "Échec du changement de mot de passe",
   "shop_name_fallback": "BMS",
-  "not_authorized": "Non autorisé"
+  "not_authorized": "Non autorisé",
+  "printer": "Imprimante",
+  "no_printers": "Aucune imprimante trouvée",
+  "default_chip": "par défaut",
+  "sent_printer": "Reçu envoyé à l'imprimante",
+  "print_failed": "Échec de l'impression"
 }

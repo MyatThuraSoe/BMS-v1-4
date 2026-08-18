@@ -327,7 +327,6 @@ CREATE TABLE shop_info (
     logo_data LONGBLOB NULL,
     logo_type VARCHAR(10) NULL,
     currency VARCHAR(10) NULL,
-    receipt_paper_size VARCHAR(10) NULL,
     tax_percentage DECIMAL(6,4) NOT NULL DEFAULT 0.00,
     version BIGINT NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

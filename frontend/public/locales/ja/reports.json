@@ -91,5 +91,6 @@
   "total_spent": "累計購入額",
   "visits": "来店回数",
   "avg_basket": "平均購入額",
-  "first_purchase": "初回購入日"
+  "first_purchase": "初回購入日",
+  "heatmap_transactions": "取引数"
 }

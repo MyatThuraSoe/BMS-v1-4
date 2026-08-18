@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
 import { Box, Typography, Tabs, Tab, Tooltip, Paper } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { saleService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
 
 const CustomerSpendingHeatmap = ({ customerId }) => {
+  const { t, i18n } = useTranslation('customers');
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
 
@@ -108,7 +110,10 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
   // Calculate month label positions based on the first week they appear in
   const monthLabels = useMemo(() => {
     const labels = [];
-    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const locale = i18n.language || 'en';
+    const monthNames = Array.from({ length: 12 }, (_, m) =>
+      new Intl.DateTimeFormat(locale, { month: 'short' }).format(new Date(2024, m, 1))
+    );
     const firstWeekOfMonth = {};
     
     yearGrid.forEach((week, wIdx) => {
@@ -128,11 +133,11 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
       }
     }
     return labels;
-  }, [yearGrid]);
+  }, [yearGrid, i18n.language]);
 
   return (
     <Paper sx={{ p: 3, overflow: 'hidden' }}>
-      <Typography variant="h6" gutterBottom>Spending Activity</Typography>
+      <Typography variant="h6" gutterBottom>{t('spending_activity')}</Typography>
       
       <Tabs
         value={selectedYear}
@@ -145,7 +150,7 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
       </Tabs>
 
       {isLoading ? (
-        <Typography color="text.secondary">Loading activity data...</Typography>
+        <Typography color="text.secondary">{t('loading_activity')}</Typography>
       ) : (
         <Box sx={{ overflowX: 'auto', pb: 1 }}>
           {/* Month labels - absolutely positioned based on week index */}
@@ -170,23 +175,28 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
           <Box sx={{ display: 'flex' }}>
             {/* Day labels */}
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px', mr: 1, mt: 0 }}>
-              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, idx) => (
-                <Typography 
-                  key={idx} 
-                  variant="caption" 
-                  sx={{ 
-                    height: '12px', 
-                    lineHeight: '12px', 
-                    fontSize: '10px',
-                    color: 'text.secondary',
-                    textAlign: 'right',
-                    width: '24px' // Fixed width prevents layout shifting
-                  }}
-                >
-                  {/* Show only Mon, Wed, Fri like GitHub */}
-                  {idx === 1 ? 'Mon' : idx === 3 ? 'Wed' : idx === 5 ? 'Fri' : ''}
-                </Typography>
-              ))}
+              {(() => {
+                const locale = i18n.language || 'en';
+                const fmt = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+                const dayNames = Array.from({ length: 7 }, (_, i) => fmt.format(new Date(2024, 0, i + 1)));
+                return dayNames.map((name, idx) => (
+                  <Typography
+                    key={idx}
+                    variant="caption"
+                    sx={{
+                      height: '12px',
+                      lineHeight: '12px',
+                      fontSize: '10px',
+                      color: 'text.secondary',
+                      textAlign: 'right',
+                      width: '24px',
+                    }}
+                  >
+                    {/* Show only Mon, Wed, Fri like GitHub */}
+                    {idx === 1 || idx === 3 || idx === 5 ? name : ''}
+                  </Typography>
+                ));
+              })()}
             </Box>
 
             {/* Heatmap grid */}
@@ -198,7 +208,7 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
                       key={dayIdx}
                       title={
                         day.isCurrentYear && day.date
-                          ? `${day.date}: ${day.amount > 0 ? formatCurrency(day.amount) : 'No activity'}`
+                          ? `${day.date}: ${day.amount > 0 ? formatCurrency(day.amount) : t('no_activity')}`
                           : ''
                       }
                       arrow
@@ -227,13 +237,13 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
 
           {/* Legend */}
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', mt: 2, gap: 1 }}>
-            <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>Less</Typography>
+            <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>{t('legend_less')}</Typography>
             <Box sx={{ width: '12px', height: '12px', backgroundColor: '#f0f4f8', borderRadius: '2px', border: '1px solid rgba(0,0,0,0.06)' }} />
             <Box sx={{ width: '12px', height: '12px', backgroundColor: '#bbdefb', borderRadius: '2px' }} />
             <Box sx={{ width: '12px', height: '12px', backgroundColor: '#64b5f6', borderRadius: '2px' }} />
             <Box sx={{ width: '12px', height: '12px', backgroundColor: '#1e88e5', borderRadius: '2px' }} />
             <Box sx={{ width: '12px', height: '12px', backgroundColor: '#0d47a1', borderRadius: '2px' }} />
-            <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>More</Typography>
+            <Typography variant="caption" sx={{ fontSize: '11px', color: 'text.secondary' }}>{t('legend_more')}</Typography>
           </Box>
         </Box>
       )}

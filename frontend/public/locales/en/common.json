@@ -32,5 +32,10 @@
   "password_min": "New password must be at least 6 characters",
   "failed_to_change_password": "Failed to change password",
   "shop_name_fallback": "BMS",
-  "not_authorized": "Not authorized"
+  "not_authorized": "Not authorized",
+  "printer": "Printer",
+  "no_printers": "No printers found",
+  "default_chip": "default",
+  "sent_printer": "Receipt sent to printer",
+  "print_failed": "Print failed"
 }

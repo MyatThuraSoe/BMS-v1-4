@@ -6,6 +6,8 @@
   "phone": "電話番号",
   "email": "メール",
   "address": "住所",
+  "city": "市区町村",
+  "all_cities": "すべての市区町村",
   "created": "作成日",
   "actions": "操作",
   "loading": "読み込み中...",
@@ -47,5 +49,10 @@
   "amount": "金額",
   "status": "ステータス",
   "status_voided": "無効",
-  "status_completed": "完了"
+  "status_completed": "完了",
+  "spending_activity": "支出のアクティビティ",
+  "loading_activity": "アクティビティデータを読み込み中...",
+  "no_activity": "アクティビティなし",
+  "legend_less": "少ない",
+  "legend_more": "多い"
 }

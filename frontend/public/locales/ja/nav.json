@@ -26,5 +26,6 @@
   "audit_logs": "監査ログ",
   "new_entity": "新規{{name}}",
   "edit_entity": "{{name}}の編集",
-  "entity_details": "{{name}}の詳細"
+  "entity_details": "{{name}}の詳細",
+  "receipt_customization": "レシートのカスタマイズ"
 }

@@ -29,10 +29,25 @@ public class ReceiptCustomizationService {
     public ReceiptCustomization upsertCustomization(ReceiptCustomizationRequest request) {
         ReceiptCustomization entity = receiptCustomizationRepository.findTopByOrderByIdAsc().orElseGet(ReceiptCustomization::new);
         entity.setHeaderText(trimToEmpty(request.getHeaderText()));
-        entity.setMainMessage(defaultIfBlank(request.getMainMessage(), "Please keep this receipt for your records."));
+        entity.setMainMessage(trimToEmpty(request.getMainMessage()));
         entity.setFooterText(defaultIfBlank(request.getFooterText(), "Thank you for your business!"));
         entity.setPaperSize(normalizePaperSize(request.getPaperSize()));
         entity.setTimeFormat(normalizeTimeFormat(request.getTimeFormat()));
+
+        // Advanced design fields
+        if (request.getLogoSize() != null) {
+            entity.setLogoSize(Math.max(20, Math.min(200, request.getLogoSize())));
+        }
+        if (request.getShowLogo() != null)    entity.setShowLogo(request.getShowLogo());
+        if (request.getShowShopName() != null) entity.setShowShopName(request.getShowShopName());
+        if (request.getShowAddress() != null) entity.setShowAddress(request.getShowAddress());
+        if (request.getShowPhone() != null)   entity.setShowPhone(request.getShowPhone());
+        if (request.getHeaderAlign() != null) entity.setHeaderAlign(normalizeAlign(request.getHeaderAlign()));
+        if (request.getFontSize() != null)    entity.setFontSize(normalizeFontSize(request.getFontSize()));
+        if (request.getDividerStyle() != null) entity.setDividerStyle(normalizeDividerStyle(request.getDividerStyle()));
+        if (request.getBoldShopName() != null) entity.setBoldShopName(request.getBoldShopName());
+        if (request.getShowQRCode() != null) entity.setShowQRCode(request.getShowQRCode());
+
         return receiptCustomizationRepository.save(entity);
     }
 
@@ -62,51 +77,95 @@ public class ReceiptCustomizationService {
         return "12";
     }
 
+    private String normalizeAlign(String align) {
+        if (align == null) return "center";
+        return switch (align.toLowerCase().trim()) {
+            case "left" -> "left";
+            case "right" -> "right";
+            default -> "center";
+        };
+    }
+
+    private String normalizeFontSize(String fontSize) {
+        if (fontSize == null) return "normal";
+        return switch (fontSize.toLowerCase().trim()) {
+            case "small" -> "small";
+            case "large" -> "large";
+            default -> "normal";
+        };
+    }
+
+    private String normalizeDividerStyle(String style) {
+        if (style == null) return "dashed";
+        return switch (style.toLowerCase().trim()) {
+            case "solid" -> "solid";
+            case "dotted" -> "dotted";
+            case "none" -> "none";
+            default -> "dashed";
+        };
+    }
+
     public static class ReceiptCustomizationRequest {
         private String headerText;
         private String mainMessage;
         private String footerText;
         private String paperSize;
         private String timeFormat;
+        // Advanced
+        private Integer logoSize;
+        private Boolean showLogo;
+        private Boolean showShopName;
+        private Boolean showAddress;
+        private Boolean showPhone;
+        private String headerAlign;
+        private String fontSize;
+        private String dividerStyle;
+        private Boolean boldShopName;
+        private Boolean showQRCode;
 
-        public String getHeaderText() {
-            return headerText;
-        }
+        public String getHeaderText() { return headerText; }
+        public void setHeaderText(String headerText) { this.headerText = headerText; }
 
-        public void setHeaderText(String headerText) {
-            this.headerText = headerText;
-        }
+        public String getMainMessage() { return mainMessage; }
+        public void setMainMessage(String mainMessage) { this.mainMessage = mainMessage; }
 
-        public String getMainMessage() {
-            return mainMessage;
-        }
+        public String getFooterText() { return footerText; }
+        public void setFooterText(String footerText) { this.footerText = footerText; }
 
-        public void setMainMessage(String mainMessage) {
-            this.mainMessage = mainMessage;
-        }
+        public String getPaperSize() { return paperSize; }
+        public void setPaperSize(String paperSize) { this.paperSize = paperSize; }
 
-        public String getFooterText() {
-            return footerText;
-        }
+        public String getTimeFormat() { return timeFormat; }
+        public void setTimeFormat(String timeFormat) { this.timeFormat = timeFormat; }
 
-        public void setFooterText(String footerText) {
-            this.footerText = footerText;
-        }
+        public Integer getLogoSize() { return logoSize; }
+        public void setLogoSize(Integer logoSize) { this.logoSize = logoSize; }
 
-        public String getPaperSize() {
-            return paperSize;
-        }
+        public Boolean getShowLogo() { return showLogo; }
+        public void setShowLogo(Boolean showLogo) { this.showLogo = showLogo; }
 
-        public void setPaperSize(String paperSize) {
-            this.paperSize = paperSize;
-        }
+        public Boolean getShowShopName() { return showShopName; }
+        public void setShowShopName(Boolean showShopName) { this.showShopName = showShopName; }
 
-        public String getTimeFormat() {
-            return timeFormat;
-        }
+        public Boolean getShowAddress() { return showAddress; }
+        public void setShowAddress(Boolean showAddress) { this.showAddress = showAddress; }
 
-        public void setTimeFormat(String timeFormat) {
-            this.timeFormat = timeFormat;
-        }
+        public Boolean getShowPhone() { return showPhone; }
+        public void setShowPhone(Boolean showPhone) { this.showPhone = showPhone; }
+
+        public String getHeaderAlign() { return headerAlign; }
+        public void setHeaderAlign(String headerAlign) { this.headerAlign = headerAlign; }
+
+        public String getFontSize() { return fontSize; }
+        public void setFontSize(String fontSize) { this.fontSize = fontSize; }
+
+        public String getDividerStyle() { return dividerStyle; }
+        public void setDividerStyle(String dividerStyle) { this.dividerStyle = dividerStyle; }
+
+        public Boolean getBoldShopName() { return boldShopName; }
+        public void setBoldShopName(Boolean boldShopName) { this.boldShopName = boldShopName; }
+
+        public Boolean getShowQRCode() { return showQRCode; }
+        public void setShowQRCode(Boolean showQRCode) { this.showQRCode = showQRCode; }
     }
 }

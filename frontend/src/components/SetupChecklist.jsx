@@ -26,12 +26,14 @@ import {
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 // FIXED: Import from your existing services file instead of a non-existent axios file
 import { shopInfoService, categoryService, productService } from '../api/services';
 
 const DISMISSAL_KEY = 'bms_setup_checklist_dismissed';
 
 export default function SetupChecklist() {
+  const { t } = useTranslation('dashboard');
   const navigate = useNavigate();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISSAL_KEY) === 'true'
@@ -65,32 +67,32 @@ export default function SetupChecklist() {
   const steps = useMemo(() => [
     {
       id: 'shop-info',
-      label: 'Set up your shop information',
-      description: 'Add your shop name, address, and logo for receipts',
+      label: t('step_shop_label'),
+      description: t('step_shop_desc'),
       icon: <Store />,
       completed: Boolean(shopInfo?.shopName && shopInfo.shopName.trim() !== ''),
       action: () => navigate('/settings/shop-info'),
-      buttonText: 'Set Up Shop'
+      buttonText: t('step_shop_button')
     },
     {
       id: 'category',
-      label: 'Create your first category',
-      description: 'Organize products into categories like "Beverages" or "Snacks"',
+      label: t('step_category_label'),
+      description: t('step_category_desc'),
       icon: <Category />,
       completed: (categoriesData?.page?.totalElements ?? 0) > 0,
       action: () => navigate('/categories'),
-      buttonText: 'Add Category'
+      buttonText: t('step_category_button')
     },
     {
       id: 'product',
-      label: 'Add your first product',
-      description: 'Start building your inventory',
+      label: t('step_product_label'),
+      description: t('step_product_desc'),
       icon: <Inventory />,
       completed: (productsData?.page?.totalElements ?? 0) > 0,
       action: () => navigate('/products/new'),
-      buttonText: 'Add Product'
+      buttonText: t('step_product_button')
     }
-  ], [shopInfo, categoriesData, productsData, navigate]);
+  ], [shopInfo, categoriesData, productsData, navigate, t]);
 
   const completedCount = steps.filter(s => s.completed).length;
   const progress = (completedCount / steps.length) * 100;
@@ -139,12 +141,12 @@ export default function SetupChecklist() {
       <CardContent>
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} sx={{ flexWrap: 'wrap', gap: 1 }}>
           <Typography variant="h6" fontWeight="bold">
-            {allComplete ? '🎉 Setup Complete!' : '👋 Welcome! Let\'s get you set up'}
+            {allComplete ? t('setup_complete') : t('welcome_title')}
           </Typography>
           <IconButton 
             onClick={handleDismiss} 
             size="small"
-            aria-label="Dismiss setup checklist"
+            aria-label={t('dismiss_aria')}
           >
             <Close />
           </IconButton>
@@ -152,7 +154,7 @@ export default function SetupChecklist() {
 
         {allComplete && (
           <Alert severity="success" sx={{ mb: 2 }}>
-            You're all set! You can now start using the system. This card will disappear automatically.
+            {t('all_set_alert')}
           </Alert>
         )}
 
@@ -171,7 +173,7 @@ export default function SetupChecklist() {
               }} 
             />
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {completedCount} of {steps.length} steps completed
+              {t('steps_completed', { count: completedCount, total: steps.length })}
             </Typography>
           </>
         )}

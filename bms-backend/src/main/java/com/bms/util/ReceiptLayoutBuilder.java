@@ -32,7 +32,7 @@ public class ReceiptLayoutBuilder {
         this.shopInfo = shopInfo;
         this.customization = customization;
         this.currency = shopInfo != null ? shopInfo.getCurrency() : "USD";
-        this.paperWidthMm = parsePaperWidth(customization.getPaperSize() != null ? customization.getPaperSize() : (shopInfo != null ? shopInfo.getReceiptPaperSize() : "58"));
+        this.paperWidthMm = parsePaperWidth(customization.getPaperSize() != null ? customization.getPaperSize() : "58");
         this.lineWidth = Math.max(16, (int) Math.round(this.paperWidthMm * CHARS_PER_MM));
         this.lines = new ArrayList<>();
     }
@@ -44,12 +44,18 @@ public class ReceiptLayoutBuilder {
     public List<String> build() {
         lines.clear();
 
-        // Header: Shop name, address, phone
-        addCenteredLine(shopInfo != null ? shopInfo.getShopName() : "Shop");
-        if (shopInfo != null && shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+        // Header: Shop name, address, phone (respect show toggles)
+        boolean showShopName = customization.getShowShopName() == null || customization.getShowShopName();
+        boolean showAddress  = customization.getShowAddress()  == null || customization.getShowAddress();
+        boolean showPhone    = customization.getShowPhone()    == null || customization.getShowPhone();
+
+        if (showShopName) {
+            addCenteredLine(shopInfo != null ? shopInfo.getShopName() : "Shop");
+        }
+        if (showAddress && shopInfo != null && shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
             addCenteredLine(shopInfo.getAddress());
         }
-        if (shopInfo != null && shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+        if (showPhone && shopInfo != null && shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
             addCenteredLine(shopInfo.getPhone());
         }
 
@@ -74,20 +80,22 @@ public class ReceiptLayoutBuilder {
         addLine("");
         addLine(repeatChar(HORIZONTAL_LINE, lineWidth));
 
-        // Items header (no table header, just items)
+        // Items (4-column: Item, Qty, Price, Amount)
+        int qtyW = 4;
+        int priceW = Math.max(7, formatCurrency(BigDecimal.valueOf(9999999.99)).length());
+        int amountW = Math.max(9, formatCurrency(BigDecimal.valueOf(9999999.99)).length());
+        int gap = 1;
+        int nameW = Math.max(6, lineWidth - qtyW - priceW - amountW - (gap * 3));
+
+        addLine(fourColumnRow("Item", "Qty", "Price", "Amount", nameW, qtyW, priceW, amountW, gap));
         for (var item : receipt.getItems()) {
-            String itemName = item.getProductName();
-            String quantity = "x" + item.getQuantity();
-            String price = formatCurrency(item.getSubtotal());
-            
-            // Format: Name (qty) ... price
-            String leftPart = itemName + " " + quantity;
-            int padding = Math.max(1, lineWidth - leftPart.length() - price.length());
-            addLine(leftPart + repeatChar(" ", padding) + price);
-            
-            // Unit price on next line (indented, smaller)
-            String unitPrice = "@ " + formatCurrency(item.getUnitPrice());
-            addLine("  " + unitPrice);
+            String name = item.getProductName() != null ? item.getProductName() : "";
+            addLine(fourColumnRow(
+                    name,
+                    String.valueOf(item.getQuantity()),
+                    formatCurrency(item.getUnitPrice()),
+                    formatCurrency(item.getSubtotal()),
+                    nameW, qtyW, priceW, amountW, gap));
         }
 
         addLine("");
@@ -182,6 +190,34 @@ public class ReceiptLayoutBuilder {
             sb.append(ch);
         }
         return sb.toString();
+    }
+
+    private String fourColumnRow(String name, String qty, String price, String amount,
+                                 int nameW, int qtyW, int priceW, int amountW, int gap) {
+        String pad = repeatChar(" ", gap);
+        return padRight(truncate(name, nameW), nameW) + pad
+                + padLeft(qty, qtyW) + pad
+                + padLeft(price, priceW) + pad
+                + padLeft(amount, amountW);
+    }
+
+    private String truncate(String text, int max) {
+        if (text == null) return "";
+        if (text.length() <= max) return text;
+        if (max <= 1) return text.substring(0, max);
+        return text.substring(0, max - 1) + ".";
+    }
+
+    private String padLeft(String text, int width) {
+        if (text == null) text = "";
+        if (text.length() >= width) return text;
+        return repeatChar(" ", width - text.length()) + text;
+    }
+
+    private String padRight(String text, int width) {
+        if (text == null) text = "";
+        if (text.length() >= width) return text;
+        return text + repeatChar(" ", width - text.length());
     }
 
     private String formatDateTime(LocalDateTime saleDate) {

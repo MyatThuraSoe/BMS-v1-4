@@ -93,6 +93,10 @@ const CustomerDetails = () => {
               <Typography variant="body1">{customer.address || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
+              <Typography variant="body2" color="text.secondary">{t('city')}</Typography>
+              <Typography variant="body1">{customer.city || t('n_a')}</Typography>
+            </Grid>
+            <Grid item xs={12} md={6}>
               <Typography variant="body2" color="text.secondary">{t('customer_code')}</Typography>
               <Typography variant="body1">{customer.customerCode || t('n_a')}</Typography>
             </Grid>

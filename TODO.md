@@ -4,4 +4,8 @@
 
 
 
- want to add invoice customization feature. add a new page on the menu bar Receipt customization or any name. the user(only admin) can modify which type of text will be add on incoive paper. there would be input fields, shop info datas, and then preview page for different size of incoive paper. the data can be saved as a new entity in backend.
+- in receipt customization page, i want receipt preview more advanced like the user can adjust the size of shop logo.
+
+
+LumiPOS v2 - for future, not now
+- I want to add an attribute "Credit Sale" in sale. If the it is credit sale, the am

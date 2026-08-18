@@ -55,5 +55,7 @@
   "load_print_failed": "ไม่สามารถโหลดหน้าพิมพ์ได้ โปรดลองอีกครั้ง",
   "download_pdf_failed": "ไม่สามารถดาวน์โหลด PDF ได้",
   "receipt_sent_printer": "ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว!",
-  "discount": "ส่วนลด"
+  "discount": "ส่วนลด",
+  "print_failed": "พิมพ์ไม่สำเร็จ",
+  "printing": "กำลังพิมพ์"
 }

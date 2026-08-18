@@ -6,6 +6,8 @@
   "phone": "Phone",
   "email": "Email",
   "address": "Address",
+  "city": "City",
+  "all_cities": "All Cities",
   "created": "Created",
   "actions": "Actions",
   "loading": "Loading...",
@@ -47,5 +49,10 @@
   "amount": "Amount",
   "status": "Status",
   "status_voided": "Voided",
-  "status_completed": "Completed"
+  "status_completed": "Completed",
+  "spending_activity": "Spending Activity",
+  "loading_activity": "Loading activity data...",
+  "no_activity": "No activity",
+  "legend_less": "Less",
+  "legend_more": "More"
 }

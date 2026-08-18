@@ -82,5 +82,6 @@
   "type_to_search": "พิมพ์เพื่อค้นหา...",
   "update": "อัปเดต",
   "update_payment_status_failed": "ไม่สามารถอัปเดตสถานะการชำระเงินได้",
-  "purchase_deleted": "ลบการสั่งซื้อแล้ว"
+  "purchase_deleted": "ลบการสั่งซื้อแล้ว",
+  "payment_status_updated": "อัปเดตสถานะการชำระเงินแล้ว"
 }

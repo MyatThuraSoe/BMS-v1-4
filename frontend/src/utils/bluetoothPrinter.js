@@ -73,7 +73,7 @@ export async function getAvailablePrinters() {
   }
 }
 
-export async function printReceiptViaQZ(receiptData, shopInfo, printerName = null, timeFormat = '12') {
+export async function printReceiptViaQZ(receiptData, shopInfo, printerName = null, timeFormat = '12', paperSize = '58') {
   if (!isQZSupported()) {
     notifyError("QZ Tray is not loaded.");
     return;
@@ -125,7 +125,7 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
       commands.push((shopInfo.phone || '') + '\n');
     }
     
-    const lineWidth = getReceiptLineWidth(shopInfo?.receiptPaperSize);
+    const lineWidth = getReceiptLineWidth(paperSize);
     commands.push('-'.repeat(lineWidth) + '\n');
     
     // Left align
@@ -138,17 +138,26 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
     }
     commands.push('-'.repeat(lineWidth) + '\n');
 
-    // Items (name and total on same line, price right-aligned)
+    // Items (4-column: Item, Qty, Price, Amount)
+    const qtyW = 4;
+    const priceW = Math.max(7, formatCurrency(9999999.99).length);
+    const amountW = Math.max(9, formatCurrency(9999999.99).length);
+    const gap = 1;
+    const nameW = Math.max(6, lineWidth - qtyW - priceW - amountW - gap * 3);
+
+    const padRight = (s, w) => { s = String(s); return s.length >= w ? s : s + ' '.repeat(w - s.length); };
+    const padLeft = (s, w) => { s = String(s); return s.length >= w ? s : ' '.repeat(w - s.length) + s; };
+    const truncate = (s, w) => { s = String(s); if (s.length <= w) return s; return w <= 1 ? s.slice(0, w) : s.slice(0, w - 1) + '.'; };
+    const fourCol = (n, q, p, a) =>
+      padRight(truncate(n, nameW), nameW) + ' '.repeat(gap)
+      + padLeft(q, qtyW) + ' '.repeat(gap)
+      + padLeft(p, priceW) + ' '.repeat(gap)
+      + padLeft(a, amountW);
+
+    commands.push(fourCol('Item', 'Qty', 'Price', 'Amount') + '\n');
     (receiptData.items || []).forEach((item) => {
       const total = item.totalPrice != null ? Number(item.totalPrice) : (Number(item.unitPrice || 0) * Number(item.quantity || 0));
-      const name = `${item.productName} x${item.quantity}`;
-      const price = formatCurrency(total);
-      const pad = Math.max(1, lineWidth - name.length - price.length);
-      commands.push(`${name}${' '.repeat(pad)}${price}\n`);
-      
-      // Unit price on next line
-      const unitPrice = '@' + formatCurrency(item.unitPrice || 0);
-      commands.push('  ' + unitPrice + '\n');
+      commands.push(fourCol(item.productName || '', item.quantity, formatCurrency(item.unitPrice || 0), formatCurrency(total)) + '\n');
     });
 
     const totalAmount = Number(receiptData.totalAmount || 0);

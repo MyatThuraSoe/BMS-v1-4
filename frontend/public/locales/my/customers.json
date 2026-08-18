@@ -6,6 +6,8 @@
   "phone": "ဖုန်း",
   "email": "အီးမေးလ်",
   "address": "လိပ်စာ",
+  "city": "မြို့",
+  "all_cities": "မြို့အားလုံး",
   "created": "ဖန်တီးသည့်ရက်",
   "actions": "လုပ်ဆောင်ချက်များ",
   "loading": "ဝန်ဆွဲနေသည်...",
@@ -47,5 +49,10 @@
   "amount": "ပမာဏ",
   "status": "အခြေအနေ",
   "status_voided": "ပျက်ကွယ်",
-  "status_completed": "ပြီးစီး"
+  "status_completed": "ပြီးစီး",
+  "spending_activity": "အသုံးစရိတ် လုပ်ဆောင်ချက်များ",
+  "loading_activity": "လုပ်ဆောင်ချက်ဒေတာ ဖတ်နေသည်...",
+  "no_activity": "လုပ်ဆောင်ချက် မရှိပါ",
+  "legend_less": "နည်း",
+  "legend_more": "များ"
 }

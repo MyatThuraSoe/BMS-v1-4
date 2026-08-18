@@ -91,5 +91,6 @@
   "total_spent": "Total Spent",
   "visits": "Visits",
   "avg_basket": "Avg Basket",
-  "first_purchase": "First Purchase"
+  "first_purchase": "First Purchase",
+  "heatmap_transactions": "Transactions"
 }

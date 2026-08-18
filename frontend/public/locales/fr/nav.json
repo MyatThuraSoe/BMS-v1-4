@@ -26,5 +26,6 @@
   "audit_logs": "Journaux d'audit",
   "new_entity": "Nouveau {{name}}",
   "edit_entity": "Modifier {{name}}",
-  "entity_details": "Détails de {{name}}"
+  "entity_details": "Détails de {{name}}",
+  "receipt_customization": "Personnalisation du reçu"
 }

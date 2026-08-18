@@ -11,7 +11,6 @@ public class ShopInfoResponse {
     private String phone;
     private String email;
     private String currency;
-    private String receiptPaperSize;
     private BigDecimal taxPercentage;
     private boolean hasLogo;
 
@@ -25,7 +24,6 @@ public class ShopInfoResponse {
                              String phone,
                              String email,
                              String currency,
-                             String receiptPaperSize,
                              BigDecimal taxPercentage,
                              boolean hasLogo) {
         this.id = id;
@@ -35,7 +33,6 @@ public class ShopInfoResponse {
         this.phone = phone;
         this.email = email;
         this.currency = currency;
-        this.receiptPaperSize = receiptPaperSize;
         this.taxPercentage = taxPercentage;
         this.hasLogo = hasLogo;
     }
@@ -94,14 +91,6 @@ public class ShopInfoResponse {
 
     public void setCurrency(String currency) {
         this.currency = currency;
-    }
-
-    public String getReceiptPaperSize() {
-        return receiptPaperSize;
-    }
-
-    public void setReceiptPaperSize(String receiptPaperSize) {
-        this.receiptPaperSize = receiptPaperSize;
     }
 
     public BigDecimal getTaxPercentage() {

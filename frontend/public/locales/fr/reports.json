@@ -91,5 +91,6 @@
   "total_spent": "Total dépensé",
   "visits": "Visites",
   "avg_basket": "Panier moyen",
-  "first_purchase": "Premier achat"
+  "first_purchase": "Premier achat",
+  "heatmap_transactions": "Transactions"
 }

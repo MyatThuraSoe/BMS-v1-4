@@ -16,6 +16,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
+
 @RestController
 @RequestMapping("/api/customers")
 public class CustomerController {
@@ -44,12 +46,20 @@ public class CustomerController {
     @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<Page<CustomerResponse>>> searchCustomers(
-            @RequestParam String keyword,
+            @RequestParam(required = false, defaultValue = "") String keyword,
+            @RequestParam(required = false, defaultValue = "") String city,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         Pageable pageable = PageRequest.of(page, size, Sort.by("firstName"));
-        Page<CustomerResponse> customers = customerService.searchCustomers(keyword, pageable);
+        Page<CustomerResponse> customers = customerService.searchCustomers(keyword, city, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Customers searched successfully", customers));
+    }
+
+    @GetMapping("/cities")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<String>>> getCities() {
+        List<String> cities = customerService.getDistinctCities();
+        return ResponseEntity.ok(new ApiResponse<>(true, "Cities retrieved successfully", cities));
     }
 
     @PostMapping

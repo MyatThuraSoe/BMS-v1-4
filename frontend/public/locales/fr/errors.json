@@ -4,5 +4,6 @@
   "unexpected_error": "Une erreur est survenue de notre côté. Veuillez réessayer dans un instant.",
   "conflict": "Cette action entre en conflit avec des données existantes (par ex. un doublon).",
   "check_form": "Veuillez vérifier le formulaire pour les erreurs.",
-  "generic": "Une erreur est survenue."
+  "generic": "Une erreur est survenue.",
+  "license_required": "Une licence est requise pour utiliser cette application."
 }

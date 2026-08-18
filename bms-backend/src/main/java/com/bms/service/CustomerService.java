@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -29,8 +30,12 @@ public class CustomerService {
         return customerRepository.findActiveCustomers(pageable).map(this::convertToResponse);
     }
 
-    public Page<CustomerResponse> searchCustomers(String keyword, Pageable pageable) {
-        return customerRepository.searchActiveCustomers(keyword, pageable).map(this::convertToResponse);
+    public Page<CustomerResponse> searchCustomers(String keyword, String city, Pageable pageable) {
+        return customerRepository.searchActiveCustomers(keyword, city, pageable).map(this::convertToResponse);
+    }
+
+    public List<String> getDistinctCities() {
+        return customerRepository.findDistinctActiveCities();
     }
 
     public CustomerResponse getCustomerById(Long id) {

@@ -48,10 +48,10 @@ import { formatCurrency, formatReceiptDateTime } from '../utils/helpers';
 
 import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
-
+import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
 import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService } from '../api/services';
-import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter'; // Add QZ Tray import
+import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter';
 import directPrint from '../services/directPrintService';
 
 const POS = () => {
@@ -97,7 +97,8 @@ const POS = () => {
     enabled: true,
   });
 
-  const receiptTimeFormat = customizationData?.data?.timeFormat || '12';
+  const customization     = customizationData?.data || {};
+  const receiptTimeFormat = customization.timeFormat || '12';
 
   // Fetch products
 
@@ -432,7 +433,7 @@ const filteredProducts = products.filter(
     if (lastSale) {
       try {
         // lastSale contains the exact same data structure as the receipt
-        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat);
+        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
         notifySuccess(t('receipt_sent_printer'));
       } catch (err) {
         // Error is already handled inside the utility
@@ -440,27 +441,42 @@ const filteredProducts = products.filter(
     }
   };
 
-    // ✅ NEW: Smart Direct Print (Electron silent -> QZ Tray -> Browser fallback)
+  // Smart Direct Print: uses generatePrintHtml so the printed paper matches the on-screen receipt
   const handleDirectPrint = async () => {
     if (!lastSale?.invoiceNumber) return;
     setIsDirectPrinting(true);
     try {
       if (directPrint.isAvailable()) {
-        // Fetch the formatted HTML from the backend (same as handlePrintReceipt)
-        const htmlContent = await receiptService.getPrintHtml(lastSale.invoiceNumber);
-        // Send directly to Electron's silent printer (null = use system default printer)
-        const result = await directPrint.print(htmlContent, null); 
+        // Fetch logo as base64 so it embeds in the offline HTML document
+        let logoDataUrl = null;
+        if (shopInfo?.hasLogo) {
+          try {
+            const blob = await shopInfoService.getLogo();
+            logoDataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload  = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+          } catch { /* no logo */ }
+        }
+        const paperWidthMm = Math.max(40, parseInt(String(customization.paperSize || '58').replace(/\D/g, ''), 10) || 58);
+        let qrDataUrl = null;
+        if (customization?.showQRCode) {
+          qrDataUrl = await generateQRDataUrl(lastSale.invoiceNumber);
+        }
+        const html = generatePrintHtml(lastSale, shopInfo || {}, customization, logoDataUrl, qrDataUrl);
+        const result = await directPrint.print(html, null, paperWidthMm);
         if (result.success) {
           notifySuccess(t('receipt_sent_printer'));
         } else {
           notifyError(result.error || t('print_failed'));
         }
       } else if (isQZSupported()) {
-        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat);
+        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
         notifySuccess(t('receipt_sent_printer'));
       } else {
-        // Plain browser fallback
-        handlePrintReceipt(); 
+        handlePrintReceipt();
       }
     } catch (err) {
       notifyError(err.message || t('print_failed'));
@@ -870,72 +886,27 @@ const filteredProducts = products.filter(
 
 
 
-      {/* Receipt Dialog */}
+      {/* Receipt Dialog — uses the shared ReceiptDocument so it matches what prints */}
       <Dialog open={showReceiptDialog} onClose={() => setShowReceiptDialog(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{t('receipt')}</DialogTitle>
         <DialogContent>
           {lastSale && (
-            <Box sx={{ p: 2, fontFamily: 'monospace', bgcolor: '#f5f5f5' }}>
-              <Box sx={{ display: 'flex', justifyContent: 'center', mb: 1 }}>
-                <ShopLogo size={56} />
-              </Box>
-              <Typography variant="h6" align="center">{shopInfo?.shopName || t('shop')}</Typography>
-
-              <Typography variant="body2" align="center">{t('invoice_label', { invoice: lastSale.invoiceNumber })}</Typography>
-
-              <Typography variant="body2" align="center">
-                {formatReceiptDateTime(lastSale.saleDate, receiptTimeFormat)}
-              </Typography>
-              {/* <Typography variant="body2" align="center">
-                Cashier: {user?.username}
-              </Typography> */}
-              {lastSale.customerName && lastSale.customerName !== 'Walk-in' && (
-                <Typography variant="body2" align="center">
-                  {t('customer_label', { name: lastSale.customerName })}
-                </Typography>
-              )}
-              <br />
-              {lastSale.items?.map((item, idx) => (
-                <Box key={idx} sx={{ display: 'flex', justifyContent: 'space-between', mb: 0.5, alignItems: 'center' }}>
-                  <Typography variant="body2" noWrap sx={{ minWidth: 0, pr: 1 }}>
-                    {item.productName} x{item.quantity}
-                  </Typography>
-                  <Typography variant="body2" sx={{ fontWeight: 600, flexShrink: 0 }}>
-                    {formatCurrency(item.totalPrice)}
-                  </Typography>
-                </Box>
-              ))}
-              <br />
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{t('subtotal')}</Typography>
-                <Typography variant="body2">{formatCurrency(lastSale.subtotal)}</Typography>
-              </Box>
-              {Number(lastSale.taxAmount) > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2">{t('tax')}</Typography>
-                  <Typography variant="body2">{formatCurrency(lastSale.taxAmount)}</Typography>
-                </Box>
-              )}
-              {Number(lastSale.discountAmount) > 0 && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant="body2">{t('discount')}</Typography>
-                  <Typography variant="body2">-{formatCurrency(lastSale.discountAmount)}</Typography>
-                </Box>
-              )}
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{t('total')}</Typography>
-                <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatCurrency(lastSale.totalAmount)}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{t('paid')}</Typography>
-                <Typography variant="body2">{formatCurrency(lastSale.amountPaid)}</Typography>
-              </Box>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2">{t('change')}</Typography>
-                <Typography variant="body2">
-                  {formatCurrency(lastSale.changeGiven ?? (lastSale.amountPaid - lastSale.totalAmount))}
-                </Typography>
-              </Box>
+            <Box
+              sx={{
+                background: '#fff',
+                border: '1px solid #ddd',
+                borderRadius: '2px',
+                p: '12px',
+                mx: 'auto',
+                maxWidth: 340,
+              }}
+            >
+              <ReceiptDocument
+                receipt={lastSale}
+                shopInfo={shopInfo || {}}
+                customization={customization}
+                isMockPreview={false}
+              />
             </Box>
           )}
         </DialogContent>

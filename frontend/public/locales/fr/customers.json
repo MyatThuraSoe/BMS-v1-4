@@ -6,6 +6,8 @@
   "phone": "Téléphone",
   "email": "E-mail",
   "address": "Adresse",
+  "city": "Ville",
+  "all_cities": "Toutes les villes",
   "created": "Créé",
   "actions": "Actions",
   "loading": "Chargement...",
@@ -47,5 +49,10 @@
   "amount": "Montant",
   "status": "Statut",
   "status_voided": "Annulé",
-  "status_completed": "Terminé"
+  "status_completed": "Terminé",
+  "spending_activity": "Activité de dépenses",
+  "loading_activity": "Chargement des données d'activité...",
+  "no_activity": "Aucune activité",
+  "legend_less": "Moins",
+  "legend_more": "Plus"
 }

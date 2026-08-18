@@ -1,36 +1,33 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export default function ShutdownButton() {
+    const { t } = useTranslation('settings');
     const [shuttingDown, setShuttingDown] = useState(false);
 
     const handleShutdown = async () => {
-        if (!window.confirm('Are you sure you want to shut down LumiPOS?')) {
+        if (!window.confirm(t('shutdown_confirm'))) {
             return;
         }
 
         setShuttingDown(true);
 
         try {
-            // 1. Tell Spring Boot to shut down
             await fetch('/api/system/shutdown', { method: 'POST' });
 
-            // 2. Wait a moment for the server to stop
             await new Promise(resolve => setTimeout(resolve, 1500));
 
-            // 3. Tell Electron to quit
             if (window.electronAPI && window.electronAPI.quitApp) {
                 window.electronAPI.quitApp();
             } else {
-                // Fallback: not running in Electron, just close the tab
-                alert('Server has been stopped. You can close this window.');
+                alert(t('server_stopped'));
                 window.close();
             }
         } catch (error) {
-            // Server already stopped or unreachable
             if (window.electronAPI && window.electronAPI.quitApp) {
                 window.electronAPI.quitApp();
             } else {
-                alert('Server has been stopped. You can close this window.');
+                alert(t('server_stopped'));
             }
         }
     };
@@ -53,7 +50,7 @@ export default function ShutdownButton() {
                 gap: '8px'
             }}
         >
-            {shuttingDown ? '⏳ Shutting Down...' : '🔴 Shut Down POS'}
+            {shuttingDown ? t('shutting_down') : t('shutdown_label')}
         </button>
     );
 }

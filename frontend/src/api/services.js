@@ -278,10 +278,15 @@ export const customerService = {
     return response.data;
   },
 
-  search: async (keyword, page = 0, size = 20) => {
+  search: async (keyword, page = 0, size = 20, city = '') => {
       const response = await apiClient.get(
-          `/customers/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`
+          `/customers/search?keyword=${encodeURIComponent(keyword || '')}&city=${encodeURIComponent(city || '')}&page=${page}&size=${size}`
       );
+      return response.data;
+  },
+
+  getCities: async () => {
+      const response = await apiClient.get('/customers/cities');
       return response.data;
   },
 };

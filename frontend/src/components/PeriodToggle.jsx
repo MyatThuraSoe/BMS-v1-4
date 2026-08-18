@@ -1,7 +1,9 @@
 import { ToggleButtonGroup, ToggleButton } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 
 // Emits { startDate, endDate } as ISO strings for whichever period is selected.
 const PeriodToggle = ({ period, onChange }) => {
+  const { t } = useTranslation('dashboard');
   const handleChange = (e, newPeriod) => {
     if (!newPeriod) return; // ignore deselect-to-nothing
     const today = new Date();
@@ -24,9 +26,9 @@ const PeriodToggle = ({ period, onChange }) => {
 
   return (
     <ToggleButtonGroup value={period} exclusive onChange={handleChange} size="small">
-      <ToggleButton value="today">Today</ToggleButton>
-      <ToggleButton value="week">This Week</ToggleButton>
-      <ToggleButton value="month">This Month</ToggleButton>
+      <ToggleButton value="today">{t('period_today')}</ToggleButton>
+      <ToggleButton value="week">{t('period_week')}</ToggleButton>
+      <ToggleButton value="month">{t('period_month')}</ToggleButton>
     </ToggleButtonGroup>
   );
 };

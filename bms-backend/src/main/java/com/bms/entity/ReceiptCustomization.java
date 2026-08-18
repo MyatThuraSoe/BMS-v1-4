@@ -25,51 +25,85 @@ public class ReceiptCustomization {
     @Column(name = "time_format", length = 10)
     private String timeFormat = "12";
 
-    public Long getId() {
-        return id;
-    }
+    // --- Advanced design fields ---
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    @Column(name = "logo_size")
+    private Integer logoSize = 80;
 
-    public String getHeaderText() {
-        return headerText;
-    }
+    @Column(name = "show_logo")
+    private Boolean showLogo = true;
 
-    public void setHeaderText(String headerText) {
-        this.headerText = headerText;
-    }
+    @Column(name = "show_shop_name")
+    private Boolean showShopName = true;
 
-    public String getMainMessage() {
-        return mainMessage;
-    }
+    @Column(name = "show_address")
+    private Boolean showAddress = true;
 
-    public void setMainMessage(String mainMessage) {
-        this.mainMessage = mainMessage;
-    }
+    @Column(name = "show_phone")
+    private Boolean showPhone = true;
 
-    public String getFooterText() {
-        return footerText;
-    }
+    @Column(name = "header_align", length = 10)
+    private String headerAlign = "center";
 
-    public void setFooterText(String footerText) {
-        this.footerText = footerText;
-    }
+    @Column(name = "font_size", length = 10)
+    private String fontSize = "normal";
 
-    public String getPaperSize() {
-        return paperSize;
-    }
+    @Column(name = "divider_style", length = 10)
+    private String dividerStyle = "dashed";
 
-    public void setPaperSize(String paperSize) {
-        this.paperSize = paperSize;
-    }
+    @Column(name = "bold_shop_name")
+    private Boolean boldShopName = true;
 
-    public String getTimeFormat() {
-        return timeFormat;
-    }
+    @Column(name = "show_qr_code")
+    private Boolean showQRCode = false;
 
-    public void setTimeFormat(String timeFormat) {
-        this.timeFormat = timeFormat;
-    }
+    // --- Getters & Setters ---
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+
+    public String getHeaderText() { return headerText; }
+    public void setHeaderText(String headerText) { this.headerText = headerText; }
+
+    public String getMainMessage() { return mainMessage; }
+    public void setMainMessage(String mainMessage) { this.mainMessage = mainMessage; }
+
+    public String getFooterText() { return footerText; }
+    public void setFooterText(String footerText) { this.footerText = footerText; }
+
+    public String getPaperSize() { return paperSize; }
+    public void setPaperSize(String paperSize) { this.paperSize = paperSize; }
+
+    public String getTimeFormat() { return timeFormat; }
+    public void setTimeFormat(String timeFormat) { this.timeFormat = timeFormat; }
+
+    public Integer getLogoSize() { return logoSize; }
+    public void setLogoSize(Integer logoSize) { this.logoSize = logoSize; }
+
+    public Boolean getShowLogo() { return showLogo; }
+    public void setShowLogo(Boolean showLogo) { this.showLogo = showLogo; }
+
+    public Boolean getShowShopName() { return showShopName; }
+    public void setShowShopName(Boolean showShopName) { this.showShopName = showShopName; }
+
+    public Boolean getShowAddress() { return showAddress; }
+    public void setShowAddress(Boolean showAddress) { this.showAddress = showAddress; }
+
+    public Boolean getShowPhone() { return showPhone; }
+    public void setShowPhone(Boolean showPhone) { this.showPhone = showPhone; }
+
+    public String getHeaderAlign() { return headerAlign; }
+    public void setHeaderAlign(String headerAlign) { this.headerAlign = headerAlign; }
+
+    public String getFontSize() { return fontSize; }
+    public void setFontSize(String fontSize) { this.fontSize = fontSize; }
+
+    public String getDividerStyle() { return dividerStyle; }
+    public void setDividerStyle(String dividerStyle) { this.dividerStyle = dividerStyle; }
+
+    public Boolean getBoldShopName() { return boldShopName; }
+    public void setBoldShopName(Boolean boldShopName) { this.boldShopName = boldShopName; }
+
+    public Boolean getShowQRCode() { return showQRCode; }
+    public void setShowQRCode(Boolean showQRCode) { this.showQRCode = showQRCode; }
 }

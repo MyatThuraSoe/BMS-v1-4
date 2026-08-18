@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { 
   Box, Typography, Paper, Button, Chip, Divider, Stack, Link as MuiLink,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField 
@@ -32,6 +33,7 @@ const TikTokIcon = (props) => (
 
 
 const About = () => {
+  const { t } = useTranslation('about');
   const appVersion = '1.0.0';
   const buildDate = 'August 2025';
 
@@ -46,12 +48,12 @@ const [newKey, setNewKey] = useState('');
 const handleActivateNewKey = async () => {
     const res = await licenseService.activate(newKey.trim());
     if (res.data.data.activated) {
-        notifySuccess('✅ License updated!');
+        notifySuccess(t('license_updated'));
         setKeyDialog(false);
         setNewKey('');
         refetch();
     } else {
-        notifyError(res.data.message || 'Invalid key for this machine');
+        notifyError(res.data.message || t('invalid_key'));
     }
 };
 
@@ -101,19 +103,19 @@ const handleActivateNewKey = async () => {
         </Typography>
 
         <Typography variant="subtitle1" color="text.secondary" sx={{ mb: 2 }}>
-          POS + Retail System
+          {t('tagline')}
         </Typography>
 
         <Stack direction="row" spacing={1} justifyContent="center" flexWrap="wrap" useFlexGap>
           <Chip
             icon={<UpdateIcon />}
-            label={`Version ${appVersion}`}
+            label={t('version_chip', { version: appVersion })}
             color="primary"
             variant="outlined"
             sx={{ fontWeight: 600 }}
           />
           <Chip
-            label={`Built ${buildDate}`}
+            label={t('built_chip', { date: buildDate })}
             variant="outlined"
             sx={{ color: 'text.secondary' }}
           />
@@ -125,10 +127,10 @@ const handleActivateNewKey = async () => {
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
             <Box>
                 <Typography variant="h6" sx={{ fontWeight: 600 }}>
-                    🎫 {lic.plan === 'trial' ? '1-Month Trial' : lic.plan === 'year' ? '1-Year License' : 'Lifetime License'}
+                    🎫 {lic.plan === 'trial' ? t('trial_plan') : lic.plan === 'year' ? t('year_plan') : t('lifetime_plan')}
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
-                    Licensed to: {lic.customer || '—'}
+                    {t('licensed_to', { name: lic.customer || '—' })}
                 </Typography>
             </Box>
             <Box sx={{ textAlign: 'right' }}>
@@ -140,33 +142,33 @@ const handleActivateNewKey = async () => {
                       'warning'
                   }
                   label={
-                      lic.plan === 'lifetime' ? '∞ Lifetime' : 
-                      lic.expired ? 'Expired' :
-                      lic.daysLeft <= 7 ? `${lic.daysLeft} days left ⚠️` :
-                      `${lic.daysLeft} days left`
+                      lic.plan === 'lifetime' ? t('lifetime_badge') : 
+                      lic.expired ? t('expired_badge') :
+                      lic.daysLeft <= 7 ? t('days_left_warning', { count: lic.daysLeft }) :
+                      t('days_left', { count: lic.daysLeft })
                   }
               />
                 <Box>
                     <Button size="small" sx={{ mt: 1 }} onClick={() => setKeyDialog(true)}>
-                        Enter new license key
+                        {t('enter_new_key')}
                     </Button>
                 </Box>
             </Box>
         </Stack>
 
         <Dialog open={keyDialog} onClose={() => setKeyDialog(false)} fullWidth maxWidth="sm">
-            <DialogTitle>Upgrade / Renew License</DialogTitle>
+            <DialogTitle>{t('upgrade_renew')}</DialogTitle>
             <DialogContent>
                 <TextField
                     autoFocus fullWidth multiline minRows={4} sx={{ mt: 1 }}
-                    placeholder="Paste your new license key..."
+                    placeholder={t('paste_key_placeholder')}
                     value={newKey} onChange={(e) => setNewKey(e.target.value)}
                 />
             </DialogContent>
             <DialogActions>
-                <Button onClick={() => setKeyDialog(false)}>Cancel</Button>
+                <Button onClick={() => setKeyDialog(false)}>{t('cancel')}</Button>
                 <Button variant="contained" onClick={handleActivateNewKey} disabled={!newKey.trim()}>
-                    Activate
+                    {t('activate')}
                 </Button>
             </DialogActions>
         </Dialog>
@@ -193,32 +195,26 @@ const handleActivateNewKey = async () => {
           />
           <Box>
             <Typography variant="h5" sx={{ fontWeight: 600 }}>
-              Developed by MegaCode
+              {t('developed_by')}
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Software Development Company
+              {t('dev_company')}
             </Typography>
           </Box>
         </Stack>
 
         <Typography variant="body1" sx={{ mb: 3, lineHeight: 1.8, color: 'text.primary' }}>
-          At <strong>MegaCode Software Development</strong>, we specialize in creating powerful, 
-          customized local software solutions tailored to the unique needs of businesses across Myanmar. 
-          From point-of-sale systems and inventory management to custom ERP solutions, mobile applications, 
-          and web platforms — we build reliable, offline-first applications that empower local businesses 
-          to thrive in the digital age.
+          {t('intro_1')}
         </Typography>
 
         <Typography variant="body1" sx={{ lineHeight: 1.8, color: 'text.primary' }}>
-          Our mission is to deliver modern, user-friendly software that works seamlessly even without 
-          internet connectivity, ensuring your business never stops running. Every product we build is 
-          crafted with care, attention to detail, and a deep understanding of local business requirements.
+          {t('intro_2')}
         </Typography>
 
         <Divider sx={{ my: 3 }} />
 
         <Typography variant="h6" sx={{ fontWeight: 600, mb: 2 }}>
-          Connect With Us
+          {t('connect')}
         </Typography>
 
         <Stack spacing={2}>
@@ -338,20 +334,20 @@ const handleActivateNewKey = async () => {
         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 2 }}>
           <InfoIcon color="primary" />
           <Typography variant="h6" sx={{ fontWeight: 600 }}>
-            What We Build
+            {t('what_we_build')}
           </Typography>
         </Stack>
 
         <Stack spacing={1.5}>
           {[
-            'Point of Sale (POS) Systems',
-            'Inventory & Stock Management',
-            'Custom ERP & Business Software',
-            'Offline-First Desktop Applications',
-            'Mobile Applications (Android/iOS)',
-            'Web Applications & Dashboards',
-            'Database Design & Migration',
-            'Local Network Multi-User Systems',
+            'feat_pos',
+            'feat_inventory',
+            'feat_erp',
+            'feat_offline',
+            'feat_mobile',
+            'feat_web',
+            'feat_db',
+            'feat_network',
           ].map((feature, idx) => (
             <Stack key={idx} direction="row" spacing={1.5} alignItems="center">
               <Box
@@ -364,7 +360,7 @@ const handleActivateNewKey = async () => {
                 }}
               />
               <Typography variant="body2" color="text.secondary">
-                {feature}
+                {t(feature)}
               </Typography>
             </Stack>
           ))}
@@ -378,17 +374,17 @@ const handleActivateNewKey = async () => {
           textAlign="center"
           sx={{ fontStyle: 'italic' }}
         >
-          Need a custom software solution for your business? Let's talk!
+          {t('cta')}
         </Typography>
       </Paper>
 
       {/* Footer */}
       <Box sx={{ mt: 4, textAlign: 'center' }}>
         <Typography variant="caption" color="text.secondary">
-          © {new Date().getFullYear()} MegaCode Software Development. All rights reserved.
+          {t('copyright', { year: new Date().getFullYear() })}
         </Typography>
         <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 0.5 }}>
-          Proudly made in Myanmar 🇲🇲
+          {t('made_in')}
         </Typography>
       </Box>
     </Box>

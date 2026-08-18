@@ -26,5 +26,6 @@
   "audit_logs": "บันทึกการตรวจสอบ",
   "new_entity": "เพิ่ม{{name}}ใหม่",
   "edit_entity": "แก้ไข{{name}}",
-  "entity_details": "รายละเอียด{{name}}"
+  "entity_details": "รายละเอียด{{name}}",
+  "receipt_customization": "ปรับแต่งใบเสร็จ"
 }

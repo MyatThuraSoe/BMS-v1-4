@@ -32,5 +32,10 @@
   "password_min": "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร",
   "failed_to_change_password": "ไม่สามารถเปลี่ยนรหัสผ่านได้",
   "shop_name_fallback": "BMS",
-  "not_authorized": "ไม่มีสิทธิ์"
+  "not_authorized": "ไม่มีสิทธิ์",
+  "printer": "เครื่องพิมพ์",
+  "no_printers": "ไม่พบเครื่องพิมพ์",
+  "default_chip": "ค่าเริ่มต้น",
+  "sent_printer": "ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว",
+  "print_failed": "พิมพ์ไม่สำเร็จ"
 }

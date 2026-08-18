@@ -55,5 +55,7 @@
   "load_print_failed": "Échec du chargement de l'aperçu d'impression. Veuillez réessayer.",
   "download_pdf_failed": "Échec du téléchargement du PDF.",
   "receipt_sent_printer": "Reçu envoyé à l'imprimante !",
-  "discount": "Remise"
+  "discount": "Remise",
+  "print_failed": "Échec de l'impression",
+  "printing": "Impression"
 }

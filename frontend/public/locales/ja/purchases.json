@@ -82,5 +82,6 @@
   "type_to_search": "入力して検索...",
   "update": "更新",
   "update_payment_status_failed": "支払状況の更新に失敗しました",
-  "purchase_deleted": "購入を削除しました"
+  "purchase_deleted": "購入を削除しました",
+  "payment_status_updated": "支払い状況が更新されました"
 }

@@ -91,5 +91,6 @@
   "total_spent": "ยอดใช้จ่ายทั้งหมด",
   "visits": "จำนวนการเข้าชม",
   "avg_basket": "ตะกร้าสินค้าเฉลี่ย",
-  "first_purchase": "การซื้อครั้งแรก"
+  "first_purchase": "การซื้อครั้งแรก",
+  "heatmap_transactions": "รายการขาย"
 }

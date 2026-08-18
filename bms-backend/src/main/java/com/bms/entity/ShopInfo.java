@@ -49,9 +49,6 @@ public class ShopInfo {
     @Column(name = "currency", length = 10)
     private String currency = "USD";
 
-    @Column(name = "receipt_paper_size", length = 10)
-    private String receiptPaperSize = "58";
-
     @Column(name = "tax_percentage", precision = 6, scale = 4)
     private BigDecimal taxPercentage = BigDecimal.ZERO;
 
@@ -128,14 +125,6 @@ public class ShopInfo {
 
     public void setCurrency(String currency) {
         this.currency = currency;
-    }
-
-    public String getReceiptPaperSize() {
-        return receiptPaperSize;
-    }
-
-    public void setReceiptPaperSize(String receiptPaperSize) {
-        this.receiptPaperSize = receiptPaperSize;
     }
 
     public BigDecimal getTaxPercentage() {

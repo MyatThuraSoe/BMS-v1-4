@@ -2,9 +2,19 @@ import { useState, useEffect } from 'react';
 import { Button, MenuItem, TextField, Box, CircularProgress, Chip } from '@mui/material';
 import PrintIcon from '@mui/icons-material/Print';
 import { useSnackbar } from 'notistack';
+import { useTranslation } from 'react-i18next';
 import directPrint from '../services/directPrintService';
 
-const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print' }) => {
+/**
+ * DirectPrintButton
+ *
+ * Props:
+ *   getReceiptHtml  – function that returns the receipt body HTML string
+ *   label           – button label
+ *   paperSizeMm     – paper width in mm (default 80). Must match the receipt customization setting.
+ */
+const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print', paperSizeMm = 80 }) => {
+    const { t } = useTranslation('common');
     const { enqueueSnackbar } = useSnackbar();
     const [printers, setPrinters] = useState([]);
     const [printer, setPrinter] = useState(localStorage.getItem('lumipos_printer') || '');
@@ -27,16 +37,16 @@ const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print' }) => {
         setPrinting(true);
         try {
             const bodyHtml = getReceiptHtml();
-            // Wrap in a complete HTML document optimized for thermal printers (80mm)
+            const mm = Math.max(40, paperSizeMm || 80);
             const fullHtml = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><style>
-  @page { size: 80mm auto; margin: 0; }
+  @page { size: ${mm}mm auto; margin: 0; }
   body {
-    width: 72mm;
+    width: ${mm - 6}mm;
     margin: 0 auto;
-    padding: 4mm;
+    padding: 3mm 3mm 8mm 3mm;
     font-family: 'Courier New', monospace;
-    font-size: 12px;
+    font-size: 13px;
     color: #000;
     background: #fff;
   }
@@ -44,11 +54,11 @@ const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print' }) => {
   img { max-width: 100%; }
 </style></head><body>${bodyHtml}</body></html>`;
 
-            const result = await directPrint.print(fullHtml, printer);
+            const result = await directPrint.print(fullHtml, printer, mm);
             if (result.success) {
-                enqueueSnackbar('Receipt sent to printer', { variant: 'success' });
+                enqueueSnackbar(t('sent_printer'), { variant: 'success' });
             } else {
-                enqueueSnackbar('Print failed: ' + result.error, { variant: 'error' });
+                enqueueSnackbar(t('print_failed') + ': ' + result.error, { variant: 'error' });
             }
         } catch (e) {
             enqueueSnackbar(e.message, { variant: 'error' });
@@ -65,7 +75,7 @@ const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print' }) => {
             <TextField
                 select
                 size="small"
-                label="Printer"
+                label={t('printer')}
                 value={printer}
                 onChange={(e) => {
                     setPrinter(e.target.value);
@@ -74,11 +84,11 @@ const DirectPrintButton = ({ getReceiptHtml, label = 'Direct Print' }) => {
                 sx={{ minWidth: 200 }}
             >
                 {printers.length === 0 && (
-                    <MenuItem disabled>No printers found</MenuItem>
+                    <MenuItem disabled>{t('no_printers')}</MenuItem>
                 )}
                 {printers.map(p => (
                     <MenuItem key={p.name} value={p.name}>
-                        {p.displayName} {p.isDefault && <Chip size="small" label="default" sx={{ ml: 1 }} />}
+                        {p.displayName} {p.isDefault && <Chip size="small" label={t('default_chip')} sx={{ ml: 1 }} />}
                     </MenuItem>
                 ))}
             </TextField>

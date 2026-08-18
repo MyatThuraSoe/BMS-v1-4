@@ -6,6 +6,8 @@
   "phone": "โทรศัพท์",
   "email": "อีเมล",
   "address": "ที่อยู่",
+  "city": "เมือง",
+  "all_cities": "ทุกเมือง",
   "created": "วันที่สร้าง",
   "actions": "การดำเนินการ",
   "loading": "กำลังโหลด...",
@@ -47,5 +49,10 @@
   "amount": "จำนวนเงิน",
   "status": "สถานะ",
   "status_voided": "ยกเลิก",
-  "status_completed": "เสร็จสมบูรณ์"
+  "status_completed": "เสร็จสมบูรณ์",
+  "spending_activity": "กิจกรรมการใช้จ่าย",
+  "loading_activity": "กำลังโหลดข้อมูลกิจกรรม...",
+  "no_activity": "ไม่มีกิจกรรม",
+  "legend_less": "น้อย",
+  "legend_more": "มาก"
 }

@@ -4,5 +4,6 @@
   "unexpected_error": "Something went wrong on our end. Please try again in a moment.",
   "conflict": "That action conflicts with existing data (e.g., a duplicate).",
   "check_form": "Please check the form for errors.",
-  "generic": "Something went wrong."
+  "generic": "Something went wrong.",
+  "license_required": "A license is required to use this application."
 }

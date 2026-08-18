@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'; // ✅ 1. Added useEffect to import
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
-  Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip,
+  Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, MenuItem,
 } from '@mui/material';
 import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as SearchIcon, PersonAddAlt as QuickAddIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -17,6 +17,7 @@ const Customers = () => {
   // ✅ 2. Single, clean declaration of search states (removed the duplicate)
   const [search, setSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [city, setCity] = useState('');
   
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -33,13 +34,18 @@ const Customers = () => {
 
   // ✅ 4. useQuery now depends on debouncedSearch, NOT search
   const { data: customersData, isLoading } = useQuery({
-    queryKey: ['customers', page, size, debouncedSearch],
+    queryKey: ['customers', page, size, debouncedSearch, city],
     queryFn: () => {
-      if (debouncedSearch.trim()) {
-        return customerService.search(debouncedSearch, page, size);
+      if (debouncedSearch.trim() || city) {
+        return customerService.search(debouncedSearch, page, size, city);
       }
       return customerService.getAll(page, size);
     },
+  });
+
+  const { data: citiesData } = useQuery({
+    queryKey: ['customerCities'],
+    queryFn: () => customerService.getCities(),
   });
 
   const deleteMutation = useMutation({
@@ -70,16 +76,30 @@ const Customers = () => {
         )}
       </Box>
 
-      <Paper sx={{ mb: 2 }}>
-        {/* This correctly updates the immediate 'search' state, which triggers the debounce timer */}
-        <TextField 
-          fullWidth 
-          placeholder={t('search_placeholder')} 
-          value={search} 
-          onChange={(e) => setSearch(e.target.value)} 
-          InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }} 
-          size="small" 
-        />
+      <Paper sx={{ mb: 2, p: 2 }}>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <TextField 
+            sx={{ flexGrow: 1, minWidth: 220 }}
+            placeholder={t('search_placeholder')} 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+            InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }} 
+            size="small" 
+          />
+          <TextField
+            select
+            label={t('city')}
+            value={city}
+            onChange={(e) => { setCity(e.target.value); setPage(0); }}
+            size="small"
+            sx={{ minWidth: 180 }}
+          >
+            <MenuItem value="">{t('all_cities')}</MenuItem>
+            {(citiesData?.data || []).map((c) => (
+              <MenuItem key={c} value={c}>{c}</MenuItem>
+            ))}
+          </TextField>
+        </Box>
       </Paper>
 
       <TableContainer component={Paper}>
@@ -89,6 +109,7 @@ const Customers = () => {
               <TableCell>{t('name')}</TableCell>
               <TableCell>{t('phone')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('city')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('address')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('created')}</TableCell>
               {isManager() && <TableCell align="right">{t('actions')}</TableCell>}
@@ -96,9 +117,9 @@ const Customers = () => {
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center">{t('loading')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('loading')}</TableCell></TableRow>
             ) : customers.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center">{t('no_customers_found')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={7} align="center">{t('no_customers_found')}</TableCell></TableRow>
             ) : (
               customers.map((c) => (
                 <TableRow 
@@ -115,6 +136,7 @@ const Customers = () => {
                   </TableCell>
                   <TableCell>{c.phone || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.email || '-'}</TableCell>
+                  <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.city || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.address || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(c.createdAt)}</TableCell>
                   {isManager() && (

@@ -26,12 +26,19 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     Page<Customer> findActiveCustomers(Pageable pageable);
 
     @Query("SELECT c FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL AND " +
-            "(LOWER(c.firstName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+            "(:city IS NULL OR :city = '' OR LOWER(c.city) LIKE LOWER(CONCAT('%', :city, '%'))) AND " +
+            "(:keyword IS NULL OR :keyword = '' OR " +
+            "LOWER(c.firstName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(c.email) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(c.phone) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(c.customerCode) LIKE LOWER(CONCAT('%', :keyword, '%')))")
-    Page<Customer> searchActiveCustomers(@Param("keyword") String keyword, Pageable pageable);
+            "LOWER(c.customerCode) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+            "LOWER(c.city) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+    Page<Customer> searchActiveCustomers(@Param("keyword") String keyword, @Param("city") String city, Pageable pageable);
+
+    @Query("SELECT DISTINCT c.city FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL " +
+            "AND c.city IS NOT NULL AND c.city <> '' ORDER BY c.city")
+    List<String> findDistinctActiveCities();
 
     // REPLACED the broken method with this safe @Query version
     @Query("SELECT c FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL AND " +

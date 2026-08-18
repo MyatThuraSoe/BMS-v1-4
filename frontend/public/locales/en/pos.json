@@ -55,5 +55,7 @@
   "load_print_failed": "Failed to load print view. Please try again.",
   "download_pdf_failed": "Failed to download PDF.",
   "receipt_sent_printer": "Receipt sent to printer!",
-  "discount": "Discount"
+  "discount": "Discount",
+  "print_failed": "Print failed",
+  "printing": "Printing"
 }

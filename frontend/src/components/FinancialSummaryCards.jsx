@@ -1,15 +1,17 @@
 import { Grid, Paper, Typography, Box } from '@mui/material';
+import { useTranslation } from 'react-i18next';
 import { formatCurrency } from '../utils/helpers';
 
 // One consistent row, everywhere this data appears: Revenue -> Gross Profit -> Expenses -> Net Profit.
 // This is the only place that formats/labels these four numbers — Dashboard and Accounting both
 // render this same component so they can't drift into different wording or ordering over time.
 const FinancialSummaryCards = ({ summary, onCardClick }) => {
+  const { t } = useTranslation('dashboard');
   const cards = [
-    { key: 'revenue', label: 'Revenue', value: summary?.totalIncome, color: 'text.primary', changePercent: summary?.incomeChangePercent },
-    { key: 'grossProfit', label: 'Gross Profit', value: summary?.grossProfit, color: 'info.main', changePercent: null },
-    { key: 'expenses', label: 'Expenses', value: summary?.totalExpenses, color: 'error.main', changePercent: null },
-    { key: 'netProfit', label: 'Net Profit', value: summary?.netProfit, color: 'success.main', highlight: true, changePercent: summary?.profitChangePercent },
+    { key: 'revenue', label: t('revenue'), value: summary?.totalIncome, color: 'text.primary', changePercent: summary?.incomeChangePercent },
+    { key: 'grossProfit', label: t('gross_profit'), value: summary?.grossProfit, color: 'info.main', changePercent: null },
+    { key: 'expenses', label: t('expenses'), value: summary?.totalExpenses, color: 'error.main', changePercent: null },
+    { key: 'netProfit', label: t('net_profit'), value: summary?.netProfit, color: 'success.main', highlight: true, changePercent: summary?.profitChangePercent },
   ];
 
   return (
@@ -35,12 +37,12 @@ const FinancialSummaryCards = ({ summary, onCardClick }) => {
                 color={card.changePercent >= 0 ? 'success.main' : 'error.main'}
                 sx={{ display: 'block', mt: 0.5 }}
               >
-                {card.changePercent >= 0 ? '▲' : '▼'} {Math.abs(Number(card.changePercent)).toFixed(1)}% vs previous period
+                {card.changePercent >= 0 ? '▲' : '▼'} {t('vs_previous_period', { value: Math.abs(Number(card.changePercent)).toFixed(1) })}
               </Typography>
             )}
             {card.changePercent == null && summary != null && card.key === 'revenue' && summary.incomeChangePercent == null && (
               <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
-                N/A — no prior period data
+                {t('no_prior_data')}
               </Typography>
             )}
           </Paper>
