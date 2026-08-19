@@ -54,5 +54,19 @@
   "loading_activity": "လုပ်ဆောင်ချက်ဒေတာ ဖတ်နေသည်...",
   "no_activity": "လုပ်ဆောင်ချက် မရှိပါ",
   "legend_less": "နည်း",
-  "legend_more": "များ"
+  "legend_more": "များ",
+  "credit_limit": "ချေးငွေ ကန့်သတ်ချက်",
+  "credit_limit_hint": "အကြွေးမပေးချင်လျှင် ဗလာထားပါ",
+  "current_balance": "လက်ရှိ လက်ကျန်",
+  "available_credit": "ရနိုင်သော အကြွေး",
+  "accounts_receivable": "ရောင်းရန်ငွေစာရင်း",
+  "total_debt": "စုစုပေါင်းအကြွေး",
+  "due_date": "ပေးရမည့်ရက်",
+  "amount_paid": "ပေးချေပြီးငွေ",
+  "balance_due": "ကျန်ရှိငွေ",
+  "payment_status_PAID": "ပေးချေပြီး",
+  "payment_status_PARTIAL": "တစ်စိတ်တစ်ပိုင်း",
+  "payment_status_UNPAID": "မပေးရသေး",
+  "no_ar_history": "အကြွေးစာရင်းမရှိပါ",
+  "overdue": "နောက်ကျနေသည်"
 }

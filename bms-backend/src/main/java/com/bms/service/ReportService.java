@@ -437,6 +437,7 @@ public class ReportService {
         summary.put("cogs", cogs);
         summary.put("grossProfit", grossProfit);
         summary.put("grossMarginPercent", grossMarginPercent);
+        summary.put("outstandingAr", saleRepository.sumOutstandingAr());
         return summary;
     }
 
@@ -551,6 +552,7 @@ public class ReportService {
         });
         response.setExpensesByCategory(summaries);
         response.setTotalRefunds(totalRefunds);
+        response.setOutstandingAr(saleRepository.sumOutstandingAr());
 
         // Compute previous equivalent period
         long periodDays = ChronoUnit.DAYS.between(startDate, endDate);

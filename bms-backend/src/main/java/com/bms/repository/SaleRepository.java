@@ -20,6 +20,10 @@ import java.util.List;
 public interface SaleRepository extends JpaRepository<Sale, Long> {
     Optional<Sale> findByInvoiceNumber(String invoiceNumber);
     boolean existsByInvoiceNumber(String invoiceNumber);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT s FROM Sale s WHERE s.id = :id")
+    Optional<Sale> findByIdForUpdate(@Param("id") Long id);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate DESC")
@@ -182,4 +186,51 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
           AND s.isActive = true AND s.deletedAt IS NULL
         """)
     CashierStats findCashierStatsSince(@Param("cashierId") Long cashierId, @Param("since") LocalDateTime since);
+
+    // ---- Accounts Receivable ----
+
+    // Outstanding credit invoices (paymentStatus != PAID), excluding voided /
+    // soft-deleted rows, sorted by dueDate (earliest first) for aging.
+    @EntityGraph(attributePaths = {"customer"})
+    @Query("""
+        SELECT s FROM Sale s
+        WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
+          AND s.paymentStatus <> com.bms.entity.Sale.PaymentStatus.PAID
+          AND s.isVoided = false
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+          AND (:keyword IS NULL OR :keyword = ''
+               OR LOWER(s.invoiceNumber) LIKE LOWER(CONCAT('%', :keyword, '%'))
+               OR LOWER(s.customerDisplayName) LIKE LOWER(CONCAT('%', :keyword, '%')))
+        ORDER BY
+          CASE WHEN s.dueDate IS NULL THEN 1 ELSE 0 END,
+          s.dueDate ASC,
+          s.saleDate DESC
+        """)
+    Page<Sale> findOutstandingAr(@Param("keyword") String keyword, Pageable pageable);
+
+    // Total money still owed across all outstanding credit invoices
+    // (SUM(totalAmount) - SUM(amountPaid)), matching the findOutstandingAr filter.
+    @Query("""
+        SELECT COALESCE(SUM(s.totalAmount) - COALESCE(SUM(s.amountPaid), 0), 0)
+        FROM Sale s
+        WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
+          AND s.paymentStatus <> com.bms.entity.Sale.PaymentStatus.PAID
+          AND s.isVoided = false
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+        """)
+    BigDecimal sumOutstandingAr();
+
+    // Full AR history (including already-paid invoices) for a single customer.
+    @EntityGraph(attributePaths = {"customer"})
+    @Query("""
+        SELECT s FROM Sale s
+        WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
+          AND s.customer.id = :customerId
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+        ORDER BY s.saleDate DESC
+        """)
+    Page<Sale> findArHistoryByCustomerId(@Param("customerId") Long customerId, Pageable pageable);
 }

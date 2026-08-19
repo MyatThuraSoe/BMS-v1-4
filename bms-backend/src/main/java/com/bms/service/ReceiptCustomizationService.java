@@ -47,6 +47,7 @@ public class ReceiptCustomizationService {
         if (request.getDividerStyle() != null) entity.setDividerStyle(normalizeDividerStyle(request.getDividerStyle()));
         if (request.getBoldShopName() != null) entity.setBoldShopName(request.getBoldShopName());
         if (request.getShowQRCode() != null) entity.setShowQRCode(request.getShowQRCode());
+        if (request.getShowCreditInfo() != null) entity.setShowCreditInfo(request.getShowCreditInfo());
 
         return receiptCustomizationRepository.save(entity);
     }
@@ -122,6 +123,7 @@ public class ReceiptCustomizationService {
         private String dividerStyle;
         private Boolean boldShopName;
         private Boolean showQRCode;
+        private Boolean showCreditInfo;
 
         public String getHeaderText() { return headerText; }
         public void setHeaderText(String headerText) { this.headerText = headerText; }
@@ -167,5 +169,8 @@ public class ReceiptCustomizationService {
 
         public Boolean getShowQRCode() { return showQRCode; }
         public void setShowQRCode(Boolean showQRCode) { this.showQRCode = showQRCode; }
+
+        public Boolean getShowCreditInfo() { return showCreditInfo; }
+        public void setShowCreditInfo(Boolean showCreditInfo) { this.showCreditInfo = showCreditInfo; }
     }
 }

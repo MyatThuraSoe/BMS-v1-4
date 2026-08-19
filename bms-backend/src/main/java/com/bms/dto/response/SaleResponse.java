@@ -1,6 +1,7 @@
 package com.bms.dto.response;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -19,6 +20,9 @@ public class SaleResponse {
     private BigDecimal amountPaid;
     private BigDecimal changeGiven;
     private String paymentMethod;
+    private String saleType;
+    private String paymentStatus;
+    private LocalDate dueDate;
     private String notes;
     private Boolean isVoided;
     private String voidedReason;
@@ -80,6 +84,12 @@ public class SaleResponse {
     public void setChangeGiven(BigDecimal changeGiven) { this.changeGiven = changeGiven; }
     public String getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+    public String getSaleType() { return saleType; }
+    public void setSaleType(String saleType) { this.saleType = saleType; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public Boolean getIsVoided() { return isVoided; }

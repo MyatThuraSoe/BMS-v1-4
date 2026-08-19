@@ -27,5 +27,6 @@
   "audit_logs": "Audit Logs",
   "new_entity": "New {{name}}",
   "edit_entity": "Edit {{name}}",
-  "entity_details": "{{name}} Details"
+  "entity_details": "{{name}} Details",
+  "accounts_receivable": "Accounts Receivable"
 }

@@ -92,5 +92,6 @@
   "visits": "Visits",
   "avg_basket": "Avg Basket",
   "first_purchase": "First Purchase",
-  "heatmap_transactions": "Transactions"
+  "heatmap_transactions": "Transactions",
+  "outstanding_ar": "Outstanding AR (To Collect)"
 }

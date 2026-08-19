@@ -69,12 +69,27 @@ public class SaleController {
     public ResponseEntity<ApiResponse<SaleResponse>> createSale(
             @Valid @RequestBody SaleCreateRequest request,
             Authentication authentication) {
+        // Credit sales are STRICTLY limited to ADMIN/MANAGER at the API level
+        // even though cashiers may post cash sales.
+        if (isCreditRequest(request) && !hasManagerAuthority(authentication)) {
+            throw new org.springframework.security.access.AccessDeniedException("Credit sales are restricted to managers");
+        }
         // Extract cashier ID from authentication
         org.springframework.security.core.userdetails.UserDetails userDetails = 
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
         Long cashierId = userService.findByUsername(userDetails.getUsername()).getId();
         SaleResponse sale = saleService.createSale(request, cashierId);
         return ResponseEntity.status(HttpStatus.CREATED).body(new ApiResponse<>(true, "Sale created successfully", sale));
+    }
+
+    private boolean isCreditRequest(SaleCreateRequest request) {
+        return request.getSaleType() != null && "CREDIT".equalsIgnoreCase(request.getSaleType().trim());
+    }
+
+    private boolean hasManagerAuthority(Authentication authentication) {
+        if (authentication == null || authentication.getAuthorities() == null) return false;
+        return authentication.getAuthorities().stream()
+                .anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_MANAGER".equals(a.getAuthority()));
     }
 
     @PostMapping("/{id}/void")

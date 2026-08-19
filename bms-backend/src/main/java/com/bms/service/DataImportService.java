@@ -96,6 +96,7 @@ public class DataImportService {
                 : "SET FOREIGN_KEY_CHECKS = 1";
 
         String[] tables = {
+            "ar_payments",
             "refund_items", "refunds",
             "sale_items", "sales",
             "purchase_items", "purchases",
@@ -131,7 +132,7 @@ public class DataImportService {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
         String[] tables = {"categories", "customers", "suppliers", "products",
-                "sales", "sale_items", "purchases", "purchase_items"};
+                "sales", "sale_items", "purchases", "purchase_items", "ar_payments"};
         for (String table : tables) {
             try {
                 Long max = jdbcTemplate.queryForObject(

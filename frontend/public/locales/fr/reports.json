@@ -92,5 +92,6 @@
   "visits": "Visites",
   "avg_basket": "Panier moyen",
   "first_purchase": "Premier achat",
-  "heatmap_transactions": "Transactions"
+  "heatmap_transactions": "Transactions",
+  "outstanding_ar": "AR en suspens (à encaisser)"
 }

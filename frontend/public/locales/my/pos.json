@@ -57,5 +57,12 @@
   "receipt_sent_printer": "ပြေစာကို ပရင်တာသို့ ပို့ပြီးပါပြီ။",
   "discount": "လျှော့ဈေး",
   "print_failed": "ပရင့်ထုတ်ရန် မအောင်မြင်ပါ",
-  "printing": "ပရင့်ထုတ်နေသည်"
+  "printing": "ပရင့်ထုတ်နေသည်",
+  "sale_type_cash": "ငွေသား",
+  "sale_type_credit": "အကြွေး",
+  "available_credit": "ရနိုင်သော အကြွေး",
+  "due_date": "ကြွေးကျနေ့",
+  "complete_credit_sale": "အကြွေးရောင်းခြင်း ပြီးဆုံး",
+  "select_credit_customer": "အကြွေးရောင်းရန် စာရင်းသွင်းထားသော ဖောက်သည်ကို ရွေးချယ်ပါ",
+  "enter_due_date": "ကြွေးကျနေ့ကို ထည့်သွင်းပါ"
 }

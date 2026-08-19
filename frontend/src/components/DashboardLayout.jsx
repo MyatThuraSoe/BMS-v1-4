@@ -50,6 +50,7 @@ import {
   Lock as LockIcon,
   CloudUpload as CloudUploadIcon,
   AccountBalanceWallet as CashIcon,
+  Payments as PaymentsIcon,
   Inventory as InventoryIcon,
   Category as CategoryIcon,
   Info as InfoIcon,
@@ -106,6 +107,7 @@ const menuGroups = [
       { textKey: 'reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
       { textKey: 'analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'], color: 'secondary.main' },
       { textKey: 'accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'], color: 'success.main' },
+      { textKey: 'accounts_receivable', icon: <PaymentsIcon />, path: '/accounts-receivable', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
   {

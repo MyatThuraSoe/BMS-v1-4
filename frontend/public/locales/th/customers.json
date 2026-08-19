@@ -54,5 +54,19 @@
   "loading_activity": "กำลังโหลดข้อมูลกิจกรรม...",
   "no_activity": "ไม่มีกิจกรรม",
   "legend_less": "น้อย",
-  "legend_more": "มาก"
+  "legend_more": "มาก",
+  "credit_limit": "วงเงินเครดิต",
+  "credit_limit_hint": "เว้นว่างไว้หากไม่มีเครดิต",
+  "current_balance": "ยอดค้างชำระ",
+  "available_credit": "วงเงินเครดิตคงเหลือ",
+  "accounts_receivable": "บัญชีลูกหนี้",
+  "total_debt": "หนี้รวม",
+  "due_date": "กำหนดชำระ",
+  "amount_paid": "ยอดชำระแล้ว",
+  "balance_due": "ยอดค้างชำระ",
+  "payment_status_PAID": "ชำระแล้ว",
+  "payment_status_PARTIAL": "ชำระบางส่วน",
+  "payment_status_UNPAID": "ยังไม่ชำระ",
+  "no_ar_history": "ไม่มีบิลเครดิต",
+  "overdue": "เกินกำหนด"
 }

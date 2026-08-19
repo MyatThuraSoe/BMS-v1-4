@@ -1,5 +1,6 @@
 package com.bms.controller;
 
+import com.bms.dto.receipt.ArPaymentReceiptDto;
 import com.bms.dto.receipt.ReceiptDto;
 import com.bms.dto.response.ApiResponse;
 import com.bms.entity.ReceiptCustomization;
@@ -20,6 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.text.DecimalFormat;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 
@@ -213,6 +217,127 @@ public class ReceiptController {
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate PNG receipt", e);
         }
+    }
+
+    // AR payment receipt (payment made against a credit invoice)
+    @GetMapping("/ar-payment/{paymentId}/print")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<String> printArPaymentReceiptHtml(@PathVariable Long paymentId) {
+        ArPaymentReceiptDto payment = receiptService.getArPaymentReceipt(paymentId);
+        var shopInfo = shopInfoService.getShopInfo();
+        LogoPayload logoPayload = shopInfoService.getLogoBytesOrNull();
+        ReceiptCustomization customization = receiptCustomizationService.getCustomization();
+
+        String logoDataUri = null;
+        if (logoPayload != null && logoPayload.data() != null) {
+            String mime = logoPayload.contentType() != null ? logoPayload.contentType() : "image/png";
+            logoDataUri = "data:" + mime + ";base64," + Base64.getEncoder().encodeToString(logoPayload.data());
+        }
+
+        int paperWidthMm = paperWidthMm(customization.getPaperSize());
+        String currency = shopInfo != null ? shopInfo.getCurrency() : "USD";
+        int lineWidth = Math.max(16, (int) Math.round(paperWidthMm * (1.0 / 1.47)));
+
+        List<String> lines = new ArrayList<>();
+
+        boolean showShopName = customization.getShowShopName() == null || customization.getShowShopName();
+        boolean showAddress  = customization.getShowAddress()  == null || customization.getShowAddress();
+        boolean showPhone    = customization.getShowPhone()    == null || customization.getShowPhone();
+
+        if (showShopName) {
+            lines.add(centerLine(shopInfo != null ? shopInfo.getShopName() : "Shop", lineWidth));
+        }
+        if (showAddress && shopInfo != null && shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
+            lines.add(centerLine(shopInfo.getAddress(), lineWidth));
+        }
+        if (showPhone && shopInfo != null && shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
+            lines.add(centerLine(shopInfo.getPhone(), lineWidth));
+        }
+
+        lines.add("");
+        lines.add(repeatChar("-", lineWidth));
+        lines.add(centerLine("PAYMENT RECEIPT", lineWidth));
+        lines.add(repeatChar("-", lineWidth));
+        lines.add("Invoice No: " + payment.getInvoiceNumber());
+        lines.add("Date: " + formatPaymentDateTime(payment.getPaymentDate(), customization.getTimeFormat()));
+        if (payment.getCustomerName() != null && !payment.getCustomerName().isBlank()) {
+            lines.add("Customer: " + payment.getCustomerName());
+        }
+        lines.add("Collected By: " + (payment.getRecordedByName() != null ? payment.getRecordedByName() : "-"));
+        lines.add("");
+        lines.add(repeatChar("-", lineWidth));
+        lines.add(totalLine("Amount Paid", payment.getAmount(), lineWidth, currency));
+        lines.add(totalLine("Remaining Credit", payment.getBalanceAfter(), lineWidth, currency));
+        if (payment.getNotes() != null && !payment.getNotes().isBlank()) {
+            lines.add(repeatChar("-", lineWidth));
+            lines.add("Notes: " + payment.getNotes());
+        }
+        lines.add("");
+        lines.add(repeatChar("-", lineWidth));
+        lines.add(centerLine(customization.getFooterText(), lineWidth));
+        lines.add("");
+        lines.add("");
+
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
+        html.append("<style>");
+        html.append("@media print { @page { margin: 0; size: ").append(paperWidthMm).append("mm auto; } body { margin: 0; padding: 2px; } }");
+        html.append("body { font-family: 'Courier New', monospace; font-size: 11px; width: ")
+                .append(paperWidthMm).append("mm; margin: 0 auto; padding: 2px; }");
+        html.append(".line { white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: 1.2; }");
+        html.append("</style></head><body>");
+
+        if (logoDataUri != null) {
+            html.append("<div style='text-align: center; margin-bottom: 2px;'>");
+            html.append("<img src='").append(logoDataUri).append("' style='max-width: 100%; max-height: 40px;' />");
+            html.append("</div>");
+        }
+
+        for (String line : lines) {
+            html.append("<div class='line'>").append(ReceiptLayoutBuilder.escapeHtml(line)).append("</div>");
+        }
+
+        html.append("</body></html>");
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.TEXT_HTML);
+        headers.setContentDispositionFormData("inline", "ar_payment_" + payment.getPaymentId() + ".html");
+
+        return ResponseEntity.ok().headers(headers).body(html.toString());
+    }
+
+    private static String repeatChar(String ch, int count) {
+        if (count <= 0) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < count; i++) {
+            sb.append(ch);
+        }
+        return sb.toString();
+    }
+
+    private static String centerLine(String text, int lineWidth) {
+        if (text == null || text.isEmpty()) return "";
+        int padding = Math.max(0, (lineWidth - text.length()) / 2);
+        return repeatChar(" ", padding) + text;
+    }
+
+    private static String totalLine(String label, BigDecimal amount, int lineWidth, String currency) {
+        String price = fmt(amount, currency);
+        String line = label + ":";
+        int padding = Math.max(1, lineWidth - line.length() - price.length());
+        return line + repeatChar(" ", padding) + price;
+    }
+
+    private static String formatPaymentDateTime(LocalDateTime dateTime, String timeFormat) {
+        if (dateTime == null) return "";
+        String datePart = DateTimeFormatter.ofPattern("yyyy-MM-dd").format(dateTime);
+        if ("24".equalsIgnoreCase(timeFormat)) {
+            return datePart + " " + DateTimeFormatter.ofPattern("HH:mm").format(dateTime);
+        }
+        int hour = dateTime.getHour();
+        int hour12 = hour % 12 == 0 ? 12 : hour % 12;
+        String ampm = hour < 12 ? "am" : "pm";
+        return datePart + " " + hour12 + ":" + String.format("%02d", dateTime.getMinute()) + ampm;
     }
 
     private static String escapeHtml(String s) {

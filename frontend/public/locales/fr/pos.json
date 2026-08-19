@@ -57,5 +57,12 @@
   "receipt_sent_printer": "Reçu envoyé à l'imprimante !",
   "discount": "Remise",
   "print_failed": "Échec de l'impression",
-  "printing": "Impression"
+  "printing": "Impression",
+  "sale_type_cash": "Espèces",
+  "sale_type_credit": "Crédit",
+  "available_credit": "Crédit disponible",
+  "due_date": "Date d'échéance",
+  "complete_credit_sale": "Vente à crédit",
+  "select_credit_customer": "Veuillez sélectionner un client enregistré",
+  "enter_due_date": "Veuillez saisir une date d'échéance"
 }

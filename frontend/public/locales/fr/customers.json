@@ -54,5 +54,19 @@
   "loading_activity": "Chargement des données d'activité...",
   "no_activity": "Aucune activité",
   "legend_less": "Moins",
-  "legend_more": "Plus"
+  "legend_more": "Plus",
+  "credit_limit": "Limite de crédit",
+  "credit_limit_hint": "Laisser vide pour aucun crédit",
+  "current_balance": "Solde actuel",
+  "available_credit": "Crédit disponible",
+  "accounts_receivable": "Comptes clients",
+  "total_debt": "Dette totale",
+  "due_date": "Date d'échéance",
+  "amount_paid": "Montant payé",
+  "balance_due": "Solde dû",
+  "payment_status_PAID": "Payé",
+  "payment_status_PARTIAL": "Partiel",
+  "payment_status_UNPAID": "Impayé",
+  "no_ar_history": "Aucune facture à crédit",
+  "overdue": "En retard"
 }

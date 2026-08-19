@@ -3,6 +3,7 @@ package com.bms.entity;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -48,8 +49,14 @@ public class Customer {
 
     private String country;
 
-    @Column(length = 1000)
+    @Column(name = "notes", length = 1000)
     private String notes;
+
+    @Column(name = "credit_limit", precision = 19, scale = 2)
+    private BigDecimal creditLimit = BigDecimal.ZERO;
+
+    @Column(name = "current_balance", precision = 19, scale = 2)
+    private BigDecimal currentBalance = BigDecimal.ZERO;
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
@@ -116,6 +123,12 @@ public class Customer {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public BigDecimal getCreditLimit() { return creditLimit != null ? creditLimit : BigDecimal.ZERO; }
+    public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit != null ? creditLimit : BigDecimal.ZERO; }
+
+    public BigDecimal getCurrentBalance() { return currentBalance != null ? currentBalance : BigDecimal.ZERO; }
+    public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance != null ? currentBalance : BigDecimal.ZERO; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

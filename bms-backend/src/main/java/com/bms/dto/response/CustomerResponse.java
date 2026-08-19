@@ -20,6 +20,8 @@ public class CustomerResponse {
     private String notes;
     private Boolean isActive;
     private Boolean isQuickAdd;
+    private BigDecimal creditLimit;
+    private BigDecimal currentBalance;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -51,6 +53,10 @@ public class CustomerResponse {
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public Boolean getIsQuickAdd() { return isQuickAdd; }
     public void setIsQuickAdd(Boolean isQuickAdd) { this.isQuickAdd = isQuickAdd; }
+    public BigDecimal getCreditLimit() { return creditLimit; }
+    public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
+    public BigDecimal getCurrentBalance() { return currentBalance; }
+    public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

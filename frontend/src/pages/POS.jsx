@@ -28,6 +28,8 @@ import {
   ListItemButton,
   Switch,
   CircularProgress,
+  ToggleButton,
+  ToggleButtonGroup,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -77,10 +79,14 @@ const POS = () => {
   const [customerNameInput, setCustomerNameInput] = useState(''); // used only when registeredMode is off
   const [customerInputText, setCustomerInputText] = useState('');
   const queryClient = useQueryClient();
-  const { user } = useAuth();
+  const { user, isManager } = useAuth();
   const [verifiedTotals, setVerifiedTotals] = useState(null); // { subtotal, taxAmount, totalAmount } from last successful verify
 
     const [isDirectPrinting, setIsDirectPrinting] = useState(false); // ✅ NEW
+
+  const [saleType, setSaleType] = useState('CASH'); // CASH | CREDIT
+  const [dueDate, setDueDate] = useState('');
+  const canUseCredit = isManager(); // credit sales are ADMIN/MANAGER only
 
   // Shop info (for receipt branding)
   const { data: shopInfoData } = useQuery({
@@ -237,6 +243,8 @@ const filteredProducts = products.filter(
     setCustomerNameInput('');
     setRegisteredMode(false);
     setCashAmount('');
+    setDueDate('');
+    setSaleType('CASH');
     setError('');
     setVerifiedTotals(0);
   };
@@ -259,6 +267,10 @@ const filteredProducts = products.filter(
 
   const displayTotal = verifiedTotals?.totalAmount ?? total;// fallback only before first verify
   const displayChange = cashAmount ? parseFloat(cashAmount) - displayTotal : 0;
+
+  const availableCredit = selectedCustomer
+    ? (selectedCustomer.creditLimit ?? 0) - (selectedCustomer.currentBalance ?? 0)
+    : 0;
 
   const createSaleMutation = useMutation({
     mutationFn: async (saleData) => {
@@ -356,7 +368,17 @@ const filteredProducts = products.filter(
     });
     setCart(sanitizedCart);
 
-    if (!cashAmount || parseFloat(cashAmount) <= 0) {
+    if (saleType === 'CREDIT') {
+      // Credit requires a registered customer + due date before checkout.
+      if (!registeredMode || !selectedCustomer) {
+        setError(t('select_credit_customer'));
+        return;
+      }
+      if (!dueDate) {
+        setError(t('enter_due_date'));
+        return;
+      }
+    } else if (!cashAmount || parseFloat(cashAmount) <= 0) {
       setError(t('enter_cash_amount'));
       return;
     }
@@ -364,6 +386,23 @@ const filteredProducts = products.filter(
   };
 
   const confirmCheckout = () => {
+    if (saleType === 'CREDIT') {
+      const saleData = {
+        items: cart.map((item) => ({
+          productId: item.productId,
+          quantity: parseInt(item.quantity, 10) || 1,
+          price: item.price,
+        })),
+        customerId: selectedCustomer?.id ?? null,
+        customerName: null,
+        paymentMethod: 'CREDIT',
+        saleType: 'CREDIT',
+        dueDate,
+        amountPaid: 0,
+      };
+      createSaleMutation.mutate(saleData);
+      return;
+    }
     const saleData = {
       items: cart.map((item) => ({
         productId: item.productId,
@@ -373,9 +412,20 @@ const filteredProducts = products.filter(
       customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
       customerName: registeredMode ? null : (customerNameInput.trim() || null),
       paymentMethod: 'CASH',
+      saleType: 'CASH',
       amountPaid: parseFloat(cashAmount),
     };
     createSaleMutation.mutate(saleData);
+  };
+
+  const handleSaleTypeChange = (event, newType) => {
+    if (!newType) return;
+    setSaleType(newType);
+    if (newType === 'CREDIT') {
+      setRegisteredMode(true);
+      setCustomerNameInput('');
+    }
+    setError('');
   };
 
   // 👇 FIXED: Fetches HTML with JWT token, then opens it in a new window
@@ -811,23 +861,84 @@ const filteredProducts = products.filter(
                 </Typography>
               </Box>
 
-              <TextField
-                fullWidth
-                label={t('cash_amount')}
-                type="number"
-                value={cashAmount}
-                onChange={(e) => setCashAmount(e.target.value)}
-                size="small"
-                sx={{ mb: 1 }}
-              />
+              {canUseCredit && (
+                <ToggleButtonGroup
+                  size="small"
+                  exclusive
+                  fullWidth
+                  value={saleType}
+                  onChange={handleSaleTypeChange}
+                  sx={{ mb: 1 }}
+                >
+                  <ToggleButton value="CASH" sx={{ flex: 1, textTransform: 'none' }}>
+                    {t('sale_type_cash')}
+                  </ToggleButton>
+                  <ToggleButton value="CREDIT" sx={{ flex: 1, textTransform: 'none' }} color="primary">
+                    {t('sale_type_credit')}
+                  </ToggleButton>
+                </ToggleButtonGroup>
+              )}
 
-              {cashAmount && (
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                  <Typography>{t('change')}</Typography>
-                  <Typography color={change < 0 ? 'error' : 'success'}>
-                    {formatCurrency(displayChange)}
-                  </Typography>
-                </Box>
+              {saleType === 'CREDIT' ? (
+                <>
+                  {selectedCustomer && registeredMode && (
+                    <Box
+                        sx={{
+                          mb: 1,
+                          p: 1,
+                          bgcolor: 'background.default',
+                          borderRadius: 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: 1,
+                        }}
+                      >
+                        <Typography variant="body2" color="text.secondary">
+                          {t('available_credit')}
+                        </Typography>
+
+                        <Typography
+                          variant="body2"
+                          fontWeight={600}
+                          color={availableCredit < 0 ? 'error' : 'primary'}
+                        >
+                          {formatCurrency(availableCredit)}
+                        </Typography>
+                      </Box>
+                  )}
+                  <TextField
+                    fullWidth
+                    label={t('due_date')}
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    size="small"
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ mb: 1 }}
+                  />
+                </>
+              ) : (
+                <>
+                  <TextField
+                    fullWidth
+                    label={t('cash_amount')}
+                    type="number"
+                    value={cashAmount}
+                    onChange={(e) => setCashAmount(e.target.value)}
+                    size="small"
+                    sx={{ mb: 1 }}
+                  />
+
+                  {cashAmount && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                      <Typography>{t('change')}</Typography>
+                      <Typography color={change < 0 ? 'error' : 'success'}>
+                        {formatCurrency(displayChange)}
+                      </Typography>
+                    </Box>
+                  )}
+                </>
               )}
 
               <Button
@@ -838,7 +949,7 @@ const filteredProducts = products.filter(
                 disabled={cart.length === 0}
                 sx={{ py: 1.75, fontSize: '1.05rem', mt: 1 }}
               >
-                {t('checkout')}
+                {saleType === 'CREDIT' ? t('complete_credit_sale') : t('checkout')}
               </Button>
               <Button
                 fullWidth
@@ -860,12 +971,21 @@ const filteredProducts = products.filter(
         <DialogContent>
           <Typography>{t('items_count', { count: cart.length })}</Typography>
           <Typography>{t('total')}: {formatCurrency(displayTotal)}</Typography>
-          <Typography>{t('cash_label')} {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
-          <Typography>{t('change')} {formatCurrency(displayChange)}</Typography>
+          {saleType === 'CREDIT' ? (
+            <>
+              <Typography>{t('sale_type_credit')}</Typography>
+              <Typography>{t('due_date')}: {dueDate}</Typography>
+            </>
+          ) : (
+            <>
+              <Typography>{t('cash_label')} {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
+              <Typography>{t('change')} {formatCurrency(displayChange)}</Typography>
+            </>
+          )}
           {selectedCustomer && (
             <Typography>{t('customer_label', { name: `${selectedCustomer.firstName} ${selectedCustomer.lastName}` })}</Typography>
           )}
-          {parseFloat(cashAmount) < displayTotal && (
+          {saleType !== 'CREDIT' && parseFloat(cashAmount) < displayTotal && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) })}
             </Alert>
@@ -877,7 +997,7 @@ const filteredProducts = products.filter(
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
-            disabled={parseFloat(cashAmount) < displayTotal}
+            disabled={saleType === 'CREDIT' ? false : parseFloat(cashAmount) < displayTotal}
           >
             {t('confirm')}
           </Button>

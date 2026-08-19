@@ -92,5 +92,6 @@
   "visits": "လာရောက်ဝယ်ယူမှု အကြိမ်ရေ",
   "avg_basket": "ပျမ်းမျှဝယ်ယူမှုပမာဏ",
   "first_purchase": "ပထမဆုံးဝယ်ယူသည့်ရက်",
-  "heatmap_transactions": "အရောင်းအဝယ်များ"
+  "heatmap_transactions": "အရောင်းအဝယ်များ",
+  "outstanding_ar": "ရောင်းရန်ငွေ (ကောက်ခံရမည့်)"
 }

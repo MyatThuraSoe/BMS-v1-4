@@ -54,5 +54,19 @@
   "loading_activity": "Loading activity data...",
   "no_activity": "No activity",
   "legend_less": "Less",
-  "legend_more": "More"
+  "legend_more": "More",
+  "credit_limit": "Credit Limit",
+  "credit_limit_hint": "Leave blank for no credit",
+  "current_balance": "Current Balance",
+  "available_credit": "Available Credit",
+  "accounts_receivable": "Accounts Receivable",
+  "total_debt": "Total Debt",
+  "due_date": "Due Date",
+  "amount_paid": "Amount Paid",
+  "balance_due": "Balance Due",
+  "payment_status_PAID": "Paid",
+  "payment_status_PARTIAL": "Partial",
+  "payment_status_UNPAID": "Unpaid",
+  "no_ar_history": "No credit invoices",
+  "overdue": "Overdue"
 }

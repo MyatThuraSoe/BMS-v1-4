@@ -17,6 +17,9 @@ public class AccountingSummaryResponse {
     private BigDecimal incomeChangePercent;
     private BigDecimal profitChangePercent;
 
+    /** Point-in-time total still owed on outstanding credit invoices. */
+    private BigDecimal outstandingAr = BigDecimal.ZERO;
+
     public BigDecimal getPreviousPeriodProfit() {
         return previousPeriodProfit;
     }
@@ -63,6 +66,8 @@ public class AccountingSummaryResponse {
     public void setExpensesByCategory(List<ExpenseCategorySummary> expensesByCategory) { this.expensesByCategory = expensesByCategory; }
     public BigDecimal getTotalRefunds() { return totalRefunds; }
     public void setTotalRefunds(BigDecimal totalRefunds) { this.totalRefunds = totalRefunds; }
+    public BigDecimal getOutstandingAr() { return outstandingAr; }
+    public void setOutstandingAr(BigDecimal outstandingAr) { this.outstandingAr = outstandingAr; }
 
     public static class ExpenseCategorySummary {
         private String category;

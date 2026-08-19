@@ -21,6 +21,7 @@ const CustomerForm = () => {
       email: '',
       address: '',
       city: '',
+      creditLimit: '',
   });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -38,6 +39,7 @@ const CustomerForm = () => {
           email: c.email || '',
           address: c.address || '',
           city: c.city || '',
+          creditLimit: c.creditLimit != null ? String(c.creditLimit) : '',
       });
     }
   }, [existingCustomer]);
@@ -73,6 +75,7 @@ const CustomerForm = () => {
         phone: formData.phone,
         address: formData.address,
         city: formData.city,
+        creditLimit: formData.creditLimit === '' ? null : parseFloat(formData.creditLimit),
     };
 
     saveMutation.mutate(customerRequest);
@@ -105,6 +108,17 @@ const CustomerForm = () => {
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('city')} name="city" value={formData.city} onChange={(e) => setFormData({ ...formData, city: e.target.value })} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label={t('credit_limit')}
+                name="creditLimit"
+                type="number"
+                value={formData.creditLimit}
+                onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
+                helperText={t('credit_limit_hint')}
+              />
             </Grid>
             <Grid item xs={12}>
               <Button type="submit" variant="contained" disabled={saveMutation.isPending}>

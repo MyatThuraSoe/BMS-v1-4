@@ -39,6 +39,22 @@ public class SequenceService {
                 + String.format("%03d", next);
     }
 
+    /**
+     * Credit invoices share the SAME locked per-day sequence row as cash
+     * invoices (prefixes differ so numbers never collide) — e.g.
+     * CR-20260819-001. Keeps the atomic lock guarantee and a single
+     * chronological counter for easy reporting.
+     */
+    @Transactional
+    public String nextCreditInvoiceNumber() {
+        LocalDate today = LocalDate.now();
+        InvoiceSequence seq = lockOrCreateInvoice(today);
+        int next = (seq.getLastNumber() == null ? 0 : seq.getLastNumber()) + 1;
+        seq.setLastNumber(next);
+        return "CR-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+                + "-" + String.format("%03d", next);
+    }
+
     @Transactional
     public String nextPurchaseNumber() {
         LocalDate today = LocalDate.now();

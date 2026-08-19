@@ -69,6 +69,9 @@ public class CustomerService {
         customer.setZipCode(request.getZipCode());
         customer.setCountry(request.getCountry());
         customer.setNotes(request.getNotes());
+        customer.setCreditLimit(request.getCreditLimit() != null
+                ? request.getCreditLimit().setScale(2, java.math.RoundingMode.HALF_UP)
+                : java.math.BigDecimal.ZERO);
 
         Customer savedCustomer = customerRepository.save(customer);
 
@@ -111,6 +114,9 @@ public class CustomerService {
         customer.setZipCode(request.getZipCode());
         customer.setCountry(request.getCountry());
         customer.setNotes(request.getNotes());
+        if (request.getCreditLimit() != null) {
+            customer.setCreditLimit(request.getCreditLimit().setScale(2, java.math.RoundingMode.HALF_UP));
+        }
 
         Customer updatedCustomer = customerRepository.save(customer);
 
@@ -175,6 +181,8 @@ public class CustomerService {
         response.setNotes(customer.getNotes());
         response.setIsActive(customer.getIsActive());
         response.setIsQuickAdd(customer.getIsQuickAdd());
+        response.setCreditLimit(customer.getCreditLimit());
+        response.setCurrentBalance(customer.getCurrentBalance());
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());
         return response;

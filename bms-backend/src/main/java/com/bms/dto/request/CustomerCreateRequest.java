@@ -1,7 +1,9 @@
 package com.bms.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import java.math.BigDecimal;
 import java.util.List;
 
 public class CustomerCreateRequest {
@@ -21,6 +23,12 @@ public class CustomerCreateRequest {
     private String zipCode;
     private String country;
     private String notes;
+
+    @DecimalMin(value = "0.00", message = "Credit limit cannot be negative")
+    private BigDecimal creditLimit;
+
+    public BigDecimal getCreditLimit() { return creditLimit; }
+    public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
 
     public String getFirstName() { return firstName; }
     public void setFirstName(String firstName) { this.firstName = firstName; }

@@ -92,5 +92,6 @@
   "visits": "来店回数",
   "avg_basket": "平均購入額",
   "first_purchase": "初回購入日",
-  "heatmap_transactions": "取引数"
+  "heatmap_transactions": "取引数",
+  "outstanding_ar": "未回収の売掛金（回収予定額）"
 }

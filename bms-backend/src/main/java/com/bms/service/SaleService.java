@@ -6,6 +6,7 @@ import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.response.*;
 import com.bms.entity.*;
 import com.bms.exception.BusinessException;
+import com.bms.exception.InsufficientCreditException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -146,41 +147,66 @@ public class SaleService {
             throw new BusinessException("Sale must have at least one item");
         }
 
-        // Generate invoice number
-        String invoiceNumber = generateInvoiceNumber();
+        Sale.SaleType saleType = resolveSaleType(request.getSaleType());
+
+        // Credit sales REQUIRE a registered customer and a due date.
+        if (saleType == Sale.SaleType.CREDIT && request.getCustomerId() == null) {
+            throw new IllegalArgumentException("error.credit.customer.required");
+        }
+        if (saleType == Sale.SaleType.CREDIT && request.getDueDate() == null) {
+            throw new IllegalArgumentException("error.credit.dueDate.required");
+        }
+        if (saleType == Sale.SaleType.CASH
+                && (request.getAmountPaid() == null || request.getAmountPaid().compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new BusinessException("Amount paid is required and must be positive for cash sales");
+        }
+
+        // Credit invoices get a CR- prefixed, per-day locked sequence number.
+        String invoiceNumber = saleType == Sale.SaleType.CREDIT
+                ? sequenceService.nextCreditInvoiceNumber()
+                : generateInvoiceNumber();
 
         Sale sale = new Sale();
         sale.setInvoiceNumber(invoiceNumber);
         sale.setCashierId(cashierId);
         sale.setSaleDate(LocalDateTime.now());
         sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        sale.setSaleType(saleType);
+        sale.setPaymentStatus(saleType == Sale.SaleType.CREDIT
+                ? Sale.PaymentStatus.UNPAID : Sale.PaymentStatus.PAID);
+        sale.setDueDate(saleType == Sale.SaleType.CREDIT ? request.getDueDate() : null);
         sale.setNotes(request.getNotes());
         sale.setIsVoided(false);
 
-        // Cash sales MUST belong to an open cash shift — otherwise shift
-        // totals and closing amounts can never reconcile.
-        if (sale.getPaymentMethod() == Sale.PaymentMethod.CASH) {
-            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
-                .orElseThrow(() -> new BusinessException(
-                    "No open cash shift. Please open a shift before recording cash sales."));
-            sale.setCashShiftId(openShift.getId());
-        }
-
-        // Set customer: registered (by ID), quick-typed name, or Walk-in — exactly one of these three
-        if (request.getCustomerId() != null) {
+        // Customer resolution. Credit sales lock the customer row with
+        // PESSIMISTIC_WRITE from the start so concurrent credit sales
+        // serialize on this customer and never race currentBalance.
+        Customer creditCustomer = null;
+        if (saleType == Sale.SaleType.CREDIT) {
+            creditCustomer = customerRepository.findByIdForUpdate(request.getCustomerId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
+            if (!Boolean.TRUE.equals(creditCustomer.getIsActive()) || creditCustomer.getDeletedAt() != null) {
+                throw new ResourceNotFoundException("Customer not found: " + request.getCustomerId());
+            }
+            sale.setCustomer(creditCustomer);
+            sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
+        } else if (request.getCustomerId() != null) {
             Customer customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
             sale.setCustomer(customer);
-            String contact = customer.getPhone() != null ? customer.getPhone()
-                    : (customer.getEmail() != null ? customer.getEmail() : null);
-            sale.setCustomerDisplayName(
-                customer.getFirstName() + " " + customer.getLastName() +
-                (contact != null ? " (" + contact + ")" : "")
-            );
+            sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
         } else if (request.getCustomerName() != null && !request.getCustomerName().isBlank()) {
             sale.setCustomerDisplayName(request.getCustomerName().trim());
         } else {
             sale.setCustomerDisplayName("Walk-in");
+        }
+
+        // Cash sales MUST belong to an open cash shift — credit sales bypass it.
+        if (saleType == Sale.SaleType.CASH) {
+            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
+                .orElseThrow(() -> new BusinessException(
+                    "No open cash shift. Please open a shift before recording cash sales."));
+            sale.setCashShiftId(openShift.getId());
         }
 
         BigDecimal subtotal = BigDecimal.ZERO;
@@ -201,7 +227,6 @@ public class SaleService {
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
-
 
             SaleItem item = new SaleItem();
             item.setSale(sale);
@@ -225,28 +250,65 @@ public class SaleService {
         sale.setSubtotal(subtotal);
         sale.setTaxAmount(taxAmount);
         sale.setDiscountAmount(BigDecimal.ZERO);
-        
+
         BigDecimal totalAmount = subtotal.add(taxAmount);
         sale.setTotalAmount(totalAmount);
-        sale.setAmountPaid(request.getAmountPaid());
-        
-        BigDecimal changeGiven = request.getAmountPaid().subtract(totalAmount);
-        if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException("Amount paid (" + request.getAmountPaid() + 
-                ") is less than total amount (" + totalAmount + ")");
+
+        if (saleType == Sale.SaleType.CREDIT) {
+            // Credit-limit check BEFORE persisting anything
+            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
+            if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
+                throw new InsufficientCreditException(
+                    "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+            }
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+        } else {
+            sale.setAmountPaid(request.getAmountPaid());
+
+            BigDecimal changeGiven = request.getAmountPaid().subtract(totalAmount);
+            if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("Amount paid (" + request.getAmountPaid() +
+                    ") is less than total amount (" + totalAmount + ")");
+            }
+            sale.setChangeGiven(changeGiven);
         }
-        sale.setChangeGiven(changeGiven);
 
         Sale savedSale = saleRepository.save(sale);
+
+        // Credit sales raise the customer's outstanding balance by the full
+        // invoice total (same transaction, customer row already locked).
+        if (saleType == Sale.SaleType.CREDIT) {
+            creditCustomer.setCurrentBalance(creditCustomer.getCurrentBalance().add(totalAmount));
+            customerRepository.save(creditCustomer);
+        }
 
         // Process stock deductions
         processStockDeduction(savedSale, cashierId);
 
-        auditLogService.logAction(cashierId, "SALE_CREATE", 
-            "Sale created: " + savedSale.getInvoiceNumber(), 
+        auditLogService.logAction(cashierId, "SALE_CREATE",
+            "Sale created: " + savedSale.getInvoiceNumber(),
             "Sale", savedSale.getId(), null, savedSale.toString());
 
         return convertToResponse(savedSale);
+    }
+
+    private Sale.SaleType resolveSaleType(String saleType) {
+        if (saleType == null || saleType.isBlank()) {
+            return Sale.SaleType.CASH;
+        }
+        try {
+            return Sale.SaleType.valueOf(saleType.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("Invalid sale type: " + saleType);
+        }
+    }
+
+    private String buildCustomerDisplayName(Customer customer) {
+        String contact = customer.getPhone() != null ? customer.getPhone()
+                : (customer.getEmail() != null ? customer.getEmail() : null);
+        return customer.getFirstName() + " " + customer.getLastName() +
+                (contact != null ? " (" + contact + ")" : "");
     }
 
     private void processStockDeduction(Sale sale, Long userId) {
@@ -340,7 +402,31 @@ public class SaleService {
             "Sale voided: " + sale.getInvoiceNumber() + ". Reason: " + reason, 
             "Sale", sale.getId(), oldValues, sale.toString());
 
+        // Voiding a credit sale reverses the increase in the customer's
+        // outstanding balance for whatever is still owed on this invoice.
+        if (sale.getSaleType() == Sale.SaleType.CREDIT
+                && sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
+            reverseCreditBalance(sale);
+        }
+
         return convertToResponse(updatedSale);
+    }
+
+    private void reverseCreditBalance(Sale sale) {
+        if (sale.getCustomer() == null) {
+            return;
+        }
+        Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+        BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+        BigDecimal outstanding = sale.getTotalAmount().subtract(paid)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(outstanding);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            newBalance = BigDecimal.ZERO;
+        }
+        creditCustomer.setCurrentBalance(newBalance);
+        customerRepository.save(creditCustomer);
     }
 
     public RefundResponse processRefund(Long saleId, RefundRequest request, Long userId) {
@@ -428,11 +514,34 @@ public class SaleService {
         refund.setTotalRefundAmount(totalRefundAmount);
         Refund savedRefund = refundRepository.save(refund);
 
+        // Refunds on credit invoices that are still UNPAID/PARTIAL should NOT
+        // dispense cash — they reduce what the customer owes instead.
+        if (sale.getSaleType() == Sale.SaleType.CREDIT
+                && sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
+            reverseCreditBalanceForRefund(sale, totalRefundAmount);
+        }
+
         auditLogService.logAction(userId, "SALE_REFUND",
                 "Refund processed for sale: " + sale.getInvoiceNumber() + ". Amount: " + totalRefundAmount,
                 "Refund", savedRefund.getId(), null, savedRefund.toString());
 
         return convertRefundToResponse(savedRefund);
+    }
+
+    private void reverseCreditBalanceForRefund(Sale sale, BigDecimal refundAmount) {
+        if (sale.getCustomer() == null) {
+            return;
+        }
+        Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+        BigDecimal reduced = refundAmount != null ? refundAmount : BigDecimal.ZERO;
+        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(reduced)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            newBalance = BigDecimal.ZERO;
+        }
+        creditCustomer.setCurrentBalance(newBalance);
+        customerRepository.save(creditCustomer);
     }
 
     public void deleteSale(Long id, Long userId) {
@@ -497,6 +606,13 @@ public class SaleService {
             .executeUpdate();
 
         entityManager.createQuery("""
+                DELETE FROM ArPayment ap
+                WHERE ap.invoice.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        entityManager.createQuery("""
                 DELETE FROM SaleItem si
                 WHERE si.sale.id IN :saleIds
                 """)
@@ -541,6 +657,9 @@ public class SaleService {
         response.setAmountPaid(sale.getAmountPaid());
         response.setChangeGiven(sale.getChangeGiven());
         response.setPaymentMethod(sale.getPaymentMethod().name());
+        response.setSaleType(sale.getSaleType().name());
+        response.setPaymentStatus(sale.getPaymentStatus().name());
+        response.setDueDate(sale.getDueDate());
         response.setNotes(sale.getNotes());
         response.setIsVoided(sale.getIsVoided());
         response.setVoidedReason(sale.getVoidedReason());

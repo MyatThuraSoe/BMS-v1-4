@@ -270,6 +270,7 @@ const Analytics = () => {
     { label: t('total_cogs'), value: summary.cogs || 0 },
     { label: t('gross_profit'), value: summary.grossProfit || 0 },
     { label: t('gross_margin_percent'), value: summary.grossMarginPercent || 0, formatter: (value) => `${value}%` },
+    { label: t('outstanding_ar'), value: summary.outstandingAr || 0 },
   ], [summary]);
 
   const renderChartState = (loading) => loading

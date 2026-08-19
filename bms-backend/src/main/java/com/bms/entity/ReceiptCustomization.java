@@ -57,6 +57,9 @@ public class ReceiptCustomization {
     @Column(name = "show_qr_code")
     private Boolean showQRCode = false;
 
+    @Column(name = "show_credit_info")
+    private Boolean showCreditInfo = true;
+
     // --- Getters & Setters ---
 
     public Long getId() { return id; }
@@ -106,4 +109,7 @@ public class ReceiptCustomization {
 
     public Boolean getShowQRCode() { return showQRCode; }
     public void setShowQRCode(Boolean showQRCode) { this.showQRCode = showQRCode; }
+
+    public Boolean getShowCreditInfo() { return showCreditInfo; }
+    public void setShowCreditInfo(Boolean showCreditInfo) { this.showCreditInfo = showCreditInfo; }
 }

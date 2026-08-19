@@ -47,5 +47,6 @@
   "category_supplies": "วัสดุสิ้นเปลือง",
   "category_maintenance": "ซ่อมบำรุง",
   "category_marketing": "การตลาด",
-  "category_other": "อื่น ๆ"
+  "category_other": "อื่น ๆ",
+  "outstanding_ar": "ลูกหนี้คงค้าง (ที่ต้องเก็บ)"
 }

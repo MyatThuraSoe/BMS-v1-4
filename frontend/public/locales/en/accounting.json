@@ -47,5 +47,6 @@
   "category_supplies": "Supplies",
   "category_maintenance": "Maintenance",
   "category_marketing": "Marketing",
-  "category_other": "Other"
+  "category_other": "Other",
+  "outstanding_ar": "Outstanding AR (To Collect)"
 }

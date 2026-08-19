@@ -4,6 +4,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -15,7 +16,10 @@ import java.util.List;
     @Index(name = "idx_sale_date", columnList = "saleDate"),
     @Index(name = "idx_sale_cashier", columnList = "cashierId"),
     @Index(name = "idx_sale_customer", columnList = "customer_id"),
-    @Index(name = "idx_sale_is_voided", columnList = "isVoided")
+    @Index(name = "idx_sale_is_voided", columnList = "isVoided"),
+    @Index(name = "idx_sale_type", columnList = "saleType"),
+    @Index(name = "idx_sale_payment_status", columnList = "paymentStatus"),
+    @Index(name = "idx_sale_due_date", columnList = "dueDate")
 })
 public class Sale {
     @Id
@@ -60,6 +64,17 @@ public class Sale {
     @Column(name = "payment_method", nullable = false)
     private PaymentMethod paymentMethod = PaymentMethod.CASH;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "sale_type", nullable = false)
+    private SaleType saleType = SaleType.CASH;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_status", nullable = false)
+    private PaymentStatus paymentStatus = PaymentStatus.PAID;
+
+    @Column(name = "due_date")
+    private LocalDate dueDate;
+
     @Column(length = 1000)
     private String notes;
 
@@ -95,6 +110,17 @@ public class Sale {
 
     public enum PaymentMethod {
         CASH
+    }
+
+    public enum SaleType {
+        CASH,
+        CREDIT
+    }
+
+    public enum PaymentStatus {
+        PAID,
+        UNPAID,
+        PARTIAL
     }
 
     @PrePersist
@@ -153,6 +179,15 @@ public class Sale {
 
     public PaymentMethod getPaymentMethod() { return paymentMethod; }
     public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public SaleType getSaleType() { return saleType != null ? saleType : SaleType.CASH; }
+    public void setSaleType(SaleType saleType) { this.saleType = saleType != null ? saleType : SaleType.CASH; }
+
+    public PaymentStatus getPaymentStatus() { return paymentStatus != null ? paymentStatus : PaymentStatus.PAID; }
+    public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus != null ? paymentStatus : PaymentStatus.PAID; }
+
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }

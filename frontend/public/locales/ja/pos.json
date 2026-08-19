@@ -57,5 +57,12 @@
   "receipt_sent_printer": "レシートをプリンターに送信しました!",
   "discount": "割引",
   "print_failed": "印刷に失敗しました",
-  "printing": "印刷中"
+  "printing": "印刷中",
+  "sale_type_cash": "現金",
+  "sale_type_credit": "掛売り",
+  "available_credit": "利用可能枠",
+  "due_date": "支払期限",
+  "complete_credit_sale": "掛売り完了",
+  "select_credit_customer": "登録済み顧客を選択してください",
+  "enter_due_date": "支払期限を入力してください"
 }

@@ -44,7 +44,7 @@ public class CustomerController {
     }
 
     @GetMapping("/search")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Page<CustomerResponse>>> searchCustomers(
             @RequestParam(required = false, defaultValue = "") String keyword,
             @RequestParam(required = false, defaultValue = "") String city,
@@ -102,6 +102,8 @@ public class CustomerController {
         response.setNotes(customer.getNotes());
         response.setIsActive(customer.getIsActive());
         response.setIsQuickAdd(customer.getIsQuickAdd());
+        response.setCreditLimit(customer.getCreditLimit());
+        response.setCurrentBalance(customer.getCurrentBalance());
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());
         return response;

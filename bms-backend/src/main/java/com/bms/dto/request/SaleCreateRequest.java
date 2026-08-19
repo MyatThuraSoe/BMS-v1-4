@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 public class SaleCreateRequest {
@@ -14,11 +15,16 @@ public class SaleCreateRequest {
 
     private String customerName;
 
-    @NotNull(message = "Amount paid is required")
-    @Positive(message = "Amount paid must be positive")
+    // Required and > 0 for CASH sales; ignored (0) for CREDIT sales.
     private BigDecimal amountPaid;
 
     private String notes;
+
+    /** CASH or CREDIT. Defaults to CASH for backwards compatibility. */
+    private String saleType;
+
+    /** Required when saleType == CREDIT. */
+    private LocalDate dueDate;
 
     public List<SaleItemRequest> getItems() { return items; }
     public void setItems(List<SaleItemRequest> items) { this.items = items; }
@@ -30,6 +36,10 @@ public class SaleCreateRequest {
     public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getSaleType() { return saleType; }
+    public void setSaleType(String saleType) { this.saleType = saleType; }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
 
     public static class SaleItemRequest {
         @NotNull(message = "Product ID is required")

@@ -116,7 +116,20 @@ public class ReceiptLayoutBuilder {
         addLine("");
         addTotalLineStrong("TOTAL", receipt.getTotalAmount());
         addTotalLine("Paid", receipt.getAmountPaid());
-        addTotalLine("Change", receipt.getChangeGiven());
+        if (receipt.getChangeGiven() != null && receipt.getChangeGiven().compareTo(BigDecimal.ZERO) > 0) {
+            addTotalLine("Change", receipt.getChangeGiven());
+        }
+
+        // Credit info (credit sales only, respects the show/hide toggle)
+        boolean showCreditInfo = customization.getShowCreditInfo() == null || customization.getShowCreditInfo();
+        if (showCreditInfo && "CREDIT".equalsIgnoreCase(receipt.getSaleType())) {
+            addLine("");
+            addCenteredLine("*** CREDIT SALE ***");
+            addTotalLine("Balance Due", receipt.getBalanceDue());
+            if (receipt.getDueDate() != null) {
+                addLine("Due Date: " + receipt.getDueDate());
+            }
+        }
 
         addLine("");
         addLine(repeatChar(HORIZONTAL_LINE, lineWidth));

@@ -92,6 +92,7 @@ const Accounting = () => {
     { id: 'gross_profit', label: t('gross_profit'), value: summary.grossProfit || 0 },
     { id: 'total_expenses', label: t('total_expenses'), value: summary.totalExpenses || 0 },
     { id: 'net_profit', label: t('net_profit'), value: summary.netProfit || 0, highlight: true, changePercent: summary.profitChangePercent },
+    { id: 'outstanding_ar', label: t('outstanding_ar'), value: summary.outstandingAr || 0 },
   ], [summary]);
 
   const categoryLabel = (cat) => t(`category_${String(cat).toLowerCase()}`, { defaultValue: cat });

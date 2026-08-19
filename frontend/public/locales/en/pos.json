@@ -57,5 +57,12 @@
   "receipt_sent_printer": "Receipt sent to printer!",
   "discount": "Discount",
   "print_failed": "Print failed",
-  "printing": "Printing"
+  "printing": "Printing",
+  "sale_type_cash": "Cash",
+  "sale_type_credit": "Credit",
+  "available_credit": "Available Credit",
+  "due_date": "Due Date",
+  "complete_credit_sale": "Complete Credit Sale",
+  "select_credit_customer": "Please select a registered customer for credit sale",
+  "enter_due_date": "Please enter a due date"
 }

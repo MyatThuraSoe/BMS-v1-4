@@ -92,5 +92,6 @@
   "visits": "จำนวนการเข้าชม",
   "avg_basket": "ตะกร้าสินค้าเฉลี่ย",
   "first_purchase": "การซื้อครั้งแรก",
-  "heatmap_transactions": "รายการขาย"
+  "heatmap_transactions": "รายการขาย",
+  "outstanding_ar": "ลูกหนี้คงค้าง (ที่ต้องเก็บ)"
 }

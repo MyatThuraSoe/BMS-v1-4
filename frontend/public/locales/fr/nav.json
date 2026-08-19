@@ -27,5 +27,6 @@
   "new_entity": "Nouveau {{name}}",
   "edit_entity": "Modifier {{name}}",
   "entity_details": "Détails de {{name}}",
-  "receipt_customization": "Personnalisation du reçu"
+  "receipt_customization": "Personnalisation du reçu",
+  "accounts_receivable": "Comptes clients"
 }

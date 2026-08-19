@@ -68,6 +68,7 @@ const defaultCustomization = {
   dividerStyle: 'dashed',
   boldShopName: true,
   showQRCode:   false,
+  showCreditInfo: true,
 };
 
 // ─── Section wrapper ─────────────────────────────────────────────────────────
@@ -121,6 +122,7 @@ const ReceiptCustomization = () => {
         dividerStyle: d.dividerStyle || defaultCustomization.dividerStyle,
         boldShopName: d.boldShopName ?? defaultCustomization.boldShopName,
         showQRCode:   d.showQRCode   ?? defaultCustomization.showQRCode,
+        showCreditInfo: d.showCreditInfo ?? defaultCustomization.showCreditInfo,
       });
     }
   }, [customizationData]);
@@ -253,6 +255,11 @@ const ReceiptCustomization = () => {
                   <FormControlLabel
                     control={<Switch checked={form.showQRCode} onChange={(e) => set('showQRCode', e.target.checked)} color="primary" />}
                     label={t('rc_show_qr')}
+                  />
+
+                  <FormControlLabel
+                    control={<Switch checked={form.showCreditInfo} onChange={(e) => set('showCreditInfo', e.target.checked)} color="primary" />}
+                    label={t('rc_show_credit_info')}
                   />
 
                   <Box>

@@ -172,5 +172,6 @@
   "rc_scaled_tooltip": "L'aperçu est réduit pour tenir à l'écran. Les proportions sont exactes.",
   "rc_scale_percent": "(échelle {{percent}}%)",
   "rc_preview_1to1": "Cet aperçu est à l'échelle 1:1 avec le papier physique.",
-  "rc_preview_scaled": "Le papier physique mesure {{width}} mm de large. L'aperçu est réduit pour tenir."
+  "rc_preview_scaled": "Le papier physique mesure {{width}} mm de large. L'aperçu est réduit pour tenir.",
+  "rc_show_credit_info": "Afficher le montant du crédit sur le reçu"
 }

@@ -47,5 +47,6 @@
   "category_supplies": "Fournitures",
   "category_maintenance": "Maintenance",
   "category_marketing": "Marketing",
-  "category_other": "Autre"
+  "category_other": "Autre",
+  "outstanding_ar": "AR en suspens (à encaisser)"
 }

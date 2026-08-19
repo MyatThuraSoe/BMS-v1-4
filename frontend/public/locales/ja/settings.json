@@ -172,5 +172,6 @@
   "rc_scaled_tooltip": "プレビューは画面に収まるよう縮小されています。比率は正確です。",
   "rc_scale_percent": "({{percent}}% 表示)",
   "rc_preview_1to1": "このプレビューは実際の用紙と1:1のスケールです。",
-  "rc_preview_scaled": "実際の用紙は幅{{width}}mmです。プレビューは収まるように縮小されています。"
+  "rc_preview_scaled": "実際の用紙は幅{{width}}mmです。プレビューは収まるように縮小されています。",
+  "rc_show_credit_info": "レシートにクレジット金額を表示"
 }

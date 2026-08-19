@@ -95,6 +95,7 @@ const ReceiptDocument = ({
     boldShopName = true,
     showQRCode = false,
     showShopName = true,
+    showCreditInfo = true,
     paperSize = '58',
     headerText = '',
     mainMessage = 'Please keep this receipt for your records.',
@@ -118,6 +119,8 @@ const ReceiptDocument = ({
   const mockTotal    = 18.00;
   const mockPaid     = 20.00;
   const mockSubtotal = 18.00;
+  const mockBalanceDue   = 18.00;
+  const mockDueDate      = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString().slice(0, 10);
 
   const items          = (isMockPreview ? mockItems   : receipt.items)     || [];
   const invoiceNumber  = isMockPreview  ? 'INV-1001'  : (receipt.invoiceNumber || '');
@@ -129,6 +132,13 @@ const ReceiptDocument = ({
   const totalAmount    = isMockPreview  ? mockTotal    : (receipt.totalAmount ?? 0);
   const amountPaid     = isMockPreview  ? mockPaid     : (receipt.amountPaid ?? 0);
   const change         = amountPaid - totalAmount;
+
+  // Credit sale info (shown for CREDIT sales only, when enabled in customization)
+  const isCredit        = isMockPreview ? true : (receipt.saleType || receipt.paymentStatus) === 'CREDIT';
+  const showCreditInfo_ = Boolean(showCreditInfo) && isCredit;
+  const balanceDue      = isMockPreview ? mockBalanceDue : (receipt.balanceDue ?? (Number(totalAmount) - Number(amountPaid)));
+  const dueDate         = isMockPreview ? mockDueDate     : receipt.dueDate;
+  const dueDateLabel    = dueDate ? String(dueDate).slice(0, 10) : '';
 
   const baseStyle = {
     fontFamily: '"Courier New", Courier, monospace',
@@ -291,11 +301,30 @@ const ReceiptDocument = ({
           <span>Paid:</span>
           <span>{formatCurrency(amountPaid)}</span>
         </Box>
-        <Box sx={rowStyle}>
-          <span>Change:</span>
-          <span>{formatCurrency(change)}</span>
-        </Box>
+        {change > 0 && (
+          <Box sx={rowStyle}>
+            <span>Change:</span>
+            <span>{formatCurrency(change)}</span>
+          </Box>
+        )}
       </Box>
+
+      {/* ===== CREDIT INFO ===== */}
+      {showCreditInfo_ && (
+        <Box sx={{ ...dividerStyle_, py: '4px' }}>
+          <Box sx={{ textAlign: 'center', fontWeight: 700, mb: '4px' }}>*** CREDIT SALE ***</Box>
+          <Box sx={rowStyle}>
+            <span>Balance Due:</span>
+            <span>{formatCurrency(balanceDue)}</span>
+          </Box>
+          {dueDateLabel && (
+            <Box sx={rowStyle}>
+              <span>Due Date:</span>
+              <span>{dueDateLabel}</span>
+            </Box>
+          )}
+        </Box>
+      )}
 
       {/* ===== FOOTER ===== */}
       {footerText?.trim() && (
@@ -334,6 +363,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
     boldShopName = true,
     showQRCode = false,
     showShopName = true,
+    showCreditInfo = true,
     headerText = '',
     mainMessage = 'Please keep this receipt for your records.',
     footerText = 'Thank you for your business!',
@@ -360,6 +390,13 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   const amountPaid     = receipt.amountPaid ?? 0;
   const change         = amountPaid - totalAmount;
   const customerName   = receipt.customerName;
+
+  const isCredit        = (receipt.saleType || receipt.paymentStatus) === 'CREDIT';
+  const showCreditInfo_ = Boolean(showCreditInfo) && isCredit;
+  const balanceDue      = receipt.balanceDue != null
+    ? receipt.balanceDue
+    : (Number(receipt.totalAmount ?? 0) - Number(receipt.amountPaid ?? 0));
+  const dueDateLabel    = receipt.dueDate ? String(receipt.dueDate).slice(0, 10) : '';
 
   const alignStyle = `text-align:${headerAlign};`;
 
@@ -436,8 +473,16 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
     <div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
       <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatCurrency(totalAmount))}</span></div>
       <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatCurrency(amountPaid))}</span></div>
-      <div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatCurrency(change))}</span></div>
+      ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatCurrency(change))}</span></div>` : ''}
     </div>`;
+
+  let creditHtml = showCreditInfo_
+    ? `<div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
+        <div style="text-align:center;font-weight:700;margin-bottom:4px;">*** CREDIT SALE ***</div>
+        <div style="display:flex;justify-content:space-between;"><span>Balance Due:</span><span>${escHtml(formatCurrency(balanceDue))}</span></div>
+        ${dueDateLabel ? `<div style="display:flex;justify-content:space-between;"><span>Due Date:</span><span>${escHtml(dueDateLabel)}</span></div>` : ''}
+      </div>`
+    : '';
 
   let footerHtml = footerText?.trim()
     ? `<div style="text-align:center;font-weight:600;margin-top:10px;">${escHtml(footerText)}</div>`
@@ -476,6 +521,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   ${divHtml}
   ${subtotalsHtml}
   ${totalsHtml}
+  ${creditHtml}
   ${footerHtml}
 </body>
 </html>`;

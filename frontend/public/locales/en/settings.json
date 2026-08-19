@@ -172,5 +172,6 @@
   "rc_scaled_tooltip": "Preview is scaled down to fit on screen. The proportions are exact.",
   "rc_scale_percent": "({{percent}}% scale)",
   "rc_preview_1to1": "This preview is 1:1 scale with the physical paper.",
-  "rc_preview_scaled": "Physical paper is {{width}}mm wide. Preview is scaled to fit."
+  "rc_preview_scaled": "Physical paper is {{width}}mm wide. Preview is scaled to fit.",
+  "rc_show_credit_info": "Show credit amount on receipt"
 }

@@ -45,6 +45,7 @@ import BackupSettings from './pages/BackupSettings';
 import SupplierDetails from './pages/SupplierDetails';
 import CashShift from './pages/CashShift';
 import ShiftHistory from './pages/ShiftHistory';
+import AccountsReceivable from './pages/AccountsReceivable';
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
@@ -188,6 +189,7 @@ function AppRoutes() {
         <Route path="reports" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Reports /></ProtectedRoute>} />
         <Route path="analytics" element={<ProtectedRoute allowedRoles={['ADMIN']}><Analytics /></ProtectedRoute>} />
         <Route path="accounting" element={<ProtectedRoute allowedRoles={['ADMIN']}><Accounting /></ProtectedRoute>} />
+        <Route path="accounts-receivable" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><AccountsReceivable /></ProtectedRoute>} />
         
         {/* Users (Admin only) */}
         <Route path="users" element={<ProtectedRoute allowedRoles={['ADMIN']}><Users /></ProtectedRoute>} />

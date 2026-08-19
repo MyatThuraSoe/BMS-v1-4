@@ -1,6 +1,7 @@
 package com.bms.dto.receipt;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -19,6 +20,10 @@ public class ReceiptDto {
     private BigDecimal amountPaid;
     private BigDecimal changeGiven;
     private String paymentMethod;
+    private String saleType;
+    private String paymentStatus;
+    private LocalDate dueDate;
+    private BigDecimal balanceDue;
 
 
     // No-Args Constructor
@@ -40,7 +45,11 @@ public class ReceiptDto {
             BigDecimal totalAmount,
             BigDecimal amountPaid,
             BigDecimal changeGiven,
-            String paymentMethod
+            String paymentMethod,
+            String saleType,
+            String paymentStatus,
+            LocalDate dueDate,
+            BigDecimal balanceDue
     ) {
         this.invoiceNumber = invoiceNumber;
         this.saleId = saleId;
@@ -55,6 +64,10 @@ public class ReceiptDto {
         this.amountPaid = amountPaid;
         this.changeGiven = changeGiven;
         this.paymentMethod = paymentMethod;
+        this.saleType = saleType;
+        this.paymentStatus = paymentStatus;
+        this.dueDate = dueDate;
+        this.balanceDue = balanceDue;
     }
 
 
@@ -172,4 +185,16 @@ public class ReceiptDto {
     public void setPaymentMethod(String paymentMethod) {
         this.paymentMethod = paymentMethod;
     }
+
+    public String getSaleType() { return saleType; }
+    public void setSaleType(String saleType) { this.saleType = saleType; }
+
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+
+    public BigDecimal getBalanceDue() { return balanceDue; }
+    public void setBalanceDue(BigDecimal balanceDue) { this.balanceDue = balanceDue; }
 }

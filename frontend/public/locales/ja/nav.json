@@ -27,5 +27,6 @@
   "new_entity": "新規{{name}}",
   "edit_entity": "{{name}}の編集",
   "entity_details": "{{name}}の詳細",
-  "receipt_customization": "レシートのカスタマイズ"
+  "receipt_customization": "レシートのカスタマイズ",
+  "accounts_receivable": "売掛金"
 }

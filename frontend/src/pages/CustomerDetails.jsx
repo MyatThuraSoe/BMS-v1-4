@@ -6,8 +6,8 @@ import {
 } from '@mui/material';
 import { ArrowBack as ArrowBackIcon, Edit as EditIcon, Receipt as ReceiptIcon, ShoppingCart as ShoppingCartIcon } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import { customerService, saleService } from '../api/services';
-import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { customerService, saleService, arService } from '../api/services';
+import { formatDate, formatDateTime, formatCurrency } from '../utils/helpers';
 import CustomerSpendingHeatmap from '../components/CustomerSpendingHeatmap';
 
 
@@ -36,12 +36,19 @@ const CustomerDetails = () => {
     queryFn: () => saleService.getAll(0, 10, 'saleDate', null, null, null, id, null),
   });
 
+  const { data: arHistoryData, isLoading: arLoading } = useQuery({
+    queryKey: ['customerArHistory', id],
+    queryFn: () => arService.getCustomerHistory(id, 0, 50),
+  });
+
   if (customerLoading) return <Box sx={{ p: 3 }}><CircularProgress /></Box>;
 
   const customer = customerData?.data || {};
   const stats = statsData?.data || {};
   const topProducts = topProductsData?.data || [];
   const sales = salesData?.data?.content || [];
+  const arInvoices = arHistoryData?.data?.content || [];
+  const today = new Date();
 
   const StatCard = ({ title, value, icon, color }) => (
     <Card sx={{ height: '100%' }}>
@@ -100,6 +107,22 @@ const CustomerDetails = () => {
               <Typography variant="body2" color="text.secondary">{t('customer_code')}</Typography>
               <Typography variant="body1">{customer.customerCode || t('n_a')}</Typography>
             </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="body2" color="text.secondary">{t('credit_limit')}</Typography>
+              <Typography variant="body1">{customer.creditLimit != null ? formatCurrency(customer.creditLimit) : t('n_a')}</Typography>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="body2" color="text.secondary">{t('current_balance')}</Typography>
+              <Typography variant="body1" color={(customer.currentBalance || 0) > 0 ? 'error.main' : 'text.primary'}>
+                {formatCurrency(customer.currentBalance || 0)}
+              </Typography>
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <Typography variant="body2" color="text.secondary">{t('available_credit')}</Typography>
+              <Typography variant="body1" color="primary.main">
+                {formatCurrency((customer.creditLimit || 0) - (customer.currentBalance || 0))}
+              </Typography>
+            </Grid>
           </Grid>
         </CardContent>
       </Card>
@@ -133,6 +156,61 @@ const CustomerDetails = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Accounts Receivable */}
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 1, mb: 1 }}>
+            <Typography variant="h6">{t('accounts_receivable')}</Typography>
+            <Typography variant="h6" color={(customer.currentBalance || 0) > 0 ? 'error.main' : 'success.main'}>
+              {t('total_debt')}: {formatCurrency(customer.currentBalance || 0)}
+            </Typography>
+          </Box>
+          <Divider sx={{ mb: 2 }} />
+          {arLoading ? <CircularProgress size={24} /> : arInvoices.length === 0 ? (
+            <Typography color="text.secondary">{t('no_ar_history')}</Typography>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t('invoice')}</TableCell>
+                    <TableCell>{t('date')}</TableCell>
+                    <TableCell>{t('due_date')}</TableCell>
+                    <TableCell align="right">{t('amount')}</TableCell>
+                    <TableCell align="right">{t('amount_paid')}</TableCell>
+                    <TableCell align="right">{t('balance_due')}</TableCell>
+                    <TableCell align="center">{t('status')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {arInvoices.map((row) => {
+                    const overdue = row.paymentStatus !== 'PAID' && row.dueDate && new Date(row.dueDate) < today;
+                    return (
+                      <TableRow key={row.invoiceId} hover>
+                        <TableCell>{row.invoiceNumber}</TableCell>
+                        <TableCell>{formatDateTime(row.saleDate)}</TableCell>
+                        <TableCell>
+                          {row.dueDate ? formatDate(row.dueDate) : '-'}
+                          {overdue && <Typography variant="caption" color="error.main" sx={{ display: 'block' }}>{t('overdue')}</Typography>}
+                        </TableCell>
+                        <TableCell align="right">{formatCurrency(row.totalAmount)}</TableCell>
+                        <TableCell align="right">{formatCurrency(row.amountPaid)}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold', color: row.balanceDue > 0 ? 'error.main' : 'text.primary' }}>
+                          {formatCurrency(row.balanceDue)}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip size="small" color={row.paymentStatus === 'PAID' ? 'success' : 'warning'} label={t(`payment_status_${row.paymentStatus}`)} />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Spending Heatmap */}
     <Box sx={{ mb: 4 }}>

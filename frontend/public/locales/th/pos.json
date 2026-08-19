@@ -57,5 +57,12 @@
   "receipt_sent_printer": "ส่งใบเสร็จไปยังเครื่องพิมพ์แล้ว!",
   "discount": "ส่วนลด",
   "print_failed": "พิมพ์ไม่สำเร็จ",
-  "printing": "กำลังพิมพ์"
+  "printing": "กำลังพิมพ์",
+  "sale_type_cash": "เงินสด",
+  "sale_type_credit": "เครดิต",
+  "available_credit": "วงเงินเครดิตคงเหลือ",
+  "due_date": "กำหนดชำระ",
+  "complete_credit_sale": "ทำรายการขายเครดิต",
+  "select_credit_customer": "กรุณาเลือกลูกค้าที่ลงทะเบียนสำหรับขายเครดิต",
+  "enter_due_date": "กรุณากรอกวันกำหนดชำระ"
 }

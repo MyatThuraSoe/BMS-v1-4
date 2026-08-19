@@ -18,7 +18,7 @@ public class ReceiptCustomizationController {
     }
 
     @GetMapping
-    @PreAuthorize("hasAnyRole('ADMIN')")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<ReceiptCustomization>> getCustomization() {
         return ResponseEntity.ok(new ApiResponse<>(true, "Receipt customization retrieved", receiptCustomizationService.getCustomization()));
     }

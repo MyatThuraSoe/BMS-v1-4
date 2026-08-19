@@ -47,5 +47,6 @@
   "category_supplies": "消耗品",
   "category_maintenance": "メンテナンス",
   "category_marketing": "マーケティング",
-  "category_other": "その他"
+  "category_other": "その他",
+  "outstanding_ar": "未回収の売掛金（回収予定額）"
 }
