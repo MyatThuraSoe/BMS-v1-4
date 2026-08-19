@@ -55,8 +55,8 @@ google:
   oauth:
     # Override via environment variables when configuring real credentials.
     # Placeholders avoid shipping fake secrets that would silently break auth.
-    client-id: ${GOOGLE_CLIENT_ID:377772345599-8n8h8k8j8i8h8g8f8e8d8c8b8a8.apps.googleusercontent.com}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    client-id: 
+    client-secret: 
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
     frontend-redirect-base: http://127.0.0.1:17234
 
