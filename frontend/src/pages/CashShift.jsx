@@ -79,7 +79,7 @@ const CashShift = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{t('cash_shift')}</Typography>
+    
 
       {!currentShift ? (
         <Paper sx={{ p: 4, maxWidth: 480 }}>

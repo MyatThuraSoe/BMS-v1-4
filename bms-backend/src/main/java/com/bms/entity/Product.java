@@ -43,6 +43,9 @@ public class Product {
     
     @Column(name = "stock_quantity", nullable = false)
     private Integer stockQuantity = 0;
+
+    @Column(name = "reserved_quantity", nullable = false)
+    private Integer reservedQuantity = 0;
     
     @Column(name = "min_stock_level")
     private Integer minStockLevel = 0;
@@ -84,6 +87,9 @@ public class Product {
         if (minStockLevel == null) {
             minStockLevel = 0;
         }
+        if (reservedQuantity == null) {
+            reservedQuantity = 0;
+        }
         if (taxRate == null) {
             taxRate = BigDecimal.ZERO;
         }
@@ -121,6 +127,11 @@ public class Product {
     
     public Integer getStockQuantity() { return stockQuantity; }
     public void setStockQuantity(Integer stockQuantity) { this.stockQuantity = stockQuantity; }
+
+    public Integer getReservedQuantity() { return reservedQuantity != null ? reservedQuantity : 0; }
+    public void setReservedQuantity(Integer reservedQuantity) { this.reservedQuantity = reservedQuantity != null ? reservedQuantity : 0; }
+
+    public int getAvailableQuantity() { return Math.max(0, getStockQuantity() - getReservedQuantity()); }
     
     public Integer getMinStockLevel() { return minStockLevel; }
     public void setMinStockLevel(Integer minStockLevel) { this.minStockLevel = minStockLevel; }

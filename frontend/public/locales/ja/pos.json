@@ -5,8 +5,14 @@
   "quantity": "数量",
   "subtotal": "小計",
   "tax": "税",
+  "discount_pct_label": "割引 ({{pct}}%)",
+  "discount_amount": "割引額",
+  "discount_amount_helper": "割引額（上限は小計まで）",
   "total": "合計",
   "checkout": "会計",
+  "checkout_and_print": "会計 & 印刷",
+  "complete_credit_sale_print": "掛売り完了 & 印刷",
+  "confirm_and_print": "確認 & 印刷",
   "cart": "カート",
   "scan_barcode": "バーコードをスキャンまたは検索",
   "empty_cart": "カートは空です",
@@ -64,5 +70,11 @@
   "due_date": "支払期限",
   "complete_credit_sale": "掛売り完了",
   "select_credit_customer": "登録済み顧客を選択してください",
-  "enter_due_date": "支払期限を入力してください"
+  "enter_due_date": "支払期限を入力してください",
+  "order_now": "注文",
+  "confirm_order": "注文を確定",
+  "order_created": "注文を作成し、在庫を確保しました",
+  "order_failed": "注文の作成に失敗しました",
+  "order_reserves_stock": "保留中の注文を作成します。注文が売上に変換されるかキャンセルされるまで在庫が確保されます。",
+  "notes_optional": "メモ（任意）"
 }

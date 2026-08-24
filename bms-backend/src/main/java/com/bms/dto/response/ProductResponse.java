@@ -14,6 +14,8 @@ public class ProductResponse {
     private BigDecimal costPrice;
     private BigDecimal taxRate;
     private Integer stockQuantity;
+    private Integer reservedQuantity;
+    private Integer availableQuantity;
     private Integer minStockLevel;
     private String unit;
     private Boolean isActive;
@@ -41,6 +43,10 @@ public class ProductResponse {
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
     public Integer getStockQuantity() { return stockQuantity; }
     public void setStockQuantity(Integer stockQuantity) { this.stockQuantity = stockQuantity; }
+    public Integer getReservedQuantity() { return reservedQuantity; }
+    public void setReservedQuantity(Integer reservedQuantity) { this.reservedQuantity = reservedQuantity; }
+    public Integer getAvailableQuantity() { return availableQuantity; }
+    public void setAvailableQuantity(Integer availableQuantity) { this.availableQuantity = availableQuantity; }
     public Integer getMinStockLevel() { return minStockLevel; }
     public void setMinStockLevel(Integer minStockLevel) { this.minStockLevel = minStockLevel; }
     public String getUnit() { return unit; }

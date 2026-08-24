@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Grid, Paper, Typography, Box, Button } from '@mui/material';
+import { Grid, Paper, Typography, Box, Button, Chip } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
-import { reportService, saleService } from '../api/services';
-import { ShoppingCart, AttachMoney, Inventory, TrendingUp, Add as AddIcon } from '@mui/icons-material';
+import { reportService, saleService, inventoryService } from '../api/services';
+import { ShoppingCart, Inventory, TrendingUp, Add as AddIcon, TrendingDown as TrendingDownIcon } from '@mui/icons-material';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, Legend } from 'recharts';
 
 import SetupChecklist from '../components/SetupChecklist';
 
@@ -81,6 +81,26 @@ const Dashboard = () => {
     queryKey: ['salesTrend', 7],
     queryFn: () => reportService.getSalesTrend(7),
   });
+
+  // --- Advanced widgets ---
+  const { data: topProductsData } = useQuery({
+    queryKey: ['dashboard-top-products', dateRange.startDate, dateRange.endDate],
+    queryFn: () => reportService.getTopSellingProducts(5, dateRange.startDate, dateRange.endDate),
+  });
+
+  const { data: movementStatsData } = useQuery({
+    queryKey: ['dashboard-movement-stats', 14],
+    queryFn: () => inventoryService.getMovementStats(14),
+  });
+
+  const { data: invSummaryData } = useQuery({
+    queryKey: ['inventory-summary'],
+    queryFn: () => inventoryService.getSummary(),
+  });
+
+  const topProducts = topProductsData?.data || [];
+  const movementStats = movementStatsData?.data || null;
+  const lowStockItems = invSummaryData?.data?.lowStockItems || [];
 
   const dailySales = dailySalesData?.data || {
     totalTransactions: 0,
@@ -174,6 +194,146 @@ const Dashboard = () => {
             </Box>
           </Paper>
         </Grid>
+
+        {/* --- Advanced: Top Selling Products (follows selected period) --- */}
+        <Grid item xs={12} md={7}>
+          <Paper sx={{ p: 3 }}>
+            <Typography variant="h6" gutterBottom>{t('top_selling_products')}</Typography>
+            {topProducts.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">{t('no_data')}</Typography>
+            ) : (
+              <Box sx={{ width: '100%', height: 240 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={topProducts}
+                    layout="vertical"
+                    margin={{ top: 4, right: 24, left: 8, bottom: 0 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" tickLine={false} axisLine={false} />
+                    <YAxis
+                      type="category"
+                      dataKey="productName"
+                      width={130}
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fontSize: 11 }}
+                    />
+                    <Tooltip formatter={(value) => formatCurrency(value)} />
+                    <Bar
+                      dataKey="totalRevenue"
+                      fill={theme.palette.secondary.main}
+                      radius={[0, 4, 4, 0]}
+                      maxBarSize={20}
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* --- Advanced: Low Stock Watchlist --- */}
+        <Grid item xs={12} md={5}>
+          <Paper sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+              <Typography variant="h6">{t('low_stock_watchlist')}</Typography>
+              <Button size="small" onClick={() => navigate('/products?view=low-stock')}>
+                {t('view_all')}
+              </Button>
+            </Box>
+            {lowStockItems.length === 0 ? (
+              <Typography variant="body2" color="text.secondary">
+                {t('all_stock_healthy')}
+              </Typography>
+            ) : (
+              <Box>
+                {lowStockItems.slice(0, 6).map((item) => (
+                  <Box
+                    key={item.productId}
+                    onClick={() => navigate(`/products/${item.productId}/edit`)}
+                    sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', py: 1, borderBottom: '1px solid #eee', cursor: 'pointer' }}
+                  >
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography variant="body2" fontWeight="medium" noWrap>{item.productName}</Typography>
+                      <Typography variant="caption" color="text.secondary">{item.sku}</Typography>
+                    </Box>
+                    <Box sx={{ textAlign: 'right', flexShrink: 0 }}>
+                      <Typography
+                        variant="body2"
+                        fontWeight="bold"
+                        color={item.stockQuantity <= 0 ? 'error.main' : 'warning.main'}
+                      >
+                        {item.stockQuantity} / {item.minStockLevel}
+                      </Typography>
+                      <Typography variant="caption" color="error.main">
+                        -{item.shortage}
+                      </Typography>
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
+            )}
+          </Paper>
+        </Grid>
+
+        {/* --- Advanced: Stock Movement Flow (last 14 days) --- */}
+        {movementStats && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="h6">{t('stock_movements_last_14_days')}</Typography>
+                <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                  <Chip size="small" color="success" label={`${t('stock_in')}: ${movementStats.totalIn ?? 0}`} />
+                  <Chip size="small" color="error" label={`${t('stock_out')}: ${movementStats.totalOut ?? 0}`} />
+                  <Chip
+                    size="small"
+                    icon={<TrendingDownIcon />}
+                    color={(movementStats.netChange ?? 0) >= 0 ? 'primary' : 'warning'}
+                    label={`${t('net_change')}: ${(movementStats.netChange ?? 0) >= 0 ? '+' : ''}${movementStats.netChange ?? 0}`}
+                  />
+                </Box>
+              </Box>
+              <Box sx={{ width: '100%', height: 240 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={movementStats.daily || []} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="inGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={theme.palette.primary.main} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={theme.palette.primary.main} stopOpacity={0} />
+                      </linearGradient>
+                      <linearGradient id="outGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={theme.palette.error.main} stopOpacity={0.35} />
+                        <stop offset="95%" stopColor={theme.palette.error.main} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis dataKey="date" tickLine={false} axisLine={false} />
+                    <YAxis tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip />
+                    <Legend wrapperStyle={{ fontSize: 12 }} />
+                    <Area
+                      type="monotone"
+                      dataKey="inQty"
+                      name={t('stock_in')}
+                      stroke={theme.palette.primary.main}
+                      fill="url(#inGrad)"
+                      strokeWidth={2}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="outQty"
+                      name={t('stock_out')}
+                      stroke={theme.palette.error.main}
+                      fill="url(#outGrad)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Box>
+            </Paper>
+          </Grid>
+        )}
 
         <Grid item xs={12} md={6}>
           <Paper sx={{ p: 3 }}>

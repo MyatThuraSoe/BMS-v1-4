@@ -1,6 +1,8 @@
 server:
   port: 17234
-  address: 0.0.0.0
+  # Bind to loopback only by default. If you truly need LAN access, change this
+  # to the specific LAN IP (or 0.0.0.0) AND use strong credentials / TLS.
+  address: 127.0.0.1
 
 spring:
   application:
@@ -37,6 +39,8 @@ spring:
       fail-on-empty-beans: false
 
 jwt:
+  # Override in production; the JWT signing key actually comes from the per-install
+  # JwtSecretService file, so this is only a fallback for dev.
   secret: MySecureSecretKeyForJWTTokenGeneration2026!
   expiration: 86400000
 
@@ -49,7 +53,7 @@ google:
   oauth:
     client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
     client-secret: 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
-    redirect-uri: http://localhost:17234/api/backups/google/callback
-    # Change redirect-uri to your production URL in production!
-    frontend-redirect-base: http://localhost:17234
-    # Change this too — it's where the browser lands after Google auth completes.
+    redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
+    frontend-redirect-base: http://127.0.0.1:17234
+
+   

@@ -33,7 +33,7 @@
   "email_required": "メールアドレスは必須です",
   "email_invalid": "メールアドレスの形式が正しくありません",
   "password_required": "パスワードは必須です",
-  "password_min_length": "パスワードは6文字以上で入力してください",
+  "password_min_length": "パスワードは8文字以上で入力してください",
   "first_name_required": "名は必須です",
   "last_name_required": "姓は必須です",
   "role_required": "役割は必須です",

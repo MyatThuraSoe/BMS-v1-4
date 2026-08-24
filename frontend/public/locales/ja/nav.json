@@ -28,5 +28,9 @@
   "edit_entity": "{{name}}の編集",
   "entity_details": "{{name}}の詳細",
   "receipt_customization": "レシートのカスタマイズ",
-  "accounts_receivable": "売掛金"
+  "accounts_receivable": "売掛金",
+  "orders": "注文",
+  "inventory": "在庫管理",
+  "fullscreen": "全画面表示",
+  "exit_fullscreen": "全画面解除"
 }

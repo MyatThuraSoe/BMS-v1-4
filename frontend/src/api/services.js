@@ -157,6 +157,11 @@ export const categoryService = {
     return response.data;
   },
 
+  getStatsSummary: async () => {
+    const response = await apiClient.get('/categories/stats/summary');
+    return response.data;
+  },
+
   getById: async (id) => {
     const response = await apiClient.get(`/categories/${id}`);
     return response.data;
@@ -174,6 +179,37 @@ export const categoryService = {
 
   delete: async (id) => {
     const response = await apiClient.delete(`/categories/${id}`);
+    return response.data;
+  },
+};
+
+export const orderService = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== '' && v !== false) query.append(k, v);
+    });
+    const response = await apiClient.get(`/orders?${query.toString()}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await apiClient.get(`/orders/${id}`);
+    return response.data;
+  },
+
+  create: async (data) => {
+    const response = await apiClient.post('/orders', data);
+    return response.data;
+  },
+
+  convert: async (id, data = {}) => {
+    const response = await apiClient.post(`/orders/${id}/convert`, data);
+    return response.data;
+  },
+
+  cancel: async (id, data = {}) => {
+    const response = await apiClient.post(`/orders/${id}/cancel`, data);
     return response.data;
   },
 };
@@ -323,8 +359,13 @@ export const saleService = {
     return response.data;
   },
 
-  refundSale: async (id, data) => {
-    const response = await apiClient.post(`/sales/${id}/refund`, data);
+  createSaleReturn: async (id, data) => {
+    const response = await apiClient.post(`/sales/${id}/returns`, data);
+    return response.data;
+  },
+
+  getReturnableItems: async (id) => {
+    const response = await apiClient.get(`/sales/${id}/returnable-items`);
     return response.data;
   },
 
@@ -343,13 +384,14 @@ export const saleService = {
     return response.data;
   },
 
-  verifyCart: async (cart) => {
+  verifyCart: async (cart, discountAmount = null) => {
     const response = await apiClient.post('/sales/verify-cart', {
       items: cart.map((item) => ({
         productId: item.productId,
         quantity: item.quantity,
         expectedUnitPrice: item.price,
       })),
+      discountAmount: discountAmount != null && discountAmount !== '' ? Number(discountAmount) : null,
     });
     return response.data;
   },
@@ -366,6 +408,21 @@ export const saleService = {
 
   getCustomerDailySpending: async (customerId, year) => {
     const response = await apiClient.get(`/sales/customer/${customerId}/daily-spending/${year}`);
+    return response.data;
+  },
+};
+
+export const saleReturnService = {
+  getAll: async (page = 0, size = 20, saleId = null, invoice = null) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (saleId) params.append('saleId', saleId);
+    if (invoice) params.append('invoice', invoice);
+    const response = await apiClient.get(`/sale-returns?${params.toString()}`);
+    return response.data;
+  },
+
+  getById: async (id) => {
+    const response = await apiClient.get(`/sale-returns/${id}`);
     return response.data;
   },
 };
@@ -445,8 +502,37 @@ export const inventoryService = {
     return response.data;
   },
 
-  getStockMovements: async (productId, page = 0, size = 20) => {
-    const response = await apiClient.get(`/inventory/product/${productId}/movements?page=${page}&size=${size}`);
+  getProducts: async ({ page = 0, size = 1000, categoryId = null } = {}) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (categoryId) params.append('categoryId', String(categoryId));
+    const response = await apiClient.get(`/inventory/products?${params.toString()}`);
+    return response.data;
+  },
+
+  // Headline counts + valuation + category breakdown + low-stock watchlist
+  getSummary: async () => {
+    const response = await apiClient.get('/inventory/summary');
+    return response.data;
+  },
+
+  // Global movement ledger. All filters optional; server-paged, newest first.
+  getMovements: async ({
+    page = 0, size = 20, productId = null, type = '',
+    search = '', dateFrom = null, dateTo = null,
+  } = {}) => {
+    const params = new URLSearchParams({ page: String(page), size: String(size) });
+    if (productId) params.append('productId', String(productId));
+    if (type) params.append('type', type);
+    if (search) params.append('search', search);
+    if (dateFrom) params.append('dateFrom', dateFrom);
+    if (dateTo) params.append('dateTo', dateTo);
+    const response = await apiClient.get(`/inventory/movements?${params.toString()}`);
+    return response.data;
+  },
+
+  // Daily IN vs OUT totals + cause mix over the last N days
+  getMovementStats: async (days = 30) => {
+    const response = await apiClient.get(`/inventory/movement-stats?days=${days}`);
     return response.data;
   },
 };

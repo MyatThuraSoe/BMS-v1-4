@@ -34,5 +34,14 @@
   "expenses": "Expenses",
   "net_profit": "Net Profit",
   "vs_previous_period": "{{value}}% vs previous period",
-  "no_prior_data": "N/A — no prior period data"
+  "no_prior_data": "N/A — no prior period data",
+  "top_selling_products": "Top Selling Products",
+  "no_data": "No data for this period.",
+  "low_stock_watchlist": "Low Stock Watchlist",
+  "view_all": "View All",
+  "all_stock_healthy": "All stock levels are healthy.",
+  "stock_movements_last_14_days": "Stock Movements (Last 14 Days)",
+  "stock_in": "Stock In",
+  "stock_out": "Stock Out",
+  "net_change": "Net Change"
 }

@@ -325,7 +325,7 @@ const Products = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{t('products_inventory')}</Typography>
+      
       <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ mb: 3 }}>
         <Tab label={t('products')} />
         <Tab label={t('dead_stock')} />

@@ -46,13 +46,20 @@ apiClient.interceptors.response.use(
     }
 
     // 2. Handle JWT Expiration / Unauthorized Access
-    if (status === 401 || status === 403) {
+    if (status === 401) {
       // Prevent infinite redirect loop if already on the login page
       if (!window.location.pathname.includes('/login')) {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
         window.location.href = '/login';
       }
+      return Promise.reject(error);
+    }
+
+    // 2b. Role/privilege denied — the session is still valid, the caller just
+    // lacks the required role. Don't log the user out; surface the message.
+    if (status === 403) {
+      error.friendlyMessage = backendMessage || i18n.t('errors:forbidden');
       return Promise.reject(error);
     }
 

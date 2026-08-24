@@ -34,5 +34,14 @@
   "expenses": "ค่าใช้จ่าย",
   "net_profit": "กำไรสุทธิ",
   "vs_previous_period": "{{value}}% เทียบกับช่วงก่อนหน้า",
-  "no_prior_data": "N/A — ไม่มีข้อมูลช่วงก่อนหน้า"
+  "no_prior_data": "N/A — ไม่มีข้อมูลช่วงก่อนหน้า",
+  "top_selling_products": "สินค้าขายดี",
+  "no_data": "ไม่มีข้อมูลในช่วงเวลานี้",
+  "low_stock_watchlist": "รายการสต็อกใกล้หมด",
+  "view_all": "ดูทั้งหมด",
+  "all_stock_healthy": "ระดับสต็อกทั้งหมดปกติ",
+  "stock_movements_last_14_days": "การเคลื่อนไหวของสต็อก (14 วัน)",
+  "stock_in": "สต๊อกเข้า",
+  "stock_out": "สต๊อกออก",
+  "net_change": "เปลี่ยนแปลงสุทธิ"
 }

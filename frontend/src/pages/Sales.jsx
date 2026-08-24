@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete,
+  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete,
 } from '@mui/material';
 import { Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -25,9 +25,7 @@ const Sales = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [voidDialogOpen, setVoidDialogOpen] = useState(false);
   const [selectedSale, setSelectedSale] = useState(null);
-  const [voidReason, setVoidReason] = useState('');
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [debouncedInvoice, setDebouncedInvoice] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -116,24 +114,8 @@ const Sales = () => {
     },
   });
 
-  const voidMutation = useMutation({
-    mutationFn: ({ id, reason }) => saleService.voidSale(id, reason),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
-      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
-      setVoidDialogOpen(false);
-      setVoidReason('');
-    },
-  });
-
   const handleDelete = () => {
     if (selectedSale) deleteMutation.mutate(selectedSale.id);
-  };
-
-  const handleVoid = () => {
-    if (selectedSale && voidReason) voidMutation.mutate({ id: selectedSale.id, reason: voidReason });
   };
 
   const sales = salesData?.data?.content || [];
@@ -262,9 +244,6 @@ const Sales = () => {
                     <TableCell><Chip label={t(`status_${status.toLowerCase().replace(/\s+/g, '_')}`)} size="small" color={getStatusColor(status)} /></TableCell>
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.saleDate)}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                      {isManager() && status !== 'VOIDED' && (
-                        <IconButton size="small" color="warning" onClick={(e) => { e.stopPropagation(); setSelectedSale(s); setVoidDialogOpen(true); }}>{t('void')}</IconButton>
-                      )}
                       {isManager() && (
                         <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
                       )}
@@ -284,18 +263,6 @@ const Sales = () => {
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
           <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={voidDialogOpen} onClose={() => setVoidDialogOpen(false)}>
-        <DialogTitle>{t('void_sale')}</DialogTitle>
-        <DialogContent>
-          <Typography sx={{ mb: 2 }}>{t('sale_number', { number: selectedSale?.invoiceNumber })}</Typography>
-          <TextField fullWidth label={t('reason')} multiline rows={3} value={voidReason} onChange={(e) => setVoidReason(e.target.value)} required />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setVoidDialogOpen(false)}>{t('cancel')}</Button>
-          <Button onClick={handleVoid} color="warning" variant="contained" disabled={!voidReason}>{t('void')}</Button>
         </DialogActions>
       </Dialog>
     </Box>

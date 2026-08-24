@@ -137,8 +137,7 @@ const AccountsReceivable = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{t('accounts_receivable')}</Typography>
-
+      
       <Paper sx={{ mb: 2, p: 2 }}>
         <TextField
           sx={{ flexGrow: 1, minWidth: 220, width: { xs: '100%', md: 360 } }}

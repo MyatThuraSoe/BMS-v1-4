@@ -28,5 +28,9 @@
   "edit_entity": "แก้ไข{{name}}",
   "entity_details": "รายละเอียด{{name}}",
   "receipt_customization": "ปรับแต่งใบเสร็จ",
-  "accounts_receivable": "บัญชีลูกหนี้"
+  "accounts_receivable": "บัญชีลูกหนี้",
+  "orders": "คำสั่งซื้อ",
+  "inventory": "สินค้าคงคลัง",
+  "fullscreen": "เต็มหน้าจอ",
+  "exit_fullscreen": "ออกจากภาพเต็มหน้าจอ"
 }

@@ -33,7 +33,7 @@
   "email_required": "L'adresse e-mail est requise",
   "email_invalid": "Format d'adresse e-mail invalide",
   "password_required": "Le mot de passe est requis",
-  "password_min_length": "Le mot de passe doit contenir au moins 6 caractères",
+  "password_min_length": "Le mot de passe doit contenir au moins 8 caractères",
   "first_name_required": "Le prénom est requis",
   "last_name_required": "Le nom de famille est requis",
   "role_required": "Le rôle est requis",

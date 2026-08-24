@@ -76,13 +76,19 @@ function startServer() {
     console.log(`Starting server with Java: ${javaPath}`);
     console.log(`JAR path: ${jarPath}`);
     
-    serverProcess = spawn(javaPath, [
+    // Optional override only — if GOOGLE_CLIENT_SECRET isn't set, the value
+    // from application-electron.yml is used instead.
+    const spawnArgs = [
         '-Dspring.profiles.active=electron',
         '-Dspring.main.banner-mode=off',
-        '-Dserver.port=' + APP_PORT,
-        '-jar',
-        jarPath
-    ], {
+        '-Dserver.port=' + APP_PORT
+    ];
+    if (process.env.GOOGLE_CLIENT_SECRET) {
+        spawnArgs.push('-Dgoogle.oauth.client-secret=' + process.env.GOOGLE_CLIENT_SECRET);
+    }
+    spawnArgs.push('-jar', jarPath);
+
+    serverProcess = spawn(javaPath, spawnArgs, {
         stdio: ['ignore', 'pipe', 'pipe'],
         detached: false,
         windowsHide: true

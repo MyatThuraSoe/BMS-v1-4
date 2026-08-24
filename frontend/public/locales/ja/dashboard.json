@@ -34,5 +34,14 @@
   "expenses": "費用",
   "net_profit": "純利益",
   "vs_previous_period": "前期比 {{value}}%",
-  "no_prior_data": "N/A — 前期データなし"
+  "no_prior_data": "N/A — 前期データなし",
+  "top_selling_products": "売れ筋商品",
+  "no_data": "この期間のデータはありません。",
+  "low_stock_watchlist": "在庫少ウォッチリスト",
+  "view_all": "すべて表示",
+  "all_stock_healthy": "在庫レベルはすべて正常です。",
+  "stock_movements_last_14_days": "在庫移動（過去14日間）",
+  "stock_in": "入庫",
+  "stock_out": "出庫",
+  "net_change": "純変動"
 }

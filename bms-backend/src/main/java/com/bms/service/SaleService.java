@@ -1,7 +1,6 @@
 package com.bms.service;
 
 import com.bms.dto.request.CartVerifyRequest;
-import com.bms.dto.request.RefundRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.response.*;
 import com.bms.entity.*;
@@ -22,9 +21,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
-import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -51,7 +49,7 @@ public class SaleService {
     private UserRepository userRepository;
 
     @Autowired
-    private RefundRepository refundRepository;
+    private SaleReturnService saleReturnService;
 
     @Autowired
     private SaleItemRepository saleItemRepository;
@@ -217,9 +215,9 @@ public class SaleService {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
 
-            if (product.getStockQuantity() < itemRequest.getQuantity()) {
+            if (product.getAvailableQuantity() < itemRequest.getQuantity()) {
                 throw new BusinessException("Insufficient stock for product '" + product.getName() +
-                    "'. Available: " + product.getStockQuantity() + ", Requested: " + itemRequest.getQuantity());
+                    "'. Available: " + product.getAvailableQuantity() + ", Requested: " + itemRequest.getQuantity());
             }
         }
 
@@ -249,9 +247,10 @@ public class SaleService {
 
         sale.setSubtotal(subtotal);
         sale.setTaxAmount(taxAmount);
-        sale.setDiscountAmount(BigDecimal.ZERO);
+        BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
+        sale.setDiscountAmount(discountAmount);
 
-        BigDecimal totalAmount = subtotal.add(taxAmount);
+        BigDecimal totalAmount = subtotal.add(taxAmount).subtract(discountAmount);
         sale.setTotalAmount(totalAmount);
 
         if (saleType == Sale.SaleType.CREDIT) {
@@ -344,6 +343,166 @@ public class SaleService {
         return sequenceService.nextInvoiceNumber();
     }
 
+    /**
+     * Converts a PENDING order into a real sale. The order already reserved
+     * stock, so this method deducts physical stock AND clears the reservation
+     * for every item — stock must never be counted twice.
+     */
+    public com.bms.dto.response.SaleResponse createSaleFromOrder(Order order, String paymentMethod,
+                                                                  BigDecimal amountPaid, LocalDate dueDate,
+                                                                  Long cashierId) {
+        String method = paymentMethod != null ? paymentMethod.trim().toUpperCase() : "CASH";
+        boolean isCredit = "CREDIT".equals(method);
+        if (!"CREDIT".equals(method) && !"CASH".equals(method)) {
+            throw new BusinessException("Invalid payment method: " + method);
+        }
+
+        if (isCredit && order.getCustomer() == null) {
+            throw new BusinessException("Credit orders require a registered customer");
+        }
+        if (isCredit && dueDate == null) {
+            throw new IllegalArgumentException("error.credit.dueDate.required");
+        }
+        if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new BusinessException("Amount paid is required and must be positive for cash sales");
+        }
+
+        String invoiceNumber = isCredit
+                ? sequenceService.nextCreditInvoiceNumber()
+                : generateInvoiceNumber();
+
+        Sale sale = new Sale();
+        sale.setInvoiceNumber(invoiceNumber);
+        sale.setCashierId(cashierId);
+        sale.setSaleDate(LocalDateTime.now());
+        sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        sale.setSaleType(isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+        sale.setPaymentStatus(isCredit ? Sale.PaymentStatus.UNPAID : Sale.PaymentStatus.PAID);
+        sale.setDueDate(isCredit ? dueDate : null);
+        sale.setIsVoided(false);
+        sale.setNotes("From order " + order.getOrderNumber() +
+                (order.getNotes() != null ? ". " + order.getNotes() : ""));
+
+        Customer creditCustomer = null;
+        if (isCredit) {
+            creditCustomer = customerRepository.findByIdForUpdate(order.getCustomer().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            sale.setCustomer(creditCustomer);
+            sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
+        } else if (order.getCustomer() != null) {
+            Customer customer = customerRepository.findById(order.getCustomer().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            sale.setCustomer(customer);
+            sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
+        } else {
+            sale.setCustomerDisplayName(order.getCustomerDisplayName() != null ? order.getCustomerDisplayName() : "Walk-in");
+        }
+
+        if (!isCredit) {
+            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
+                .orElseThrow(() -> new BusinessException(
+                    "No open cash shift. Please open a shift before recording cash sales."));
+            sale.setCashShiftId(openShift.getId());
+        }
+
+        BigDecimal subtotal = order.getSubtotal();
+        BigDecimal taxAmount = order.getTaxAmount();
+        BigDecimal totalAmount = order.getTotalAmount();
+
+        // The order being converted still holds its own reservation, so stock checks
+        // must NOT count that reservation against itself. Compute the order's reserved
+        // share per product (aggregated, since a product can appear on multiple lines).
+        Map<Long, Integer> orderReservedByProduct = new HashMap<>();
+        for (OrderItem oi : order.getItems()) {
+            orderReservedByProduct.merge(oi.getProduct().getId(), oi.getQuantity(), Integer::sum);
+        }
+
+        for (OrderItem orderItem : order.getItems()) {
+            Product product = productRepository.findByIdForUpdate(orderItem.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + orderItem.getProduct().getId()));
+
+            int selfReserved = orderReservedByProduct.getOrDefault(orderItem.getProduct().getId(), 0);
+            int available = product.getStockQuantity() - product.getReservedQuantity() + selfReserved;
+            if (available < orderItem.getQuantity()) {
+                throw new BusinessException("Insufficient stock for product '" + product.getName() +
+                    "'. Available: " + available + ", Requested: " + orderItem.getQuantity());
+            }
+
+            SaleItem item = new SaleItem();
+            item.setSale(sale);
+            item.setProduct(product);
+            item.setQuantity(orderItem.getQuantity());
+            item.setUnitPrice(orderItem.getUnitPrice());
+            item.setTotalPrice(orderItem.getTotalPrice());
+            item.setTaxAmount(orderItem.getTaxAmount());
+            item.setCostPriceAtSale(orderItem.getCostPriceAtOrder());
+            sale.getItems().add(item);
+        }
+
+        sale.setSubtotal(subtotal);
+        sale.setTaxAmount(taxAmount);
+        sale.setDiscountAmount(BigDecimal.ZERO);
+        sale.setTotalAmount(totalAmount);
+
+        if (isCredit) {
+            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
+            if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
+                throw new InsufficientCreditException(
+                    "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+            }
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+        } else {
+            sale.setAmountPaid(amountPaid);
+            BigDecimal changeGiven = amountPaid.subtract(totalAmount);
+            if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
+                throw new BusinessException("Amount paid (" + amountPaid +
+                    ") is less than total amount (" + totalAmount + ")");
+            }
+            sale.setChangeGiven(changeGiven);
+        }
+
+        Sale savedSale = saleRepository.save(sale);
+
+        if (isCredit) {
+            creditCustomer.setCurrentBalance(creditCustomer.getCurrentBalance().add(totalAmount));
+            customerRepository.save(creditCustomer);
+        }
+
+        // Deduct physical stock and clear the reservation in the same pass
+        for (SaleItem item : savedSale.getItems()) {
+            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
+            int oldStock = product.getStockQuantity();
+            int newStock = oldStock - item.getQuantity();
+            if (newStock < 0) {
+                throw new BusinessException("Stock cannot go below zero for product: " + product.getName());
+            }
+            product.setStockQuantity(newStock);
+            int newReserved = Math.max(0, product.getReservedQuantity() - item.getQuantity());
+            product.setReservedQuantity(newReserved);
+            productRepository.save(product);
+
+            StockMovement movement = new StockMovement();
+            movement.setProduct(product);
+            movement.setMovementType(StockMovement.MovementType.OUT);
+            movement.setQuantity(item.getQuantity());
+            movement.setReferenceType(StockMovement.ReferenceType.SALE);
+            movement.setReferenceId(sale.getId());
+            movement.setDescription("Stock deducted from sale (order conversion): " + savedSale.getInvoiceNumber());
+            User user = userRepository.findById(cashierId).orElse(null);
+            movement.setCreatedBy(user);
+            movement.setMovementDate(LocalDateTime.now());
+            stockMovementRepository.save(movement);
+        }
+
+        auditLogService.logAction(cashierId, "SALE_CREATE",
+            "Sale created from order " + order.getOrderNumber() + ": " + savedSale.getInvoiceNumber(),
+            "Sale", savedSale.getId(), null, savedSale.toString());
+
+        return convertToResponse(savedSale);
+    }
+
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
         Sale sale = saleRepository.findById(saleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
@@ -416,127 +575,27 @@ public class SaleService {
         if (sale.getCustomer() == null) {
             return;
         }
-        Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+        // Returns on an unpaid/partial credit invoice have already lowered the
+        // customer's balance by their return amounts. Only void-reverse what is
+        // still genuinely outstanding for THIS invoice, otherwise a fully
+        // returned sale would be reversed twice.
+        BigDecimal alreadyReversedByReturns = BigDecimal.ZERO;
+        for (SaleReturn ret : saleReturnService.findBySaleId(sale.getId())) {
+            if (ret.getTotalReturnAmount() != null) {
+                alreadyReversedByReturns = alreadyReversedByReturns.add(ret.getTotalReturnAmount());
+            }
+        }
         BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
         BigDecimal outstanding = sale.getTotalAmount().subtract(paid)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(outstanding);
-        if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
-            newBalance = BigDecimal.ZERO;
-        }
-        creditCustomer.setCurrentBalance(newBalance);
-        customerRepository.save(creditCustomer);
-    }
-
-    public RefundResponse processRefund(Long saleId, RefundRequest request, Long userId) {
-        Sale sale = saleRepository.findById(saleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
-
-        if (sale.getIsVoided() != null && sale.getIsVoided()) {
-            throw new BusinessException("Cannot refund a voided sale");
-        }
-
-        User refundedBy = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
-
-        Refund refund = new Refund();
-        refund.setSale(sale);
-        refund.setRefundedBy(refundedBy);
-        refund.setRefundDate(LocalDateTime.now());
-        refund.setReason(request.getReason());
-
-        BigDecimal totalRefundAmount = BigDecimal.ZERO;
-        Set<Long> requestedSaleItemIds = new HashSet<>();
-
-        for (RefundRequest.RefundItemRequest itemRequest : request.getItems()) {
-            if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
-                throw new BusinessException("Duplicate refund item: " + itemRequest.getSaleItemId());
-            }
-
-            // Lock this specific sale item row before reading its refunded quantity —
-            // prevents two concurrent refund requests from both reading "0 already refunded"
-            // and both approving a refund that, combined, exceeds what was actually sold.
-            SaleItem saleItem = saleItemRepository.findByIdForUpdate(itemRequest.getSaleItemId())
-                    .orElseThrow(() -> new BusinessException("Sale item not found: " + itemRequest.getSaleItemId()));
-
-            if (!saleItem.getSale().getId().equals(saleId)) {
-                throw new BusinessException("Sale item does not belong to this sale: " + itemRequest.getSaleItemId());
-            }
-
-            int alreadyRefunded = saleItem.getQuantityRefunded() != null ? saleItem.getQuantityRefunded() : 0;
-            int refundableQuantity = saleItem.getQuantity() - alreadyRefunded;
-            int requestedQuantity = itemRequest.getQuantity();
-            if (requestedQuantity > refundableQuantity) {
-                throw new BusinessException("Cannot refund " + requestedQuantity + " of " + saleItem.getProduct().getName()
-                        + ". Refundable quantity is " + refundableQuantity);
-            }
-
-            // Refund the tax-inclusive price (tax was charged at sale time,
-            // so it must be returned too — otherwise refunds silently leak tax).
-            BigDecimal itemTotal = saleItem.getTotalPrice() != null ? saleItem.getTotalPrice() : BigDecimal.ZERO;
-            BigDecimal itemTax = saleItem.getTaxAmount() != null ? saleItem.getTaxAmount() : BigDecimal.ZERO;
-            int itemQty = saleItem.getQuantity() != null && saleItem.getQuantity() > 0 ? saleItem.getQuantity() : 1;
-            BigDecimal unitTotalInclTax = itemTotal.add(itemTax)
-                    .divide(BigDecimal.valueOf(itemQty), 4, java.math.RoundingMode.HALF_UP);
-            BigDecimal refundAmount = unitTotalInclTax
-                    .multiply(BigDecimal.valueOf(requestedQuantity))
-                    .setScale(2, java.math.RoundingMode.HALF_UP);
-
-            Product product = productRepository.findByIdForUpdate(saleItem.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + saleItem.getProduct().getId()));
-            product.setStockQuantity(product.getStockQuantity() + requestedQuantity);
-            productRepository.save(product);
-
-            saleItem.setQuantityRefunded(alreadyRefunded + requestedQuantity);
-
-            RefundItem refundItem = new RefundItem();
-            refundItem.setRefund(refund);
-            refundItem.setSaleItem(saleItem);
-            refundItem.setQuantityRefunded(requestedQuantity);
-            refundItem.setRefundAmount(refundAmount);
-            refund.getItems().add(refundItem);
-
-            StockMovement movement = new StockMovement();
-            movement.setProduct(product);
-            movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
-            movement.setQuantity(requestedQuantity);
-            movement.setReferenceType(StockMovement.ReferenceType.RETURN);
-            movement.setReferenceId(sale.getId());
-            movement.setDescription("Stock restored from refund: " + sale.getInvoiceNumber());
-            movement.setCreatedBy(refundedBy);
-            movement.setMovementDate(LocalDateTime.now());
-            stockMovementRepository.save(movement);
-
-            totalRefundAmount = totalRefundAmount.add(refundAmount);
-        }
-
-        refund.setTotalRefundAmount(totalRefundAmount);
-        Refund savedRefund = refundRepository.save(refund);
-
-        // Refunds on credit invoices that are still UNPAID/PARTIAL should NOT
-        // dispense cash — they reduce what the customer owes instead.
-        if (sale.getSaleType() == Sale.SaleType.CREDIT
-                && sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
-            reverseCreditBalanceForRefund(sale, totalRefundAmount);
-        }
-
-        auditLogService.logAction(userId, "SALE_REFUND",
-                "Refund processed for sale: " + sale.getInvoiceNumber() + ". Amount: " + totalRefundAmount,
-                "Refund", savedRefund.getId(), null, savedRefund.toString());
-
-        return convertRefundToResponse(savedRefund);
-    }
-
-    private void reverseCreditBalanceForRefund(Sale sale, BigDecimal refundAmount) {
-        if (sale.getCustomer() == null) {
+        BigDecimal toReverse = outstanding.subtract(alreadyReversedByReturns)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        if (toReverse.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
         Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
-        BigDecimal reduced = refundAmount != null ? refundAmount : BigDecimal.ZERO;
-        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(reduced)
-                .setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(toReverse);
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
             newBalance = BigDecimal.ZERO;
         }
@@ -579,15 +638,15 @@ public class SaleService {
         }
 
         entityManager.createQuery("""
-                DELETE FROM RefundItem ri
-                WHERE ri.refund.sale.id IN :saleIds
+                DELETE FROM SaleReturnItem ri
+                WHERE ri.saleReturn.sale.id IN :saleIds
                    OR ri.saleItem.sale.id IN :saleIds
                 """)
             .setParameter("saleIds", saleIds)
             .executeUpdate();
 
         entityManager.createQuery("""
-                DELETE FROM Refund r
+                DELETE FROM SaleReturn r
                 WHERE r.sale.id IN :saleIds
                 """)
             .setParameter("saleIds", saleIds)
@@ -637,11 +696,11 @@ public class SaleService {
     }
 
     public SaleResponse convertToResponse(Sale sale) {
-        List<Refund> refunds = refundRepository.findBySaleIdOrderByRefundDateDesc(sale.getId());
-        return convertToResponse(sale, refunds);
+        List<SaleReturn> returns = saleReturnService.findBySaleId(sale.getId());
+        return convertToResponse(sale, returns);
     }
 
-    public SaleResponse convertToResponse(Sale sale, List<Refund> refunds) {
+    public SaleResponse convertToResponse(Sale sale, List<SaleReturn> returns) {
         SaleResponse response = new SaleResponse();
         response.setId(sale.getId());
         response.setInvoiceNumber(sale.getInvoiceNumber());
@@ -675,23 +734,21 @@ public class SaleService {
                 .collect(Collectors.toList());
         response.setItems(itemResponses);
 
-        response.setRefunds(refunds.stream().map(this::convertRefundToResponse).collect(Collectors.toList()));
-        response.setTotalRefunded(refunds.stream()
-                .map(Refund::getTotalRefundAmount)
+        response.setReturns(returns.stream().map(saleReturnService::convertToResponse).collect(Collectors.toList()));
+        response.setTotalReturned(returns.stream()
+                .map(SaleReturn::getTotalReturnAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
+        response.setReturnStatus(sale.getReturnStatus().name());
 
         return response;
     }
 
-    // Batch map a page of sales to DTOs so refunds reload in a single query instead of one per sale.
+    // Batch map a page of sales to DTOs so returns reload in a single query instead of one per sale.
     public Page<SaleResponse> convertToResponses(Page<Sale> salePage) {
         List<Sale> sales = salePage.getContent();
         List<Long> saleIds = sales.stream().map(Sale::getId).toList();
-        Map<Long, List<Refund>> refundsBySale = saleIds.isEmpty()
-                ? Map.of()
-                : refundRepository.findBySaleIdInOrderByRefundDateDesc(saleIds).stream()
-                        .collect(Collectors.groupingBy(r -> r.getSale().getId()));
-        return salePage.map(sale -> convertToResponse(sale, refundsBySale.getOrDefault(sale.getId(), List.of())));
+        Map<Long, List<SaleReturn>> returnsBySale = saleReturnService.findBySaleIds(saleIds);
+        return salePage.map(sale -> convertToResponse(sale, returnsBySale.getOrDefault(sale.getId(), List.of())));
     }
 
     public SaleItemResponse convertItemToResponse(SaleItem item) {
@@ -705,29 +762,6 @@ public class SaleService {
         response.setTaxAmount(item.getTaxAmount());
         response.setCostPriceAtSale(item.getCostPriceAtSale());
         response.setQuantityRefunded(item.getQuantityRefunded());
-        return response;
-    }
-
-    private RefundResponse convertRefundToResponse(Refund refund) {
-        RefundResponse response = new RefundResponse();
-        response.setId(refund.getId());
-        response.setSaleId(refund.getSale().getId());
-        response.setInvoiceNumber(refund.getSale().getInvoiceNumber());
-        response.setRefundedBy(refund.getRefundedBy().getId());
-        response.setRefundedByUsername(refund.getRefundedBy().getUsername());
-        response.setRefundDate(refund.getRefundDate());
-        response.setReason(refund.getReason());
-        response.setTotalRefundAmount(refund.getTotalRefundAmount());
-        response.setItems(refund.getItems().stream().map(item -> {
-            RefundResponse.RefundItemResponse itemResponse = new RefundResponse.RefundItemResponse();
-            itemResponse.setId(item.getId());
-            itemResponse.setSaleItemId(item.getSaleItem().getId());
-            itemResponse.setProductId(item.getSaleItem().getProduct().getId());
-            itemResponse.setProductName(item.getSaleItem().getProduct().getName());
-            itemResponse.setQuantityRefunded(item.getQuantityRefunded());
-            itemResponse.setRefundAmount(item.getRefundAmount());
-            return itemResponse;
-        }).collect(Collectors.toList()));
         return response;
     }
 
@@ -749,11 +783,11 @@ public class SaleService {
             result.setQuantity(itemRequest.getQuantity());
             result.setUnitPrice(product.getUnitPrice());
             result.setTaxRate(getShopTaxRate());
-            result.setAvailableStock(product.getStockQuantity());
+            result.setAvailableStock(product.getAvailableQuantity());
 
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
             boolean priceChanged = product.getUnitPrice().compareTo(itemRequest.getExpectedUnitPrice()) != 0;
-            boolean insufficientStock = product.getStockQuantity() < itemRequest.getQuantity();
+            boolean insufficientStock = product.getAvailableQuantity() < itemRequest.getQuantity();
             result.setPriceChanged(priceChanged);
             result.setInsufficientStock(insufficientStock);
 
@@ -765,7 +799,7 @@ public class SaleService {
             if (insufficientStock) {
                 anyChanged = true;
                 messages.add(String.format("%s: only %d in stock, %d requested",
-                        product.getName(), product.getStockQuantity(), itemRequest.getQuantity()));
+                        product.getName(), product.getAvailableQuantity(), itemRequest.getQuantity()));
             }
 
             BigDecimal[] linePricing = calculateItemPricing(product, itemRequest.getQuantity(), getShopTaxRate());
@@ -779,7 +813,9 @@ public class SaleService {
         response.setItems(results);
         response.setSubtotal(subtotal);
         response.setTaxAmount(taxAmount);
-        response.setTotalAmount(subtotal.add(taxAmount));
+        BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
+        response.setDiscountAmount(discountAmount);
+        response.setTotalAmount(subtotal.add(taxAmount).subtract(discountAmount));
         response.setMessages(messages);
         response.setValid(!anyChanged);
         return response;
@@ -802,6 +838,35 @@ public class SaleService {
         return shopInfoRepository.findTopByOrderByIdAsc()
                 .map(ShopInfo::getTaxPercentage)
                 .orElse(BigDecimal.ZERO);
+    }
+
+    // Discount config comes from Shop Info (admin-controlled):
+    //  - PERCENTAGE mode: discountValue% off the subtotal, applied automatically
+    //  - FIXED mode: discountValue amount off every sale, applied automatically
+    //  - AMOUNT mode: cashier-entered amount (clamped to [0, subtotal])
+    // Disabled (or missing config) always yields ZERO. Mirrors getShopTaxRate().
+    private BigDecimal computeDiscount(BigDecimal subtotal, BigDecimal requestedAmount) {
+        if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElse(null);
+        if (info == null || !Boolean.TRUE.equals(info.getDiscountEnabled())) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal discount;
+        if (info.getDiscountType() == ShopInfo.DiscountType.AMOUNT) {
+            discount = requestedAmount != null ? requestedAmount : BigDecimal.ZERO;
+        } else if (info.getDiscountType() == ShopInfo.DiscountType.FIXED) {
+            discount = info.getDiscountValue() != null ? info.getDiscountValue() : BigDecimal.ZERO;
+        } else {
+            BigDecimal pct = info.getDiscountValue() != null ? info.getDiscountValue() : BigDecimal.ZERO;
+            if (pct.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+            discount = subtotal.multiply(pct)
+                    .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+        }
+        if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
+        if (discount.compareTo(subtotal) > 0) discount = subtotal;
+        return discount.setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
     public CustomerStatsResponse getCustomerStats(Long customerId) {

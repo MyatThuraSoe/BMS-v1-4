@@ -5,8 +5,14 @@
   "quantity": "Qty",
   "subtotal": "Subtotal",
   "tax": "Tax",
+  "discount_pct_label": "Discount ({{pct}}%)",
+  "discount_amount": "Discount",
+  "discount_amount_helper": "Optional discount amount (max = subtotal)",
   "total": "Total",
   "checkout": "Checkout",
+  "checkout_and_print": "Checkout & Print",
+  "complete_credit_sale_print": "Complete Credit Sale & Print",
+  "confirm_and_print": "Confirm & Print",
   "cart": "Cart",
   "scan_barcode": "Scan barcode or search",
   "empty_cart": "Cart is empty",
@@ -64,5 +70,11 @@
   "due_date": "Due Date",
   "complete_credit_sale": "Complete Credit Sale",
   "select_credit_customer": "Please select a registered customer for credit sale",
-  "enter_due_date": "Please enter a due date"
+  "enter_due_date": "Please enter a due date",
+  "order_now": "Order",
+  "confirm_order": "Confirm Order",
+  "order_created": "Order created. Stock reserved.",
+  "order_failed": "Failed to create order",
+  "order_reserves_stock": "This creates a pending order. Stock will be reserved until the order is converted to a sale or cancelled.",
+  "notes_optional": "Notes (optional)"
 }

@@ -29,7 +29,7 @@
   "confirm_password": "Confirm Password",
   "password_changed": "Password changed successfully",
   "passwords_not_match": "New passwords do not match",
-  "password_min": "New password must be at least 6 characters",
+  "password_min": "New password must be at least 8 characters",
   "failed_to_change_password": "Failed to change password",
   "shop_name_fallback": "BMS",
   "not_authorized": "Not authorized",

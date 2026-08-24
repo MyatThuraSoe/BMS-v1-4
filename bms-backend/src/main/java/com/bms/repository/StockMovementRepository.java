@@ -26,6 +26,49 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
     );
     
     @Query("SELECT sm FROM StockMovement sm WHERE sm.referenceType = :referenceType AND sm.referenceId = :referenceId")
-    List<StockMovement> findByReference(@Param("referenceType") StockMovement.ReferenceType referenceType, 
+    List<StockMovement> findByReference(@Param("referenceType") StockMovement.ReferenceType referenceType,
                                        @Param("referenceId") Long referenceId);
+
+    // Global movement ledger with optional filters. Both joins are ManyToOne so
+    // JOIN FETCH stays safe with pagination.
+    @Query(value = """
+        SELECT sm FROM StockMovement sm
+        JOIN FETCH sm.product p
+        LEFT JOIN FETCH sm.createdBy u
+        WHERE (:productId IS NULL OR p.id = :productId)
+          AND (:type IS NULL OR sm.movementType = :type)
+          AND (:dateFrom IS NULL OR sm.movementDate >= :dateFrom)
+          AND (:dateTo IS NULL OR sm.movementDate < :dateTo)
+          AND (:search IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%')))
+        ORDER BY sm.movementDate DESC, sm.id DESC
+        """,
+        countQuery = """
+        SELECT COUNT(sm) FROM StockMovement sm
+        JOIN sm.product p
+        WHERE (:productId IS NULL OR p.id = :productId)
+          AND (:type IS NULL OR sm.movementType = :type)
+          AND (:dateFrom IS NULL OR sm.movementDate >= :dateFrom)
+          AND (:dateTo IS NULL OR sm.movementDate < :dateTo)
+          AND (:search IS NULL OR LOWER(p.name) LIKE LOWER(CONCAT('%', :search, '%'))
+               OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :search, '%')))
+        """)
+    Page<StockMovement> findFiltered(
+            @Param("productId") Long productId,
+            @Param("type") StockMovement.MovementType type,
+            @Param("search") String search,
+            @Param("dateFrom") LocalDateTime dateFrom,
+            @Param("dateTo") LocalDateTime dateTo,
+            Pageable pageable);
+
+    // Movement statistics source rows. Deliberately plain JPQL — this app runs
+    // on both H2 (Electron/offline) and MySQL, so date-truncation functions
+    // like DATE() are off-limits in native SQL here. Aggregation happens in
+    // InventoryService.
+    @Query("""
+        SELECT sm.movementType, sm.quantity, sm.movementDate, sm.referenceType
+        FROM StockMovement sm
+        WHERE sm.movementDate >= :from
+        """)
+    List<Object[]> findMovementsSince(@Param("from") LocalDateTime from);
 }

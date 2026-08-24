@@ -46,8 +46,15 @@ public class UserService implements UserDetailsService {
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        User user = userRepository.findActiveByUsernameIgnoreCase(username)
+        // Load regardless of isActive — an inactive account must reach the
+        // authentication provider so it fails with DisabledException (surfaced
+        // to the user as "contact administrator"), not as "invalid credentials".
+        User user = userRepository.findByUsernameIgnoreCase(username)
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
+        if (user.getDeletedAt() != null) {
+            // Soft-deleted users are treated as non-existent
+            throw new UsernameNotFoundException("User not found: " + username);
+        }
         return user;
     }
 
@@ -109,6 +116,15 @@ public class UserService implements UserDetailsService {
         if (request.getPassword() != null && !request.getPassword().isBlank()) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
         }
+        if (request.getIsActive() != null) {
+            // Guard: an admin deactivating their own account would lock themselves
+            // out with no one left to re-enable them.
+            if (Boolean.FALSE.equals(request.getIsActive())
+                    && user.getUsername().equals(currentUsername())) {
+                throw new com.bms.exception.BusinessException("auth.user.self.deactivate");
+            }
+            user.setIsActive(request.getIsActive());
+        }
 
         User updatedUser = userRepository.save(user);
         
@@ -135,6 +151,11 @@ public class UserService implements UserDetailsService {
     public User findById(Long id) {
         return userRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+    }
+
+    private String currentUsername() {
+        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        return auth != null ? auth.getName() : null;
     }
 
     public User findByUsername(String username) {

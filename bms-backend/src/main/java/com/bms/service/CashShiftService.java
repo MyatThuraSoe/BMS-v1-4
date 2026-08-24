@@ -79,10 +79,10 @@ public class CashShiftService {
 
         BigDecimal cashSalesTotal = saleRepository.sumNetCashSalesByShiftId(shiftId);
         if (cashSalesTotal == null) cashSalesTotal = BigDecimal.ZERO;
-        BigDecimal refundsTotal = saleRepository.sumRefundsDuringShift(shiftId, shift.getOpeningTime());
-        if (refundsTotal == null) refundsTotal = BigDecimal.ZERO;
+        BigDecimal returnsTotal = saleRepository.sumReturnsDuringShift(shiftId, shift.getOpeningTime());
+        if (returnsTotal == null) returnsTotal = BigDecimal.ZERO;
 
-        BigDecimal expectedAmount = shift.getOpeningAmount().add(cashSalesTotal).subtract(refundsTotal);
+        BigDecimal expectedAmount = shift.getOpeningAmount().add(cashSalesTotal).subtract(returnsTotal);
         BigDecimal variance = request.getClosingAmount().subtract(expectedAmount);
 
         shift.setClosingAmount(request.getClosingAmount());

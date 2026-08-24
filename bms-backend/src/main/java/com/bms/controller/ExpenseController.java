@@ -84,6 +84,7 @@ public class ExpenseController {
         MediaType mediaType = switch (imageType) {
             case "png" -> MediaType.IMAGE_PNG;
             case "gif" -> MediaType.IMAGE_GIF;
+            case "webp" -> MediaType.parseMediaType("image/webp");
             default -> MediaType.IMAGE_JPEG;
         };
         return ResponseEntity.ok()

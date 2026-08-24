@@ -10,7 +10,7 @@ i18n
   .init({
     fallbackLng: 'en',
     supportedLngs: ['en', 'my', 'ja', 'th', 'fr'],
-    ns: ['common', 'nav', 'pos', 'inventory', 'sales', 'purchases', 'customers', 'accounting', 'reports', 'dashboard', 'cash', 'settings', 'users', 'auth', 'errors', 'about', 'ar'],
+    ns: ['common', 'nav', 'pos', 'inventory', 'sales', 'purchases', 'customers', 'accounting', 'reports', 'dashboard', 'cash', 'settings', 'users', 'auth', 'errors', 'about', 'ar', 'orders'],
     defaultNS: 'common',
     backend: {
       loadPath: '/locales/{{lng}}/{{ns}}.json',

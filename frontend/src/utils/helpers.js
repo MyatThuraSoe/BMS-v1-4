@@ -28,6 +28,14 @@ export const formatDate = (dateString) => {
   });
 };
 
+export const toLocalDateString = (date) => {
+  if (!date) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+};
+
 export const formatDateTime = (dateString) => {
   if (!dateString) return '';
   return new Date(dateString).toLocaleString('en-US');
@@ -59,4 +67,26 @@ export const validateEmail = (email) => {
 export const validatePhone = (phone) => {
   const re = /^[\d\s\-\+\(\)]+$/;
   return re.test(phone);
+};
+
+export const downloadCsv = (filename, rows, headers) => {
+  if (!rows || rows.length === 0) return;
+  const keys = Object.keys(rows[0]);
+  const escapeCell = (v) => {
+    const s = v == null ? '' : String(v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const lines = [
+    (headers || keys).map(escapeCell).join(','),
+    ...rows.map((r) => keys.map((h) => escapeCell(r[h])).join(',')),
+  ];
+  const blob = new Blob(['\ufeff' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filename}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 };

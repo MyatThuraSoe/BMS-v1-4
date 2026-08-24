@@ -29,7 +29,7 @@
   "confirm_password": "新しいパスワードの確認",
   "password_changed": "パスワードが正常に変更されました",
   "passwords_not_match": "新しいパスワードが一致しません",
-  "password_min": "新しいパスワードは6文字以上である必要があります",
+  "password_min": "新しいパスワードは8文字以上である必要があります",
   "failed_to_change_password": "パスワードの変更に失敗しました",
   "shop_name_fallback": "BMS",
   "not_authorized": "権限がありません",

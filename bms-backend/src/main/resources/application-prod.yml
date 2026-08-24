@@ -43,7 +43,9 @@ spring:
       fail-on-empty-beans: false
 
 jwt:
-  secret: c2VjcmV0S2V5Rm9yQk1TT2ZmbGluZUFwcENyZWF0ZWRGb3JNeWF0VGh1cmFTb2UyMDI2
+  # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
+  # value is shipped; override via environment variable if needed.
+  secret: MySecureSecretKeyForJWTTokenGeneration2026!
   expiration: 86400000
 
 logging:
@@ -53,10 +55,8 @@ logging:
 
 google:
   oauth:
-    # Override via environment variables when configuring real credentials.
-    # Placeholders avoid shipping fake secrets that would silently break auth.
-    client-id: ${GOOGLE_CLIENT_ID:377772345599-8n8h8k8j8i8h8g8f8e8d8c8b8a8.apps.googleusercontent.com}
-    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
+    client-secret: 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
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
     frontend-redirect-base: http://127.0.0.1:17234
 

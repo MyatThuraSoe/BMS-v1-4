@@ -36,6 +36,9 @@ public class BackupService {
     private final PurchaseRepository purchaseRepository;
     private final PurchaseItemRepository purchaseItemRepository;
     private final ExpenseRepository expenseRepository;
+    private final ArPaymentRepository arPaymentRepository;
+    private final ReceiptCustomizationRepository receiptCustomizationRepository;
+    private final OrderRepository orderRepository;
 
     private final BackupSettingRepository backupSettingRepository;
     private final GoogleDriveService googleDriveService;
@@ -50,6 +53,9 @@ public class BackupService {
             PurchaseRepository purchaseRepository,
             PurchaseItemRepository purchaseItemRepository,
             ExpenseRepository expenseRepository,
+            ArPaymentRepository arPaymentRepository,
+            ReceiptCustomizationRepository receiptCustomizationRepository,
+            OrderRepository orderRepository,
             BackupSettingRepository backupSettingRepository,
             GoogleDriveService googleDriveService) {
         this.productRepository = productRepository;
@@ -61,6 +67,9 @@ public class BackupService {
         this.purchaseRepository = purchaseRepository;
         this.purchaseItemRepository = purchaseItemRepository;
         this.expenseRepository = expenseRepository;
+        this.arPaymentRepository = arPaymentRepository;
+        this.receiptCustomizationRepository = receiptCustomizationRepository;
+        this.orderRepository = orderRepository;
         this.backupSettingRepository = backupSettingRepository;
         this.googleDriveService = googleDriveService;
     }
@@ -99,6 +108,10 @@ public class BackupService {
             writePurchasesSheet(workbook, purchasesToExport);
             writePurchaseItemsSheet(workbook, purchasesToExport); // Pass filtered purchases to filter items
             writeExpensesSheet(workbook, expensesToExport);
+            writeArPaymentsSheet(workbook);
+            writeReceiptCustomizationsSheet(workbook);
+            writeOrdersSheet(workbook);
+            writeOrderItemsSheet(workbook);
 
             workbook.write(outputStream);
         }
@@ -106,7 +119,7 @@ public class BackupService {
 
     private void writeProductsSheet(Workbook workbook) {
         Sheet sheet = workbook.createSheet("Products");
-String[] headers = {"id", "sku", "name", "description", "category_id", "unit_price", "cost_price", "tax_rate", "stock_quantity", "min_stock_level", "unit", "image_data", "image_type", "is_active", "deleted_at", "created_at", "updated_at"};
+String[] headers = {"id", "sku", "name", "description", "category_id", "unit_price", "cost_price", "tax_rate", "stock_quantity", "reserved_quantity", "min_stock_level", "unit", "image_data", "image_type", "is_active", "deleted_at", "created_at", "updated_at"};
         createHeaderRow(sheet, headers);
         int rowNum = 1;
         for (Product p : productRepository.findAll()) {
@@ -115,7 +128,8 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             setCell(row, col++, p.getId()); setCell(row, col++, p.getSku()); setCell(row, col++, p.getName());
             setCell(row, col++, p.getDescription()); setCell(row, col++, p.getCategory() != null ? p.getCategory().getId() : null);
             setCell(row, col++, p.getUnitPrice()); setCell(row, col++, p.getCostPrice()); setCell(row, col++, p.getTaxRate());
-setCell(row, col++, p.getStockQuantity()); setCell(row, col++, p.getMinStockLevel()); setCell(row, col++, p.getUnit());
+            setCell(row, col++, p.getStockQuantity());
+            setCell(row, col++, p.getReservedQuantity()); setCell(row, col++, p.getMinStockLevel()); setCell(row, col++, p.getUnit());
             setCell(row, col++, binaryPlaceholder(p.getImageData())); setCell(row, col++, p.getImageType());
             setCell(row, col++, p.getIsActive()); setCell(row, col++, p.getDeletedAt()); setCell(row, col++, p.getCreatedAt()); setCell(row, col, p.getUpdatedAt());
         }
@@ -136,7 +150,7 @@ setCell(row, col++, p.getStockQuantity()); setCell(row, col++, p.getMinStockLeve
 
     private void writeCustomersSheet(Workbook workbook) {
         Sheet sheet = workbook.createSheet("Customers");
-        String[] headers = {"id", "customer_code", "first_name", "last_name", "email", "phone", "address", "city", "state", "zip_code", "country", "notes", "is_active", "deleted_at", "created_at", "updated_at"};
+        String[] headers = {"id", "customer_code", "first_name", "last_name", "email", "phone", "address", "city", "state", "zip_code", "country", "notes", "credit_limit", "current_balance", "is_active", "deleted_at", "created_at", "updated_at"};
         createHeaderRow(sheet, headers);
         int rowNum = 1;
         for (Customer c : customerRepository.findAll()) {
@@ -146,6 +160,7 @@ setCell(row, col++, p.getStockQuantity()); setCell(row, col++, p.getMinStockLeve
             setCell(row, col++, c.getLastName()); setCell(row, col++, c.getEmail()); setCell(row, col++, c.getPhone());
             setCell(row, col++, c.getAddress()); setCell(row, col++, c.getCity()); setCell(row, col++, c.getState());
             setCell(row, col++, c.getZipCode()); setCell(row, col++, c.getCountry()); setCell(row, col++, c.getNotes());
+            setCell(row, col++, c.getCreditLimit()); setCell(row, col++, c.getCurrentBalance());
             setCell(row, col++, c.getIsActive()); setCell(row, col++, c.getDeletedAt()); setCell(row, col++, c.getCreatedAt()); setCell(row, col, c.getUpdatedAt());
         }
     }
@@ -167,17 +182,21 @@ setCell(row, col++, p.getStockQuantity()); setCell(row, col++, p.getMinStockLeve
 
     private void writeSalesSheet(Workbook workbook, List<Sale> sales) {
         Sheet sheet = workbook.createSheet("Sales");
-        String[] headers = {"id", "invoice_number", "customer_id", "cashier_id", "sale_date", "subtotal", "tax_amount", "discount_amount", "total_amount", "amount_paid", "change_given", "payment_method", "notes", "is_voided", "voided_reason", "voided_by", "voided_at", "is_active", "deleted_at", "created_at", "updated_at"};
+        String[] headers = {"id", "invoice_number", "customer_id", "customer_display_name", "cashier_id", "sale_date", "subtotal", "tax_amount", "discount_amount", "total_amount", "amount_paid", "change_given", "payment_method", "sale_type", "payment_status", "due_date", "notes", "is_voided", "voided_reason", "voided_by", "voided_at", "is_active", "deleted_at", "created_at", "updated_at"};
         createHeaderRow(sheet, headers);
         int rowNum = 1;
         for (Sale s : sales) {
             Row row = sheet.createRow(rowNum++);
             int col = 0;
             setCell(row, col++, s.getId()); setCell(row, col++, s.getInvoiceNumber());
-            setCell(row, col++, s.getCustomer() != null ? s.getCustomer().getId() : null); setCell(row, col++, s.getCashierId());
+            setCell(row, col++, s.getCustomer() != null ? s.getCustomer().getId() : null); setCell(row, col++, s.getCustomerDisplayName());
+            setCell(row, col++, s.getCashierId());
             setCell(row, col++, s.getSaleDate()); setCell(row, col++, s.getSubtotal()); setCell(row, col++, s.getTaxAmount());
             setCell(row, col++, s.getDiscountAmount()); setCell(row, col++, s.getTotalAmount()); setCell(row, col++, s.getAmountPaid());
             setCell(row, col++, s.getChangeGiven()); setCell(row, col++, s.getPaymentMethod() != null ? s.getPaymentMethod().name() : null);
+            setCell(row, col++, s.getSaleType() != null ? s.getSaleType().name() : null);
+            setCell(row, col++, s.getPaymentStatus() != null ? s.getPaymentStatus().name() : null);
+            setCell(row, col++, s.getDueDate());
             setCell(row, col++, s.getNotes()); setCell(row, col++, s.getIsVoided()); setCell(row, col++, s.getVoidedReason());
             setCell(row, col++, s.getVoidedBy()); setCell(row, col++, s.getVoidedAt()); setCell(row, col++, s.getIsActive());
             setCell(row, col++, s.getDeletedAt()); setCell(row, col++, s.getCreatedAt()); setCell(row, col, s.getUpdatedAt());
@@ -258,6 +277,83 @@ setCell(row, col++, p.getStockQuantity()); setCell(row, col++, p.getMinStockLeve
             setCell(row, col++, e.getDescription()); setCell(row, col++, e.getAmount()); setCell(row, col++, e.getExpenseDate());
             setCell(row, col++, e.getCreatedBy()); setCell(row, col++, binaryPlaceholder(e.getReceiptImage()));
             setCell(row, col++, e.getReceiptImageType()); setCell(row, col++, e.getCreatedAt()); setCell(row, col, e.getDeletedAt());
+        }
+    }
+
+    private void writeArPaymentsSheet(Workbook workbook) {
+        Sheet sheet = workbook.createSheet("AR Payments");
+        String[] headers = {"id", "invoice_id", "amount", "payment_date", "recorded_by_id", "notes"};
+        createHeaderRow(sheet, headers);
+        int rowNum = 1;
+        for (ArPayment p : arPaymentRepository.findAll()) {
+            Row row = sheet.createRow(rowNum++);
+            int col = 0;
+            setCell(row, col++, p.getId());
+            setCell(row, col++, p.getInvoice() != null ? p.getInvoice().getId() : null);
+            setCell(row, col++, p.getAmount());
+            setCell(row, col++, p.getPaymentDate());
+            setCell(row, col++, p.getRecordedBy() != null ? p.getRecordedBy().getId() : null);
+            setCell(row, col, p.getNotes());
+        }
+    }
+
+    private void writeReceiptCustomizationsSheet(Workbook workbook) {
+        Sheet sheet = workbook.createSheet("Receipt Customizations");
+        String[] headers = {"id", "header_text", "main_message", "footer_text", "paper_size", "time_format",
+                "logo_size", "show_logo", "show_shop_name", "show_address", "show_phone", "header_align",
+                "font_size", "divider_style", "bold_shop_name", "show_qr_code", "show_credit_info"};
+        createHeaderRow(sheet, headers);
+        int rowNum = 1;
+        for (ReceiptCustomization rc : receiptCustomizationRepository.findAll()) {
+            Row row = sheet.createRow(rowNum++);
+            int col = 0;
+            setCell(row, col++, rc.getId()); setCell(row, col++, rc.getHeaderText()); setCell(row, col++, rc.getMainMessage());
+            setCell(row, col++, rc.getFooterText()); setCell(row, col++, rc.getPaperSize()); setCell(row, col++, rc.getTimeFormat());
+            setCell(row, col++, rc.getLogoSize()); setCell(row, col++, rc.getShowLogo()); setCell(row, col++, rc.getShowShopName());
+            setCell(row, col++, rc.getShowAddress()); setCell(row, col++, rc.getShowPhone()); setCell(row, col++, rc.getHeaderAlign());
+            setCell(row, col++, rc.getFontSize()); setCell(row, col++, rc.getDividerStyle()); setCell(row, col++, rc.getBoldShopName());
+            setCell(row, col++, rc.getShowQRCode()); setCell(row, col, rc.getShowCreditInfo());
+        }
+    }
+
+    private void writeOrdersSheet(Workbook workbook) {
+        Sheet sheet = workbook.createSheet("Orders");
+        String[] headers = {"id", "order_number", "customer_id", "customer_display_name", "cashier_id", "created_at", "subtotal", "tax_amount", "total_amount", "status", "converted_sale_id", "converted_at", "cancelled_at", "cancelled_by", "cancel_reason", "notes", "is_active", "deleted_at", "updated_at"};
+        createHeaderRow(sheet, headers);
+        int rowNum = 1;
+        for (Order o : orderRepository.findAll()) {
+            Row row = sheet.createRow(rowNum++);
+            int col = 0;
+            setCell(row, col++, o.getId()); setCell(row, col++, o.getOrderNumber());
+            setCell(row, col++, o.getCustomer() != null ? o.getCustomer().getId() : null);
+            setCell(row, col++, o.getCustomerDisplayName());
+            setCell(row, col++, o.getCashierId());
+            setCell(row, col++, o.getCreatedAt());
+            setCell(row, col++, o.getSubtotal()); setCell(row, col++, o.getTaxAmount()); setCell(row, col++, o.getTotalAmount());
+            setCell(row, col++, o.getStatus() != null ? o.getStatus().name() : null);
+            setCell(row, col++, o.getConvertedSaleId()); setCell(row, col++, o.getConvertedAt());
+            setCell(row, col++, o.getCancelledAt()); setCell(row, col++, o.getCancelledBy()); setCell(row, col++, o.getCancelReason());
+            setCell(row, col++, o.getNotes()); setCell(row, col++, o.getIsActive());
+            setCell(row, col++, o.getDeletedAt()); setCell(row, col, o.getUpdatedAt());
+        }
+    }
+
+    private void writeOrderItemsSheet(Workbook workbook) {
+        Sheet sheet = workbook.createSheet("Order Items");
+        String[] headers = {"id", "order_id", "product_id", "quantity", "unit_price", "total_price", "tax_amount", "cost_price_at_order"};
+        createHeaderRow(sheet, headers);
+        int rowNum = 1;
+        for (Order o : orderRepository.findAll()) {
+            Long orderId = o.getId();
+            for (OrderItem item : o.getItems()) {
+                Row row = sheet.createRow(rowNum++);
+                int col = 0;
+                setCell(row, col++, item.getId()); setCell(row, col++, orderId);
+                setCell(row, col++, item.getProduct() != null ? item.getProduct().getId() : null);
+                setCell(row, col++, item.getQuantity()); setCell(row, col++, item.getUnitPrice());
+                setCell(row, col++, item.getTotalPrice()); setCell(row, col++, item.getTaxAmount());
+                setCell(row, col, item.getCostPriceAtOrder());
+            }
         }
     }
 

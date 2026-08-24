@@ -92,9 +92,11 @@ public class ExpenseService {
     }
 
     public void uploadReceiptImage(Long id, MultipartFile file) throws IOException {
+        // Trust magic bytes, never the client Content-Type / filename extension.
+        String mime = com.bms.util.ImageValidationUtil.validateImage(file);
         Expense expense = getActiveExpenseEntity(id);
         expense.setReceiptImage(file.getBytes());
-        expense.setReceiptImageType(getFileExtension(file.getOriginalFilename()));
+        expense.setReceiptImageType(com.bms.util.ImageValidationUtil.mimeToExtension(mime));
         expenseRepository.save(expense);
     }
 
@@ -138,12 +140,5 @@ public class ExpenseService {
             throw new ResourceNotFoundException("Expense not found: " + id);
         }
         return expense;
-    }
-
-    private String getFileExtension(String filename) {
-        if (filename == null || !filename.contains(".")) {
-            return "jpeg";
-        }
-        return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase();
     }
 }

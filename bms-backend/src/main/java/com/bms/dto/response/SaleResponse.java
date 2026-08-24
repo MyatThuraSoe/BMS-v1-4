@@ -29,15 +29,16 @@ public class SaleResponse {
     private LocalDateTime createdAt;
     private java.util.List<SaleItemResponse> items;
 
-    private List<RefundResponse> refunds;
-    private BigDecimal totalRefunded;
+    private List<SaleReturnResponse> returns;
+    private BigDecimal totalReturned;
+    private String returnStatus;
 
-    public List<RefundResponse> getRefunds() {
-        return refunds;
+    public List<SaleReturnResponse> getReturns() {
+        return returns;
     }
 
-    public void setRefunds(List<RefundResponse> refunds) {
-        this.refunds = refunds;
+    public void setReturns(List<SaleReturnResponse> returns) {
+        this.returns = returns;
     }
 
     public Boolean getVoided() {
@@ -48,12 +49,20 @@ public class SaleResponse {
         isVoided = voided;
     }
 
-    public BigDecimal getTotalRefunded() {
-        return totalRefunded;
+    public BigDecimal getTotalReturned() {
+        return totalReturned;
     }
 
-    public void setTotalRefunded(BigDecimal totalRefunded) {
-        this.totalRefunded = totalRefunded;
+    public void setTotalReturned(BigDecimal totalReturned) {
+        this.totalReturned = totalReturned;
+    }
+
+    public String getReturnStatus() {
+        return returnStatus;
+    }
+
+    public void setReturnStatus(String returnStatus) {
+        this.returnStatus = returnStatus;
     }
 
     public Long getId() { return id; }

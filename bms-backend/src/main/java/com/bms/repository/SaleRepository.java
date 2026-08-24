@@ -130,12 +130,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     BigDecimal sumNetCashSalesByShiftId(@Param("shiftId") Long shiftId);
 
     @Query("""
-        SELECT COALESCE(SUM(r.totalRefundAmount), 0)
-        FROM Refund r
-        WHERE r.sale.cashShiftId = :shiftId AND r.refundDate >= :shiftStart
+        SELECT COALESCE(SUM(r.totalReturnAmount), 0)
+        FROM SaleReturn r
+        WHERE r.sale.cashShiftId = :shiftId AND r.returnDate >= :shiftStart
           AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
+          AND (r.sale.saleType <> com.bms.entity.Sale.SaleType.CREDIT
+               OR r.sale.paymentStatus = com.bms.entity.Sale.PaymentStatus.PAID)
         """)
-    BigDecimal sumRefundsDuringShift(@Param("shiftId") Long shiftId, @Param("shiftStart") LocalDateTime shiftStart);
+    BigDecimal sumReturnsDuringShift(@Param("shiftId") Long shiftId, @Param("shiftStart") LocalDateTime shiftStart);
 
     // Customer LTV — aggregate per customer across all non-voided sales
     @Query("""

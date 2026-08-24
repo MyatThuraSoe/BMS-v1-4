@@ -89,4 +89,51 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         ORDER BY MAX(s.saleDate) ASC NULLS FIRST
         """)
     List<Object[]> findDeadStock(@Param("cutoffDate") java.time.LocalDateTime cutoffDate);
+
+    // -----------------------------------------------------------------------
+    // Inventory dashboard aggregates (active, non-deleted products only)
+    // -----------------------------------------------------------------------
+
+    @Query("""
+        SELECT COUNT(p),
+               COALESCE(SUM(CASE WHEN p.stockQuantity > p.minStockLevel THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN p.stockQuantity > 0 AND p.stockQuantity <= p.minStockLevel THEN 1 ELSE 0 END), 0),
+               COALESCE(SUM(CASE WHEN p.stockQuantity <= 0 THEN 1 ELSE 0 END), 0)
+        FROM Product p
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+        """)
+    List<Object[]> getStockStatusCounts();
+
+    @Query("""
+        SELECT COALESCE(SUM(p.stockQuantity), 0),
+               COALESCE(SUM(COALESCE(p.costPrice, 0) * p.stockQuantity), 0),
+               COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0)
+        FROM Product p
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+        """)
+    List<Object[]> getInventoryValues();
+
+    @Query("""
+        SELECT c.id, c.name,
+               COUNT(p),
+               COALESCE(SUM(p.stockQuantity), 0),
+               COALESCE(SUM(COALESCE(p.costPrice, 0) * p.stockQuantity), 0),
+               COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0)
+        FROM Product p
+        JOIN p.category c
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+        GROUP BY c.id, c.name
+        ORDER BY COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0) DESC
+        """)
+    List<Object[]> getCategoryInventoryBreakdown();
+
+    @Query("""
+        SELECT p.id, p.name, p.sku, c.name, p.stockQuantity, p.minStockLevel
+        FROM Product p
+        LEFT JOIN p.category c
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+          AND p.stockQuantity <= p.minStockLevel
+        ORDER BY (p.minStockLevel - p.stockQuantity) DESC, p.name ASC
+        """)
+    List<Object[]> findLowStockRows(Pageable pageable);
 }

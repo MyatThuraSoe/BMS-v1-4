@@ -86,13 +86,13 @@ const Accounting = () => {
   const expenses = expensesData?.data || [];
 
   const summaryCards = useMemo(() => [
-    { id: 'revenue', label: t('revenue'), value: summary.totalIncome || 0, changePercent: summary.incomeChangePercent },
-    { id: 'refunds', label: t('refunds'), value: summary.totalRefunds || 0 },
-    { id: 'cogs', label: t('cogs'), value: summary.totalCogs || 0 },
-    { id: 'gross_profit', label: t('gross_profit'), value: summary.grossProfit || 0 },
-    { id: 'total_expenses', label: t('total_expenses'), value: summary.totalExpenses || 0 },
-    { id: 'net_profit', label: t('net_profit'), value: summary.netProfit || 0, highlight: true, changePercent: summary.profitChangePercent },
-    { id: 'outstanding_ar', label: t('outstanding_ar'), value: summary.outstandingAr || 0 },
+    { id: 'revenue', label: t('revenue'), value: summary.totalIncome || 0, changePercent: summary.incomeChangePercent, color: 'primary.main' },
+    { id: 'refunds', label: t('refunds'), value: summary.totalRefunds || 0, color: 'error.main' },
+    { id: 'cogs', label: t('cogs'), value: summary.totalCogs || 0, color: 'warning.main' },
+    { id: 'gross_profit', label: t('gross_profit'), value: summary.grossProfit || 0, color: 'success.main' },
+    { id: 'total_expenses', label: t('total_expenses'), value: summary.totalExpenses || 0, color: 'error.main' },
+    { id: 'net_profit', label: t('net_profit'), value: summary.netProfit || 0, highlight: true, changePercent: summary.profitChangePercent, dynamic: true },
+    { id: 'outstanding_ar', label: t('outstanding_ar'), value: summary.outstandingAr || 0, color: 'error.main' },
   ], [summary]);
 
   const categoryLabel = (cat) => t(`category_${String(cat).toLowerCase()}`, { defaultValue: cat });
@@ -147,7 +147,9 @@ const Accounting = () => {
           <Grid item xs={12} sm={6} md={2} key={card.label}>
             <Paper sx={{ p: 2, border: card.highlight ? '2px solid #1976d2' : '1px solid #e0e0e0' }}>
               <Typography variant="body2" color="text.secondary">{card.label}</Typography>
-              <Typography variant="h5" sx={{ fontWeight: 700 }}>{formatCurrency(card.value)}</Typography>
+              <Typography variant="h5" sx={{ fontWeight: 700, color: card.dynamic ? ((card.value || 0) >= 0 ? 'success.main' : 'error.main') : (card.color || 'text.primary') }}>
+                {formatCurrency(card.value)}
+              </Typography>
               {card.changePercent != null && (
                 <Typography variant="caption" color={card.changePercent >= 0 ? 'success.main' : 'error.main'} sx={{ display: 'block', mt: 0.5 }}>
                   {card.changePercent >= 0 ? '\u25B2' : '\u25BC'} {t('change_vs_previous', { pct: Math.abs(Number(card.changePercent)).toFixed(1) })}

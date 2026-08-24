@@ -8,21 +8,21 @@ import jakarta.validation.constraints.NotNull;
 
 import java.util.List;
 
-public class RefundRequest {
-    @NotBlank(message = "Refund reason is required")
+public class SaleReturnRequest {
+    @NotBlank(message = "Return reason is required")
     private String reason;
 
     @Valid
-    @NotEmpty(message = "At least one refund item is required")
-    private List<RefundItemRequest> items;
+    @NotEmpty(message = "At least one return item is required")
+    private List<SaleReturnItemRequest> items;
 
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
 
-    public List<RefundItemRequest> getItems() { return items; }
-    public void setItems(List<RefundItemRequest> items) { this.items = items; }
+    public List<SaleReturnItemRequest> getItems() { return items; }
+    public void setItems(List<SaleReturnItemRequest> items) { this.items = items; }
 
-    public static class RefundItemRequest {
+    public static class SaleReturnItemRequest {
         @NotNull(message = "Sale item ID is required")
         private Long saleItemId;
 

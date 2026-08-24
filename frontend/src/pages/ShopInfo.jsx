@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Paper, TextField, MenuItem, Button, Alert, CircularProgress } from '@mui/material';
+import { Box, Typography, Paper, TextField, MenuItem, Button, Alert, CircularProgress, FormControlLabel, Switch } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { shopInfoService } from '../api/services';
@@ -26,6 +26,12 @@ const parseTaxPercentage = (v) => {
   return Number.isFinite(num) ? String(num) : '';
 };
 
+// Focused number inputs change value when scrolling the page — blur them on
+// wheel so scrolling never mutates a typed amount.
+const preventWheelChange = (e) => {
+  if (e.target === document.activeElement) e.target.blur();
+};
+
 const ShopInfo = () => {
 
   const { t } = useTranslation('settings');
@@ -50,6 +56,9 @@ const ShopInfo = () => {
     email: '',
     currency: 'USD',
     taxPercentage: '0',
+    discountEnabled: false,
+    discountType: 'PERCENTAGE',
+    discountValue: '0',
   });
 
   useEffect(() => {
@@ -63,6 +72,9 @@ const ShopInfo = () => {
       email: d.email || '',
       currency: d.currency || 'USD',
       taxPercentage: parseTaxPercentage(d.taxPercentage) || '0',
+      discountEnabled: Boolean(d.discountEnabled),
+      discountType: ['AMOUNT', 'FIXED'].includes(d.discountType) ? d.discountType : 'PERCENTAGE',
+      discountValue: parseTaxPercentage(d.discountValue) || '0',
     });
   }, [data]);
 
@@ -133,6 +145,9 @@ const ShopInfo = () => {
       email: form.email,
       currency: form.currency,
       taxPercentage: parseTaxPercentage(form.taxPercentage) || '0',
+      discountEnabled: form.discountEnabled,
+      discountType: form.discountType,
+      discountValue: parseTaxPercentage(form.discountValue) || '0',
     });
     setCurrencyCode(form.currency);
   };
@@ -214,6 +229,7 @@ const ShopInfo = () => {
               type="number"
               value={form.taxPercentage}
               onChange={(e) => setForm((p) => ({ ...p, taxPercentage: parseTaxPercentage(e.target.value) }))}
+              onWheel={preventWheelChange}
               fullWidth
               helperText={t('tax_percentage_helper')}
               inputProps={{ inputMode: 'decimal', min: 0, max: 100, step: '0.0001' }}
@@ -221,6 +237,63 @@ const ShopInfo = () => {
                 endAdornment: <span>%</span>,
               }}
             />
+
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={form.discountEnabled}
+                    onChange={(e) => setForm((p) => ({ ...p, discountEnabled: e.target.checked }))}
+                  />
+                }
+                label={t('discount_enabled')}
+              />
+              {form.discountEnabled && (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
+                  <TextField
+                    select
+                    label={t('discount_type')}
+                    value={form.discountType}
+                    onChange={(e) => setForm((p) => ({ ...p, discountType: e.target.value }))}
+                    fullWidth
+                    helperText={t('discount_type_helper')}
+                  >
+                    <MenuItem value="PERCENTAGE">{t('discount_type_percentage')}</MenuItem>
+                    <MenuItem value="FIXED">{t('discount_type_fixed')}</MenuItem>
+                    <MenuItem value="AMOUNT">{t('discount_type_amount')}</MenuItem>
+                  </TextField>
+
+                  {form.discountType === 'PERCENTAGE' && (
+                    <TextField
+                      label={t('discount_value')}
+                      type="number"
+                      value={form.discountValue}
+                      onChange={(e) => setForm((p) => ({ ...p, discountValue: parseTaxPercentage(e.target.value) }))}
+                      onWheel={preventWheelChange}
+                      fullWidth
+                      helperText={t('discount_percentage_helper')}
+                      inputProps={{ inputMode: 'decimal', min: 0, max: 100, step: '0.01' }}
+                      InputProps={{ endAdornment: <span>%</span> }}
+                    />
+                  )}
+                  {form.discountType === 'FIXED' && (
+                    <TextField
+                      label={t('discount_fixed_value')}
+                      type="number"
+                      value={form.discountValue}
+                      onChange={(e) => setForm((p) => ({ ...p, discountValue: parseTaxPercentage(e.target.value) }))}
+                      onWheel={preventWheelChange}
+                      fullWidth
+                      helperText={t('discount_fixed_helper')}
+                      inputProps={{ inputMode: 'decimal', min: 0, step: '0.01' }}
+                    />
+                  )}
+                  {form.discountType === 'AMOUNT' && (
+                    <Alert severity="info">{t('discount_amount_mode_hint')}</Alert>
+                  )}
+                </Box>
+              )}
+            </Paper>
 
             <TextField
               label={t('address')}

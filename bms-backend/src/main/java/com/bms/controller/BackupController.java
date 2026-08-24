@@ -16,18 +16,26 @@ import org.springframework.web.bind.annotation.*;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @RestController
 @RequestMapping("/api/backups")
 public class BackupController {
 
+    private static final Duration STATE_TTL = Duration.ofMinutes(5);
+    private static final int MAX_PENDING_STATES = 200;
+
     private final BackupSettingRepository backupSettingRepository;
     private final BackupService backupService;
     private final GoogleDriveService googleDriveService;
+    private final Map<String, Instant> pendingOAuthStates = new ConcurrentHashMap<>();
 
     @Value("${google.oauth.client-id}")
     private String clientId;
@@ -51,7 +59,27 @@ public class BackupController {
     public ResponseEntity<ApiResponse<BackupSetting>> getSettings() {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> backupSettingRepository.save(new BackupSetting()));
-        return ResponseEntity.ok(new ApiResponse<>(true, "Settings retrieved", setting));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Settings retrieved", maskTokens(setting)));
+    }
+
+    private BackupSetting maskTokens(BackupSetting source) {
+        BackupSetting masked = new BackupSetting();
+        masked.setId(source.getId());
+        masked.setEnabled(source.isEnabled());
+        masked.setFrequency(source.getFrequency());
+        masked.setCustomCronExpression(source.getCustomCronExpression());
+        masked.setLastBackupDate(source.getLastBackupDate());
+        masked.setNextBackupDate(source.getNextBackupDate());
+        masked.setGoogleRefreshToken(maskSecret(source.getGoogleRefreshToken()));
+        masked.setGoogleAccessToken(maskSecret(source.getGoogleAccessToken()));
+        return masked;
+    }
+
+    private String maskSecret(String token) {
+        if (token == null || token.isEmpty()) {
+            return token;
+        }
+        return token.length() <= 4 ? "••••" : "••••" + token.substring(token.length() - 4);
     }
 
     @PutMapping("/settings")
@@ -82,6 +110,15 @@ public class BackupController {
     @GetMapping("/google/auth-url")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, String>>> getAuthUrl() {
+        // Single-use CSRF token; verified in the callback. Prevents login CSRF /
+        // OAuth state poisoning by attackers who can start an auth flow themselves.
+        String state = UUID.randomUUID().toString();
+        evictExpiredStates();
+        if (pendingOAuthStates.size() >= MAX_PENDING_STATES) {
+            pendingOAuthStates.clear();
+        }
+        pendingOAuthStates.put(state, Instant.now().plus(STATE_TTL));
+
         String scope = "https://www.googleapis.com/auth/drive.file";
         String authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
                 + "?client_id=" + clientId
@@ -89,8 +126,14 @@ public class BackupController {
                 + "&response_type=code"
                 + "&scope=" + URLEncoder.encode(scope, StandardCharsets.UTF_8)
                 + "&access_type=offline"
-                + "&prompt=consent";
+                + "&prompt=consent"
+                + "&state=" + state;
         return ResponseEntity.ok(new ApiResponse<>(true, "ok", Map.of("authUrl", authUrl)));
+    }
+
+    private void evictExpiredStates() {
+        Instant now = Instant.now();
+        pendingOAuthStates.entrySet().removeIf(e -> e.getValue().isBefore(now));
     }
 
     // ✅ NEW: Status endpoint for polling
@@ -105,7 +148,28 @@ public class BackupController {
 
     // Callback from Google (NO @PreAuthorize - Google redirects browser directly here)
     @GetMapping("/google/callback")
-    public ResponseEntity<Void> handleGoogleCallback(@RequestParam("code") String code) {
+    public ResponseEntity<Void> handleGoogleCallback(@RequestParam(value = "state", required = false) String state,
+                                                     @RequestParam(value = "code", required = false) String code,
+                                                     @RequestParam(value = "error", required = false) String error) {
+        if (error != null && !error.isBlank()) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(frontendRedirectBase + "/settings/backup?status=error"))
+                    .build();
+        }
+        // Require + consume the single-use state token (one-time use, 5-min TTL).
+        if (state == null || code == null) {
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(frontendRedirectBase + "/settings/backup?status=error"))
+                    .build();
+        }
+        Instant issuedAt = pendingOAuthStates.remove(state);
+        if (issuedAt == null || issuedAt.isBefore(Instant.now())) {
+            org.slf4j.LoggerFactory.getLogger(BackupController.class)
+                    .warn("Google OAuth callback rejected: missing/expired state token");
+            return ResponseEntity.status(HttpStatus.FOUND)
+                    .location(URI.create(frontendRedirectBase + "/settings/backup?status=error"))
+                    .build();
+        }
         try {
             googleDriveService.handleCallback(code);
             // Redirect to friendly success page
@@ -113,6 +177,8 @@ public class BackupController {
                     .location(URI.create("/api/backups/google/success"))
                     .build();
         } catch (Exception e) {
+            org.slf4j.LoggerFactory.getLogger(BackupController.class)
+                    .error("Google OAuth token exchange failed", e);
             return ResponseEntity.status(HttpStatus.FOUND)
                     .location(URI.create(frontendRedirectBase + "/settings/backup?status=error"))
                     .build();

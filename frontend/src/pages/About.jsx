@@ -15,6 +15,7 @@ import {
 
 import { licenseService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
+import { useAuth } from '../context/AuthContext';
 
 // TikTok SVG Icon - MUI v5 compatible
 const TikTokIcon = (props) => (
@@ -34,12 +35,14 @@ const TikTokIcon = (props) => (
 
 const About = () => {
   const { t } = useTranslation('about');
+  const { isAdmin } = useAuth();
   const appVersion = '1.0.0';
   const buildDate = 'August 2025';
 
   const { data: statusData, refetch } = useQuery({
     queryKey: ['license-status'],
     queryFn: () => licenseService.getStatus(),
+    enabled: isAdmin(),
 });
 const lic = statusData?.data?.data;
 const [keyDialog, setKeyDialog] = useState(false);
@@ -122,7 +125,7 @@ const handleActivateNewKey = async () => {
         </Stack>
       </Paper>
 
-      {lic && (
+      {isAdmin() && lic && (
     <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
         <Stack direction="row" justifyContent="space-between" alignItems="center" flexWrap="wrap" gap={1}>
             <Box>

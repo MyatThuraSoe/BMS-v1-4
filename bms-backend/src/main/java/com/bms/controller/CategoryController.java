@@ -32,6 +32,12 @@ public class CategoryController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Active categories retrieved successfully", categoryService.getAllActiveCategories()));
     }
 
+    @GetMapping("/stats/summary")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<java.util.Map<String, Object>>> getCategoryStatsSummary() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Category stats summary retrieved successfully", categoryService.getCategoryStatsSummary()));
+    }
+
     @GetMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<CategoryResponseDto>> getCategoryById(@PathVariable Long id) {

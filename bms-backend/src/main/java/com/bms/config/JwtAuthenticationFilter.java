@@ -42,6 +42,16 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                 String username = jwtUtil.extractUsername(token);
                 UserDetails userDetails = userService.loadUserByUsername(username);
 
+                // Deactivated users lose API access immediately, even with a
+                // still-unexpired token.
+                if (!userDetails.isEnabled()) {
+                    logger.warn("JWT rejected for inactive account: {}", username);
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN); // 403
+                    response.setContentType("application/json");
+                    response.getWriter().write("{\"error\": \"Account deactivated\", \"message\": \"This account has been deactivated. Please contact your administrator.\"}");
+                    return;
+                }
+
                 if (jwtUtil.validateToken(token, userDetails)) {
                     UsernamePasswordAuthenticationToken authToken = new UsernamePasswordAuthenticationToken(
                             userDetails, null, userDetails.getAuthorities());

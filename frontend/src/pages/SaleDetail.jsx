@@ -19,12 +19,15 @@ import {
   Payments as PaymentsIcon,
   History as HistoryIcon,
   Receipt as ReceiptIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  AssignmentReturn as ReturnIcon
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { notifySuccess, notifyError } from '../utils/notify';
 import directPrint from '../services/directPrintService';
 import { printReceiptViaQZ, isQZSupported, connectQZ } from '../utils/bluetoothPrinter';
+import { useAuth } from '../context/AuthContext';
+import SaleReturnDialog from '../components/SaleReturnDialog';
 
 const StatCard = ({ label, value, color, icon, highlight, highlightColor = 'success' }) => (
   <Paper 
@@ -68,8 +71,10 @@ const SaleDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation('sales');
+  const { isManager } = useAuth();
   const [isDirectPrinting, setIsDirectPrinting] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ['sale', id],
@@ -87,16 +92,24 @@ const SaleDetail = () => {
   if (!data?.data) return <Typography>{t('sale_not_found')}</Typography>;
 
   const sale = data.data;
-  const netTotal = sale.totalAmount - (sale.totalRefunded || 0);
-  const isFullyRefunded = sale.totalRefunded > 0 && Math.abs(netTotal) < 0.01;
+  const totalReturned = Number(sale.totalReturned || 0);
+  const netTotal = sale.totalAmount - totalReturned;
+  // Backend truth first (returnStatus); fallback to derived totals for old cached payloads
+  const returnStatus = sale.returnStatus
+    || (totalReturned > 0 && Math.abs(netTotal) < 0.01 ? 'FULLY_RETURNED'
+      : totalReturned > 0 ? 'PARTIALLY_RETURNED' : 'COMPLETED');
 
   const statusChip = sale.isVoided
     ? <Chip label={t('status_voided')} color="error" variant="filled" sx={{ fontWeight: 600 }} />
-    : isFullyRefunded
-    ? <Chip label={t('status_fully_refunded')} color="warning" variant="filled" sx={{ fontWeight: 600 }} />
-    : sale.totalRefunded > 0
-    ? <Chip label={t('status_partially_refunded')} color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
+    : returnStatus === 'FULLY_RETURNED'
+    ? <Chip label={t('status_fully_returned')} color="warning" variant="filled" sx={{ fontWeight: 600 }} />
+    : returnStatus === 'PARTIALLY_RETURNED'
+    ? <Chip label={t('status_partially_returned')} color="warning" variant="outlined" sx={{ fontWeight: 600 }} />
     : <Chip label={t('status_completed')} color="success" variant="filled" sx={{ fontWeight: 600 }} />;
+
+  const hasReturnableItems = !sale.isVoided && sale.items?.some(
+    (item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0
+  );
 
   const handleViewReceipt = () => window.open(`/receipt/${sale.invoiceNumber}`, '_blank');
 
@@ -230,6 +243,17 @@ const SaleDetail = () => {
         </Box>
 
         <Stack direction="row" spacing={1.5} alignItems="center">
+          {isManager() && hasReturnableItems && (
+            <Button
+              variant="outlined"
+              color="warning"
+              startIcon={<ReturnIcon />}
+              onClick={() => setReturnDialogOpen(true)}
+              sx={{ textTransform: 'none', fontWeight: 600 }}
+            >
+              {t('return')}
+            </Button>
+          )}
           <Button 
             variant="contained" 
             color="success"
@@ -318,11 +342,11 @@ const SaleDetail = () => {
         </Grid>
         <Grid item xs={6} md={3}>
           <StatCard 
-            label={t('net_after_refunds')} 
+            label={t('net_after_returns')} 
             value={formatCurrency(netTotal)} 
-            color={sale.totalRefunded > 0 ? 'warning.main' : 'success.main'} 
-            highlight={sale.totalRefunded > 0}
-            highlightColor={sale.totalRefunded > 0 ? 'warning' : 'success'}
+            color={totalReturned > 0 ? 'warning.main' : 'success.main'} 
+            highlight={totalReturned > 0}
+            highlightColor={totalReturned > 0 ? 'warning' : 'success'}
             icon={<HistoryIcon />}
           />
         </Grid>
@@ -362,10 +386,10 @@ const SaleDetail = () => {
         </TableContainer>
       </Paper>
 
-      {sale.refunds?.length > 0 && (
+      {sale.returns?.length > 0 && (
         <Paper elevation={0} sx={{ p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
           <Typography variant="h6" fontWeight={700} gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-            <HistoryIcon color="success" /> {t('refund_history')}
+            <HistoryIcon color="success" /> {t('return_history')}
           </Typography>
           <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
@@ -378,12 +402,12 @@ const SaleDetail = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {sale.refunds.map((r) => (
+                {sale.returns.map((r) => (
                   <TableRow key={r.id} sx={{ '&:last-child td': { border: 0 }, '&:hover': { bgcolor: 'grey.50' } }}>
-                    <TableCell>{formatDateTime(r.refundDate)}</TableCell>
+                    <TableCell>{formatDateTime(r.returnDate)}</TableCell>
                     <TableCell>{r.reason}</TableCell>
-                    <TableCell>{r.refundedByName || '-'}</TableCell>
-                    <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: 'warning.main' }}>{formatCurrency(r.totalRefundAmount)}</TableCell>
+                    <TableCell>{r.returnedByUsername || '-'}</TableCell>
+                    <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontWeight: 600, color: 'warning.main' }}>{formatCurrency(r.totalReturnAmount)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -393,12 +417,18 @@ const SaleDetail = () => {
           <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
             <Paper sx={{ px: 3, py: 1.5, bgcolor: 'warning.50', border: '1px solid', borderColor: 'warning.light', borderRadius: 2 }}>
               <Typography fontWeight={700} color="warning.dark" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
-                {t('total_refunded', { amount: formatCurrency(sale.totalRefunded) })}
+                {t('total_returned', { amount: formatCurrency(totalReturned) })}
               </Typography>
             </Paper>
           </Box>
         </Paper>
       )}
+
+      <SaleReturnDialog
+        open={returnDialogOpen}
+        onClose={() => setReturnDialogOpen(false)}
+        saleId={sale.id}
+      />
     </Box>
   );
 };

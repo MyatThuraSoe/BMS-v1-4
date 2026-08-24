@@ -34,5 +34,14 @@
   "expenses": "Dépenses",
   "net_profit": "Bénéfice net",
   "vs_previous_period": "{{value}}% par rapport à la période précédente",
-  "no_prior_data": "N/A — aucune donnée de période antérieure"
+  "no_prior_data": "N/A — aucune donnée de période antérieure",
+  "top_selling_products": "Produits les plus vendus",
+  "no_data": "Aucune donnée pour cette période.",
+  "low_stock_watchlist": "Surveillance des stocks faibles",
+  "view_all": "Voir tout",
+  "all_stock_healthy": "Tous les niveaux de stock sont bons.",
+  "stock_movements_last_14_days": "Mouvements de stock (14 derniers jours)",
+  "stock_in": "Entrées",
+  "stock_out": "Sorties",
+  "net_change": "Variation nette"
 }

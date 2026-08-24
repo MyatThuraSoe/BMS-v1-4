@@ -14,7 +14,7 @@ public class UserUpdateRequest {
     @Email(message = "Email should be valid")
     private String email;
 
-    @Size(min = 6, message = "Password must be at least 6 characters")
+    @Size(min = 8, message = "Password must be at least 6 characters")
     private String password; // Optional
 
     @NotBlank(message = "First name is required")
@@ -28,6 +28,17 @@ public class UserUpdateRequest {
 
     @NotNull(message = "Role ID is required")
     private Long roleId;
+
+    /** Optional — omitted means "leave unchanged". */
+    private Boolean isActive;
+
+    public Boolean getIsActive() {
+        return isActive;
+    }
+
+    public void setIsActive(Boolean isActive) {
+        this.isActive = isActive;
+    }
 
     // Getters
 

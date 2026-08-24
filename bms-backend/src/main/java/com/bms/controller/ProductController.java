@@ -220,6 +220,8 @@ public class ProductController {
         response.setCostPrice(product.getCostPrice());
         response.setTaxRate(product.getTaxRate());
 response.setStockQuantity(product.getStockQuantity());
+        response.setReservedQuantity(product.getReservedQuantity());
+        response.setAvailableQuantity(product.getAvailableQuantity());
         response.setMinStockLevel(product.getMinStockLevel());
         response.setIsActive(product.getIsActive());
         response.setCreatedAt(product.getCreatedAt());

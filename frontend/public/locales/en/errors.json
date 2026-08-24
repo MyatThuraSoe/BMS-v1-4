@@ -5,5 +5,6 @@
   "conflict": "That action conflicts with existing data (e.g., a duplicate).",
   "check_form": "Please check the form for errors.",
   "generic": "Something went wrong.",
-  "license_required": "A license is required to use this application."
+  "license_required": "A license is required to use this application.",
+  "forbidden": "You don't have permission to perform this action."
 }

@@ -19,6 +19,14 @@ public class ShopInfo {
         OTHER
     }
 
+    public enum DiscountType {
+        PERCENTAGE,
+        // Admin-set flat amount subtracted from every sale automatically
+        FIXED,
+        // Cashier-entered amount per sale
+        AMOUNT
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -51,6 +59,21 @@ public class ShopInfo {
 
     @Column(name = "tax_percentage", precision = 6, scale = 4)
     private BigDecimal taxPercentage = BigDecimal.ZERO;
+
+    // Nullable on purpose: ddl-auto=update cannot add a NOT NULL column to a
+    // table that already has rows (H2/MySQL reject it). getDiscountEnabled()
+    // normalizes null -> false instead.
+    @Column(name = "discount_enabled")
+    private Boolean discountEnabled = false;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "discount_type", length = 20)
+    private DiscountType discountType = DiscountType.PERCENTAGE;
+
+    // PERCENTAGE: percent off the subtotal. AMOUNT: default/fixed amount the
+    // cashier may adjust per sale (capped at the subtotal server-side).
+    @Column(name = "discount_value", precision = 10, scale = 2)
+    private BigDecimal discountValue = BigDecimal.ZERO;
 
     @Version
     private Long version;
@@ -133,6 +156,30 @@ public class ShopInfo {
 
     public void setTaxPercentage(BigDecimal taxPercentage) {
         this.taxPercentage = taxPercentage;
+    }
+
+    public Boolean getDiscountEnabled() {
+        return discountEnabled != null ? discountEnabled : false;
+    }
+
+    public void setDiscountEnabled(Boolean discountEnabled) {
+        this.discountEnabled = discountEnabled;
+    }
+
+    public DiscountType getDiscountType() {
+        return discountType != null ? discountType : DiscountType.PERCENTAGE;
+    }
+
+    public void setDiscountType(DiscountType discountType) {
+        this.discountType = discountType;
+    }
+
+    public BigDecimal getDiscountValue() {
+        return discountValue != null ? discountValue : BigDecimal.ZERO;
+    }
+
+    public void setDiscountValue(BigDecimal discountValue) {
+        this.discountValue = discountValue;
     }
 
     public Long getVersion() {

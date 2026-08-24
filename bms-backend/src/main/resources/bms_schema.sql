@@ -187,6 +187,10 @@ CREATE TABLE sales (
     amount_paid DECIMAL(10,2) NOT NULL,
     change_given DECIMAL(10,2) NOT NULL DEFAULT 0.00,
     payment_method ENUM('CASH') NOT NULL DEFAULT 'CASH',
+    sale_type ENUM('CASH', 'CREDIT') NOT NULL DEFAULT 'CASH',
+    payment_status VARCHAR(255) NOT NULL DEFAULT 'PAID',
+    due_date DATE NULL,
+    return_status ENUM('COMPLETED', 'PARTIALLY_RETURNED', 'FULLY_RETURNED') NOT NULL DEFAULT 'COMPLETED',
     notes TEXT,
     is_voided BOOLEAN DEFAULT FALSE,
     voided_reason TEXT,
@@ -257,30 +261,30 @@ CREATE TABLE expenses (
     FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
-CREATE TABLE refunds (
+CREATE TABLE sale_returns (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     sale_id BIGINT NOT NULL,
-    refunded_by BIGINT NOT NULL,
-    refund_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    returned_by BIGINT NOT NULL,
+    return_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     reason TEXT NOT NULL,
-    total_refund_amount DECIMAL(10,2) NOT NULL,
+    total_return_amount DECIMAL(10,2) NOT NULL,
     FOREIGN KEY (sale_id) REFERENCES sales(id),
-    FOREIGN KEY (refunded_by) REFERENCES users(id),
-    INDEX idx_refund_sale (sale_id),
-    INDEX idx_refund_date (refund_date),
-    INDEX idx_refund_user (refunded_by)
+    FOREIGN KEY (returned_by) REFERENCES users(id),
+    INDEX idx_sale_return_sale (sale_id),
+    INDEX idx_sale_return_date (return_date),
+    INDEX idx_sale_return_user (returned_by)
 );
 
-CREATE TABLE refund_items (
+CREATE TABLE sale_return_items (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
-    refund_id BIGINT NOT NULL,
+    sale_return_id BIGINT NOT NULL,
     sale_item_id BIGINT NOT NULL,
-    quantity_refunded INT NOT NULL,
-    refund_amount DECIMAL(10,2) NOT NULL,
-    FOREIGN KEY (refund_id) REFERENCES refunds(id) ON DELETE CASCADE,
+    quantity_returned INT NOT NULL,
+    return_amount DECIMAL(10,2) NOT NULL,
+    FOREIGN KEY (sale_return_id) REFERENCES sale_returns(id) ON DELETE CASCADE,
     FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
-    INDEX idx_refund_item_refund (refund_id),
-    INDEX idx_refund_item_sale_item (sale_item_id)
+    INDEX idx_sale_return_item_return (sale_return_id),
+    INDEX idx_sale_return_item_sale_item (sale_item_id)
 );
 
 -- Audit Logs table

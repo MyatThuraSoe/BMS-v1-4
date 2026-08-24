@@ -64,6 +64,9 @@ const StockAdjustment = () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
+      queryClient.invalidateQueries({ queryKey: ['inventory-summary'] });
+      queryClient.invalidateQueries({ queryKey: ['stock-movements'] });
+      queryClient.invalidateQueries({ queryKey: ['movement-stats'] });
       setTimeout(() => navigate(-1), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || t('failed_to_adjust_stock')),

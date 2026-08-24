@@ -39,7 +39,7 @@ import {
   ShoppingCart as CartIcon,
   PersonAdd as CustomerIcon,
   FlashOn as DirectPrintIcon,
-  FlashOn,
+  ListAlt as OrderIcon,
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -52,13 +52,19 @@ import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService } from '../api/services';
 import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter';
 import directPrint from '../services/directPrintService';
 
 const POS = () => {
 
   const { t } = useTranslation('pos');
+
+  // Focused number inputs change value when scrolling the page — blur them
+  // so scrolling never mutates a typed amount (cash received / discount).
+  const preventWheelChange = (e) => {
+    if (e.target === document.activeElement) e.target.blur();
+  };
 
   const [customerSearch, setCustomerSearch] = useState('');
   const [debouncedCustomerSearch, setDebouncedCustomerSearch] = useState('');
@@ -71,8 +77,11 @@ const POS = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [cashAmount, setCashAmount] = useState('');
+  const [cashManuallyEdited, setCashManuallyEdited] = useState(false);
+  const [cashierDiscount, setCashierDiscount] = useState(''); // AMOUNT-mode discount entered by cashier
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
+  const [printAfterCheckout, setPrintAfterCheckout] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [error, setError] = useState('');
   const [registeredMode, setRegisteredMode] = useState(false); // toggle: off = plain name, on = search registered
@@ -87,6 +96,9 @@ const POS = () => {
   const [saleType, setSaleType] = useState('CASH'); // CASH | CREDIT
   const [dueDate, setDueDate] = useState('');
   const canUseCredit = isManager(); // credit sales are ADMIN/MANAGER only
+
+  const [showOrderDialog, setShowOrderDialog] = useState(false);
+  const [orderNotes, setOrderNotes] = useState('');
 
   // Shop info (for receipt branding)
   const { data: shopInfoData } = useQuery({
@@ -243,10 +255,12 @@ const filteredProducts = products.filter(
     setCustomerNameInput('');
     setRegisteredMode(false);
     setCashAmount('');
+    setCashManuallyEdited(false);
+    setCashierDiscount('');
     setDueDate('');
     setSaleType('CASH');
     setError('');
-    setVerifiedTotals(0);
+    setVerifiedTotals(null);
   };
 
   const subtotal = cart.reduce(
@@ -258,7 +272,27 @@ const filteredProducts = products.filter(
 
   const tax = subtotal * (shopTaxPercentage / 100);
 
-  const total = subtotal + tax;
+  // Shop-level discount config (admin-controlled, mirrors tax)
+  const discountEnabled = Boolean(shopInfo?.discountEnabled);
+  const rawDiscountType = shopInfo?.discountType;
+  const discountMode = ['FIXED', 'AMOUNT'].includes(rawDiscountType) ? rawDiscountType : 'PERCENTAGE';
+
+  // Live estimate for the cart panel; server recomputes authoritatively
+  let discountEstimate = 0;
+  if (discountEnabled && subtotal > 0) {
+    if (discountMode === 'PERCENTAGE') {
+      discountEstimate = subtotal * ((Number(shopInfo?.discountValue) || 0) / 100);
+    } else if (discountMode === 'FIXED') {
+      const v = Number(shopInfo?.discountValue) || 0;
+      discountEstimate = Math.min(Math.max(v, 0), subtotal);
+    } else {
+      const d = parseFloat(cashierDiscount);
+      if (Number.isFinite(d) && d > 0) discountEstimate = Math.min(d, subtotal);
+    }
+  }
+  discountEstimate = Math.max(0, Math.min(discountEstimate, subtotal));
+
+  const total = subtotal + tax - discountEstimate;
   const change = cashAmount ? parseFloat(cashAmount) - total : 0;
 
   const displaySubtotal = verifiedTotals?.subtotal ?? subtotal;
@@ -272,16 +306,31 @@ const filteredProducts = products.filter(
     ? (selectedCustomer.creditLimit ?? 0) - (selectedCustomer.currentBalance ?? 0)
     : 0;
 
+  // Auto-fill the cash-received field with the exact total so cashiers don't
+  // have to type it. Once they edit it (customer pays more), we stop syncing.
+  useEffect(() => {
+    if (saleType !== 'CASH') return;
+    if (cart.length === 0 || cashManuallyEdited) return;
+    const t = Number(displayTotal);
+    if (!isFinite(t) || t <= 0) return;
+    setCashAmount(t.toFixed(2));
+  }, [displayTotal, saleType, cart.length, cashManuallyEdited]);
+
   const createSaleMutation = useMutation({
     mutationFn: async (saleData) => {
       const response = await saleService.create(saleData);
       return response;
     },
     onSuccess: (response) => {
-      setLastSale(response.data);
+      const sale = response.data;
+      setLastSale(sale);
       setShowCheckoutDialog(false);
       setShowReceiptDialog(true);
       clearCart();
+      if (printAfterCheckout) {
+        setPrintAfterCheckout(false);
+        handleDirectPrint(sale);
+      }
       queryClient.invalidateQueries({ queryKey: ['products-pos'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
@@ -293,6 +342,7 @@ const filteredProducts = products.filter(
       queryClient.invalidateQueries({ queryKey: ['salesTrend'] });
     },
     onError: (err) => {
+      setPrintAfterCheckout(false);
       const message = err.response?.data?.message || '';
       if (message.includes('Insufficient stock') || message.includes('less than total amount')) {
         notifyWarning(t('prices_changed_warning'));
@@ -304,6 +354,52 @@ const filteredProducts = products.filter(
     },
   });
 
+    const createOrderMutation = useMutation({
+    mutationFn: (orderData) => orderService.create(orderData),
+    onSuccess: () => {
+      notifySuccess(t('order_created'));
+      setShowOrderDialog(false);
+      setOrderNotes('');
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['products-pos'] });
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
+      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
+      clearCart();
+    },
+    onError: (err) => {
+      notifyError(err.friendlyMessage || t('order_failed'));
+    },
+  });
+
+  const handleOrderClick = () => {
+    if (cart.length === 0) {
+      setError(t('empty_cart'));
+      return;
+    }
+    const sanitizedCart = cart.map(item => {
+      const qty = parseInt(item.quantity, 10);
+      if (isNaN(qty) || qty <= 0) {
+        return { ...item, quantity: 1 };
+      }
+      return item;
+    });
+    setCart(sanitizedCart);
+    setOrderNotes('');
+    setShowOrderDialog(true);
+  };
+
+  const confirmOrder = () => {
+    createOrderMutation.mutate({
+      items: cart.map((item) => ({
+        productId: item.productId,
+        quantity: parseInt(item.quantity, 10) || 1,
+      })),
+      customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
+      notes: orderNotes.trim() || undefined,
+    });
+  };
+
     useEffect(() => {
     const timer = setTimeout(() => setDebouncedCustomerSearch(customerSearch), 300);
     return () => clearTimeout(timer);
@@ -311,17 +407,25 @@ const filteredProducts = products.filter(
 
 
   const verifyCartMutation = useMutation({
-    mutationFn: (cartItems) => saleService.verifyCart(cartItems),
+    mutationFn: (cartItems) => saleService.verifyCart(
+      cartItems,
+      discountEnabled && discountMode === 'AMOUNT' ? (parseFloat(cashierDiscount) || 0) : null
+    ),
     onSuccess: (response) => {
       const result = response.data;
 
       if (result.valid) {
-        // Nothing changed — proceed straight to the confirm dialog with authoritative totals
         setVerifiedTotals({
           subtotal: result.subtotal,
           taxAmount: result.taxAmount,
+          discountAmount: result.discountAmount,
           totalAmount: result.totalAmount,
         });
+        // Checkout & Print: skip the confirmation dialog, create + print right away
+        if (printAfterCheckout) {
+          createSaleMutation.mutate(buildSaleData());
+          return;
+        }
         setShowCheckoutDialog(true);
         return;
       }
@@ -348,6 +452,7 @@ const filteredProducts = products.filter(
       // Do NOT open the confirm dialog yet — let them see the corrected cart first.
     },
     onError: (err) => {
+      setPrintAfterCheckout(false); // don't surprise-print on a later manual checkout
       notifyError(err.friendlyMessage || t('verify_cart_failed'));
     },
   });
@@ -385,9 +490,15 @@ const filteredProducts = products.filter(
     verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
   };
 
-  const confirmCheckout = () => {
+  const getDiscountPayload = () =>
+    discountEnabled && discountMode === 'AMOUNT'
+      ? Math.max(0, Math.min(parseFloat(cashierDiscount) || 0, subtotal))
+      : null;
+
+  // Shared by the confirm dialog and the direct Checkout & Print path
+  const buildSaleData = () => {
     if (saleType === 'CREDIT') {
-      const saleData = {
+      return {
         items: cart.map((item) => ({
           productId: item.productId,
           quantity: parseInt(item.quantity, 10) || 1,
@@ -399,11 +510,10 @@ const filteredProducts = products.filter(
         saleType: 'CREDIT',
         dueDate,
         amountPaid: 0,
+        discountAmount: getDiscountPayload(),
       };
-      createSaleMutation.mutate(saleData);
-      return;
     }
-    const saleData = {
+    return {
       items: cart.map((item) => ({
         productId: item.productId,
         quantity: parseInt(item.quantity, 10) || 1, // Fallback to 1 just in case
@@ -414,8 +524,12 @@ const filteredProducts = products.filter(
       paymentMethod: 'CASH',
       saleType: 'CASH',
       amountPaid: parseFloat(cashAmount),
+      discountAmount: getDiscountPayload(),
     };
-    createSaleMutation.mutate(saleData);
+  };
+
+  const confirmCheckout = () => {
+    createSaleMutation.mutate(buildSaleData());
   };
 
   const handleSaleTypeChange = (event, newType) => {
@@ -424,6 +538,9 @@ const filteredProducts = products.filter(
     if (newType === 'CREDIT') {
       setRegisteredMode(true);
       setCustomerNameInput('');
+    } else {
+      // Back to CASH: re-enable auto-fill so the field tracks the total again
+      setCashManuallyEdited(false);
     }
     setError('');
   };
@@ -491,9 +608,11 @@ const filteredProducts = products.filter(
     }
   };
 
-  // Smart Direct Print: uses generatePrintHtml so the printed paper matches the on-screen receipt
-  const handleDirectPrint = async () => {
-    if (!lastSale?.invoiceNumber) return;
+  // Smart Direct Print: uses generatePrintHtml so the printed paper matches the on-screen receipt.
+  // Accepts an optional sale object so "Checkout & Print" can print immediately after sale creation.
+  const handleDirectPrint = async (saleOverride) => {
+    const sale = (saleOverride && saleOverride.invoiceNumber) ? saleOverride : lastSale;
+    if (!sale?.invoiceNumber) return;
     setIsDirectPrinting(true);
     try {
       if (directPrint.isAvailable()) {
@@ -513,9 +632,9 @@ const filteredProducts = products.filter(
         const paperWidthMm = Math.max(40, parseInt(String(customization.paperSize || '58').replace(/\D/g, ''), 10) || 58);
         let qrDataUrl = null;
         if (customization?.showQRCode) {
-          qrDataUrl = await generateQRDataUrl(lastSale.invoiceNumber);
+          qrDataUrl = await generateQRDataUrl(sale.invoiceNumber);
         }
-        const html = generatePrintHtml(lastSale, shopInfo || {}, customization, logoDataUrl, qrDataUrl);
+        const html = generatePrintHtml(sale, shopInfo || {}, customization, logoDataUrl, qrDataUrl);
         const result = await directPrint.print(html, null, paperWidthMm);
         if (result.success) {
           notifySuccess(t('receipt_sent_printer'));
@@ -523,7 +642,7 @@ const filteredProducts = products.filter(
           notifyError(result.error || t('print_failed'));
         }
       } else if (isQZSupported()) {
-        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
+        await printReceiptViaQZ(sale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
         notifySuccess(t('receipt_sent_printer'));
       } else {
         handlePrintReceipt();
@@ -533,6 +652,11 @@ const filteredProducts = products.filter(
     } finally {
       setIsDirectPrinting(false);
     }
+  };
+
+  const handleCheckoutAndPrint = () => {
+    setPrintAfterCheckout(true);
+    handleCheckout();
   };
 
   return (
@@ -618,8 +742,8 @@ const filteredProducts = products.filter(
                           {t('out_of_stock')}
                         </Box>
                       )}
-                      <Box sx={{ p: 1.5, pb: 1, display: 'flex', justifyContent: 'center', bgcolor: 'background.default' }}>
-                        <ProductImage productId={product.id} hasImage={product.hasImage} size={72} />
+                      <Box sx={{ p: 1, pb: 0.5, display: 'flex', justifyContent: 'center', bgcolor: 'background.default' }}>
+                        <ProductImage productId={product.id} hasImage={product.hasImage} size={130} />
                       </Box>
                       <Box sx={{ p: 1.5, pt: 1 }}>
                         <Typography variant="body2" fontWeight={500} noWrap title={product.name}>
@@ -672,7 +796,6 @@ const filteredProducts = products.filter(
           <Paper
             elevation={0}
             sx={{
-              height: '100%',
               display: 'flex',
               flexDirection: 'column',
               border: '1px solid',
@@ -854,6 +977,34 @@ const filteredProducts = products.filter(
                 <Typography>{t('tax')}</Typography>
                 <Typography>{formatCurrency(displayTax)}</Typography>
             </Box>
+              {discountEnabled && discountMode === 'PERCENTAGE' && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="secondary">
+                    {t('discount_pct_label', { pct: Number(shopInfo?.discountValue) || 0 })}
+                  </Typography>
+                  <Typography color="secondary">-{formatCurrency(discountEstimate)}</Typography>
+                </Box>
+              )}
+              {discountEnabled && discountMode === 'FIXED' && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="secondary">{t('discount_fixed_label')}</Typography>
+                  <Typography color="secondary">-{formatCurrency(discountEstimate)}</Typography>
+                </Box>
+              )}
+              {discountEnabled && discountMode === 'AMOUNT' && (
+                <TextField
+                  fullWidth
+                  label={t('discount_amount')}
+                  type="number"
+                  value={cashierDiscount}
+                  onChange={(e) => setCashierDiscount(e.target.value)}
+                  onWheel={preventWheelChange}
+                  size="small"
+                  sx={{ mb: 1 }}
+                  inputProps={{ min: 0, step: '0.01' }}
+                  helperText={t('discount_amount_helper')}
+                />
+              )}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
                 <Typography variant="h6">{t('total')}</Typography>
                 <Typography variant="h6" color="primary">
@@ -925,7 +1076,8 @@ const filteredProducts = products.filter(
                     label={t('cash_amount')}
                     type="number"
                     value={cashAmount}
-                    onChange={(e) => setCashAmount(e.target.value)}
+                    onChange={(e) => { setCashAmount(e.target.value); setCashManuallyEdited(true); }}
+                    onWheel={preventWheelChange}
                     size="small"
                     sx={{ mb: 1 }}
                   />
@@ -945,9 +1097,27 @@ const filteredProducts = products.filter(
                 fullWidth
                 variant="contained"
                 size="large"
-                onClick={handleCheckout}
+                onClick={handleCheckoutAndPrint}
                 disabled={cart.length === 0}
-                sx={{ py: 1.75, fontSize: '1.05rem', mt: 1 }}
+                startIcon={<DirectPrintIcon />}
+                sx={{ py: 1.75, fontSize: '1.05rem', mt: 1, bgcolor: 'primary.main' }}
+              >
+                {saleType === 'CREDIT' ? t('complete_credit_sale_print') : t('checkout_and_print')}
+              </Button>
+              <Button
+                fullWidth
+                variant="contained"
+                size="large"
+                onClick={() => { setPrintAfterCheckout(false); handleCheckout(); }}
+                disabled={cart.length === 0}
+                sx={{
+                  py: 1.75,
+                  fontSize: '1.05rem',
+                  mt: 1,
+                  bgcolor: 'rgba(43,110,79,0.12)',
+                  color: 'primary.dark',
+                  '&:hover': { bgcolor: 'rgba(43,110,79,0.2)' },
+                }}
               >
                 {saleType === 'CREDIT' ? t('complete_credit_sale') : t('checkout')}
               </Button>
@@ -959,6 +1129,17 @@ const filteredProducts = products.filter(
               >
                 {t('clear_cart')}
               </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                color="secondary"
+                startIcon={<OrderIcon />}
+                onClick={handleOrderClick}
+                disabled={cart.length === 0}
+                sx={{ mt: 1 }}
+              >
+                {t('order_now')}
+              </Button>
             </Box>
             </Box>
           </Paper>
@@ -966,11 +1147,16 @@ const filteredProducts = products.filter(
       </Grid>
 
       {/* Checkout Confirmation Dialog */}
-      <Dialog open={showCheckoutDialog} onClose={() => setShowCheckoutDialog(false)}>
+      <Dialog open={showCheckoutDialog} onClose={() => { setShowCheckoutDialog(false); setPrintAfterCheckout(false); }}>
         <DialogTitle>{t('confirm_checkout')}</DialogTitle>
         <DialogContent>
           <Typography>{t('items_count', { count: cart.length })}</Typography>
           <Typography>{t('total')}: {formatCurrency(displayTotal)}</Typography>
+          {Number(verifiedTotals?.discountAmount) > 0 && (
+            <Typography color="secondary">
+              {t('discount_amount')}: -{formatCurrency(verifiedTotals.discountAmount)}
+            </Typography>
+          )}
           {saleType === 'CREDIT' ? (
             <>
               <Typography>{t('sale_type_credit')}</Typography>
@@ -992,18 +1178,55 @@ const filteredProducts = products.filter(
           )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setShowCheckoutDialog(false)}>{t('cancel')}</Button>
+          <Button onClick={() => { setShowCheckoutDialog(false); setPrintAfterCheckout(false); }}>{t('cancel')}</Button>
           <Button
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
             disabled={saleType === 'CREDIT' ? false : parseFloat(cashAmount) < displayTotal}
           >
-            {t('confirm')}
+            {printAfterCheckout ? t('confirm_and_print') : t('confirm')}
           </Button>
         </DialogActions>
       </Dialog>
 
+
+
+      {/* Order Dialog — reserves stock for a pending order */}
+      <Dialog open={showOrderDialog} onClose={() => setShowOrderDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('confirm_order')}</DialogTitle>
+        <DialogContent>
+          <Typography>{t('items_count', { count: cart.length })}</Typography>
+          <Typography>{t('total')}: {formatCurrency(displayTotal)}</Typography>
+          {registeredMode && selectedCustomer && (
+            <Typography>{t('customer_label', { name: `${selectedCustomer.firstName} ${selectedCustomer.lastName}` })}</Typography>
+          )}
+          <Alert severity="info" sx={{ mt: 2 }}>
+            {t('order_reserves_stock')}
+          </Alert>
+          <TextField
+            fullWidth
+            label={t('notes_optional')}
+            value={orderNotes}
+            onChange={(e) => setOrderNotes(e.target.value)}
+            size="small"
+            multiline
+            rows={2}
+            sx={{ mt: 2 }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowOrderDialog(false)}>{t('cancel')}</Button>
+          <Button
+            onClick={confirmOrder}
+            variant="contained"
+            color="secondary"
+            disabled={createOrderMutation.isPending}
+          >
+            {t('confirm_order')}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
 
       {/* Receipt Dialog — uses the shared ReceiptDocument so it matches what prints */}
@@ -1034,7 +1257,7 @@ const filteredProducts = products.filter(
           
           {/* ✅ NEW: Smart Direct Print Button (Always visible!) */}
           <Button 
-            onClick={handleDirectPrint} 
+            onClick={() => handleDirectPrint()} 
             variant="contained" 
             color="primary" 
             fullWidth 

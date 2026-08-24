@@ -5,8 +5,14 @@
   "quantity": "จำนวน",
   "subtotal": "ยอดรวมย่อย",
   "tax": "ภาษี",
+  "discount_pct_label": "ส่วนลด ({{pct}}%)",
+  "discount_amount": "ส่วนลด",
+  "discount_amount_helper": "จำนวนส่วนลด (ไม่เกินยอดรวมย่อย)",
   "total": "รวม",
   "checkout": "ชำระเงิน",
+  "checkout_and_print": "ชำระเงิน & พิมพ์",
+  "complete_credit_sale_print": "ทำรายการขายเครดิต & พิมพ์",
+  "confirm_and_print": "ยืนยัน & พิมพ์",
   "cart": "ตะกร้า",
   "scan_barcode": "สแกนบาร์โค้ดหรือค้นหา",
   "empty_cart": "ตะกร้าว่างเปล่า",
@@ -64,5 +70,11 @@
   "due_date": "กำหนดชำระ",
   "complete_credit_sale": "ทำรายการขายเครดิต",
   "select_credit_customer": "กรุณาเลือกลูกค้าที่ลงทะเบียนสำหรับขายเครดิต",
-  "enter_due_date": "กรุณากรอกวันกำหนดชำระ"
+  "enter_due_date": "กรุณากรอกวันกำหนดชำระ",
+  "order_now": "คำสั่งซื้อ",
+  "confirm_order": "ยืนยันคำสั่งซื้อ",
+  "order_created": "สร้างคำสั่งซื้อแล้ว และสำรองสต็อกแล้ว",
+  "order_failed": "ไม่สามารถสร้างคำสั่งซื้อได้",
+  "order_reserves_stock": "ระบบจะสร้างคำสั่งซื้อที่รอดำเนินการ สต็อกจะถูกสำรองไว้จนกว่าคำสั่งซื้อจะถูกแปลงเป็นยอดขายหรือยกเลิก",
+  "notes_optional": "หมายเหตุ (ไม่บังคับ)"
 }

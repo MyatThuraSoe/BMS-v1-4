@@ -33,7 +33,7 @@
   "email_required": "กรุณากรอกอีเมล",
   "email_invalid": "รูปแบบอีเมลไม่ถูกต้อง",
   "password_required": "กรุณากรอกรหัสผ่าน",
-  "password_min_length": "รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร",
+  "password_min_length": "รหัสผ่านต้องมีอย่างน้อย 8 ตัวอักษร",
   "first_name_required": "กรุณากรอกชื่อจริง",
   "last_name_required": "กรุณากรอกนามสกุล",
   "role_required": "กรุณาเลือกบทบาท",

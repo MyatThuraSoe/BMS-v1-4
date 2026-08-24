@@ -157,7 +157,8 @@ const UserUpdate = () => {
       delete submitData.password;
     }
     submitData.roleId = parseInt(submitData.roleId, 10);
-    submitData.active = formData.active;
+    submitData.isActive = formData.active;
+    delete submitData.active;
 
     mutation.mutate(submitData);
   };

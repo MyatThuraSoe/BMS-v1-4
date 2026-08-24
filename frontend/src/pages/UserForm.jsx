@@ -91,7 +91,7 @@ const UserForm = () => {
     if (!formData.email.trim()) newErrors.email = t('email_required');
     else if (!/\S+@\S+\.\S+/.test(formData.email)) newErrors.email = t('email_invalid');
     if (!isEdit && !formData.password) newErrors.password = t('password_required');
-    if (!isEdit && formData.password && formData.password.length < 6) {
+    if (!isEdit && formData.password && formData.password.length < 8) {
       newErrors.password = t('password_min_length');
     }
     if (!formData.firstName.trim()) newErrors.firstName = t('first_name_required');
@@ -111,7 +111,8 @@ const UserForm = () => {
       delete submitData.password;
     }
     submitData.roleId = parseInt(submitData.roleId, 10);
-    submitData.active = formData.active;
+    submitData.isActive = formData.active;
+    delete submitData.active;
 
     mutation.mutate(submitData);
   };

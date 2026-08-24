@@ -56,7 +56,10 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOriginPatterns(Arrays.asList("*")); // Allows all origins
+        // Explicit origin allowlist only — no wildcard. Wildcard + credentials is
+        // rejected by browsers and broadens the attack surface for no benefit here
+        // (the app is served same-origin in production; only dev Vite + LAN dev
+        // origins need CORS).
         configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000",
                 "http://192.168.1.7:3000",  // Add this for mobile
                 "http://192.168.1.7:5173"

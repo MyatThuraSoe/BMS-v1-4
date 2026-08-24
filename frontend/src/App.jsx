@@ -1,55 +1,64 @@
+import { lazy } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { QueryClient, QueryClientProvider, MutationCache } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
+import { Box, CircularProgress } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { notifyError } from './utils/notify';
 
-// Pages
-import About from './pages/About';
+// Auth entry screens stay eager (first paint); every other page is code-split
+// so the initial download stays small regardless of how many features exist.
 import Login from './pages/Login';
 import SetupFirstAdmin from './pages/SetupFirstAdmin';
-import Dashboard from './pages/Dashboard';
-import Products from './pages/Products';
-import ProductForm from './pages/ProductForm';
-import ProductDetail from './pages/ProductDetail';
-import Categories from './pages/Categories';
-import CategoryForm from './pages/CategoryForm';
-import Suppliers from './pages/Suppliers';
-import SupplierForm from './pages/SupplierForm';
-import Purchases from './pages/Purchases';
-import PurchaseForm from './pages/PurchaseForm';
-import Customers from './pages/Customers';
-import CustomerDetails from './pages/CustomerDetails';
-import CustomerForm from './pages/CustomerForm';
-import POS from './pages/POS';
-import Sales from './pages/Sales';
-import SaleDetail from './pages/SaleDetail';
-import ReceiptPreview from './pages/ReceiptPreview';
-import Reports from './pages/Reports';
-import Analytics from './pages/Analytics';
-import Accounting from './pages/Accounting';
-import StockAdjustment from './pages/StockAdjustment';
-import Users from './pages/Users';
-import UserForm from './pages/UserForm';
-import UserUpdate from './pages/UserUpdate';
-import Settings from './pages/Settings';
-import AuditLogs from './pages/AuditLogs';
-import ShopInfo from './pages/ShopInfo';
-import ReceiptCustomization from './pages/ReceiptCustomization';
+import Activate from './pages/Activate';
 import NotFound from './pages/NotFound';
 
-import Activate from './pages/Activate';
-
-import BackupSettings from './pages/BackupSettings';
-import SupplierDetails from './pages/SupplierDetails';
-import CashShift from './pages/CashShift';
-import ShiftHistory from './pages/ShiftHistory';
-import AccountsReceivable from './pages/AccountsReceivable';
+const About = lazy(() => import('./pages/About'));
+const Dashboard = lazy(() => import('./pages/Dashboard'));
+const Products = lazy(() => import('./pages/Products'));
+const ProductForm = lazy(() => import('./pages/ProductForm'));
+const ProductDetail = lazy(() => import('./pages/ProductDetail'));
+const Categories = lazy(() => import('./pages/Categories'));
+const CategoryForm = lazy(() => import('./pages/CategoryForm'));
+const Suppliers = lazy(() => import('./pages/Suppliers'));
+const SupplierForm = lazy(() => import('./pages/SupplierForm'));
+const Purchases = lazy(() => import('./pages/Purchases'));
+const PurchaseForm = lazy(() => import('./pages/PurchaseForm'));
+const Customers = lazy(() => import('./pages/Customers'));
+const CustomerDetails = lazy(() => import('./pages/CustomerDetails'));
+const CustomerForm = lazy(() => import('./pages/CustomerForm'));
+const POS = lazy(() => import('./pages/POS'));
+const Sales = lazy(() => import('./pages/Sales'));
+const SaleDetail = lazy(() => import('./pages/SaleDetail'));
+const ReceiptPreview = lazy(() => import('./pages/ReceiptPreview'));
+const Reports = lazy(() => import('./pages/Reports'));
+const Analytics = lazy(() => import('./pages/Analytics'));
+const Accounting = lazy(() => import('./pages/Accounting'));
+const StockAdjustment = lazy(() => import('./pages/StockAdjustment'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const Users = lazy(() => import('./pages/Users'));
+const UserForm = lazy(() => import('./pages/UserForm'));
+const UserUpdate = lazy(() => import('./pages/UserUpdate'));
+const Settings = lazy(() => import('./pages/Settings'));
+const AuditLogs = lazy(() => import('./pages/AuditLogs'));
+const ShopInfo = lazy(() => import('./pages/ShopInfo'));
+const ReceiptCustomization = lazy(() => import('./pages/ReceiptCustomization'));
+const BackupSettings = lazy(() => import('./pages/BackupSettings'));
+const SupplierDetails = lazy(() => import('./pages/SupplierDetails'));
+const CashShift = lazy(() => import('./pages/CashShift'));
+const ShiftHistory = lazy(() => import('./pages/ShiftHistory'));
+const AccountsReceivable = lazy(() => import('./pages/AccountsReceivable'));
+const Orders = lazy(() => import('./pages/Orders'));
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+
+const RouteFallback = () => (
+  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
+    <CircularProgress />
+  </Box>
+);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -59,11 +68,6 @@ const queryClient = new QueryClient({
       staleTime: 0,
     },
   },
-  mutationCache: new MutationCache({
-    onError: (error) => {
-      notifyError(error.friendlyMessage || 'Something went wrong.');
-    },
-  }),
 });
 
 const theme = createTheme({
@@ -133,7 +137,8 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
+    <Suspense fallback={<RouteFallback />}>
+      <Routes>
       <Route path="/login" element={!user ? <Login /> : <Navigate to={defaultRoute} />} />
       <Route path="/setup" element={!user ? <SetupFirstAdmin /> : <Navigate to={defaultRoute} />} />
 
@@ -181,6 +186,11 @@ function AppRoutes() {
         <Route path="sales/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'CASHIER']}><SaleDetail /></ProtectedRoute>} />
         <Route path="receipt/:invoiceNumber" element={<ReceiptPreview />} />
         
+        {/* Orders (all roles) */}
+        <Route path="orders" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'CASHIER']}><Orders /></ProtectedRoute>} />
+        
+        {/* Inventory Center (Admin & Manager only) */}
+        <Route path="inventory" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Inventory /></ProtectedRoute>} />
         {/* Inventory Adjustments (Admin & Manager only) */}
         <Route path="inventory/adjust" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><StockAdjustment /></ProtectedRoute>} />
 
@@ -226,7 +236,8 @@ function AppRoutes() {
 
       </Route>
       <Route path="*" element={<NotFound />} />
-    </Routes>
+      </Routes>
+    </Suspense>
   );
 }
 

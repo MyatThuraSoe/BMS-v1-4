@@ -29,7 +29,7 @@
   "confirm_password": "ยืนยันรหัสผ่านใหม่",
   "password_changed": "เปลี่ยนรหัสผ่านสำเร็จ",
   "passwords_not_match": "รหัสผ่านใหม่ไม่ตรงกัน",
-  "password_min": "รหัสผ่านใหม่ต้องมีอย่างน้อย 6 ตัวอักษร",
+  "password_min": "รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร",
   "failed_to_change_password": "ไม่สามารถเปลี่ยนรหัสผ่านได้",
   "shop_name_fallback": "BMS",
   "not_authorized": "ไม่มีสิทธิ์",

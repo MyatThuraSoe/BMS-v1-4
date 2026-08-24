@@ -32,6 +32,7 @@ import {
   Dashboard as DashboardIcon,
   ShoppingCart as CartIcon,
   PointOfSale as PosIcon,
+  ListAlt as ListAltIcon,
   People as CustomersIcon,
   ManageAccounts as UsersIcon,
   Business as SupplierIcon,
@@ -52,13 +53,16 @@ import {
   AccountBalanceWallet as CashIcon,
   Payments as PaymentsIcon,
   Inventory as InventoryIcon,
+  Warehouse as WarehouseIcon,
   Category as CategoryIcon,
   Info as InfoIcon,
+  Fullscreen as FullscreenIcon,
+  FullscreenExit as FullscreenExitIcon,
 
 } from '@mui/icons-material';
 
 import { useAuth } from '../context/AuthContext';
-import { authService, shopInfoService, shiftService } from '../api/services';
+import { authService, licenseService, shopInfoService, shiftService } from '../api/services';
 import { useQuery } from '@tanstack/react-query';
 import { setCurrencyCode } from '../utils/helpers';
 import LanguageSwitcher from './LanguageSwitcher';
@@ -75,14 +79,17 @@ const menuGroups = [
     labelKey: 'group_sales',
     items: [
       { textKey: 'pos', icon: <PosIcon />, path: '/pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'success.main' },
+      { textKey: 'orders', icon: <ListAltIcon />, path: '/orders', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'text.secondary' },
       { textKey: 'sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
       { textKey: 'cash_shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
       { textKey: 'shift_history', icon: <HistoryIcon />, path: '/shift-history', roles: ['ADMIN', 'MANAGER'], color: 'text.secondary' },
+      { textKey: 'accounts_receivable', icon: <PaymentsIcon />, path: '/accounts-receivable', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
   {
     labelKey: 'group_catalog',
     items: [
+      { textKey: 'inventory', icon: <WarehouseIcon />, path: '/inventory', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
       { textKey: 'products', icon: <InventoryIcon />, path: '/products', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
       { textKey: 'categories', icon: <CategoryIcon />, path: '/categories', roles: ['ADMIN', 'MANAGER'], color: 'secondary.main' },
     ],
@@ -90,7 +97,6 @@ const menuGroups = [
   {
     labelKey: 'group_procurement',
     items: [
-      { textKey: 'suppliers', icon: <SupplierIcon />, path: '/suppliers', roles: ['ADMIN'], color: 'info.main' },
       { textKey: 'purchases', icon: <CartIcon />, path: '/purchases', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
@@ -98,7 +104,7 @@ const menuGroups = [
     labelKey: 'group_people',
     items: [
       { textKey: 'customers', icon: <CustomersIcon />, path: '/customers', roles: ['ADMIN', 'MANAGER'], color: 'success.main' },
-      { textKey: 'users', icon: <UsersIcon />, path: '/users', roles: ['ADMIN'], color: 'error.main' },
+      { textKey: 'suppliers', icon: <SupplierIcon />, path: '/suppliers', roles: ['ADMIN'], color: 'info.main' },
     ],
   },
   {
@@ -107,13 +113,13 @@ const menuGroups = [
       { textKey: 'reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
       { textKey: 'analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'], color: 'secondary.main' },
       { textKey: 'accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'], color: 'success.main' },
-      { textKey: 'accounts_receivable', icon: <PaymentsIcon />, path: '/accounts-receivable', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
   {
     labelKey: 'group_administration',
     items: [
       { textKey: 'settings', icon: <SettingsIcon />, path: '/settings', roles: ['ADMIN'], color: 'text.secondary' },
+      { textKey: 'users', icon: <UsersIcon />, path: '/users', roles: ['ADMIN'], color: 'error.main' },
       { textKey: 'shop_info', icon: <ShopInfoIcon />, path: '/shop-info', roles: ['ADMIN'], color: 'info.main' },
       { textKey: 'receipt_customization', icon: <ReceiptIcon />, path: '/receipt-customization', roles: ['ADMIN'], color: 'secondary.main' },
       { textKey: 'backup_settings', icon: <CloudUploadIcon />, path: '/settings/backup', roles: ['ADMIN'], color: 'warning.main' },
@@ -205,6 +211,22 @@ const lic = licData?.data;
   const handleMenuClose = () => setAnchorEl(null);
   const handleLogout = () => { logout(); navigate('/login'); };
 
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement));
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const handleFullscreenToggle = () => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  };
+
   const handleChangePasswordOpen = () => {
     setAnchorEl(null);
     setCpCurrentPassword(''); setCpNewPassword(''); setCpConfirmPassword('');
@@ -215,7 +237,7 @@ const lic = licData?.data;
   const handleChangePasswordSubmit = async () => {
     setCpError(''); setCpSuccess('');
     if (cpNewPassword !== cpConfirmPassword) { setCpError(t('common:passwords_not_match')); return; }
-    if (cpNewPassword.length < 6) { setCpError(t('common:password_min')); return; }
+    if (cpNewPassword.length < 8) { setCpError(t('common:password_min')); return; }
     setCpLoading(true);
     try {
       await authService.changePassword(cpCurrentPassword, cpNewPassword);
@@ -385,6 +407,11 @@ const lic = licData?.data;
             )}
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Tooltip title={t(isFullscreen ? 'exit_fullscreen' : 'fullscreen')}>
+              <IconButton onClick={handleFullscreenToggle} size="small" color="inherit">
+                {isFullscreen ? <FullscreenExitIcon /> : <FullscreenIcon />}
+              </IconButton>
+            </Tooltip>
             <LanguageSwitcher compact />
             {currentShift && (
               <Chip

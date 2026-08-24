@@ -28,5 +28,9 @@
   "edit_entity": "Modifier {{name}}",
   "entity_details": "Détails de {{name}}",
   "receipt_customization": "Personnalisation du reçu",
-  "accounts_receivable": "Comptes clients"
+  "accounts_receivable": "Comptes clients",
+  "orders": "Commandes",
+  "inventory": "Inventaire",
+  "fullscreen": "Plein écran",
+  "exit_fullscreen": "Quitter le plein écran"
 }

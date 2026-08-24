@@ -72,6 +72,10 @@ public class Sale {
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus = PaymentStatus.PAID;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "return_status", nullable = false)
+    private ReturnStatus returnStatus = ReturnStatus.COMPLETED;
+
     @Column(name = "due_date")
     private LocalDate dueDate;
 
@@ -121,6 +125,12 @@ public class Sale {
         PAID,
         UNPAID,
         PARTIAL
+    }
+
+    public enum ReturnStatus {
+        COMPLETED,
+        PARTIALLY_RETURNED,
+        FULLY_RETURNED
     }
 
     @PrePersist
@@ -185,6 +195,9 @@ public class Sale {
 
     public PaymentStatus getPaymentStatus() { return paymentStatus != null ? paymentStatus : PaymentStatus.PAID; }
     public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus != null ? paymentStatus : PaymentStatus.PAID; }
+
+    public ReturnStatus getReturnStatus() { return returnStatus != null ? returnStatus : ReturnStatus.COMPLETED; }
+    public void setReturnStatus(ReturnStatus returnStatus) { this.returnStatus = returnStatus != null ? returnStatus : ReturnStatus.COMPLETED; }
 
     public LocalDate getDueDate() { return dueDate; }
     public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }

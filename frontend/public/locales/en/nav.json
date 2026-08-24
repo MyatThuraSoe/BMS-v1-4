@@ -28,5 +28,9 @@
   "new_entity": "New {{name}}",
   "edit_entity": "Edit {{name}}",
   "entity_details": "{{name}} Details",
-  "accounts_receivable": "Accounts Receivable"
+  "accounts_receivable": "Accounts Receivable",
+  "orders": "Orders",
+  "inventory": "Inventory",
+  "fullscreen": "Full Screen",
+  "exit_fullscreen": "Exit Full Screen"
 }

@@ -10,8 +10,13 @@ public class CartVerifyRequest {
     @NotEmpty(message = "Cart items are required")
     private List<CartVerifyItem> items;
 
+    // Cashier-entered discount (AMOUNT mode); ignored in PERCENTAGE mode
+    private BigDecimal discountAmount;
+
     public List<CartVerifyItem> getItems() { return items; }
     public void setItems(List<CartVerifyItem> items) { this.items = items; }
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
 
     public static class CartVerifyItem {
         @NotNull

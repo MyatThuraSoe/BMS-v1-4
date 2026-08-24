@@ -29,7 +29,7 @@
   "confirm_password": "စကားဝှက်အသစ် အတည်ပြုရန်",
   "password_changed": "စကားဝှက် ပြောင်းပြီးပါပြီ။",
   "passwords_not_match": "စကားဝှက်နှစ်ခု မကိုက်ညီပါ။",
-  "password_min": "စကားဝှက်တွင် အနည်းဆုံး စာလုံး ၆ လုံး ပါရမည်။",
+  "password_min": "စကားဝှက်တွင် အနည်းဆုံး စာလုံး ၈ လုံး ပါရမည်။",
   "failed_to_change_password": "စကားဝှက် ပြောင်း၍မရပါ။",
   "shop_name_fallback": "LumiPOS",
   "not_authorized": "လုပ်ဆောင်ခွင့် မရှိပါ။",

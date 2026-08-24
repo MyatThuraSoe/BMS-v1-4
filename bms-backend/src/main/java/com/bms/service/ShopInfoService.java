@@ -33,6 +33,9 @@ public class ShopInfoService {
                     "",
                     "USD",
                     BigDecimal.ZERO,
+                    false,
+                    ShopInfo.DiscountType.PERCENTAGE.name(),
+                    BigDecimal.ZERO,
                     false
             );
         }
@@ -47,6 +50,9 @@ public class ShopInfoService {
                 info.getEmail(),
                 info.getCurrency() != null ? info.getCurrency() : "USD",
                 info.getTaxPercentage(),
+                info.getDiscountEnabled(),
+                info.getDiscountType().name(),
+                info.getDiscountValue(),
                 info.getLogoData() != null
         );
     }
@@ -62,6 +68,15 @@ public class ShopInfoService {
         info.setEmail(req.getEmail());
         info.setCurrency(req.getCurrency() != null ? req.getCurrency() : "USD");
         info.setTaxPercentage(req.getTaxPercentage() != null ? req.getTaxPercentage() : BigDecimal.ZERO);
+        info.setDiscountEnabled(Boolean.TRUE.equals(req.getDiscountEnabled()));
+        ShopInfo.DiscountType discountType = ShopInfo.DiscountType.PERCENTAGE;
+        if ("AMOUNT".equalsIgnoreCase(req.getDiscountType())) {
+            discountType = ShopInfo.DiscountType.AMOUNT;
+        } else if ("FIXED".equalsIgnoreCase(req.getDiscountType())) {
+            discountType = ShopInfo.DiscountType.FIXED;
+        }
+        info.setDiscountType(discountType);
+        info.setDiscountValue(req.getDiscountValue() != null ? req.getDiscountValue() : BigDecimal.ZERO);
 
         ShopInfo saved = shopInfoRepository.save(info);
         return getShopInfo();
@@ -69,9 +84,12 @@ public class ShopInfoService {
 
     @Transactional
     public void uploadLogo(MultipartFile file) throws IOException {
+        // Trust magic bytes, never the client Content-Type. Prevents storing (then
+        // serving inline) HTML/JS payloads that would execute in the browser.
+        String mime = com.bms.util.ImageValidationUtil.validateImage(file);
         ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElseGet(ShopInfo::new);
         info.setLogoData(file.getBytes());
-        info.setLogoType(file.getContentType());
+        info.setLogoType(mime);
         shopInfoRepository.save(info);
     }
 
@@ -100,6 +118,9 @@ public class ShopInfoService {
         private String email;
         private String currency;
         private BigDecimal taxPercentage;
+        private Boolean discountEnabled;
+        private String discountType;
+        private BigDecimal discountValue;
 
         public String getShopName() {
             return shopName;
@@ -155,6 +176,30 @@ public class ShopInfoService {
 
         public void setTaxPercentage(BigDecimal taxPercentage) {
             this.taxPercentage = taxPercentage;
+        }
+
+        public Boolean getDiscountEnabled() {
+            return discountEnabled;
+        }
+
+        public void setDiscountEnabled(Boolean discountEnabled) {
+            this.discountEnabled = discountEnabled;
+        }
+
+        public String getDiscountType() {
+            return discountType;
+        }
+
+        public void setDiscountType(String discountType) {
+            this.discountType = discountType;
+        }
+
+        public BigDecimal getDiscountValue() {
+            return discountValue;
+        }
+
+        public void setDiscountValue(BigDecimal discountValue) {
+            this.discountValue = discountValue;
         }
     }
 

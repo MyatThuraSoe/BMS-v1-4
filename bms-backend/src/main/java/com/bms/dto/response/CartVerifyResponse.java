@@ -8,6 +8,7 @@ public class CartVerifyResponse {
     private List<CartVerifyItemResult> items;
     private BigDecimal subtotal;
     private BigDecimal taxAmount;
+    private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private List<String> messages; // human-readable, e.g. "Coca-Cola 500ml price changed from $2.00 to $2.50"
 
@@ -21,6 +22,8 @@ public class CartVerifyResponse {
     public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public List<String> getMessages() { return messages; }

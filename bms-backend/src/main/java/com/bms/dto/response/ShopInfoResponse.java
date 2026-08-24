@@ -12,6 +12,9 @@ public class ShopInfoResponse {
     private String email;
     private String currency;
     private BigDecimal taxPercentage;
+    private Boolean discountEnabled;
+    private String discountType;
+    private BigDecimal discountValue;
     private boolean hasLogo;
 
     public ShopInfoResponse() {
@@ -25,6 +28,9 @@ public class ShopInfoResponse {
                              String email,
                              String currency,
                              BigDecimal taxPercentage,
+                             Boolean discountEnabled,
+                             String discountType,
+                             BigDecimal discountValue,
                              boolean hasLogo) {
         this.id = id;
         this.shopName = shopName;
@@ -34,6 +40,9 @@ public class ShopInfoResponse {
         this.email = email;
         this.currency = currency;
         this.taxPercentage = taxPercentage;
+        this.discountEnabled = discountEnabled != null ? discountEnabled : false;
+        this.discountType = discountType != null ? discountType : "PERCENTAGE";
+        this.discountValue = discountValue;
         this.hasLogo = hasLogo;
     }
 
@@ -99,6 +108,30 @@ public class ShopInfoResponse {
 
     public void setTaxPercentage(BigDecimal taxPercentage) {
         this.taxPercentage = taxPercentage;
+    }
+
+    public Boolean getDiscountEnabled() {
+        return discountEnabled != null ? discountEnabled : false;
+    }
+
+    public void setDiscountEnabled(Boolean discountEnabled) {
+        this.discountEnabled = discountEnabled;
+    }
+
+    public String getDiscountType() {
+        return discountType;
+    }
+
+    public void setDiscountType(String discountType) {
+        this.discountType = discountType;
+    }
+
+    public BigDecimal getDiscountValue() {
+        return discountValue;
+    }
+
+    public void setDiscountValue(BigDecimal discountValue) {
+        this.discountValue = discountValue;
     }
 
     public boolean isHasLogo() {

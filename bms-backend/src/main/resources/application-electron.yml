@@ -38,7 +38,9 @@ spring:
       fail-on-empty-beans: false
 
 jwt:
-  secret: c2VjcmV0S2V5Rm9yQk1TT2ZmbGluZUFwcENyZWF0ZWRGb3JNeWF0VGh1cmFTb2UyMDI2
+  # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
+  # value is shipped; leave this as an env override only.
+  secret: MySecureSecretKeyForJWTTokenGeneration2026!
   expiration: 86400000
 
 logging:

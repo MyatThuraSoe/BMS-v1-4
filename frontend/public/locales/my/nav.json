@@ -28,5 +28,9 @@
   "edit_entity": "{{name}} ပြင်ဆင်ရန်",
   "entity_details": "{{name}} အသေးစိတ်",
   "receipt_customization": "ပြေစာ စိတ်ကြိုက်ပြင်ဆင်ခြင်း",
-  "accounts_receivable": "ရရန် ငွေစာရင်း"
+  "accounts_receivable": "ရရန် ငွေစာရင်း",
+  "orders": "ကြိုမှာယူမှုများ",
+  "inventory": "စတော့အရေအတွက်",
+  "fullscreen": "ဖန်သားပြင်အပြည့်",
+  "exit_fullscreen": "ဖန်သားပြင်အပြည့်မှ ထွက်ရန်"
 }

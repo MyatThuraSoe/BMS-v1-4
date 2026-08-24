@@ -9,13 +9,13 @@ import com.bms.dto.response.DeadStockDto;
 import com.bms.dto.response.SalesTimingDto;
 import com.bms.dto.response.SupplierProfitDto;
 import com.bms.entity.Expense;
-import com.bms.entity.Refund;
 import com.bms.entity.Sale;
+import com.bms.entity.SaleReturn;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ProductRepository;
-import com.bms.repository.RefundRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SaleRepository;
+import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -38,6 +38,13 @@ import java.util.*;
 @Transactional(readOnly = true)
 public class ReportService {
 
+    /**
+     * Upper bound for in-memory report queries. Reports load full result sets
+     * (not paged for the UI), so this guards memory while still comfortably
+     * covering real-world monthly volumes without silently dropping rows.
+     */
+    private static final int REPORT_MAX_ROWS = 50_000;
+
     @Autowired
     private SaleRepository saleRepository;
 
@@ -54,7 +61,7 @@ public class ReportService {
     private ExpenseRepository expenseRepository;
 
     @Autowired
-    private RefundRepository refundRepository;
+    private SaleReturnRepository saleReturnRepository;
 
     @Autowired
     private SaleItemRepository saleItemRepository;
@@ -64,7 +71,7 @@ public class ReportService {
         LocalDateTime startOfDay = date.atStartOfDay();
         LocalDateTime endOfDay = date.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, 1000);
+        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startOfDay, endOfDay, pageable);
         List<Sale> sales = salesPage.getContent();
         
@@ -103,7 +110,7 @@ public class ReportService {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, 1000);
+        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
         List<Sale> sales = salesPage.getContent();
         
@@ -132,7 +139,7 @@ public class ReportService {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, 1000);
+        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
         List<Sale> sales = salesPage.getContent();
         
@@ -180,13 +187,13 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §6 Cashier performance — fixed: accumulate ALL items/sales first, then compute averages
+    // Â§6 Cashier performance â€” fixed: accumulate ALL items/sales first, then compute averages
     // -----------------------------------------------------------------------
     public List<Map<String, Object>> getCashierPerformanceReport(LocalDate startDate, LocalDate endDate) {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, 1000);
+        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
         List<Sale> sales = salesPage.getContent();
         
@@ -206,7 +213,7 @@ public class ReportService {
                 });
 
                 Map<String, Object> stats = cashierStats.get(cashierId);
-                // Accumulate totals first — averages computed after the loop
+                // Accumulate totals first â€” averages computed after the loop
                 stats.put("totalSales", ((BigDecimal) stats.get("totalSales")).add(calculateNetSaleRevenue(sale)));
                 stats.put("transactionCount", (Integer) stats.get("transactionCount") + 1);
 
@@ -243,7 +250,7 @@ public class ReportService {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, 1000);
+        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
         List<Sale> sales = salesPage.getContent();
 
@@ -318,7 +325,7 @@ public class ReportService {
         Map<Long, String> categoryNames = new HashMap<>();
         Map<Long, BigDecimal> currentRevenueMap = new HashMap<>();
         
-        List<Sale> currentSales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, 1000)).getContent();
+        List<Sale> currentSales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
         for (Sale sale : currentSales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
             for (var item : sale.getItems()) {
@@ -377,7 +384,7 @@ public class ReportService {
 
         List<Sale> sales = saleRepository.findByDateRange(
                 startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(),
-                PageRequest.of(0, 5000)).getContent();
+                PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
 
         // day -> (categoryId -> revenue)
         Map<LocalDate, Map<Long, BigDecimal>> daily = new TreeMap<>();
@@ -409,7 +416,7 @@ public class ReportService {
 
     public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {        LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
-        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 1000)).getContent();
+        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
 
         BigDecimal revenue = BigDecimal.ZERO;
         BigDecimal cogs = BigDecimal.ZERO;
@@ -470,7 +477,7 @@ public class ReportService {
 
             LocalDateTime startDateTime = bucketStart.atStartOfDay();
             LocalDateTime endDateTime = bucketEnd.plusDays(1).atStartOfDay();
-            List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 1000)).getContent();
+            List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
             BigDecimal revenue = BigDecimal.ZERO;
             BigDecimal cogs = BigDecimal.ZERO;
             for (Sale sale : sales) {
@@ -503,7 +510,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §5 Period-over-Period Comparison — populates previous period fields
+    // Â§5 Period-over-Period Comparison â€” populates previous period fields
     // -----------------------------------------------------------------------
     public AccountingSummaryResponse getAccountingSummary(LocalDate startDate, LocalDate endDate) {
         Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
@@ -522,7 +529,7 @@ public class ReportService {
         }
 
         BigDecimal totalIncome = BigDecimal.ZERO;
-        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 1000)).getContent()) {
+        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent()) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) {
                 continue;
             }
@@ -530,8 +537,8 @@ public class ReportService {
         }
 
         BigDecimal totalRefunds = BigDecimal.ZERO;
-        for (Refund refund : refundRepository.findByRefundDateBetween(startDateTime, endDateTime)) {
-            totalRefunds = totalRefunds.add(refund.getTotalRefundAmount() != null ? refund.getTotalRefundAmount() : BigDecimal.ZERO);
+        for (SaleReturn saleReturn : saleReturnRepository.findByReturnDateBetween(startDateTime, endDateTime)) {
+            totalRefunds = totalRefunds.add(saleReturn.getTotalReturnAmount() != null ? saleReturn.getTotalReturnAmount() : BigDecimal.ZERO);
         }
 
         BigDecimal totalCogs = (BigDecimal) profitSummary.get("cogs");
@@ -588,20 +595,20 @@ public class ReportService {
         return response;
     }
 
-    /** Lightweight summary for previous-period comparison — no previous-period recursion. */
+    /** Lightweight summary for previous-period comparison â€” no previous-period recursion. */
     private AccountingSummaryResponse computeRawSummary(LocalDate startDate, LocalDate endDate) {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
         BigDecimal totalIncome = BigDecimal.ZERO;
-        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 1000)).getContent()) {
+        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent()) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
             totalIncome = totalIncome.add(sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO);
         }
 
         BigDecimal totalRefunds = BigDecimal.ZERO;
-        for (Refund refund : refundRepository.findByRefundDateBetween(startDateTime, endDateTime)) {
-            totalRefunds = totalRefunds.add(refund.getTotalRefundAmount() != null ? refund.getTotalRefundAmount() : BigDecimal.ZERO);
+        for (SaleReturn saleReturn : saleReturnRepository.findByReturnDateBetween(startDateTime, endDateTime)) {
+            totalRefunds = totalRefunds.add(saleReturn.getTotalReturnAmount() != null ? saleReturn.getTotalReturnAmount() : BigDecimal.ZERO);
         }
 
         Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
@@ -677,7 +684,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §1 Dead Stock / Slow-Moving Inventory
+    // Â§1 Dead Stock / Slow-Moving Inventory
     // -----------------------------------------------------------------------
     public List<DeadStockDto> getDeadStock(int daysThreshold) {
         LocalDateTime cutoffDate = LocalDate.now().minusDays(daysThreshold).atStartOfDay();
@@ -708,13 +715,13 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §2 Sales Timing Heatmap
+    // Â§2 Sales Timing Heatmap
     // -----------------------------------------------------------------------
     public List<SalesTimingDto> getSalesTiming(LocalDate startDate, LocalDate endDate) {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, 5000)).getContent();
+        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
 
         // Key: dayOfWeek (1=Mon..7=Sun) + hourOfDay
         Map<String, SalesTimingDto> map = new LinkedHashMap<>();
@@ -738,7 +745,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §4 Basket Analysis — Frequently Bought Together
+    // Â§4 Basket Analysis â€” Frequently Bought Together
     // -----------------------------------------------------------------------
     public List<BasketAffinityDto> getFrequentlyBoughtWith(Long productId, int limit) {
         Pageable pageable = PageRequest.of(0, limit);
@@ -755,7 +762,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // §3 Customer Retention & Lifetime Value
+    // Â§3 Customer Retention & Lifetime Value
     // -----------------------------------------------------------------------
     public List<CustomerLtvDto> getCustomerLifetimeValue() {
         List<Object[]> rows = saleRepository.findCustomerLtvData();
@@ -805,7 +812,7 @@ public class ReportService {
         Set<Long> returningSet = new HashSet<>(lastMonthSet);
         returningSet.retainAll(thisMonthSet);
 
-        // Build lapsed customer list with total historical spend — from LTV data
+        // Build lapsed customer list with total historical spend â€” from LTV data
         List<CustomerLtvDto> allLtv = getCustomerLifetimeValue();
         Map<Long, CustomerLtvDto> ltvMap = new HashMap<>();
         for (CustomerLtvDto ltv : allLtv) {
@@ -825,7 +832,7 @@ public class ReportService {
             }
             lapsedList.add(lc);
         }
-        // Sort by historical spend descending — highest-value lapsed customers first
+        // Sort by historical spend descending â€” highest-value lapsed customers first
         lapsedList.sort((a, b) -> {
             BigDecimal spendA = a.getTotalHistoricalSpend() != null ? a.getTotalHistoricalSpend() : BigDecimal.ZERO;
             BigDecimal spendB = b.getTotalHistoricalSpend() != null ? b.getTotalHistoricalSpend() : BigDecimal.ZERO;
@@ -914,13 +921,13 @@ public class ReportService {
         if ("YEAR_AGO".equals(compareMode)) {
             return new LocalDate[]{ startDate.minusYears(1), endDate.minusYears(1) };
         }
-        // Default: PREVIOUS_PERIOD — same length, immediately before the current range
+        // Default: PREVIOUS_PERIOD â€” same length, immediately before the current range
         long daysInPeriod = ChronoUnit.DAYS.between(startDate, endDate) + 1;
         return new LocalDate[]{ startDate.minusDays(daysInPeriod), startDate.minusDays(1) };
     }
 
     private Map<Long, BigDecimal> computeProductRevenue(LocalDate startDate, LocalDate endDate) {
-        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, 1000)).getContent();
+        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
         Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
         for (Sale sale : sales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
@@ -936,7 +943,7 @@ public class ReportService {
     }
 
     private Map<Long, BigDecimal> computeCategoryRevenue(LocalDate startDate, LocalDate endDate) {
-        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, 1000)).getContent();
+        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
         Map<Long, BigDecimal> revenueByCategory = new HashMap<>();
         for (Sale sale : sales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;

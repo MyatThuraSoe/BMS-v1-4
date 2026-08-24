@@ -52,8 +52,6 @@ public class ProductService {
     @Autowired
     private ProductPriceHistoryRepository priceHistoryRepository;
 
-    private static final java.util.Set<String> ALLOWED_IMAGE_TYPES = java.util.Set.of("image/jpeg", "image/png", "image/webp");
-
     public Page<ProductResponse> getAllProducts(Pageable pageable) {
         return getAllProducts(null, null, pageable);
     }
@@ -217,18 +215,14 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
 
     @Transactional
     public void uploadProductImage(Long productId, MultipartFile file, Long userId) throws IOException {
-        if (file.isEmpty()) {
-            throw new BusinessException("No file provided");
-        }
-        if (!ALLOWED_IMAGE_TYPES.contains(file.getContentType())) {
-            throw new BusinessException("Only JPEG, PNG, or WebP images are allowed");
-        }
+        // Trust magic bytes, never the client Content-Type / filename extension.
+        String mime = com.bms.util.ImageValidationUtil.validateImage(file);
 
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
         product.setImageData(file.getBytes());
-        product.setImageType(getFileExtension(file.getOriginalFilename()));
+        product.setImageType(com.bms.util.ImageValidationUtil.mimeToExtension(mime));
         productRepository.save(product);
 
         auditLogService.logAction(userId, "PRODUCT_IMAGE_UPLOAD",
@@ -429,6 +423,8 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         response.setCostPrice(product.getCostPrice());
 response.setTaxRate(product.getTaxRate());
         response.setStockQuantity(product.getStockQuantity());
+        response.setReservedQuantity(product.getReservedQuantity());
+        response.setAvailableQuantity(product.getAvailableQuantity());
         response.setMinStockLevel(product.getMinStockLevel());
         response.setUnit(product.getUnit());
         response.setIsActive(product.getIsActive());
@@ -453,13 +449,6 @@ response.setTaxRate(product.getTaxRate());
             return userRepository.findByUsername(username).map(User::getId).orElse(null);
         }
         return null;
-    }
-
-    private String getFileExtension(String filename) {
-        if (filename == null || !filename.contains(".")) {
-            return "unknown";
-        }
-        return filename.substring(filename.lastIndexOf(".") + 1).toLowerCase();
     }
 
     private void validateNonNegativeValues(ProductCreateRequest request) {

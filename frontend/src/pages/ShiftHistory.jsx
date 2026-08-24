@@ -30,7 +30,7 @@ const ShiftHistory = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{t('shift_history')}</Typography>
+
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         {t('shift_history_subtitle')}
       </Typography>

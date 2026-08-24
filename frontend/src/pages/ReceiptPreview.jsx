@@ -1,16 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Box, Typography, Button, Dialog, DialogTitle, DialogContent,
-  DialogActions, CircularProgress, TextField, Divider,
+  Box, Typography, Button, CircularProgress,
   FormControl, InputLabel, Select, MenuItem,
 } from '@mui/material';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import {
-  receiptService, saleService, shopInfoService,
+  receiptService, shopInfoService,
   receiptCustomizationService,
 } from '../api/services';
-import { formatCurrency } from '../utils/helpers';
 import {
   AssignmentReturn as RefundIcon,
   Print as PrintIcon,
@@ -28,6 +26,7 @@ import {
 import directPrint from '../services/directPrintService';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 import ShopLogo from '../components/ShopLogo';
+import SaleReturnDialog from '../components/SaleReturnDialog';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -51,13 +50,10 @@ async function fetchLogoDataUrl(shopInfoService) {
 const ReceiptPreview = () => {
   const { t } = useTranslation('sales');
   const { invoiceNumber } = useParams();
-  const [refundDialogOpen, setRefundDialogOpen] = useState(false);
-  const [refundReason,     setRefundReason]     = useState('');
-  const [refundQuantities, setRefundQuantities] = useState({});
+  const [returnDialogOpen, setReturnDialogOpen] = useState(false);
   const [printers,         setPrinters]         = useState([]);
   const [selectedPrinter,  setSelectedPrinter]  = useState('');
   const [isPrinting,       setIsPrinting]       = useState(false);
-  const queryClient = useQueryClient();
   const { isManager } = useAuth();
 
   const receiptRef = useRef();
@@ -98,24 +94,6 @@ const ReceiptPreview = () => {
     }
   }, []);
 
-  // ── Refund mutation ────────────────────────────────────────────────────────
-
-  const refundMutation = useMutation({
-    mutationFn: ({ saleId, payload }) => saleService.refundSale(saleId, payload),
-    onSuccess: () => {
-      notifySuccess(t('refunded_success'));
-      setRefundDialogOpen(false);
-      setRefundReason('');
-      setRefundQuantities({});
-      queryClient.invalidateQueries({ queryKey: ['receipt', invoiceNumber] });
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
-      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
-    },
-    onError: (err) => notifyError(err.friendlyMessage || t('refund_failed')),
-  });
-
   // ── Guards ─────────────────────────────────────────────────────────────────
 
   if (isLoading) return <CircularProgress />;
@@ -132,10 +110,6 @@ const ReceiptPreview = () => {
   const refundableItems = receipt.items?.filter(
     (item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0
   ) || [];
-  const refundTotal = refundableItems.reduce((sum, item) => {
-    const qty = Number(refundQuantities[item.saleItemId] || 0);
-    return sum + qty * Number(item.unitPrice || 0);
-  }, 0);
 
   // ── Print handlers ─────────────────────────────────────────────────────────
 
@@ -200,22 +174,6 @@ const ReceiptPreview = () => {
     } finally {
       setIsPrinting(false);
     }
-  };
-
-  // ── Refund helpers ─────────────────────────────────────────────────────────
-
-  const setRefundQuantity = (item, value) => {
-    const max = (item.quantity || 0) - (item.quantityRefunded || 0);
-    const qty = Math.max(0, Math.min(max, Number(value) || 0));
-    setRefundQuantities((cur) => ({ ...cur, [item.saleItemId]: qty }));
-  };
-
-  const handleRefundSubmit = () => {
-    const items = refundableItems
-      .map((item) => ({ saleItemId: item.saleItemId, quantity: Number(refundQuantities[item.saleItemId] || 0) }))
-      .filter((item) => item.quantity > 0);
-    if (!receipt.saleId || items.length === 0 || !refundReason.trim()) return;
-    refundMutation.mutate({ saleId: receipt.saleId, payload: { reason: refundReason.trim(), items } });
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -328,17 +286,17 @@ const ReceiptPreview = () => {
         </Box>
       )}
 
-      {/* ===== Refund ===== */}
-      {isManager() && refundableItems.length > 0 && (
+      {/* ===== Sale Return ===== */}
+      {isManager() && receipt.saleId && refundableItems.length > 0 && (
         <Box sx={{ mt: 1 }}>
           <Button
             fullWidth
             variant="outlined"
             color="warning"
             startIcon={<RefundIcon />}
-            onClick={() => setRefundDialogOpen(true)}
+            onClick={() => setReturnDialogOpen(true)}
           >
-            {t('refund')}
+            {t('return')}
           </Button>
         </Box>
       )}
@@ -347,62 +305,12 @@ const ReceiptPreview = () => {
         <Button fullWidth variant="text" onClick={() => window.close()}>{t('close')}</Button>
       </Box>
 
-      {/* ===== Refund Dialog ===== */}
-      <Dialog open={refundDialogOpen} onClose={() => setRefundDialogOpen(false)} fullWidth maxWidth="sm">
-        <DialogTitle>{t('refund_items')}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" sx={{ mb: 2 }}>{t('invoice_no')} {receipt.invoiceNumber}</Typography>
-          {refundableItems.map((item) => {
-            const max = (item.quantity || 0) - (item.quantityRefunded || 0);
-            return (
-              <Box
-                key={item.saleItemId}
-                sx={{ display: 'grid', gridTemplateColumns: '1fr 96px', gap: 2, alignItems: 'center', mb: 2 }}
-              >
-                <Box>
-                  <Typography variant="body2" fontWeight={600}>{item.productName}</Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {t('available_at', { qty: max, price: formatCurrency(item.unitPrice) })}
-                  </Typography>
-                </Box>
-                <TextField
-                  size="small"
-                  type="number"
-                  label={t('qty')}
-                  inputProps={{ min: 0, max }}
-                  value={refundQuantities[item.saleItemId] || ''}
-                  onChange={(e) => setRefundQuantity(item, e.target.value)}
-                />
-              </Box>
-            );
-          })}
-          <Divider sx={{ my: 2 }} />
-          <TextField
-            fullWidth
-            required
-            multiline
-            rows={3}
-            label={t('reason')}
-            value={refundReason}
-            onChange={(e) => setRefundReason(e.target.value)}
-          />
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-            <Typography fontWeight={600}>{t('refund_total')}</Typography>
-            <Typography fontWeight={600}>{formatCurrency(refundTotal)}</Typography>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setRefundDialogOpen(false)}>{t('cancel')}</Button>
-          <Button
-            onClick={handleRefundSubmit}
-            color="warning"
-            variant="contained"
-            disabled={refundMutation.isPending || refundTotal <= 0 || !refundReason.trim()}
-          >
-            {t('refund')}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* ===== Sale Return Dialog ===== */}
+      <SaleReturnDialog
+        open={returnDialogOpen}
+        onClose={() => setReturnDialogOpen(false)}
+        saleId={receipt.saleId}
+      />
     </Box>
   );
 };

@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
@@ -17,4 +18,12 @@ public class CategoryResponseDto {
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    private long productCount;
+    private long lowStockCount;
+    private long outOfStockCount;
+    private BigDecimal totalStockValue;
+    private BigDecimal totalStockQuantity;
+    private long unitsSold;
+    private BigDecimal revenue;
 }

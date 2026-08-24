@@ -1,10 +1,11 @@
 package com.bms.controller;
 
 import com.bms.dto.request.CartVerifyRequest;
-import com.bms.dto.request.RefundRequest;
 import com.bms.dto.request.SaleCreateRequest;
+import com.bms.dto.request.SaleReturnRequest;
 import com.bms.dto.response.*;
 import com.bms.entity.Sale;
+import com.bms.service.SaleReturnService;
 import com.bms.service.SaleService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,6 +30,9 @@ public class SaleController {
 
     @Autowired
     private SaleService saleService;
+
+    @Autowired
+    private SaleReturnService saleReturnService;
 
     @Autowired
     private com.bms.service.UserService userService;
@@ -106,17 +110,24 @@ public class SaleController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Sale voided successfully", sale));
     }
 
-    @PostMapping("/{id}/refund")
+    @PostMapping("/{id}/returns")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<RefundResponse>> refundSale(
+    public ResponseEntity<ApiResponse<SaleReturnResponse>> createSaleReturn(
             @PathVariable Long id,
-            @Valid @RequestBody RefundRequest request,
+            @Valid @RequestBody SaleReturnRequest request,
             Authentication authentication) {
         org.springframework.security.core.userdetails.UserDetails userDetails =
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
-        RefundResponse refund = saleService.processRefund(id, request, userId);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Refund processed", refund));
+        SaleReturnResponse saleReturn = saleReturnService.createSaleReturn(id, request, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Sale return processed", saleReturn));
+    }
+
+    @GetMapping("/{id}/returnable-items")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<ReturnableItemsResponse>> getReturnableItems(@PathVariable Long id) {
+        ReturnableItemsResponse items = saleReturnService.getReturnableItems(id);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Returnable items retrieved successfully", items));
     }
 
     @DeleteMapping("/{id}")

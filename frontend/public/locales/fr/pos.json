@@ -5,8 +5,14 @@
   "quantity": "Qté",
   "subtotal": "Sous-total",
   "tax": "Taxe",
+  "discount_pct_label": "Remise ({{pct}}%)",
+  "discount_amount": "Remise",
+  "discount_amount_helper": "Montant de la remise (max = sous-total)",
   "total": "Total",
   "checkout": "Encaisser",
+  "checkout_and_print": "Encaisser & Imprimer",
+  "complete_credit_sale_print": "Vente à crédit & Imprimer",
+  "confirm_and_print": "Confirmer & Imprimer",
   "cart": "Panier",
   "scan_barcode": "Scanner le code-barres ou rechercher",
   "empty_cart": "Le panier est vide",
@@ -64,5 +70,11 @@
   "due_date": "Date d'échéance",
   "complete_credit_sale": "Vente à crédit",
   "select_credit_customer": "Veuillez sélectionner un client enregistré",
-  "enter_due_date": "Veuillez saisir une date d'échéance"
+  "enter_due_date": "Veuillez saisir une date d'échéance",
+  "order_now": "Commande",
+  "confirm_order": "Confirmer la commande",
+  "order_created": "Commande créée. Stock réservé.",
+  "order_failed": "Échec de la création de la commande",
+  "order_reserves_stock": "Ceci crée une commande en attente. Le stock sera réservé jusqu'à la conversion de la commande en vente ou son annulation.",
+  "notes_optional": "Notes (facultatif)"
 }

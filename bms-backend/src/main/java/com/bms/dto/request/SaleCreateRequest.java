@@ -26,6 +26,12 @@ public class SaleCreateRequest {
     /** Required when saleType == CREDIT. */
     private LocalDate dueDate;
 
+    /** Cashier-entered discount, honored only in AMOUNT discount mode; capped server-side. */
+    private BigDecimal discountAmount;
+
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
     public List<SaleItemRequest> getItems() { return items; }
     public void setItems(List<SaleItemRequest> items) { this.items = items; }
     public Long getCustomerId() { return customerId; }
