@@ -63,8 +63,9 @@ const CustomerSpendingHeatmap = ({ customerId }) => {
     let currentWeek = [];
     let currentDate = new Date(adjustedStart);
     let isYearEnded = false;
-    
-    while (true) {
+
+    // Bounded loop: walks at most ~54 weeks (368 days) so it always terminates
+    while (!isYearEnded) {
       const isCurrentYear = currentDate.getFullYear() === selectedYear;
       
       if (isCurrentYear) {

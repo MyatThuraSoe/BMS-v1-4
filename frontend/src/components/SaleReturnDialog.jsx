@@ -90,13 +90,13 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
       notifyError(err.response?.data?.message || err.friendlyMessage || t('return_failed')),
   });
 
-  const handleClose = () => {
+  function handleClose() {
     if (mutation.isPending) return;
     setQuantities({});
     setReason('');
     setStep('form');
     onClose();
-  };
+  }
 
   const setQuantity = (item, value) => {
     const max = item.quantityReturnable || 0;

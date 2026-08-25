@@ -1,7 +1,9 @@
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useNavigate, Link, useLocation, Outlet } from 'react-router-dom';
 import {
   Box,
+  Grid,
+  Skeleton,
   Drawer,
   AppBar,
   Toolbar,
@@ -66,7 +68,25 @@ import { authService, licenseService, shopInfoService, shiftService } from '../a
 import { useQuery } from '@tanstack/react-query';
 import { setCurrencyCode } from '../utils/helpers';
 import LanguageSwitcher from './LanguageSwitcher';
+import useShopConfig from '../hooks/useShopConfig';
+import { preloadRouteChunks } from '../utils/preloadRouteChunks';
 import { useTranslation } from 'react-i18next';
+
+// Content-area skeleton shown while a lazy route chunk loads on FIRST visit.
+// Lives inside the persistent shell so the drawer/app bar never unmount.
+const ContentSkeleton = () => (
+  <Box>
+    <Skeleton variant="rounded" width="35%" height={32} sx={{ mb: 3 }} />
+    <Grid container spacing={2} sx={{ mb: 3 }}>
+      {[0, 1].map((i) => (
+        <Grid item xs={12} sm={6} key={i}>
+          <Skeleton variant="rounded" height={140} />
+        </Grid>
+      ))}
+    </Grid>
+    <Skeleton variant="rounded" height={200} />
+  </Box>
+);
 
 const menuGroups = [
   {
@@ -179,10 +199,7 @@ const DashboardLayout = ({ children }) => {
   const { user, logout } = useAuth();
   const { t } = useTranslation('nav');
 
-  const { data: shopInfoData } = useQuery({
-    queryKey: ['shopInfo'],
-    queryFn: () => shopInfoService.get(),
-  });
+  const { data: shopInfoData } = useShopConfig();
 
   const { data: currentShiftData } = useQuery({
     queryKey: ['currentShift'],
@@ -199,6 +216,9 @@ const DashboardLayout = ({ children }) => {
     queryFn: () => licenseService.getStatus(),
 });
 const lic = licData?.data;
+
+  // Warm all route chunks during idle so first menu clicks never flash
+  useEffect(() => { preloadRouteChunks(); }, []);
 
   // Keep the app-wide currency sign in sync with the Shop Info setting
   useEffect(() => {
@@ -471,9 +491,15 @@ const lic = licData?.data;
           p: { xs: 2, sm: 3 },
           mt: { xs: 7, sm: 8 },
           width: { sm: `calc(100% - ${currentDrawerWidth}px)` },
+          minWidth: 0,
         }}
       >
-        {children || <Outlet />}
+        {/* Per-route Suspense boundary: lazy pages load INSIDE the content
+            area only — the drawer and app bar stay mounted, so navigating
+            never flashes the whole window. */}
+        <Suspense fallback={<ContentSkeleton />}>
+          {children || <Outlet />}
+        </Suspense>
       </Box>
 
       {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (

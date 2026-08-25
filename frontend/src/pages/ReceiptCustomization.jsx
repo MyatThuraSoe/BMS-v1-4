@@ -7,6 +7,7 @@ import {
   Divider,
   FormControlLabel,
   Grid,
+  MenuItem,
   Paper,
   Slider,
   Stack,
@@ -30,7 +31,8 @@ import {
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
-import { receiptCustomizationService, shopInfoService } from '../api/services';
+import { receiptCustomizationService, shopInfoService, counterPrintService } from '../api/services';
+import { notifySuccess, notifyError } from '../utils/notify';
 import ReceiptDocument from '../components/ReceiptDocument';
 import { getReceiptPreviewWidth } from '../utils/bluetoothPrinter';
 
@@ -102,6 +104,38 @@ const ReceiptCustomization = () => {
 
   const [form, setForm] = useState(defaultCustomization);
 
+  // --- Counter printer (server-side printing) ---
+  const [counterPrinter, setCounterPrinter] = useState('');
+  const [printerList, setPrinterList] = useState([]);
+  const [defaultPrinter, setDefaultPrinter] = useState('');
+
+  const printersQuery = useQuery({
+    queryKey: ['counter-printers'],
+    queryFn: async () => {
+      const cfgRes = await counterPrintService.getConfig();
+      const cfg = cfgRes?.data || {};
+      setCounterPrinter(cfg.printerName || '');
+      setDefaultPrinter(cfg.default || '');
+      const listRes = await counterPrintService.listPrinters();
+      setPrinterList(listRes?.data?.printers || []);
+      return true;
+    },
+    enabled: isAdmin(),
+  });
+  const printersLoading = printersQuery.isLoading;
+
+  const savePrinter = useMutation({
+    mutationFn: counterPrintService.saveConfig,
+    onSuccess: () => notifySuccess(t('counter_printer_saved')),
+    onError: (err) => notifyError(err.friendlyMessage || err.response?.data?.message || t('counter_printer_failed')),
+  });
+
+  const testPrint = useMutation({
+    mutationFn: counterPrintService.testPrint,
+    onSuccess: () => notifySuccess(t('counter_printer_test_ok')),
+    onError: (err) => notifyError(err.friendlyMessage || err.response?.data?.message || t('counter_printer_failed')),
+  });
+
   // populate from server
   useEffect(() => {
     if (customizationData?.data) {
@@ -139,6 +173,22 @@ const ReceiptCustomization = () => {
   const set = useCallback((key, value) => setForm((prev) => ({ ...prev, [key]: value })), []);
 
   const shopInfo = useMemo(() => shopInfoData?.data || {}, [shopInfoData]);
+
+  // Mock QR for the preview so admins can see exactly where it will print
+  // when "Show QR Code" is enabled (real receipts encode the invoice number).
+  const [previewQr, setPreviewQr] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!form.showQRCode) { setPreviewQr(null); return undefined; }
+    import('qrcode').then((mod) =>
+      mod.default.toDataURL(
+        shopInfo?.shopName || 'LumiPOS',
+        { width: 320, margin: 2, color: { dark: '#111111', light: '#ffffff' } }
+      )
+    ).then((url) => { if (!cancelled) setPreviewQr(url); })
+     .catch(() => { if (!cancelled) setPreviewQr(null); });
+    return () => { cancelled = true; };
+  }, [form.showQRCode, shopInfo]);
 
   // Compute preview container width based on paper size
   const paperWidthMm  = Math.max(40, parseInt(String(form.paperSize || '58').replace(/\D/g, ''), 10) || 58);
@@ -382,7 +432,7 @@ const ReceiptCustomization = () => {
 
         {/* ===== RIGHT: Live WYSIWYG Preview ===== */}
         <Grid item xs={12} md={6}>
-          <Paper sx={{ p: 3, position: { md: 'sticky' }, top: { md: 24 } }}>
+          <Paper sx={{ p: 3 }}>
             <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 2 }}>
               <Typography variant="h6" fontWeight={700}>{t('rc_live_preview')}</Typography>
               <Stack direction="row" spacing={1} alignItems="center">
@@ -453,6 +503,7 @@ const ReceiptCustomization = () => {
                     shopInfo={shopInfo}
                     customization={form}
                     isMockPreview={true}
+                    qrDataUrl={previewQr}
                   />
                 </Box>
               </Box>
@@ -464,6 +515,54 @@ const ReceiptCustomization = () => {
                 ? t('rc_preview_1to1')
                 : t('rc_preview_scaled', { width: paperWidthMm })}
             </Typography>
+          </Paper>
+
+          {/* ===== Counter Printer (server-side printing) ===== */}
+          <Paper sx={{ p: 3, mt: 3 }}>
+            <Typography variant="h6" fontWeight={700} gutterBottom>
+              🖨 {t('counter_printer_title')}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {t('counter_printer_desc')}
+            </Typography>
+            {printersLoading ? (
+              <CircularProgress size={24} />
+            ) : (
+              <>
+                <TextField
+                  select
+                  fullWidth
+                  label={t('counter_printer_label')}
+                  value={counterPrinter}
+                  onChange={(e) => setCounterPrinter(e.target.value)}
+                  helperText={t('counter_printer_helper')}
+                  sx={{ mb: 2 }}
+                >
+                  {(printerList || []).map((name) => (
+                    <MenuItem key={name} value={name}>
+                      {name}{name === defaultPrinter ? ' ★' : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    startIcon={<SaveIcon />}
+                    onClick={() => savePrinter.mutate(counterPrinter)}
+                    disabled={savePrinter.isPending}
+                  >
+                    {t('rc_save') || t('save')}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    onClick={() => testPrint.mutate(counterPrinter)}
+                    disabled={testPrint.isPending}
+                  >
+                    {t('counter_printer_test')}
+                  </Button>
+                </Stack>
+              </>
+            )}
           </Paper>
         </Grid>
       </Grid>

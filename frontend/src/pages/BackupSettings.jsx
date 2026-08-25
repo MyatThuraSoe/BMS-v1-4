@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   Box, Typography, Card, CardContent, FormControl, FormControlLabel, Switch,
-  Select, MenuItem, Button, TextField, CircularProgress, Alert, Divider, Chip
+  Select, MenuItem, Button, TextField, CircularProgress, Alert, Divider, Chip,
+  Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import { 
   CloudUpload as CloudUploadIcon, 
@@ -93,14 +94,25 @@ const BackupSettings = () => {
     updateMutation.mutate(settings);
   };
 
+  const [remoteAuth, setRemoteAuth] = useState(null); // { authUrl } when admin is NOT on the server PC
+
   const handleConnect = async () => {
     setConnecting(true);
     try {
       const res = await googleDriveService.getAuthUrl();
       const authUrl = res.data.data.authUrl;
+      const callerIsServer = res.data.data.callerIsServer === 'true';
+
+      if (!callerIsServer && !window.electronAPI?.openExternal) {
+        // Admin is on a phone/LAN browser. Google will return to the SERVER
+        // computer (127.0.0.1) — opening here would dead-end, so guide instead.
+        setRemoteAuth({ authUrl });
+        setConnecting(false);
+        return;
+      }
 
       if (window.electronAPI?.openExternal) {
-        // Electron → open the real browser
+        // Electron → open the real browser (on this same PC = the server)
         await window.electronAPI.openExternal(authUrl);
       } else {
         // Plain browser fallback → new tab (has a back button)
@@ -114,8 +126,15 @@ const BackupSettings = () => {
     }
   };
 
+  const copyRemoteAuth = async () => {
+    try {
+      await navigator.clipboard.writeText(remoteAuth.authUrl);
+      setMessage({ type: 'info', text: t('remote_auth_copied') });
+    } catch { /* clipboard unavailable */ }
+  };
+
     // Poll the settings endpoint until Google Drive is connected
-  const startPolling = () => {
+  function startPolling() {
     clearInterval(pollRef.current);
     pollRef.current = setInterval(async () => {
       try {
@@ -132,7 +151,7 @@ const BackupSettings = () => {
 
     // Safety: stop polling after 5 minutes
     setTimeout(() => clearInterval(pollRef.current), 5 * 60 * 1000);
-  };
+  }
 
   // Clean up polling when the page unmounts
   useEffect(() => () => clearInterval(pollRef.current), []);
@@ -354,6 +373,27 @@ const BackupSettings = () => {
           <DataManagement />
         </CardContent>
       </Card>
+
+      {/* Remote-admin guidance: Google returns to the server PC, not this device */}
+      <Dialog open={Boolean(remoteAuth)} onClose={() => setRemoteAuth(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('remote_auth_title')}</DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 2 }}>{t('remote_auth_desc')}</Alert>
+          <TextField
+            fullWidth
+            multiline
+            minRows={3}
+            readOnly
+            value={remoteAuth?.authUrl || ''}
+            onFocus={(e) => e.target.select()}
+            sx={{ mb: 2 }}
+          />
+          <Button variant="outlined" onClick={copyRemoteAuth}>{t('remote_auth_copy')}</Button>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setRemoteAuth(null)}>{t('cancel')}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

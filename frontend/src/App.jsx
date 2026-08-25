@@ -1,8 +1,8 @@
-import { lazy } from 'react';
+import { lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, createTheme, CssBaseline } from '@mui/material';
-import { Box, CircularProgress } from '@mui/material';
+import { Box, Grid, Skeleton } from '@mui/material';
 import { SnackbarProvider } from 'notistack';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -54,9 +54,28 @@ const Orders = lazy(() => import('./pages/Orders'));
 import DashboardLayout from './components/DashboardLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 
-const RouteFallback = () => (
-  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '50vh' }}>
-    <CircularProgress />
+// Skeleton fallback for lazy route chunks: mimics a generic page (title +
+// summary cards + chart block) so first navigation reads as "content loading"
+// rather than an app refresh. Chunks are also idle-prefetched after login,
+// so this rarely appears at all.
+const RouteSkeleton = () => (
+  <Box sx={{ p: { xs: 2, sm: 3 } }}>
+    <Skeleton variant="rounded" width="35%" height={34} sx={{ mb: 3 }} />
+    <Grid container spacing={2} sx={{ mb: 3 }}>
+      {[0, 1, 2, 3].map((i) => (
+        <Grid item xs={6} md={3} key={i}>
+          <Skeleton variant="rounded" height={88} />
+        </Grid>
+      ))}
+    </Grid>
+    <Grid container spacing={2}>
+      <Grid item xs={12} md={7}>
+        <Skeleton variant="rounded" height={220} />
+      </Grid>
+      <Grid item xs={12} md={5}>
+        <Skeleton variant="rounded" height={220} />
+      </Grid>
+    </Grid>
   </Box>
 );
 
@@ -109,6 +128,11 @@ const theme = createTheme({
     borderRadius: 10,
   },
   components: {
+    // Mobile responsiveness defaults: every dialog adapts to screen width
+    // unless a page explicitly overrides maxWidth/fullWidth.
+    MuiDialog: {
+      defaultProps: { fullWidth: true, maxWidth: 'sm' },
+    },
     MuiButton: {
       styleOverrides: {
         root: { borderRadius: 8, paddingTop: 10, paddingBottom: 10 },
@@ -137,7 +161,10 @@ function AppRoutes() {
   }
 
   return (
-    <Suspense fallback={<RouteFallback />}>
+    // Safety net only — the REAL per-route boundary lives inside
+    // DashboardLayout (around <Outlet />) so the menu bar / app bar never
+    // unmount while a lazy page chunk loads.
+    <Suspense fallback={<RouteSkeleton />}>
       <Routes>
       <Route path="/login" element={!user ? <Login /> : <Navigate to={defaultRoute} />} />
       <Route path="/setup" element={!user ? <SetupFirstAdmin /> : <Navigate to={defaultRoute} />} />

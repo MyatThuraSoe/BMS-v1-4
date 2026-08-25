@@ -34,4 +34,8 @@
   "license_updated": "✅ လိုင်စင် မွမ်းမံပြီးပါပြီ။",
   "invalid_key": "ဤစက်အတွက် သော့ချက် မမှန်ကန်ပါ",
   "days_left_warning": "{{count}} ရက် ကျန်သည် ⚠️"
+,
+  "phone_access_title": "ဖုန်း / တက်ဘလက်ဖြင့် LumiPOS ကို ဖွင့်ရန်",
+  "phone_access_desc": "စက်နှစ်ခုလုံးကို Wi-Fi တစ်ခုတည်းတွင် ထားပြီး ဖုန်းကင်မရာဖြင့် ဤကုဒ်ကို စကန်ဖတ်ပါ။",
+  "phone_access_qr_alt": "QR"
 }

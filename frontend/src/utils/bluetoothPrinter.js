@@ -166,11 +166,45 @@ export async function printReceiptViaQZ(receiptData, shopInfo, printerName = nul
 
     commands.push('-'.repeat(lineWidth) + '\n');
     commands.push('\x1B\x61\x02'); // Right align
+
+    // Money summary — mirrors ReceiptDocument: Subtotal -> Tax -> Discount -> TOTAL
+    const subtotal = Number(receiptData.subTotal ?? receiptData.totalAmount ?? 0);
+    const taxAmount = Number(receiptData.taxAmount ?? 0);
+    const discountAmount = Number(receiptData.discountAmount ?? 0);
+
+    if (subtotal > 0 && subtotal !== totalAmount) {
+      commands.push(`Subtotal: ${formatCurrency(subtotal)}\n`);
+    }
+    if (taxAmount > 0) {
+      commands.push(`Tax: ${formatCurrency(taxAmount)}\n`);
+    }
+    if (discountAmount > 0) {
+      commands.push(`Discount: -${formatCurrency(discountAmount)}\n`);
+    }
+
     commands.push('\x1B\x45\x01'); // Bold on
     commands.push(`TOTAL: ${formatCurrency(totalAmount)}\n`);
     commands.push('\x1B\x45\x00'); // Bold off
     commands.push(`Paid: ${formatCurrency(amountPaid)}\n`);
     commands.push(`Change: ${formatCurrency(change)}\n`);
+
+    // Credit sale footer (balance + due date), matching the screen receipt
+    const isCredit = (receiptData.saleType || receiptData.paymentStatus) === 'CREDIT';
+    if (isCredit) {
+      commands.push('\x1B\x61\x01'); // Center align
+      commands.push('\x1B\x45\x01');
+      commands.push('*** CREDIT SALE ***\n');
+      commands.push('\x1B\x45\x00');
+      commands.push('\x1B\x61\x02'); // Right align
+      const balanceDue = receiptData.balanceDue != null
+        ? Number(receiptData.balanceDue)
+        : totalAmount - amountPaid;
+      commands.push(`Balance Due: ${formatCurrency(balanceDue)}\n`);
+      if (receiptData.dueDate) {
+        commands.push(`Due Date: ${String(receiptData.dueDate).slice(0, 10)}\n`);
+      }
+    }
+
     commands.push('\x1B\x61\x00'); // Left align
     commands.push('\n\n');
     commands.push('Thank you!\n\n\n');

@@ -105,11 +105,11 @@ const Accounting = () => {
     setForm({ category: expense.category, description: expense.description || '', amount: expense.amount || '', expenseDate: expense.expenseDate || today.toISOString().split('T')[0] });
     setDialogOpen(true);
   };
-  const resetForm = () => {
+  function resetForm() {
     setForm({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0] });
     setReceiptFile(null);
     setRemoveReceiptImage(false);
-  };
+  }
 
   const handleSubmit = () => {
     const payload = { category: form.category, description: form.description, amount: Number(form.amount), expenseDate: form.expenseDate };

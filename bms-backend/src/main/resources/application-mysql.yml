@@ -1,0 +1,30 @@
+# ============================================================
+# MySQL profile — multi-terminal / shop-server deployments
+# ------------------------------------------------------------
+# Activate:  java -Dspring.profiles.active=mysql -jar bms-backend-1.0.0.jar
+# Requires:  MySQL 8+ running, database `lumipos`, user `lumi`.
+#
+# One-time DB setup (run as MySQL root):
+#   CREATE DATABASE lumipos CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+#   CREATE USER 'lumi'@'localhost' IDENTIFIED BY 'LumiPOS26';
+#   GRANT ALL PRIVILEGES ON lumipos.* TO 'lumi'@'localhost';
+#   FLUSH PRIVILEGES;
+#
+# Schema tables/columns are created automatically on first start
+# (Hibernate ddl-auto=update) — no SQL import needed.
+# ============================================================
+
+server:
+  # Bind all interfaces so phones/tablets on the shop Wi-Fi can connect
+  address: 0.0.0.0
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/lumipos?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
+    username: ${MYSQL_USERNAME:lumi}
+    password: ${MYSQL_PASSWORD:LumiPOS26}
+
+  jpa:
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect

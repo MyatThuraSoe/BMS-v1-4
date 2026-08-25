@@ -182,5 +182,17 @@
   "rc_scale_percent": "({{percent}}% scale)",
   "rc_preview_1to1": "This preview is 1:1 scale with the physical paper.",
   "rc_preview_scaled": "Physical paper is {{width}}mm wide. Preview is scaled to fit.",
-  "rc_show_credit_info": "Show credit amount on receipt"
+  "rc_show_credit_info": "Show credit amount on receipt",
+  "counter_printer_title": "Counter Printer (Server)",
+  "counter_printer_desc": "Prints receipts on the printer attached to the LumiPOS server computer. Every device — phone, tablet, browser — can use it without installing anything.",
+  "counter_printer_label": "Printer on server computer",
+  "counter_printer_helper": "Leave empty to use the Windows default printer.",
+  "counter_printer_test": "Send Test Page",
+  "counter_printer_saved": "Printer saved.",
+  "counter_printer_test_ok": "Test page sent! Check the printer.",
+  "counter_printer_failed": "Could not reach the printer.",
+  "remote_auth_title": "Open on the main computer",
+  "remote_auth_desc": "For security, Google returns you to the LumiPOS main computer after sign-in. Since you are on another device, open the link below on the MAIN computer (the one running the server) — or open LumiPOS there and press Connect.",
+  "remote_auth_copy": "Copy Link",
+  "remote_auth_copied": "Copied!"
 }

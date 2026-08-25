@@ -84,10 +84,10 @@ async function main() {
   // 4) Ensure an open cash shift (cash sales require one)
   let shift = await api('GET', '/shifts/current');
   if (!shift.json?.data) {
-    const opened = await api('POST', '/shifts/open', { openingCash: 0 });
+    const opened = await api('POST', '/shifts/open', { openingAmount: 1 });
     shift = opened;
   }
-  ok('cash shift is open', Boolean(shift.json?.data));
+  ok('cash shift is open', Boolean(shift.json?.data), JSON.stringify(shift.json?.message || ''));
 
   // 5) Verify cart (authoritative pricing)
   const verify = await api('POST', '/sales/verify-cart', {

@@ -109,7 +109,7 @@ public class BackupController {
     // ✅ NEW: Returns the Google OAuth URL so the frontend can open it in the browser
     @GetMapping("/google/auth-url")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Map<String, String>>> getAuthUrl() {
+    public ResponseEntity<ApiResponse<Map<String, String>>> getAuthUrl(jakarta.servlet.http.HttpServletRequest request) {
         // Single-use CSRF token; verified in the callback. Prevents login CSRF /
         // OAuth state poisoning by attackers who can start an auth flow themselves.
         String state = UUID.randomUUID().toString();
@@ -128,7 +128,27 @@ public class BackupController {
                 + "&access_type=offline"
                 + "&prompt=consent"
                 + "&state=" + state;
-        return ResponseEntity.ok(new ApiResponse<>(true, "ok", Map.of("authUrl", authUrl)));
+
+        // The registered redirect URI is loopback (127.0.0.1) — Google will send
+        // the consent result to the SERVER computer no matter which device the
+        // admin started from. Tell the frontend so it can guide the user instead
+        // of silently failing on a phone/LAN browser.
+        boolean callerIsServer = false;
+        String host = request.getHeader("X-Forwarded-Host");
+        if (host == null || host.isBlank()) {
+            host = request.getHeader("Host");
+        }
+        if (host != null) {
+            host = host.toLowerCase();
+            host = host.substring(0, Math.max(0, host.indexOf(':') < 0 ? host.length() : host.indexOf(':')));
+            callerIsServer = host.equals("127.0.0.1") || host.equals("localhost") || host.equals("[::1]");
+        }
+
+        Map<String, String> data = new HashMap<>();
+        data.put("authUrl", authUrl);
+        data.put("callerIsServer", Boolean.toString(callerIsServer));
+        data.put("serverCallbackUrl", redirectUri);
+        return ResponseEntity.ok(new ApiResponse<>(true, "ok", data));
     }
 
     private void evictExpiredStates() {

@@ -76,5 +76,6 @@
   "order_created": "注文を作成し、在庫を確保しました",
   "order_failed": "注文の作成に失敗しました",
   "order_reserves_stock": "保留中の注文を作成します。注文が売上に変換されるかキャンセルされるまで在庫が確保されます。",
-  "notes_optional": "メモ（任意）"
+  "notes_optional": "メモ（任意）",
+  "print_at_counter": "カウンターで印刷"
 }

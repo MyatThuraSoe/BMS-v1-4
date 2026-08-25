@@ -83,6 +83,7 @@ const ReceiptDocument = ({
   customization = {},
   isMockPreview = false,
   logoPreview,
+  qrDataUrl, // optional — rendered under the footer text when provided
 }) => {
   const {
     logoSize = 80,
@@ -332,6 +333,18 @@ const ReceiptDocument = ({
           {footerText}
         </Box>
       )}
+
+      {/* ===== QR (under the bottom text, when enabled + provided) ===== */}
+      {showQRCode && qrDataUrl && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', mt: '8px' }}>
+          <Box
+            component="img"
+            src={qrDataUrl}
+            alt="QR"
+            sx={{ width: 96, height: 96, imageRendering: 'pixelated' }}
+          />
+        </Box>
+      )}
     </Box>
   );
 };
@@ -436,6 +449,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   let qrHtml = (showQRCode && qrDataUrl)
     ? `<div style="display:flex;justify-content:center;margin:8px 0;"><img src="${qrDataUrl}" alt="QR" width="${qrSizePx}" height="${qrSizePx}" style="image-rendering:pixelated;" /></div>`
     : '';
+  // QR renders under the footer text (moved to the very end of the template)
 
   let itemsHtml = [
     `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;font-weight:700;">
@@ -514,7 +528,6 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   ${headerHtml}
   ${bannerHtml}
   ${metaHtml}
-  ${qrHtml}
   ${messagHtml}
   ${divHtml}
   <div style="margin-bottom:6px;">${itemsHtml}</div>
@@ -523,6 +536,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   ${totalsHtml}
   ${creditHtml}
   ${footerHtml}
+  ${qrHtml}
 </body>
 </html>`;
 }

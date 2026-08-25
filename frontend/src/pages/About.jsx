@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { 
@@ -16,6 +16,7 @@ import {
 import { licenseService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
+import QRCode from 'qrcode';
 
 // TikTok SVG Icon - MUI v5 compatible
 const TikTokIcon = (props) => (
@@ -38,6 +39,35 @@ const About = () => {
   const { isAdmin } = useAuth();
   const appVersion = '1.0.0';
   const buildDate = 'August 2025';
+
+  // QR of the LAN address reported by the backend. On the desktop the page
+  // itself loads from 127.0.0.1 (useless to scan), so we ask the server which
+  // real Wi-Fi/LAN address it is reachable on; phones already see the right
+  // address via location.origin, which stays the fallback.
+  const [phoneQr, setPhoneQr] = useState(null);
+  const [phoneUrl, setPhoneUrl] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    const buildQr = async (url) => {
+      if (!url) return;
+      try {
+        const dataUrl = await QRCode.toDataURL(url, { width: 320, margin: 2, color: { dark: '#1C2620', light: '#ffffff' } });
+        if (!cancelled) {
+          setPhoneUrl(url);
+          setPhoneQr(dataUrl);
+        }
+      } catch { /* ignore */ }
+    };
+    fetch('/api/public/network-info')
+      .then((r) => r.json())
+      .then((res) => {
+        // Controller returns { urls } unwrapped (no ApiResponse envelope)
+        const urls = res?.urls || res?.data?.urls || [];
+        buildQr(urls[0] || window.location.origin);
+      })
+      .catch(() => buildQr(window.location.origin));
+    return () => { cancelled = true; };
+  }, []);
 
   const { data: statusData, refetch } = useQuery({
     queryKey: ['license-status'],
@@ -124,6 +154,34 @@ const handleActivateNewKey = async () => {
           />
         </Stack>
       </Paper>
+
+      {/* Use on Phone / Tablet — QR card */}
+      {phoneQr && (
+        <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={3}
+            alignItems="center"
+            justifyContent="center"
+          >
+            <Box
+              component="img"
+              src={phoneQr}
+              alt={t('phone_access_qr_alt')}
+              sx={{ width: 160, height: 160, borderRadius: 2, border: '1px solid', borderColor: 'divider' }}
+            />
+            <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
+              <Typography variant="h6" sx={{ fontWeight: 600, mb: 0.5 }}>
+                📱 {t('phone_access_title')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                {t('phone_access_desc')}
+              </Typography>
+              <Chip label={phoneUrl} color="primary" variant="outlined" sx={{ fontWeight: 700 }} />
+            </Box>
+          </Stack>
+        </Paper>
+      )}
 
       {isAdmin() && lic && (
     <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>

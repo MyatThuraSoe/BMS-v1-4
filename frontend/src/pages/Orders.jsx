@@ -162,7 +162,7 @@ const Orders = () => {
 
   const hasActiveFilters = status !== 'ALL' || startDate || endDate || selectedCustomer || debouncedSearch;
 
-  const resetOrderForm = () => {
+  function resetOrderForm() {
     setOrderCustomer(null);
     setOrderCustomerInput('');
     setOrderNotes('');
@@ -171,7 +171,7 @@ const Orders = () => {
     setQty(1);
     setCartItems([]);
     setCreateError('');
-  };
+  }
 
   const subtotal = cartItems.reduce((sum, it) => sum + it.unitPrice * it.quantity, 0);
 

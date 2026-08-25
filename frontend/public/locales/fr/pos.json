@@ -76,5 +76,6 @@
   "order_created": "Commande créée. Stock réservé.",
   "order_failed": "Échec de la création de la commande",
   "order_reserves_stock": "Ceci crée une commande en attente. Le stock sera réservé jusqu'à la conversion de la commande en vente ou son annulation.",
-  "notes_optional": "Notes (facultatif)"
+  "notes_optional": "Notes (facultatif)",
+  "print_at_counter": "Imprimer au comptoir"
 }

@@ -3,6 +3,15 @@ import { Box } from '@mui/material';
 import { Image as ImageIcon } from '@mui/icons-material';
 import { shopInfoService } from '../api/services';
 
+// Module-level cache so every ShopLogo instance shares one object URL
+let cachedLogoUrl = null;
+
+export const clearShopLogoCache = () => {
+    if (cachedLogoUrl) {
+        URL.revokeObjectURL(cachedLogoUrl);
+    }
+    cachedLogoUrl = null;
+};
 
 const ShopLogo = ({ preview, refreshTrigger = 0, size = 96 }) => {
     const [logoUrl, setLogoUrl] = useState(preview || cachedLogoUrl);
@@ -83,12 +92,3 @@ const ShopLogo = ({ preview, refreshTrigger = 0, size = 96 }) => {
 };
 
 export default ShopLogo;
-
-let cachedLogoUrl = null;
-
-export const clearShopLogoCache = () => {
-    if (cachedLogoUrl) {
-        URL.revokeObjectURL(cachedLogoUrl);
-    }
-    cachedLogoUrl = null;
-};

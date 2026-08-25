@@ -17,34 +17,41 @@ const FinancialSummaryCards = ({ summary, onCardClick }) => {
   return (
     <Grid container spacing={2}>
       {cards.map((card) => (
-        <Grid item xs={6} md={3} key={card.key}>
+        <Grid item xs={6} md={3} key={card.key} sx={{ minWidth: 0 }}>
           <Paper
             onClick={onCardClick ? () => onCardClick(card.key) : undefined}
             sx={{
               p: 2,
+              minWidth: 0,
+              overflow: 'hidden',
               cursor: onCardClick ? 'pointer' : 'default',
               '&:hover': onCardClick ? { boxShadow: 4 } : {},
               ...(card.highlight && { border: '2px solid', borderColor: 'success.main' }),
             }}
           >
-            <Typography variant="body2" color="text.secondary">{card.label}</Typography>
-            <Typography variant={card.highlight ? 'h4' : 'h5'} fontWeight="bold" color={card.color}>
+            <Typography variant="body2" color="text.secondary" noWrap>
+              {card.label}
+            </Typography>
+            {/* Fluid size: big amounts shrink to fit their box instead of
+                spilling over the card edges (MMK values get very long). */}
+            <Typography
+              component="div"
+              noWrap
+              fontWeight={card.highlight ? 800 : 700}
+              color={card.color}
+              sx={{
+                fontSize: {
+                  xs: 'clamp(0.85rem, 4.2vw, 1.25rem)',
+                  sm: 'clamp(1rem, 3vw, 1.45rem)',
+                  md: 'clamp(1rem, 1.6vw, 1.4rem)',
+                },
+                lineHeight: 1.25,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
               {formatCurrency(card.value)}
             </Typography>
-            {card.changePercent != null && (
-              <Typography
-                variant="caption"
-                color={card.changePercent >= 0 ? 'success.main' : 'error.main'}
-                sx={{ display: 'block', mt: 0.5 }}
-              >
-                {card.changePercent >= 0 ? '▲' : '▼'} {t('vs_previous_period', { value: Math.abs(Number(card.changePercent)).toFixed(1) })}
-              </Typography>
-            )}
-            {card.changePercent == null && summary != null && card.key === 'revenue' && summary.incomeChangePercent == null && (
-              <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mt: 0.5 }}>
-                {t('no_prior_data')}
-              </Typography>
-            )}
           </Paper>
         </Grid>
       ))}

@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } = 
 const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
+const os = require('os');
 
 let mainWindow = null;
 let tray = null;
@@ -11,6 +12,27 @@ let serverPid = null;
 
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
+
+// First usable LAN IPv4, preferring real private ranges over virtual
+// adapters (VMware/Hyper-V/WSL often register first).
+function getLanIp() {
+    const nets = os.networkInterfaces();
+    const candidates = [];
+    for (const name of Object.keys(nets)) {
+        for (const net of nets[name] || []) {
+            if (net.family === 'IPv4' && !net.internal) candidates.push(net.address);
+        }
+    }
+    return (
+        candidates.find((ip) => ip.startsWith('192.168.')) ||
+        candidates.find((ip) => ip.startsWith('10.')) ||
+        candidates.find((ip) => /^172\.(1[6-9]|2\d|3[01])\./.test(ip)) ||
+        candidates[0] ||
+        null
+    );
+}
+const LAN_IP = getLanIp();
+const LAN_URL = LAN_IP ? `http://${LAN_IP}:${APP_PORT}` : null;
 
 // Find Java executable - bundled JRE first, then system Java as fallback
 function getJavaPath() {
@@ -78,8 +100,12 @@ function startServer() {
     
     // Optional override only — if GOOGLE_CLIENT_SECRET isn't set, the value
     // from application-electron.yml is used instead.
+    // DB engine per launch: LUMIPOS_DB=mysql -> shop-server mode (see
+    // application-mysql.yml / start-mysql.bat); default remains built-in H2.
+    const dbProfile = process.env.LUMIPOS_DB === 'mysql' ? 'mysql' : 'electron';
+    console.log('[LumiPOS] Database profile: ' + dbProfile);
     const spawnArgs = [
-        '-Dspring.profiles.active=electron',
+        '-Dspring.profiles.active=' + dbProfile,
         '-Dspring.main.banner-mode=off',
         '-Dserver.port=' + APP_PORT
     ];
@@ -244,6 +270,28 @@ function createTray() {
                 require('electron').shell.openExternal(APP_URL);
             }
         },
+        {
+            type: 'separator'
+        },
+        {
+            label: 'Phone / Tablet Access',
+            click: async () => {
+                const message = LAN_URL
+                    ? `Open this address in your phone's browser:\n\n${LAN_URL}\n\nBoth devices must be on the same Wi-Fi. You can also scan the QR code on the About page inside LumiPOS.`
+                    : 'No Wi-Fi/LAN network detected on this computer.\nConnect to your shop Wi-Fi and restart LumiPOS.';
+                const { response } = await dialog.showMessageBox({
+                    type: 'info',
+                    title: 'LumiPOS on your phone / tablet',
+                    message,
+                    buttons: LAN_URL ? ['Close', 'Copy Address'] : ['Close'],
+                    defaultId: 0,
+                    cancelId: 0,
+                });
+                if (response === 1 && LAN_URL) {
+                    require('electron').clipboard.writeText(LAN_URL);
+                }
+            }
+        },
         { type: 'separator' },
         {
             label: 'Quit LumiPOS',
@@ -253,8 +301,19 @@ function createTray() {
         }
     ]);
 
-    tray.setToolTip('LumiPOS - Business Management System');
+    tray.setToolTip('LumiPOS - Business Management System' + (LAN_URL ? ` | Phone/tablet: ${LAN_URL}` : ''));
     tray.setContextMenu(contextMenu);
+
+    // One gentle heads-up per launch so staff learn the address exists
+    if (LAN_URL) {
+        try {
+            tray.displayBalloon({
+                iconType: 'info',
+                title: 'LumiPOS is on your Wi-Fi',
+                content: `Open on your phone: ${LAN_URL}  (or scan the QR code on the About page)`,
+            });
+        } catch { /* balloon unsupported */ }
+    }
 
     // Double-click tray icon to show window
     tray.on('double-click', () => {
@@ -520,6 +579,13 @@ if (!gotTheLock) {
         // Create the main window and tray
         createWindow();
         createTray();
+
+        // Tell the user how to reach LumiPOS from other devices on the Wi-Fi
+        if (LAN_URL) {
+            console.log(`[LumiPOS] On the same Wi-Fi, open: ${LAN_URL}  (login with your LumiPOS account)`);
+        } else {
+            console.log('[LumiPOS] No LAN IP detected — phone access unavailable.');
+        }
 
         updateSplash(100, 'Ready!');
         await new Promise(resolve => setTimeout(resolve, 500));

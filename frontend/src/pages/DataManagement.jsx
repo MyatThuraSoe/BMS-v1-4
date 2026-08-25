@@ -70,7 +70,7 @@ const DataManagement = () => {
         }
     };
 
-    const doImport = async () => {
+    async function doImport() {
         setConfirmOpen(false);
         setImporting(true);
         try {
@@ -85,7 +85,7 @@ const DataManagement = () => {
         } finally {
             setImporting(false);
         }
-    };
+    }
 
     return (
         <Box sx={{ mt: 3 }}>

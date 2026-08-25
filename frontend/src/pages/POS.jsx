@@ -52,9 +52,10 @@ import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService } from '../api/services';
 import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter';
 import directPrint from '../services/directPrintService';
+import useShopConfig from '../hooks/useShopConfig';
 
 const POS = () => {
 
@@ -79,6 +80,8 @@ const POS = () => {
   const [cashAmount, setCashAmount] = useState('');
   const [cashManuallyEdited, setCashManuallyEdited] = useState(false);
   const [cashierDiscount, setCashierDiscount] = useState(''); // AMOUNT-mode discount entered by cashier
+  const [counterPrinting, setCounterPrinting] = useState(false);
+
   const [showCheckoutDialog, setShowCheckoutDialog] = useState(false);
   const [showReceiptDialog, setShowReceiptDialog] = useState(false);
   const [printAfterCheckout, setPrintAfterCheckout] = useState(false);
@@ -100,12 +103,8 @@ const POS = () => {
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
 
-  // Shop info (for receipt branding)
-  const { data: shopInfoData } = useQuery({
-    queryKey: ['shopInfo'],
-    queryFn: () => shopInfoService.get(),
-    enabled: true,
-  });
+  // Shop info (for receipt branding) — shared cache via useShopConfig
+  const { data: shopInfoData } = useShopConfig();
 
   const shopInfo = shopInfoData?.data;
 
@@ -116,6 +115,22 @@ const POS = () => {
   });
 
   const customization     = customizationData?.data || {};
+
+  // QR for the on-screen receipt dialog — same data the printed copy carries.
+  // Placed AFTER showReceiptDialog/lastSale/customization are declared.
+  const [receiptQrDataUrl, setReceiptQrDataUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (showReceiptDialog && lastSale?.invoiceNumber && customization?.showQRCode) {
+      generateQRDataUrl(lastSale.invoiceNumber).then((url) => {
+        if (!cancelled) setReceiptQrDataUrl(url);
+      });
+    } else {
+      setReceiptQrDataUrl(null);
+    }
+    return () => { cancelled = true; };
+  }, [showReceiptDialog, lastSale, customization]);
+
   const receiptTimeFormat = customization.timeFormat || '12';
 
   // Fetch products
@@ -316,6 +331,60 @@ const filteredProducts = products.filter(
     setCashAmount(t.toFixed(2));
   }, [displayTotal, saleType, cart.length, cashManuallyEdited]);
 
+  const verifyCartMutation = useMutation({
+    mutationFn: (cartItems) => saleService.verifyCart(
+      cartItems,
+      discountEnabled && discountMode === 'AMOUNT' ? (parseFloat(cashierDiscount) || 0) : null
+    ),
+    onSuccess: (response) => {
+      const result = response.data;
+
+      if (result.valid) {
+        setVerifiedTotals({
+          subtotal: result.subtotal,
+          taxAmount: result.taxAmount,
+          discountAmount: result.discountAmount,
+          totalAmount: result.totalAmount,
+        });
+        // Checkout & Print: skip the confirmation dialog, create + print right away.
+        // createSaleMutation is defined below — safe, because this callback only
+        // runs long after render (deferred execution), but the linter can't know.
+        if (printAfterCheckout) {
+          // eslint-disable-next-line no-use-before-define
+          createSaleMutation.mutate(buildSaleData());
+          return;
+        }
+        setShowCheckoutDialog(true);
+        return;
+      }
+
+      // Something changed — update the SAME cart array in place, don't touch item selection
+      setCart((prevCart) =>
+        prevCart.map((cartItem) => {
+          const fresh = result.items.find((i) => i.productId === cartItem.productId);
+          if (!fresh) return cartItem;
+          const currentQty = parseInt(cartItem.quantity, 10) || 0;
+          return {
+            ...cartItem,
+            price: fresh.unitPrice,
+            stockQuantity: fresh.availableStock,
+            // clamp quantity down if stock dropped below what's in the cart
+            quantity: fresh.insufficientStock
+              ? Math.min(currentQty, fresh.availableStock)
+              : currentQty || 1,
+          };
+        })
+      );
+
+      notifyWarning(t('items_changed_warning', { messages: result.messages.join(' | ') }));
+      // Do NOT open the confirm dialog yet — let them see the corrected cart first.
+    },
+    onError: (err) => {
+      setPrintAfterCheckout(false); // don't surprise-print on a later manual checkout
+      notifyError(err.friendlyMessage || t('verify_cart_failed'));
+    },
+  });
+
   const createSaleMutation = useMutation({
     mutationFn: async (saleData) => {
       const response = await saleService.create(saleData);
@@ -406,57 +475,6 @@ const filteredProducts = products.filter(
   }, [customerSearch]);
 
 
-  const verifyCartMutation = useMutation({
-    mutationFn: (cartItems) => saleService.verifyCart(
-      cartItems,
-      discountEnabled && discountMode === 'AMOUNT' ? (parseFloat(cashierDiscount) || 0) : null
-    ),
-    onSuccess: (response) => {
-      const result = response.data;
-
-      if (result.valid) {
-        setVerifiedTotals({
-          subtotal: result.subtotal,
-          taxAmount: result.taxAmount,
-          discountAmount: result.discountAmount,
-          totalAmount: result.totalAmount,
-        });
-        // Checkout & Print: skip the confirmation dialog, create + print right away
-        if (printAfterCheckout) {
-          createSaleMutation.mutate(buildSaleData());
-          return;
-        }
-        setShowCheckoutDialog(true);
-        return;
-      }
-
-      // Something changed — update the SAME cart array in place, don't touch item selection
-      setCart((prevCart) =>
-        prevCart.map((cartItem) => {
-          const fresh = result.items.find((i) => i.productId === cartItem.productId);
-          if (!fresh) return cartItem;
-          const currentQty = parseInt(cartItem.quantity, 10) || 0;
-          return {
-            ...cartItem,
-            price: fresh.unitPrice,
-            stockQuantity: fresh.availableStock,
-            // clamp quantity down if stock dropped below what's in the cart
-            quantity: fresh.insufficientStock
-              ? Math.min(currentQty, fresh.availableStock)
-              : currentQty || 1,
-          };
-        })
-      );
-
-      notifyWarning(t('items_changed_warning', { messages: result.messages.join(' | ') }));
-      // Do NOT open the confirm dialog yet — let them see the corrected cart first.
-    },
-    onError: (err) => {
-      setPrintAfterCheckout(false); // don't surprise-print on a later manual checkout
-      notifyError(err.friendlyMessage || t('verify_cart_failed'));
-    },
-  });
-
   const handleCheckout = () => {
     if (cart.length === 0) {
       setError(t('empty_cart'));
@@ -496,7 +514,7 @@ const filteredProducts = products.filter(
       : null;
 
   // Shared by the confirm dialog and the direct Checkout & Print path
-  const buildSaleData = () => {
+  function buildSaleData() {
     if (saleType === 'CREDIT') {
       return {
         items: cart.map((item) => ({
@@ -526,11 +544,11 @@ const filteredProducts = products.filter(
       amountPaid: parseFloat(cashAmount),
       discountAmount: getDiscountPayload(),
     };
-  };
+  }
 
   const confirmCheckout = () => {
     createSaleMutation.mutate(buildSaleData());
-  };
+  }
 
   const handleSaleTypeChange = (event, newType) => {
     if (!newType) return;
@@ -610,7 +628,7 @@ const filteredProducts = products.filter(
 
   // Smart Direct Print: uses generatePrintHtml so the printed paper matches the on-screen receipt.
   // Accepts an optional sale object so "Checkout & Print" can print immediately after sale creation.
-  const handleDirectPrint = async (saleOverride) => {
+  async function handleDirectPrint(saleOverride) {
     const sale = (saleOverride && saleOverride.invoiceNumber) ? saleOverride : lastSale;
     if (!sale?.invoiceNumber) return;
     setIsDirectPrinting(true);
@@ -652,12 +670,29 @@ const filteredProducts = products.filter(
     } finally {
       setIsDirectPrinting(false);
     }
-  };
+  }
 
   const handleCheckoutAndPrint = () => {
     setPrintAfterCheckout(true);
     handleCheckout();
   };
+
+  // Counter printing: sends the receipt to the printer attached to the
+  // SERVER computer — works from any device, no local installs needed.
+  async function handleCounterPrint() {
+    if (!lastSale?.invoiceNumber) return;
+    setCounterPrinting(true);
+    try {
+      const res = await counterPrintService.printReceipt(lastSale.invoiceNumber);
+      if (res?.success) notifySuccess(t('receipt_sent_printer'));
+      else notifyError(res?.message || t('print_failed'));
+    } catch (err) {
+      notifyError(err.friendlyMessage || err.response?.data?.message || t('print_failed'));
+    } finally {
+      setCounterPrinting(false);
+    }
+  }
+
 
   return (
     <Box>
@@ -1249,6 +1284,7 @@ const filteredProducts = products.filter(
                 shopInfo={shopInfo || {}}
                 customization={customization}
                 isMockPreview={false}
+                qrDataUrl={receiptQrDataUrl}
               />
             </Box>
           )}
@@ -1272,8 +1308,20 @@ const filteredProducts = products.filter(
                 : '⚡ Direct Print'}
           </Button>
 
+          <Button
+            onClick={handleCounterPrint}
+            variant="contained"
+            color="secondary"
+            fullWidth
+            startIcon={counterPrinting ? <CircularProgress size={20} sx={{ color: 'white' }} /> : <DirectPrintIcon />}
+            disabled={counterPrinting || !lastSale?.invoiceNumber}
+            sx={{ py: 1.2, fontSize: '1rem' }}
+          >
+            {counterPrinting ? t('printing') : t('print_at_counter')}
+          </Button>
+
           <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
-            <Button onClick={handleDownloadPdf} variant="outlined" fullWidth>
+            <Button onClick={() => handleDownloadPdf()} variant="outlined" fullWidth>
               {t('download_pdf')}
             </Button>
             <Button onClick={handlePrintReceipt} variant="outlined" fullWidth>

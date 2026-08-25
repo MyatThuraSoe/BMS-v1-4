@@ -1,6 +1,9 @@
 server:
   port: 17234
-  address: 127.0.0.1
+  # Bind to all interfaces so phones/tablets on the same Wi-Fi can open
+  # LumiPOS at http://<this-pc-ip>:17234. Windows Firewall may still need an
+  # inbound rule for TCP 17234 on first run.
+  address: 0.0.0.0
 
 spring:
   application:
