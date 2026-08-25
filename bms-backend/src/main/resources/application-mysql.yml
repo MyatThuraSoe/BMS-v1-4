@@ -28,3 +28,12 @@ spring:
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+
+google:
+  oauth:
+    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
+    client-secret: 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
+    # Loopback ONLY — Google returns the consent result to THIS computer,
+    # regardless of which device started the sign-in (phones get guided).
+    redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
+    frontend-redirect-base: http://127.0.0.1:17234

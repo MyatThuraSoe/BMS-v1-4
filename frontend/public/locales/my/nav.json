@@ -1,36 +1,49 @@
 {
-  "group_overview": "အကျဉ်းချုပ်",
+  "group_overview": "အနှစ်ချုပ်",
+
   "group_sales": "အရောင်း",
-  "group_catalog": "ကုန်ပစ္စည်းစာရင်း",
-  "group_procurement": "ဝယ်ယူမှု",
-  "group_people": "အသုံးပြုသူနှင့် ဖောက်သည်",
-  "group_insights": "အစီရင်ခံစာနှင့် ခွဲခြမ်းစိတ်ဖြာမှု",
+  "group_catalog": "ကုန်ပစ္စည်း",
+  "group_procurement": "အဝယ်",
+  "group_people": "ဝန်ထမ်းနှင့် ဖောက်သည်",
+  "group_insights": "အစီရင်ခံစာနှင့် စာရင်းအင်း",
   "group_administration": "စီမံခန့်ခွဲမှု",
-  "dashboard": "Dashboard",
-  "pos": "POS",
+
+  "dashboard": "ပင်မစာမျက်နှာ",
+  "pos": "အရောင်းကောင်တာ",
   "sales": "အရောင်း",
-  "cash_shift": "ငွေသားဆိုင်း",
-  "shift_history": "ဆိုင်းမှတ်တမ်း",
+
+  "cash_shift": "ငွေသားစာရင်း",
+  "shift_history": "ငွေသားစာရင်းမှတ်တမ်း",
+
   "products": "ကုန်ပစ္စည်းများ",
-  "categories": "အမျိုးအစားများ",
-  "suppliers": "ပေးသွင်းသူများ",
-  "purchases": "ဝယ်ယူမှုများ",
+  "categories": "ကုန်ပစ္စည်းအမျိုးအစားများ",
+  "suppliers": "ကုန်ပစ္စည်းပေးသွင်းသူများ",
+
+  "purchases": "အဝယ်စာရင်း",
+
   "customers": "ဖောက်သည်များ",
   "users": "အသုံးပြုသူများ",
+
   "reports": "အစီရင်ခံစာများ",
-  "analytics": "ခွဲခြမ်းစိတ်ဖြာမှု",
+  "analytics": "စာရင်းအင်း",
   "accounting": "စာရင်းကိုင်",
+
   "settings": "ဆက်တင်များ",
   "shop_info": "ဆိုင်အချက်အလက်",
   "backup_settings": "အရန်သိမ်းဆည်းမှု ဆက်တင်များ",
-  "audit_logs": "စစ်ဆေးမှတ်တမ်းများ",
-  "new_entity": "{{name}}အသစ်",
+  "audit_logs": "လုပ်ဆောင်ချက်မှတ်တမ်းများ",
+
+  "new_entity": "{{name}} အသစ်",
   "edit_entity": "{{name}} ပြင်ဆင်ရန်",
   "entity_details": "{{name}} အသေးစိတ်",
-  "receipt_customization": "ပြေစာ စိတ်ကြိုက်ပြင်ဆင်ခြင်း",
-  "accounts_receivable": "ရရန် ငွေစာရင်း",
-  "orders": "ကြိုမှာယူမှုများ",
-  "inventory": "စတော့အရေအတွက်",
-  "fullscreen": "ဖန်သားပြင်အပြည့်",
-  "exit_fullscreen": "ဖန်သားပြင်အပြည့်မှ ထွက်ရန်"
+
+  "receipt_customization": "ပြေစာပုံစံ စိတ်ကြိုက်ပြင်ဆင်ရန်",
+
+  "accounts_receivable": "အကြွေးရရန် စာရင်း",
+  "orders": "အော်ဒါများ",
+
+  "inventory": "လက်ကျန် Stock",
+
+  "fullscreen": "မျက်နှာပြင်အပြည့်",
+  "exit_fullscreen": "မျက်နှာပြင်အပြည့်မှ ထွက်ရန်"
 }

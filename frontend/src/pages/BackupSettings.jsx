@@ -34,6 +34,7 @@ const BackupSettings = () => {
   const [message, setMessage] = useState(null);
   const [connecting, setConnecting] = useState(false);
   const pollRef = useRef(null);
+  const pollStopRef = useRef(null);
 
   // Inside the BackupSettings component, add state for dates:
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
@@ -133,28 +134,50 @@ const BackupSettings = () => {
     } catch { /* clipboard unavailable */ }
   };
 
-    // Poll the settings endpoint until Google Drive is connected
-  function startPolling() {
+    // Poll the status endpoint until Google Drive is connected
+  const stopPolling = () => {
     clearInterval(pollRef.current);
-    pollRef.current = setInterval(async () => {
-      try {
-        const res = await backupService.getSettings();
-        const hasToken = res.data.data?.googleRefreshToken;
-        if (hasToken) {
-          clearInterval(pollRef.current);
-          setConnecting(false);
-          setMessage({ type: 'success', text: t('drive_connected') });
-          queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
-        }
-      } catch (e) { /* ignore transient errors */ }
-    }, 2000);
+    clearTimeout(pollStopRef.current);
+    pollRef.current = null;
+    pollStopRef.current = null;
+  };
 
-    // Safety: stop polling after 5 minutes
-    setTimeout(() => clearInterval(pollRef.current), 5 * 60 * 1000);
+  const checkConnected = async () => {
+    try {
+      // getStatus() returns the raw axios response: res.data = ApiResponse, res.data.data = { connected }
+      const res = await googleDriveService.getStatus();
+      if (res.data?.data?.connected) {
+        stopPolling();
+        setConnecting(false);
+        setMessage({ type: 'success', text: t('drive_connected') });
+        queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
+        return true;
+      }
+    } catch { /* ignore transient errors */ }
+    return false;
+  };
+
+  function startPolling() {
+    stopPolling();
+    pollRef.current = setInterval(checkConnected, 2000);
+
+    // Safety: give up after 5 minutes and re-enable the button
+    pollStopRef.current = setTimeout(() => {
+      stopPolling();
+      setConnecting(false);
+    }, 5 * 60 * 1000);
   }
 
+  // Instant check when the user returns to this window from the Google tab
+  useEffect(() => {
+    if (!connecting) return undefined;
+    const onFocus = () => { checkConnected(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [connecting]);
+
   // Clean up polling when the page unmounts
-  useEffect(() => () => clearInterval(pollRef.current), []);
+  useEffect(() => () => stopPolling(), []);
 
   const handleDisconnect = async () => {
     if (window.confirm(t('disconnect_confirm'))) {
