@@ -60,6 +60,12 @@ public class ReceiptCustomization {
     @Column(name = "show_credit_info")
     private Boolean showCreditInfo = true;
 
+    @Column(name = "show_tax")
+    private Boolean showTax = true;
+
+    @Column(name = "show_discount")
+    private Boolean showDiscount = true;
+
     // --- Getters & Setters ---
 
     public Long getId() { return id; }
@@ -112,4 +118,10 @@ public class ReceiptCustomization {
 
     public Boolean getShowCreditInfo() { return showCreditInfo; }
     public void setShowCreditInfo(Boolean showCreditInfo) { this.showCreditInfo = showCreditInfo; }
+
+    public Boolean getShowTax() { return showTax; }
+    public void setShowTax(Boolean showTax) { this.showTax = showTax; }
+
+    public Boolean getShowDiscount() { return showDiscount; }
+    public void setShowDiscount(Boolean showDiscount) { this.showDiscount = showDiscount; }
 }

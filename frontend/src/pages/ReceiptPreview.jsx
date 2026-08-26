@@ -13,16 +13,12 @@ import {
   AssignmentReturn as RefundIcon,
   Print as PrintIcon,
   Download as DownloadIcon,
-  LocalPrintshop as PrinterIcon,
   FlashOn as DirectPrintIcon,
 } from '@mui/icons-material';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import {
-  connectQZ, printReceiptViaQZ, isQZSupported,
-  getAvailablePrinters, getReceiptPreviewWidth,
-} from '../utils/bluetoothPrinter';
+import { getReceiptPreviewWidth } from '../utils/helpers';
 import directPrint from '../services/directPrintService';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 import ShopLogo from '../components/ShopLogo';
@@ -78,12 +74,7 @@ const ReceiptPreview = () => {
   // ── Printer detection ──────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (isQZSupported()) {
-      connectQZ()
-        .then(() => getAvailablePrinters())
-        .then(setPrinters)
-        .catch(() => {});
-    } else if (directPrint.isAvailable()) {
+    if (directPrint.isAvailable()) {
       directPrint.getPrinters().then((list) => {
         setPrinters(list.map((p) => p.name));
         if (list.length > 0) {
@@ -105,7 +96,6 @@ const ReceiptPreview = () => {
   const paperSize      = customization.paperSize || '58';
   const paperWidthMm   = Math.max(20, parseInt(String(paperSize).replace(/\D/g, ''), 10) || 58);
   const previewWidth   = getReceiptPreviewWidth(paperSize);
-  const receiptTimeFormat = customization.timeFormat || '12';
 
   const refundableItems = receipt.items?.filter(
     (item) => (item.quantity || 0) - (item.quantityRefunded || 0) > 0
@@ -130,18 +120,6 @@ const ReceiptPreview = () => {
     }
   };
 
-  const handleQZPrint = async () => {
-    setIsPrinting(true);
-    try {
-      await connectQZ();
-      await printReceiptViaQZ(receipt, shopInfo, selectedPrinter || null, receiptTimeFormat, customization.paperSize);
-    } catch {
-      // handled inside printReceiptViaQZ
-    } finally {
-      setIsPrinting(false);
-    }
-  };
-
   /**
    * Direct print: generate the same HTML as the preview and send it
    * to the silent Electron printer, so the paper matches the screen.
@@ -163,9 +141,6 @@ const ReceiptPreview = () => {
         } else {
           notifyError(result.error || 'Print failed');
         }
-      } else if (isQZSupported()) {
-        await connectQZ();
-        await printReceiptViaQZ(receipt, shopInfo, selectedPrinter || null, receiptTimeFormat, customization.paperSize);
       } else {
         window.print();
       }
@@ -201,7 +176,7 @@ const ReceiptPreview = () => {
       </Box>
 
       {/* ===== Printer Selection ===== */}
-      {(isQZSupported() || directPrint.isAvailable()) && printers.length > 0 && (
+      {directPrint.isAvailable() && printers.length > 0 && (
         <FormControl fullWidth size="small" sx={{ mt: 2 }}>
           <InputLabel>{t('common:printer')}</InputLabel>
           <Select
@@ -270,21 +245,6 @@ const ReceiptPreview = () => {
           PNG
         </Button>
       </Box>
-
-      {/* ===== QZ Tray Print ===== */}
-      {isQZSupported() && (
-        <Box sx={{ mt: 1 }}>
-          <Button
-            fullWidth
-            variant="outlined"
-            startIcon={<PrinterIcon />}
-            onClick={handleQZPrint}
-            disabled={isPrinting}
-          >
-            {isPrinting ? t('printing') : t('qz_print')}
-          </Button>
-        </Box>
-      )}
 
       {/* ===== Sale Return ===== */}
       {isManager() && receipt.saleId && refundableItems.length > 0 && (

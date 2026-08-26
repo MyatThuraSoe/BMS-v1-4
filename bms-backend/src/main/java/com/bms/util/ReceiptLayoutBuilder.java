@@ -17,7 +17,6 @@ import java.util.List;
 public class ReceiptLayoutBuilder {
     public static final int DEFAULT_PAPER_WIDTH_MM = 58;
     private static final double CHARS_PER_MM = 1.0 / 1.47;
-    private static final String HORIZONTAL_LINE = "-";
 
     private final ReceiptDto receipt;
     private final ShopInfoResponse shopInfo;
@@ -44,23 +43,23 @@ public class ReceiptLayoutBuilder {
     public List<String> build() {
         lines.clear();
 
-        // Header: Shop name, address, phone (respect show toggles)
+        // Header: Shop name, address, phone (respect show toggles + header alignment)
         boolean showShopName = customization.getShowShopName() == null || customization.getShowShopName();
         boolean showAddress  = customization.getShowAddress()  == null || customization.getShowAddress();
         boolean showPhone    = customization.getShowPhone()    == null || customization.getShowPhone();
 
         if (showShopName) {
-            addCenteredLine(shopInfo != null ? shopInfo.getShopName() : "Shop");
+            addAlignedLine(shopInfo != null ? shopInfo.getShopName() : "Shop");
         }
         if (showAddress && shopInfo != null && shopInfo.getAddress() != null && !shopInfo.getAddress().isEmpty()) {
-            addCenteredLine(shopInfo.getAddress());
+            addAlignedLine(shopInfo.getAddress());
         }
         if (showPhone && shopInfo != null && shopInfo.getPhone() != null && !shopInfo.getPhone().isEmpty()) {
-            addCenteredLine(shopInfo.getPhone());
+            addAlignedLine(shopInfo.getPhone());
         }
 
         addLine(""); // Blank line
-        addLine(repeatChar(HORIZONTAL_LINE, lineWidth));
+        addDivider();
 
         // Header customization text (no "RECEIPT" label)
         if (customization.getHeaderText() != null && !customization.getHeaderText().isBlank()) {
@@ -77,13 +76,19 @@ public class ReceiptLayoutBuilder {
             addLine("Customer: " + receipt.getCustomerName());
         }
 
-        addLine("");
-        addLine(repeatChar(HORIZONTAL_LINE, lineWidth));
+        // Main message (mirrors the on-screen receipt: between meta and items)
+        if (customization.getMainMessage() != null && !customization.getMainMessage().isBlank()) {
+            addLine("");
+            addCenteredLine(customization.getMainMessage());
+        }
 
-        // Items (4-column: Item, Qty, Price, Amount)
+        addLine("");
+        addDivider();
+
+        // Items (4-column: Item, Qty, Price, Amount — plain numbers, no currency unit)
         int qtyW = 4;
-        int priceW = Math.max(7, formatCurrency(BigDecimal.valueOf(9999999.99)).length());
-        int amountW = Math.max(9, formatCurrency(BigDecimal.valueOf(9999999.99)).length());
+        int priceW = Math.max(7, formatPlain(BigDecimal.valueOf(9999999.99)).length());
+        int amountW = Math.max(9, formatPlain(BigDecimal.valueOf(9999999.99)).length());
         int gap = 1;
         int nameW = Math.max(6, lineWidth - qtyW - priceW - amountW - (gap * 3));
 
@@ -93,22 +98,30 @@ public class ReceiptLayoutBuilder {
             addLine(fourColumnRow(
                     name,
                     String.valueOf(item.getQuantity()),
-                    formatCurrency(item.getUnitPrice()),
-                    formatCurrency(item.getSubtotal()),
+                    formatPlain(item.getUnitPrice()),
+                    formatPlain(item.getSubtotal()),
                     nameW, qtyW, priceW, amountW, gap));
         }
 
         addLine("");
-        addLine(repeatChar(HORIZONTAL_LINE, lineWidth));
+        addDivider();
 
-        // Totals section
-        addTotalLine("Subtotal", receipt.getSubtotal());
-        
-        if (receipt.getTaxAmount().compareTo(BigDecimal.ZERO) > 0) {
+        // Totals section (respect showTax / showDiscount toggles)
+        boolean showTaxLine      = customization.getShowTax() == null || customization.getShowTax();
+        boolean showDiscountLine = customization.getShowDiscount() == null || customization.getShowDiscount();
+
+        // Subtotal only when it differs from the total (mirrors the on-screen receipt)
+        BigDecimal subtotal = receipt.getSubtotal() == null ? BigDecimal.ZERO : receipt.getSubtotal();
+        BigDecimal totalAmount = receipt.getTotalAmount() == null ? BigDecimal.ZERO : receipt.getTotalAmount();
+        if (subtotal.compareTo(BigDecimal.ZERO) > 0 && subtotal.compareTo(totalAmount) != 0) {
+            addTotalLine("Subtotal", subtotal);
+        }
+
+        if (showTaxLine && receipt.getTaxAmount().compareTo(BigDecimal.ZERO) > 0) {
             addTotalLine("Tax", receipt.getTaxAmount());
         }
-        
-        if (receipt.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+
+        if (showDiscountLine && receipt.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
             addTotalLine("Discount", receipt.getDiscountAmount().negate());
         }
 
@@ -132,7 +145,7 @@ public class ReceiptLayoutBuilder {
         }
 
         addLine("");
-        addLine(repeatChar(HORIZONTAL_LINE, lineWidth));
+        addDivider();
 
         // Footer customization text
         addCenteredLine(customization.getFooterText());
@@ -144,10 +157,91 @@ public class ReceiptLayoutBuilder {
     }
 
     /**
-     * Get normalized lines for plain-text output (console, QZ Tray ESC/POS).
+     * Get normalized lines for plain-text output (console, ESC/POS).
      */
     public List<String> getLines() {
         return new ArrayList<>(lines);
+    }
+
+    /**
+     * Divider character chosen from the customization's divider style:
+     * dashed → '-', solid → '=', dotted → '.', none → no line at all.
+     */
+    private String dividerChar() {
+        String style = customization.getDividerStyle() == null || customization.getDividerStyle().isBlank()
+                ? "dashed" : customization.getDividerStyle();
+        return switch (style) {
+            case "solid" -> "=";
+            case "dotted" -> ".";
+            case "none" -> null;
+            default -> "-";
+        };
+    }
+
+    /** Adds a full-width divider line honouring the divider style (blank line for 'none'). */
+    private void addDivider() {
+        String ch = dividerChar();
+        if (ch == null) {
+            addLine("");
+            return;
+        }
+        addLine(repeatChar(ch, lineWidth));
+    }
+
+    /** Adds a header line respecting the customization's header alignment. */
+    private void addAlignedLine(String text) {
+        if (text == null || text.isEmpty()) {
+            addLine("");
+            return;
+        }
+        String align = customization.getHeaderAlign() == null ? "center" : customization.getHeaderAlign();
+        switch (align) {
+            case "left" -> addLine(text);
+            case "right" -> addLine(padLeft(text, lineWidth));
+            default -> addCenteredLine(text);
+        }
+    }
+
+    /**
+     * Whether the shop logo should be rendered (showLogo toggle, default true).
+     */
+    public boolean isShowLogo() {
+        return customization.getShowLogo() == null || customization.getShowLogo();
+    }
+
+    /**
+     * Configured logo size in px, clamped to a sane print range.
+     */
+    public int getLogoSize() {
+        Integer size = customization.getLogoSize();
+        if (size == null) return 80;
+        return Math.max(20, Math.min(160, size));
+    }
+
+    /**
+     * Header alignment: left / center / right (default center).
+     */
+    public String getHeaderAlign() {
+        String align = customization.getHeaderAlign();
+        if (align == null) return "center";
+        return switch (align.toLowerCase().trim()) {
+            case "left" -> "left";
+            case "right" -> "right";
+            default -> "center";
+        };
+    }
+
+    /**
+     * Configured font size key: small / normal / large.
+     */
+    public String getFontSize() {
+        String size = customization.getFontSize();
+        if (size == null) return "normal";
+        return switch (size.toLowerCase().trim()) {
+            case "small" -> "small";
+            case "large" -> "large";
+            default -> "normal";
+        };
     }
 
     /**
@@ -264,6 +358,15 @@ public class ReceiptLayoutBuilder {
             default: symbol = "$"; break;
         }
         return symbol + df.format(amount);
+    }
+
+    /**
+     * Numeric amount without the currency unit — used in the item columns so
+     * they match the on-screen/direct-print receipt.
+     */
+    public String formatPlain(BigDecimal amount) {
+        if (amount == null) amount = BigDecimal.ZERO;
+        return new DecimalFormat("#,##0.00").format(amount);
     }
 
     private static int parsePaperWidth(String paperSize) {

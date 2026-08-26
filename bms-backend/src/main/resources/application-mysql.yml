@@ -1,8 +1,9 @@
 # ============================================================
-# MySQL profile — multi-terminal / shop-server deployments
+# MySQL profile — production .exe / multi-terminal deployments
 # ------------------------------------------------------------
 # Activate:  java -Dspring.profiles.active=mysql -jar bms-backend-1.0.0.jar
-# Requires:  MySQL 8+ running, database `lumipos`, user `lumi`.
+# Requires:  MySQL 8+ running on localhost:3306 (hard requirement —
+#            the Electron launcher checks this before starting).
 #
 # One-time DB setup (run as MySQL root):
 #   CREATE DATABASE lumipos CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
@@ -12,22 +13,55 @@
 #
 # Schema tables/columns are created automatically on first start
 # (Hibernate ddl-auto=update) — no SQL import needed.
+#
+# Mirrors application-electron.yml field-for-field; ONLY the
+# datasource + dialect differ (MySQL instead of built-in H2).
 # ============================================================
 
 server:
+  port: 17234
   # Bind all interfaces so phones/tablets on the shop Wi-Fi can connect
   address: 0.0.0.0
 
 spring:
+  application:
+    name: bms-electron
+
   datasource:
     url: jdbc:mysql://localhost:3306/lumipos?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
     username: ${MYSQL_USERNAME:lumi}
     password: ${MYSQL_PASSWORD:LumiPOS26}
+    driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+        default_batch_fetch_size: 50
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  jackson:
+    serialization:
+      fail-on-empty-beans: false
+
+jwt:
+  # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
+  # value is shipped; leave this as an env override only.
+  secret: MySecureSecretKeyForJWTTokenGeneration2026!
+  expiration: 86400000
+
+logging:
+  level:
+    com.bms: INFO
+    org.springframework.security: WARN
 
 google:
   oauth:
@@ -37,3 +71,7 @@ google:
     # regardless of which device started the sign-in (phones get guided).
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
     frontend-redirect-base: http://127.0.0.1:17234
+
+app:
+  upload-dir: C:/LumiPOS/uploads
+  open-browser: false

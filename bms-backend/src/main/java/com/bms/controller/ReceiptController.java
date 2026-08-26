@@ -77,15 +77,26 @@ public class ReceiptController {
         html.append("<!DOCTYPE html><html><head><meta charset='UTF-8'>");
         html.append("<style>");
         int paperWidthMm = builder.getPaperWidthMm();
+        String bodyFontSize = switch (builder.getFontSize()) {
+            case "small" -> "10px";
+            case "large" -> "13px";
+            default -> "11px";
+        };
         html.append("@media print { @page { margin: 0; size: ").append(paperWidthMm).append("mm auto; } body { margin: 0; padding: 2px; } }");
-        html.append("body { font-family: 'Courier New', monospace; font-size: 11px; width: ")
+        html.append("body { font-family: 'Courier New', monospace; font-size: ").append(bodyFontSize).append("; width: ")
                 .append(paperWidthMm).append("mm; margin: 0 auto; padding: 2px; }");
         html.append(".line { white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: 1.2; }");
         html.append("</style></head><body>");
 
-        if (logoDataUri != null) {
-            html.append("<div style='text-align: center; margin-bottom: 2px;'>");
-            html.append("<img src='").append(logoDataUri).append("' style='max-width: 100%; max-height: 40px;' />");
+        if (logoDataUri != null && builder.isShowLogo()) {
+            String logoAlign = switch (builder.getHeaderAlign()) {
+                case "left" -> "left";
+                case "right" -> "right";
+                default -> "center";
+            };
+            html.append("<div style='text-align: ").append(logoAlign).append("; margin-bottom: 2px;'>");
+            html.append("<img src='").append(logoDataUri).append("' style='max-width: 100%; height: ")
+                    .append(builder.getLogoSize()).append("px; object-fit: contain;' />");
             html.append("</div>");
         }
 
@@ -126,10 +137,10 @@ public class ReceiptController {
             com.lowagie.text.Font normalFont = new com.lowagie.text.Font(com.lowagie.text.Font.COURIER, 10, com.lowagie.text.Font.NORMAL);
             com.lowagie.text.Font boldFont = new com.lowagie.text.Font(com.lowagie.text.Font.COURIER, 10, com.lowagie.text.Font.BOLD);
 
-            if (logoPayload != null && logoPayload.data() != null) {
+            if (logoPayload != null && logoPayload.data() != null && builder.isShowLogo()) {
                 com.lowagie.text.Image logo = com.lowagie.text.Image.getInstance(logoPayload.data());
                 logo.setAlignment(com.lowagie.text.Image.ALIGN_CENTER);
-                logo.scaleToFit(120, 50);
+                logo.scaleToFit(140, builder.getLogoSize());
                 logo.setSpacingAfter(5);
                 document.add(logo);
             }
@@ -168,7 +179,11 @@ public class ReceiptController {
             int width = (int) Math.round(builder.getPaperWidthMm() * 6.9);
             int lineHeight = 14;
             int padding = 10;
-            int logoBlock = (logoPayload != null && logoPayload.data() != null) ? 60 : 0;
+            boolean withLogo = logoPayload != null && logoPayload.data() != null && builder.isShowLogo();
+            int logoSize = builder.getLogoSize();
+            int logoTargetH = Math.max(30, (int) Math.round(logoSize * 0.6));
+            int logoTargetW = Math.max(50, logoSize * 2);
+            int logoBlock = withLogo ? logoTargetH + 5 : 0;
             int height = padding * 2 + lineHeight * lines.size() + logoBlock;
 
             java.awt.image.BufferedImage image = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_RGB);
@@ -181,22 +196,25 @@ public class ReceiptController {
 
             int y = padding;
 
-            if (logoPayload != null && logoPayload.data() != null) {
+            if (withLogo) {
                 java.awt.image.BufferedImage logoImg = javax.imageio.ImageIO.read(new ByteArrayInputStream(logoPayload.data()));
-                int targetW = 110;
-                int targetH = 45;
                 double aspect = (double) logoImg.getWidth() / (double) logoImg.getHeight();
 
-                int drawW = targetW;
-                int drawH = (int) Math.round(targetW / aspect);
-                if (drawH > targetH) {
-                    drawH = targetH;
-                    drawW = (int) Math.round(targetH * aspect);
+                int drawW = logoTargetW;
+                int drawH = (int) Math.round(drawW / aspect);
+                if (drawH > logoTargetH) {
+                    drawH = logoTargetH;
+                    drawW = (int) Math.round(drawH * aspect);
                 }
 
-                int xCenter = (width - drawW) / 2;
+                int xCenter;
+                switch (builder.getHeaderAlign()) {
+                    case "left" -> xCenter = padding;
+                    case "right" -> xCenter = width - padding - drawW;
+                    default -> xCenter = (width - drawW) / 2;
+                }
                 g2d.drawImage(logoImg, xCenter, y, drawW, drawH, null);
-                y += targetH + 5;
+                y += logoTargetH + 5;
             }
 
             for (String line : lines) {
@@ -287,9 +305,12 @@ public class ReceiptController {
         html.append(".line { white-space: pre-wrap; word-wrap: break-word; margin: 0; line-height: 1.2; }");
         html.append("</style></head><body>");
 
-        if (logoDataUri != null) {
+        boolean arShowLogo = customization.getShowLogo() == null || customization.getShowLogo();
+        int arLogoSize = customization.getLogoSize() == null ? 80 : Math.max(20, Math.min(160, customization.getLogoSize()));
+        if (logoDataUri != null && arShowLogo) {
             html.append("<div style='text-align: center; margin-bottom: 2px;'>");
-            html.append("<img src='").append(logoDataUri).append("' style='max-width: 100%; max-height: 40px;' />");
+            html.append("<img src='").append(logoDataUri).append("' style='max-width: 100%; height: ")
+                    .append(arLogoSize).append("px; object-fit: contain;' />");
             html.append("</div>");
         }
 

@@ -117,15 +117,7 @@ const ProductDetail = () => {
       {/* Main product info */}
       <Paper sx={{ p: 3, mb: 3 }}>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={2}>
-            <ProductImage
-              productId={product.id}
-              hasImage={product.hasImage}
-              size={120}
-            />
-          </Grid>
-
-          <Grid item xs={12} md={10}>
+          <Grid item xs={12} md={9}>
             <Typography variant="h5" gutterBottom fontWeight="bold">
               {product.name}
             </Typography>
@@ -143,6 +135,19 @@ const ProductDetail = () => {
                 {product.description}
               </Typography>
             )}
+          </Grid>
+
+          <Grid
+            item
+            xs={12}
+            md={3}
+            sx={{ display: 'flex', justifyContent: { xs: 'flex-start', md: 'flex-end' } }}
+          >
+            <ProductImage
+              productId={product.id}
+              hasImage={product.hasImage}
+              size={220}
+            />
           </Grid>
         </Grid>
 

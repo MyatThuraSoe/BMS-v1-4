@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } = 
 const { spawn } = require('child_process');
 const path = require('path');
 const http = require('http');
+const net = require('net');
 const os = require('os');
 
 let mainWindow = null;
@@ -12,6 +13,12 @@ let serverPid = null;
 
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
+
+// DB engine per launch: production default is MySQL (shop-server mode,
+// application-mysql.yml). Opt back into the built-in H2 for dev/testing
+// with LUMIPOS_DB=electron or LUMIPOS_DB=h2 (see scripts/start-electron.js).
+const requestedDb = (process.env.LUMIPOS_DB || '').toLowerCase();
+const DB_PROFILE = (requestedDb === 'electron' || requestedDb === 'h2') ? 'electron' : 'mysql';
 
 // First usable LAN IPv4, preferring real private ranges over virtual
 // adapters (VMware/Hyper-V/WSL often register first).
@@ -100,12 +107,10 @@ function startServer() {
     
     // Optional override only — if GOOGLE_CLIENT_SECRET isn't set, the value
     // from application-electron.yml is used instead.
-    // DB engine per launch: LUMIPOS_DB=mysql -> shop-server mode (see
-    // application-mysql.yml / start-mysql.bat); default remains built-in H2.
-    const dbProfile = process.env.LUMIPOS_DB === 'mysql' ? 'mysql' : 'electron';
-    console.log('[LumiPOS] Database profile: ' + dbProfile);
+    // DB engine: production default MySQL; H2 via LUMIPOS_DB=electron/h2 (see DB_PROFILE)
+    console.log('[LumiPOS] Database profile: ' + DB_PROFILE);
     const spawnArgs = [
-        '-Dspring.profiles.active=' + dbProfile,
+        '-Dspring.profiles.active=' + DB_PROFILE,
         '-Dspring.main.banner-mode=off',
         '-Dserver.port=' + APP_PORT
     ];
@@ -144,6 +149,24 @@ function startServer() {
         if (!isQuitting) {
             console.log(`Server exited with code ${code}`);
         }
+    });
+}
+
+// Hard requirement for the MySQL profile: verify the database accepts TCP
+// connections BEFORE launching Java, so users get a clear message instead
+// of a cryptic Spring Boot stack trace.
+function checkMysqlReady(host = '127.0.0.1', port = 3306, timeoutMs = 3000) {
+    return new Promise((resolve) => {
+        const socket = new net.Socket();
+        const finish = (ok) => {
+            try { socket.destroy(); } catch (e) { /* ignore */ }
+            resolve(ok);
+        };
+        socket.setTimeout(timeoutMs);
+        socket.once('connect', () => finish(true));
+        socket.once('timeout', () => finish(false));
+        socket.once('error', () => finish(false));
+        socket.connect(port, host);
     });
 }
 
@@ -564,6 +587,26 @@ if (!gotTheLock) {
 
     updateSplash(15, 'Starting server engine...');
 
+    // MySQL is a hard requirement in production — fail fast with guidance
+    if (DB_PROFILE === 'mysql') {
+        const mysqlUp = await checkMysqlReady();
+        if (!mysqlUp) {
+            closeSplashWindow();
+            dialog.showErrorBox(
+                'LumiPOS needs MySQL',
+                'LumiPOS stores its data in MySQL, which is not reachable on this computer.\n\n' +
+                'Expected: MySQL running on localhost:3306 (database: lumipos, user: lumi)\n\n' +
+                'Please make sure:\n' +
+                '1. MySQL Server is installed and the service is started\n' +
+                '2. It is listening on port 3306\n' +
+                '3. The database "lumipos" exists (created automatically is NOT supported — run the one-time setup script)\n\n' +
+                'Then start LumiPOS again.'
+            );
+            quitApp();
+            return;
+        }
+    }
+
     // Start the Spring Boot server
     startServer();
 
@@ -596,7 +639,7 @@ if (!gotTheLock) {
         closeSplashWindow();
         dialog.showErrorBox(
             'Startup Error',
-            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. Port 17234 is not in use\n3. The application files are not corrupted'
+            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. MySQL is running and reachable\n3. Port 17234 is not in use\n4. The application files are not corrupted'
         );
         quitApp();
     }

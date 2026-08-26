@@ -41,7 +41,7 @@
           ]
         }
       ],
-      "icon": "electron/icon.ico"
+      "icon": "electron/LumiPOS.ico"
     },
     "nsis": {
       "oneClick": false,

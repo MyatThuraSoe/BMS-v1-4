@@ -15,7 +15,8 @@
 import { useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import ShopLogo from './ShopLogo';
-import { formatCurrency, formatReceiptDateTime } from '../utils/helpers';
+import { formatCurrency, formatAmountPlain, formatReceiptDateTime } from '../utils/helpers';
+
 import QRCode from 'qrcode';
 
 // --- Constants ---
@@ -97,6 +98,8 @@ const ReceiptDocument = ({
     showQRCode = false,
     showShopName = true,
     showCreditInfo = true,
+    showTax = true,
+    showDiscount = true,
     paperSize = '58',
     headerText = '',
     mainMessage = 'Please keep this receipt for your records.',
@@ -256,9 +259,9 @@ const ReceiptDocument = ({
                   {item.productName}
                 </span>
                 <span style={{ width: 26, textAlign: 'right', flexShrink: 0 }}>{item.quantity}</span>
-                <span style={{ width: 72, textAlign: 'right', flexShrink: 0 }}>{formatCurrency(item.unitPrice || 0)}</span>
+                <span style={{ width: 72, textAlign: 'right', flexShrink: 0 }}>{formatAmountPlain(item.unitPrice || 0)}</span>
                 <span style={{ width: 80, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>
-                  {formatCurrency(itemTotal)}
+                  {formatAmountPlain(itemTotal)}
                 </span>
               </Box>
               {isRefunded && (
@@ -279,13 +282,13 @@ const ReceiptDocument = ({
           <span>{formatCurrency(subTotal)}</span>
         </Box>
       )}
-      {Number(taxAmount) > 0 && (
+      {showTax !== false && Number(taxAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Tax:</span>
           <span>{formatCurrency(taxAmount)}</span>
         </Box>
       )}
-      {Number(discountAmount) > 0 && (
+      {showDiscount !== false && Number(discountAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Discount:</span>
           <span>-{formatCurrency(discountAmount)}</span>
@@ -377,6 +380,8 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
     showQRCode = false,
     showShopName = true,
     showCreditInfo = true,
+    showTax = true,
+    showDiscount = true,
     headerText = '',
     mainMessage = 'Please keep this receipt for your records.',
     footerText = 'Thank you for your business!',
@@ -470,8 +475,8 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
         <div style="display:flex;justify-content:space-between;align-items:center;">
           <span style="flex:1;margin-right:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(item.productName)}</span>
           <span style="width:26px;text-align:right;flex-shrink:0;">${item.quantity}</span>
-          <span style="width:72px;text-align:right;flex-shrink:0;">${escHtml(formatCurrency(item.unitPrice || 0))}</span>
-          <span style="width:80px;text-align:right;flex-shrink:0;font-weight:600;">${escHtml(formatCurrency(itemTotal))}</span>
+          <span style="width:72px;text-align:right;flex-shrink:0;">${escHtml(formatAmountPlain(item.unitPrice || 0))}</span>
+          <span style="width:80px;text-align:right;flex-shrink:0;font-weight:600;">${escHtml(formatAmountPlain(itemTotal))}</span>
         </div>
         ${refundedHtml}
       </div>`;
@@ -480,8 +485,8 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   const showSubLine = Number(subTotal) > 0 && Number(subTotal) !== Number(totalAmount);
   let subtotalsHtml = `
     ${showSubLine ? `<div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${escHtml(formatCurrency(subTotal))}</span></div>` : ''}
-    ${Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatCurrency(taxAmount))}</span></div>` : ''}
-    ${Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatCurrency(discountAmount))}</span></div>` : ''}`;
+    ${showTax !== false && Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatCurrency(taxAmount))}</span></div>` : ''}
+    ${showDiscount !== false && Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatCurrency(discountAmount))}</span></div>` : ''}`;
 
   let totalsHtml = `
     <div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">

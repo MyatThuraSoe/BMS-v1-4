@@ -106,7 +106,7 @@ public class CounterPrintService {
         lines.add(java.time.LocalDateTime.now()
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
         lines.add("");
-        spool(preferredPrinter, lines, 80);
+        spool(preferredPrinter, lines, 80, null, 0, "center");
     }
 
     /** Renders the invoice as fixed-width receipt text and prints it. */
@@ -121,7 +121,20 @@ public class CounterPrintService {
         List<String> lines = new ArrayList<>(builder.build());
         lines.add("");
         lines.add("");
-        spool(preferredPrinter, lines, builder.getPaperWidthMm());
+
+        // Load the shop logo so it prints above the text (respects showLogo/logoSize/headerAlign)
+        java.awt.image.BufferedImage logo = null;
+        if (builder.isShowLogo()) {
+            var payload = shopInfoService.getLogoBytesOrNull();
+            if (payload != null && payload.data() != null) {
+                try {
+                    logo = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(payload.data()));
+                } catch (Exception ignored) {
+                    logo = null; // unreadable image → print text-only
+                }
+            }
+        }
+        spool(preferredPrinter, lines, builder.getPaperWidthMm(), logo, builder.getLogoSize(), builder.getHeaderAlign());
     }
 
     private String getDefaultPrinterName() {
@@ -149,9 +162,11 @@ public class CounterPrintService {
 
     /**
      * Silent print: renders monospaced receipt lines via an AWT Printable so
-     * any Windows printer driver can rasterize it (no dialogs).
+     * any Windows printer driver can rasterize it (no dialogs). The shop logo,
+     * when provided, is drawn above the text on the first page.
      */
-    private void spool(String preferredPrinter, List<String> lines, double paperWidthMm) {
+    private void spool(String preferredPrinter, List<String> lines, double paperWidthMm,
+                       java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign) {
         String target = (preferredPrinter != null && !preferredPrinter.isBlank())
                 ? preferredPrinter : getConfiguredPrinterName();
         javax.print.PrintService service = resolvePrinter(target);
@@ -160,7 +175,7 @@ public class CounterPrintService {
             PrinterJob job = PrinterJob.getPrinterJob();
             job.setPrintService(service);
             job.setJobName("LumiPOS Receipt");
-            job.setPrintable(new MonospacedPrintable(lines, paperWidthMm));
+            job.setPrintable(new MonospacedPrintable(lines, paperWidthMm, logo, logoSizePx, headerAlign));
             job.print();
         } catch (PrinterException e) {
             throw new BusinessException("Counter print failed on '" + service.getName() + "': "
@@ -170,15 +185,23 @@ public class CounterPrintService {
 
     /**
      * Draws receipt lines in Courier-like monospace, auto-scaled to the paper
-     * width, paginating when the content exceeds one page height.
+     * width, paginating when the content exceeds one page height. An optional
+     * shop logo is drawn centred (or aligned) above the text on page 1.
      */
     static class MonospacedPrintable implements Printable {
         private final List<String> lines;
         private final double paperWidthMm;
+        private final java.awt.image.BufferedImage logo;
+        private final int logoSizePx;
+        private final String headerAlign;
 
-        MonospacedPrintable(List<String> lines, double paperWidthMm) {
+        MonospacedPrintable(List<String> lines, double paperWidthMm,
+                            java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign) {
             this.lines = lines;
             this.paperWidthMm = Math.max(40, paperWidthMm);
+            this.logo = logo;
+            this.logoSizePx = logoSizePx;
+            this.headerAlign = headerAlign == null ? "center" : headerAlign;
         }
 
         @Override
@@ -208,14 +231,38 @@ public class CounterPrintService {
             g2.setFont(new Font(attrs));
             g2.setPaint(java.awt.Color.BLACK);
 
+            float y = lineHeight;
+
+            // Draw the shop logo above the text on the first page only
+            double logoBlockHeight = 0;
+            if (logo != null && pageIndex == 0) {
+                double targetHpt = Math.min(mmToPt(paperWidthMm) * 0.45, logoSizePx * 0.75);
+                double aspect = (double) logo.getWidth() / (double) logo.getHeight();
+                double drawW = targetHpt * aspect;
+                double drawH = targetHpt;
+                if (drawW > widthPt) {
+                    drawW = widthPt;
+                    drawH = drawW / aspect;
+                }
+                double x;
+                switch (headerAlign) {
+                    case "left" -> x = 0;
+                    case "right" -> x = widthPt - drawW;
+                    default -> x = (widthPt - drawW) / 2;
+                }
+                g2.drawImage(logo, (int) Math.round(x), 0,
+                        (int) Math.round(drawW), (int) Math.round(drawH), null);
+                logoBlockHeight = drawH + lineHeight * 0.5;
+                y += (float) logoBlockHeight;
+            }
+
             int totalLines = lines.size();
-            int linesPerPage = (int) Math.max(1, heightPt / lineHeight);
+            int linesPerPage = (int) Math.max(1, (heightPt - logoBlockHeight) / lineHeight);
             int firstLine = pageIndex * linesPerPage;
             if (firstLine >= totalLines) {
                 return NO_SUCH_PAGE;
             }
 
-            float y = lineHeight;
             for (int i = firstLine; i < totalLines && i < firstLine + linesPerPage; i++) {
                 g2.drawString(lines.get(i), 0, y);
                 y += lineHeight;

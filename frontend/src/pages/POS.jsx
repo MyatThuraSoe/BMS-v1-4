@@ -53,7 +53,6 @@ import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
 import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService } from '../api/services';
-import { printReceiptViaQZ, isQZSupported } from '../utils/bluetoothPrinter';
 import directPrint from '../services/directPrintService';
 import useShopConfig from '../hooks/useShopConfig';
 
@@ -130,8 +129,6 @@ const POS = () => {
     }
     return () => { cancelled = true; };
   }, [showReceiptDialog, lastSale, customization]);
-
-  const receiptTimeFormat = customization.timeFormat || '12';
 
   // Fetch products
 
@@ -613,19 +610,6 @@ const filteredProducts = products.filter(
     }
   };
 
-  // 👇 NEW: Print directly to thermal printer via QZ Tray using the JSON data you already have!
-  const handleQZPrint = async () => {
-    if (lastSale) {
-      try {
-        // lastSale contains the exact same data structure as the receipt
-        await printReceiptViaQZ(lastSale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
-        notifySuccess(t('receipt_sent_printer'));
-      } catch (err) {
-        // Error is already handled inside the utility
-      }
-    }
-  };
-
   // Smart Direct Print: uses generatePrintHtml so the printed paper matches the on-screen receipt.
   // Accepts an optional sale object so "Checkout & Print" can print immediately after sale creation.
   async function handleDirectPrint(saleOverride) {
@@ -659,9 +643,6 @@ const filteredProducts = products.filter(
         } else {
           notifyError(result.error || t('print_failed'));
         }
-      } else if (isQZSupported()) {
-        await printReceiptViaQZ(sale, shopInfo || {}, null, receiptTimeFormat, customization.paperSize);
-        notifySuccess(t('receipt_sent_printer'));
       } else {
         handlePrintReceipt();
       }
@@ -1328,19 +1309,6 @@ const filteredProducts = products.filter(
               {t('print_browser')}
             </Button>
           </Box>
-          
-          {/* QZ Tray Thermal Printer Button */}
-          {isQZSupported() && (
-            <Button 
-              onClick={handleQZPrint} 
-              variant="outlined" 
-              color="primary" 
-              fullWidth 
-            
-            >
-              {t('print_thermal_qz')}
-            </Button>
-          )}
 
           <Button onClick={() => setShowReceiptDialog(false)} variant="text" fullWidth>
             {t('close')}

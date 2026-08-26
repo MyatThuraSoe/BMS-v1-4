@@ -20,6 +20,7 @@ import {
 } from '@mui/material';
 import {
   Save as SaveIcon,
+  RestartAlt as RestartAltIcon,
   FormatAlignLeft,
   FormatAlignCenter,
   FormatAlignRight,
@@ -34,7 +35,7 @@ import { useAuth } from '../context/AuthContext';
 import { receiptCustomizationService, shopInfoService, counterPrintService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ReceiptDocument from '../components/ReceiptDocument';
-import { getReceiptPreviewWidth } from '../utils/bluetoothPrinter';
+import { getReceiptPreviewWidth } from '../utils/helpers';
 
 const PAPER_SIZES = ['58', '80', '100'];
 const TIME_FORMATS = [
@@ -71,6 +72,30 @@ const defaultCustomization = {
   boldShopName: true,
   showQRCode:   false,
   showCreditInfo: true,
+  showTax:      true,
+  showDiscount: true,
+};
+
+// Values applied by the "Reset to Default" button
+const RESET_DEFAULTS = {
+  headerText:   '',
+  mainMessage:  '',
+  footerText:   'Thank you!',
+  paperSize:    '80',
+  timeFormat:   '12',
+  logoSize:     60,
+  showLogo:     true,
+  showShopName: true,
+  showAddress:  true,
+  showPhone:    true,
+  headerAlign:  'center',
+  fontSize:     'small',
+  dividerStyle: 'solid',
+  boldShopName: true,
+  showQRCode:   false,
+  showCreditInfo: true,
+  showTax:      true,
+  showDiscount: true,
 };
 
 // ─── Section wrapper ─────────────────────────────────────────────────────────
@@ -157,6 +182,8 @@ const ReceiptCustomization = () => {
         boldShopName: d.boldShopName ?? defaultCustomization.boldShopName,
         showQRCode:   d.showQRCode   ?? defaultCustomization.showQRCode,
         showCreditInfo: d.showCreditInfo ?? defaultCustomization.showCreditInfo,
+        showTax:      d.showTax      ?? defaultCustomization.showTax,
+        showDiscount: d.showDiscount ?? defaultCustomization.showDiscount,
       });
     }
   }, [customizationData]);
@@ -312,6 +339,16 @@ const ReceiptCustomization = () => {
                     label={t('rc_show_credit_info')}
                   />
 
+                  <FormControlLabel
+                    control={<Switch checked={form.showTax} onChange={(e) => set('showTax', e.target.checked)} color="primary" />}
+                    label={t('rc_show_tax')}
+                  />
+
+                  <FormControlLabel
+                    control={<Switch checked={form.showDiscount} onChange={(e) => set('showDiscount', e.target.checked)} color="primary" />}
+                    label={t('rc_show_discount')}
+                  />
+
                   <Box>
                     <Typography variant="body2" color="text.secondary" gutterBottom>{t('rc_header_align')}</Typography>
                     <ToggleButtonGroup
@@ -410,18 +447,32 @@ const ReceiptCustomization = () => {
 
               <Divider />
 
-              {/* --- Save --- */}
+              {/* --- Save / Reset --- */}
               <Stack spacing={1}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  startIcon={upsertMutation.isPending ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
-                  onClick={() => upsertMutation.mutate(form)}
-                  disabled={upsertMutation.isPending}
-                  sx={{ alignSelf: 'flex-start', px: 3 }}
-                >
-                  {upsertMutation.isPending ? t('rc_saving') : t('rc_save')}
-                </Button>
+                <Stack direction="row" spacing={1}>
+                  <Button
+                    variant="contained"
+                    size="large"
+                    startIcon={upsertMutation.isPending ? <CircularProgress size={18} color="inherit" /> : <SaveIcon />}
+                    onClick={() => upsertMutation.mutate(form)}
+                    disabled={upsertMutation.isPending}
+                    sx={{ px: 3 }}
+                  >
+                    {upsertMutation.isPending ? t('rc_saving') : t('rc_save')}
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    startIcon={<RestartAltIcon />}
+                    onClick={() => {
+                      setForm({ ...RESET_DEFAULTS });
+                      upsertMutation.mutate({ ...RESET_DEFAULTS });
+                    }}
+                    disabled={upsertMutation.isPending}
+                  >
+                    {t('rc_reset')}
+                  </Button>
+                </Stack>
                 {upsertMutation.isSuccess && <Alert severity="success">{t('rc_saved')}</Alert>}
                 {upsertMutation.isError   && <Alert severity="error">{t('rc_save_failed')}</Alert>}
               </Stack>

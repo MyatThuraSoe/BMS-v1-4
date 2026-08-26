@@ -19,6 +19,15 @@ export const formatCurrency = (amount) => {
   }
 };
 
+// Numeric amount without the currency unit — used in receipt item columns
+export const formatAmountPlain = (amount) => {
+  try {
+    return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0);
+  } catch {
+    return new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0);
+  }
+};
+
 export const formatDate = (dateString) => {
   if (!dateString) return '';
   return new Date(dateString).toLocaleDateString('en-US', {
@@ -67,6 +76,28 @@ export const validateEmail = (email) => {
 export const validatePhone = (phone) => {
   const re = /^[\d\s+()-]+$/;
   return re.test(phone);
+};
+
+// --- Receipt paper geometry (mm → px/chars) ---
+// Receipt paper width in characters (12 dots/char @ 203dpi ≈ 1.47mm/char).
+const CHARS_PER_MM = 1 / 1.47;
+
+function parsePaperWidthMm(paperSize) {
+  if (paperSize == null || paperSize === '') return 58;
+  const digits = String(paperSize).replace(/\D/g, '');
+  const mm = parseInt(digits, 10);
+  if (!Number.isFinite(mm) || mm < 20 || mm > 200) return 58;
+  return mm;
+}
+
+export const getReceiptLineWidth = (paperSize) => {
+  const mm = parsePaperWidthMm(paperSize);
+  return Math.max(16, Math.round(mm * CHARS_PER_MM));
+};
+
+export const getReceiptPreviewWidth = (paperSize) => {
+  const mm = parsePaperWidthMm(paperSize);
+  return Math.round(mm * (400 / 58));
 };
 
 export const downloadCsv = (filename, rows, headers) => {

@@ -6,7 +6,8 @@ import {
   Divider, Stack, IconButton, Menu, MenuItem, Tooltip, Avatar, ListItemIcon
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
-import { saleService, receiptService, shopInfoService } from '../api/services';
+import { saleService, receiptService, shopInfoService, receiptCustomizationService } from '../api/services';
+import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { 
   ArrowBack as BackIcon, 
@@ -25,7 +26,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import { notifySuccess, notifyError } from '../utils/notify';
 import directPrint from '../services/directPrintService';
-import { printReceiptViaQZ, isQZSupported, connectQZ } from '../utils/bluetoothPrinter';
 import { useAuth } from '../context/AuthContext';
 import SaleReturnDialog from '../components/SaleReturnDialog';
 
@@ -88,6 +88,11 @@ const SaleDetail = () => {
   });
   const shopInfo = shopInfoData?.data;
 
+  const { data: customizationData } = useQuery({
+    queryKey: ['receipt-customization'],
+    queryFn: () => receiptCustomizationService.get(),
+  });
+
   if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', p: 6 }}><CircularProgress /></Box>;
   if (!data?.data) return <Typography>{t('sale_not_found')}</Typography>;
 
@@ -118,18 +123,33 @@ const SaleDetail = () => {
     setIsDirectPrinting(true);
     try {
       if (directPrint.isAvailable()) {
-        const htmlContent = await receiptService.getPrintHtml(sale.invoiceNumber);
-        const result = await directPrint.print(htmlContent, null);
+        // Same pipeline as the POS page: ReceiptDocument HTML → silent print,
+        // so the paper is identical no matter where it was printed from.
+        const customization = customizationData?.data || {};
+        let logoDataUrl = null;
+        if (shopInfo?.hasLogo) {
+          try {
+            const blob = await shopInfoService.getLogo();
+            logoDataUrl = await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload  = () => resolve(reader.result);
+              reader.onerror = () => resolve(null);
+              reader.readAsDataURL(blob);
+            });
+          } catch { /* no logo */ }
+        }
+        const paperWidthMm = Math.max(40, parseInt(String(customization.paperSize || '58').replace(/\D/g, ''), 10) || 58);
+        let qrDataUrl = null;
+        if (customization?.showQRCode) {
+          qrDataUrl = await generateQRDataUrl(sale.invoiceNumber);
+        }
+        const html = generatePrintHtml(sale, shopInfo || {}, customization, logoDataUrl, qrDataUrl);
+        const result = await directPrint.print(html, null, paperWidthMm);
         if (result.success) {
           notifySuccess(t('receipt_sent_printer') || 'Receipt sent to printer');
         } else {
           notifyError(result.error || t('print_failed') || 'Print failed');
         }
-      } else if (isQZSupported()) {
-        await connectQZ();
-        const receiptRes = await receiptService.getByInvoiceNumber(sale.invoiceNumber);
-        await printReceiptViaQZ(receiptRes.data, shopInfo || {});
-        notifySuccess(t('receipt_sent_printer') || 'Receipt sent to printer');
       } else {
         handleViewReceipt();
       }
