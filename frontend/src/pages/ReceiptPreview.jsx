@@ -103,7 +103,24 @@ const ReceiptPreview = () => {
 
   // ── Print handlers ─────────────────────────────────────────────────────────
 
-  const handlePrint = () => window.print();
+  const handlePrint = async () => {
+    try {
+      const logoDataUrl = shopInfo.hasLogo ? await fetchLogoDataUrl(shopInfoService) : null;
+      const qrDataUrl = customization?.showQRCode
+        ? await generateQRDataUrl(receipt.invoiceNumber)
+        : null;
+      const html = generatePrintHtml(receipt, shopInfo, customization, logoDataUrl, qrDataUrl);
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) {
+        throw new Error('Unable to open print window');
+      }
+      printWindow.document.write(html);
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+    } catch (err) {
+      notifyError(err.message || 'Print failed');
+    }
+  };
 
   const handleDownload = async (format) => {
     try {

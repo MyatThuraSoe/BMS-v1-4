@@ -154,6 +154,7 @@ public class ReceiptService {
                 item.getId(),
                 item.getProduct().getName(),
                 item.getProduct().getSku(),
+                item.getProduct().getUnit(),
                 item.getQuantity(),
                 item.getQuantityRefunded(),
                 item.getUnitPrice(),

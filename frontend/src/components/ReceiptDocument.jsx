@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import ShopLogo from './ShopLogo';
-import { formatCurrency, formatAmountPlain, formatReceiptDateTime } from '../utils/helpers';
+import { formatReceiptCurrency, formatAmountPlain, formatReceiptDateTime } from '../utils/helpers';
 
 import QRCode from 'qrcode';
 
@@ -116,9 +116,9 @@ const ReceiptDocument = ({
 
   // --- Mock data for preview ---
   const mockItems = [
-    { productName: 'Coffee Latte',  quantity: 2, unitPrice: 5.00,  totalPrice: 10.00 },
-    { productName: 'Green Tea',      quantity: 1, unitPrice: 3.50,  totalPrice: 3.50 },
-    { productName: 'Cheese Cake',    quantity: 1, unitPrice: 4.50,  totalPrice: 4.50 },
+    { productName: 'Coffee Latte',  quantity: 2, unit: 'pcs', unitPrice: 5.00,  totalPrice: 10.00 },
+    { productName: 'Green Tea',      quantity: 1, unit: 'pcs', unitPrice: 3.50,  totalPrice: 3.50 },
+    { productName: 'Cheese Cake',    quantity: 1, unit: 'pcs', unitPrice: 4.50,  totalPrice: 4.50 },
   ];
   const mockTotal    = 18.00;
   const mockPaid     = 20.00;
@@ -240,12 +240,6 @@ const ReceiptDocument = ({
       {/* ===== ITEMS ===== */}
       <Box sx={dividerStyle_} />
       <Box sx={{ mb: '6px' }}>
-        <Box sx={{ ...rowStyle, fontWeight: 700, mb: '3px' }}>
-          <span style={{ flex: 1 }}>Item</span>
-          <span style={{ width: 26, textAlign: 'right' }}>Qty</span>
-          <span style={{ width: 72, textAlign: 'right' }}>Price</span>
-          <span style={{ width: 80, textAlign: 'right' }}>Amount</span>
-        </Box>
         {items.map((item, idx) => {
           const itemTotal = item.totalPrice != null
             ? Number(item.totalPrice)
@@ -254,15 +248,16 @@ const ReceiptDocument = ({
 
           return (
             <Box key={idx} sx={{ mb: '4px' }}>
-              <Box sx={{ ...rowStyle, alignItems: 'center' }}>
-                <span style={{ flex: 1, marginRight: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <Box sx={{ ...rowStyle, alignItems: 'flex-start' }}>
+                <span style={{ flex: 1, minWidth: 0, marginRight: '8px', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>
                   {item.productName}
                 </span>
-                <span style={{ width: 26, textAlign: 'right', flexShrink: 0 }}>{item.quantity}</span>
-                <span style={{ width: 72, textAlign: 'right', flexShrink: 0 }}>{formatAmountPlain(item.unitPrice || 0)}</span>
-                <span style={{ width: 80, textAlign: 'right', flexShrink: 0, fontWeight: 600 }}>
-                  {formatAmountPlain(itemTotal)}
+                <span style={{ flexShrink: 0, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {formatReceiptCurrency(itemTotal)}
                 </span>
+              </Box>
+              <Box sx={{ pl: '8px', color: '#555' }}>
+                {item.quantity} {item.unit || ''} x {formatAmountPlain(item.unitPrice || 0)}
               </Box>
               {isRefunded && (
                 <Box sx={{ pl: '8px', color: '#b45309' }}>
@@ -279,19 +274,19 @@ const ReceiptDocument = ({
       {Number(subTotal) > 0 && Number(subTotal) !== Number(totalAmount) && (
         <Box sx={rowStyle}>
           <span>Subtotal:</span>
-          <span>{formatCurrency(subTotal)}</span>
+          <span>{formatReceiptCurrency(subTotal)}</span>
         </Box>
       )}
       {showTax !== false && Number(taxAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Tax:</span>
-          <span>{formatCurrency(taxAmount)}</span>
+          <span>{formatReceiptCurrency(taxAmount)}</span>
         </Box>
       )}
       {showDiscount !== false && Number(discountAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Discount:</span>
-          <span>-{formatCurrency(discountAmount)}</span>
+          <span>-{formatReceiptCurrency(discountAmount)}</span>
         </Box>
       )}
 
@@ -299,16 +294,16 @@ const ReceiptDocument = ({
       <Box sx={{ ...dividerStyle_, py: '4px' }}>
         <Box sx={{ ...rowStyle, fontWeight: 700, fontSize: `calc(${fontSizeVal} + 0.05rem)` }}>
           <span>TOTAL:</span>
-          <span>{formatCurrency(totalAmount)}</span>
+          <span>{formatReceiptCurrency(totalAmount)}</span>
         </Box>
         <Box sx={rowStyle}>
           <span>Paid:</span>
-          <span>{formatCurrency(amountPaid)}</span>
+          <span>{formatReceiptCurrency(amountPaid)}</span>
         </Box>
         {change > 0 && (
           <Box sx={rowStyle}>
             <span>Change:</span>
-            <span>{formatCurrency(change)}</span>
+            <span>{formatReceiptCurrency(change)}</span>
           </Box>
         )}
       </Box>
@@ -319,7 +314,7 @@ const ReceiptDocument = ({
           <Box sx={{ textAlign: 'center', fontWeight: 700, mb: '4px' }}>*** CREDIT SALE ***</Box>
           <Box sx={rowStyle}>
             <span>Balance Due:</span>
-            <span>{formatCurrency(balanceDue)}</span>
+            <span>{formatReceiptCurrency(balanceDue)}</span>
           </Box>
           {dueDateLabel && (
             <Box sx={rowStyle}>
@@ -456,14 +451,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
     : '';
   // QR renders under the footer text (moved to the very end of the template)
 
-  let itemsHtml = [
-    `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;font-weight:700;">
-      <span style="flex:1;">Item</span>
-      <span style="width:26px;text-align:right;">Qty</span>
-      <span style="width:72px;text-align:right;">Price</span>
-      <span style="width:80px;text-align:right;">Amount</span>
-    </div>`,
-  ].concat(items.map(item => {
+  let itemsHtml = items.map(item => {
     const itemTotal = item.totalPrice != null
       ? Number(item.totalPrice)
       : Number(item.unitPrice || 0) * Number(item.quantity || 0);
@@ -472,33 +460,32 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
       : '';
     return `
       <div style="margin-bottom:4px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;">
-          <span style="flex:1;margin-right:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(item.productName)}</span>
-          <span style="width:26px;text-align:right;flex-shrink:0;">${item.quantity}</span>
-          <span style="width:72px;text-align:right;flex-shrink:0;">${escHtml(formatAmountPlain(item.unitPrice || 0))}</span>
-          <span style="width:80px;text-align:right;flex-shrink:0;font-weight:600;">${escHtml(formatAmountPlain(itemTotal))}</span>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <span style="flex:1;min-width:0;margin-right:8px;overflow-wrap:anywhere;white-space:normal;">${escHtml(item.productName)}</span>
+          <span style="flex-shrink:0;font-weight:600;white-space:nowrap;">${escHtml(formatReceiptCurrency(itemTotal))}</span>
         </div>
+        <div style="padding-left:8px;color:#555;">${item.quantity} ${escHtml(item.unit || '')} x ${escHtml(formatAmountPlain(item.unitPrice || 0))}</div>
         ${refundedHtml}
       </div>`;
-  })).join('');
+  }).join('');
 
   const showSubLine = Number(subTotal) > 0 && Number(subTotal) !== Number(totalAmount);
   let subtotalsHtml = `
-    ${showSubLine ? `<div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${escHtml(formatCurrency(subTotal))}</span></div>` : ''}
-    ${showTax !== false && Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatCurrency(taxAmount))}</span></div>` : ''}
-    ${showDiscount !== false && Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatCurrency(discountAmount))}</span></div>` : ''}`;
+    ${showSubLine ? `<div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${escHtml(formatReceiptCurrency(subTotal))}</span></div>` : ''}
+    ${showTax !== false && Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatReceiptCurrency(taxAmount))}</span></div>` : ''}
+    ${showDiscount !== false && Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatReceiptCurrency(discountAmount))}</span></div>` : ''}`;
 
   let totalsHtml = `
     <div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
-      <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatCurrency(totalAmount))}</span></div>
-      <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatCurrency(amountPaid))}</span></div>
-      ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatCurrency(change))}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatReceiptCurrency(totalAmount))}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatReceiptCurrency(amountPaid))}</span></div>
+      ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatReceiptCurrency(change))}</span></div>` : ''}
     </div>`;
 
   let creditHtml = showCreditInfo_
     ? `<div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
         <div style="text-align:center;font-weight:700;margin-bottom:4px;">*** CREDIT SALE ***</div>
-        <div style="display:flex;justify-content:space-between;"><span>Balance Due:</span><span>${escHtml(formatCurrency(balanceDue))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Balance Due:</span><span>${escHtml(formatReceiptCurrency(balanceDue))}</span></div>
         ${dueDateLabel ? `<div style="display:flex;justify-content:space-between;"><span>Due Date:</span><span>${escHtml(dueDateLabel)}</span></div>` : ''}
       </div>`
     : '';

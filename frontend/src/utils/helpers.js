@@ -19,6 +19,27 @@ export const formatCurrency = (amount) => {
   }
 };
 
+export const formatReceiptCurrency = (amount) => {
+  try {
+    if (cachedCurrencyCode === 'MMK') {
+      return `${new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0)} Ks`;
+    }
+    const parts = new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: cachedCurrencyCode,
+    }).formatToParts(amount || 0);
+    const currencyPart = parts.find((part) => part.type === 'currency')?.value || '$';
+    const numberPart = parts
+      .filter((part) => part.type !== 'currency')
+      .map((part) => part.value)
+      .join('')
+      .trim();
+    return `${numberPart} ${currencyPart}`;
+  } catch {
+    return `${new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount || 0)} $`;
+  }
+};
+
 // Numeric amount without the currency unit — used in receipt item columns
 export const formatAmountPlain = (amount) => {
   try {

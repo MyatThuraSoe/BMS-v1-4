@@ -58,11 +58,27 @@ public class CounterPrintController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Test page sent to the counter printer", null));
     }
 
-    /** THE endpoint every device calls to print a receipt at the counter. */
+    /** Queue a receipt for the Electron client on the main POS device. */
     @PostMapping("/receipt/{invoiceNumber}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
-    public ResponseEntity<ApiResponse<String>> printReceipt(@PathVariable String invoiceNumber) {
-        counterPrintService.printInvoice(invoiceNumber, null);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Receipt sent to counter printer", invoiceNumber));
+    public ResponseEntity<ApiResponse<Map<String, String>>> printReceipt(@PathVariable String invoiceNumber) {
+        return ResponseEntity.accepted().body(new ApiResponse<>(true,
+                "Receipt queued for the main POS printer", counterPrintService.enqueueReceipt(invoiceNumber)));
+    }
+
+    /** Poll endpoint used only by the Electron POS client on this server. */
+    @GetMapping("/receipt-jobs/next")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<Map<String, String>>> claimNextReceipt() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Print job retrieved", counterPrintService.claimNextReceipt()));
+    }
+
+    /** Acknowledge the result after Electron prints the receipt. */
+    @PostMapping("/receipt-jobs/{jobId}/complete")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<Void>> completeReceipt(@PathVariable String jobId,
+                                                              @RequestBody Map<String, Boolean> body) {
+        counterPrintService.completeReceipt(jobId, Boolean.TRUE.equals(body.get("success")));
+        return ResponseEntity.ok(new ApiResponse<>(true, "Print job completed", null));
     }
 }

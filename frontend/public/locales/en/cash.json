@@ -9,6 +9,7 @@
   "status_open": "OPEN",
   "status_closed": "CLOSED",
   "shift_active": "Shift Active",
+  "shift_overdue": "This cash shift has been open for more than 12 hours. Please close the shift.",
   "opened_at": "Opened {{time}}",
   "close_shift": "Close Shift",
   "opening_amount": "Opening Amount",

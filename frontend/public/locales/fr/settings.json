@@ -24,6 +24,7 @@
   "not_authorized": "Non autorisé",
   "load_shop_info_failed": "Échec du chargement des informations du magasin",
   "shop_info_updated": "Informations du magasin mises à jour avec succès !",
+  "restart_app_to_apply_changes": "Veuillez redémarrer l'application pour appliquer ces changements.",
   "shop_info_conflict": "Les informations du magasin ont été modifiées par quelqu'un d'autre pendant que vous les modifiiez. Veuillez actualiser et réessayer.",
   "shop_details": "Détails du magasin",
   "shop_name": "Nom du magasin",

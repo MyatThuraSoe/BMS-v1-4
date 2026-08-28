@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const net = require('net');
 const os = require('os');
@@ -10,6 +11,7 @@ let tray = null;
 let serverProcess = null;
 let isQuitting = false;
 let serverPid = null;
+let activePrintWindow = null;
 
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
@@ -480,43 +482,96 @@ ipcMain.handle('get-printers', async () => {
 });
 
 ipcMain.handle('print-receipt', async (event, html, printerName, paperSizeMm) => {
+    if (activePrintWindow && !activePrintWindow.isDestroyed()) {
+        return { success: false, error: 'Another receipt is already printing' };
+    }
+
     return new Promise((resolve) => {
+        let settled = false;
         const printWindow = new BrowserWindow({
             show: false,
             width: 400,
             height: 600,
             webPreferences: { contextIsolation: true, nodeIntegration: false }
         });
+        activePrintWindow = printWindow;
+        const tempFile = path.join(app.getPath('temp'), `lumipos-receipt-${Date.now()}-${Math.random().toString(36).slice(2)}.html`);
 
-        const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
-        printWindow.loadURL(dataUrl);
+        const finish = (result) => {
+            if (settled) return;
+            settled = true;
+            if (activePrintWindow === printWindow) activePrintWindow = null;
+            if (!printWindow.isDestroyed()) printWindow.close();
+            try { fs.unlinkSync(tempFile); } catch (e) { /* already removed */ }
+            resolve(result);
+        };
+
+        console.log(`[Print] Preparing receipt: printer=${printerName || 'default'}, width=${paperSizeMm || 'A4'}mm`);
+
+        const timeout = setTimeout(() => {
+            console.error('[Print] Timed out while preparing or sending receipt');
+            finish({ success: false, error: 'Printer timed out' });
+        }, 15000);
+
+        try {
+            // Avoid a large data: URL; Chromium can reject it as ERR_INVALID_URL
+            // when the receipt contains embedded logo/QR data.
+            fs.writeFileSync(tempFile, html, 'utf8');
+        } catch (error) {
+            clearTimeout(timeout);
+            finish({ success: false, error: `Failed to load receipt HTML: ${error.message}` });
+            return;
+        }
+
+        printWindow.loadFile(tempFile).catch((error) => {
+            clearTimeout(timeout);
+            finish({ success: false, error: `Failed to load receipt HTML: ${error.message}` });
+        });
 
         printWindow.webContents.on('did-finish-load', () => {
-            const pageSize = paperSizeMm
-                ? { width: paperSizeMm * 1000, height: 297000 }   // microns (1mm = 1000µm)
-                : 'A4';
-            const options = {
-                silent: true,            // No print dialog
-                printBackground: true,   // Keep colors and backgrounds
-                margins: { marginType: 'none' },
-                pageSize
-            };
-            if (printerName) options.deviceName = printerName;
+            const print = (pageSize) => {
+                const options = {
+                    silent: true,            // No print dialog
+                    printBackground: true,   // Keep colors and backgrounds
+                    margins: { marginType: 'none' },
+                    pageSize
+                };
+                if (printerName) options.deviceName = printerName;
 
-            printWindow.webContents.print(options, (success, failureReason) => {
-                printWindow.close();
-                if (success) {
-                    resolve({ success: true });
-                } else {
-                    console.error('[Print] Failed:', failureReason);
-                    resolve({ success: false, error: failureReason || 'Unknown error' });
-                }
-            });
+                printWindow.webContents.print(options, (success, failureReason) => {
+                    clearTimeout(timeout);
+                    if (success) {
+                        finish({ success: true });
+                    } else {
+                        console.error('[Print] Failed:', failureReason);
+                        finish({ success: false, error: failureReason || 'Unknown error' });
+                    }
+                });
+            };
+
+            if (!paperSizeMm) {
+                print('A4');
+                return;
+            }
+
+            // Match the backend counter printer: configured width and an
+            // 80mm minimum roll height, growing only to fit the receipt.
+            printWindow.webContents.executeJavaScript('document.body.scrollHeight')
+                .then((scrollHeight) => {
+                    const contentHeightMm = Number(scrollHeight) * 25.4 / 96;
+                    const heightMm = Math.max(80, Math.ceil(contentHeightMm));
+                    console.log(`[Print] Sending receipt to printer: width=${paperSizeMm}mm, height=${heightMm}mm`);
+                    print({ width: paperSizeMm * 1000, height: heightMm * 1000 });
+                })
+                .catch(() => {
+                    console.log(`[Print] Sending receipt with fallback height: width=${paperSizeMm}mm, height=80mm`);
+                    print({ width: paperSizeMm * 1000, height: 80000 });
+                });
         });
 
         printWindow.webContents.on('did-fail-load', () => {
-            printWindow.close();
-            resolve({ success: false, error: 'Failed to load receipt HTML' });
+            clearTimeout(timeout);
+            finish({ success: false, error: 'Failed to load receipt HTML' });
         });
     });
 });

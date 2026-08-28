@@ -53,6 +53,7 @@ const Orders = lazy(() => import('./pages/Orders'));
 // Layout
 import DashboardLayout from './components/DashboardLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import PrintJobWorker from './components/PrintJobWorker';
 
 // Skeleton fallback for lazy route chunks: mimics a generic page (title +
 // summary cards + chart block) so first navigation reads as "content loading"
@@ -280,6 +281,7 @@ function App() {
         >
           <AuthProvider>
             <Router>
+              <PrintJobWorker />
               <AppRoutes />
             </Router>
           </AuthProvider>

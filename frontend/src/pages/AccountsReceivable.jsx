@@ -12,9 +12,10 @@ import {
   Visibility as ViewIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { arService, receiptService, saleService } from '../api/services';
+import { arService, receiptService, saleService, shopInfoService, receiptCustomizationService } from '../api/services';
 import { formatCurrency, formatDateTime, formatDate } from '../utils/helpers';
 import { notifyError } from '../utils/notify';
+import { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
 const AccountsReceivable = () => {
   const { t } = useTranslation('ar');
@@ -112,7 +113,30 @@ const AccountsReceivable = () => {
   const handlePrintInvoice = async (invoiceNumber) => {
     const win = window.open('', '_blank');
     try {
-      const html = await receiptService.getPrintHtml(invoiceNumber);
+      const [receiptResponse, shopInfoResponse, customizationResponse] = await Promise.all([
+        receiptService.getByInvoiceNumber(invoiceNumber),
+        shopInfoService.get(),
+        receiptCustomizationService.get(),
+      ]);
+      const receipt = receiptResponse?.data || {};
+      const shopInfo = shopInfoResponse?.data || {};
+      const customization = customizationResponse?.data || {};
+      let logoDataUrl = null;
+      if (shopInfo.hasLogo) {
+        try {
+          const logoBlob = await shopInfoService.getLogo();
+          logoDataUrl = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = () => resolve(null);
+            reader.readAsDataURL(logoBlob);
+          });
+        } catch { /* print without logo */ }
+      }
+      const qrDataUrl = customization.showQRCode
+        ? await generateQRDataUrl(receipt.invoiceNumber)
+        : null;
+      const html = generatePrintHtml(receipt, shopInfo, customization, logoDataUrl, qrDataUrl);
       if (win) writeHtmlAndPrint(win, html);
       else notifyError(t('print_blocked'));
     } catch {

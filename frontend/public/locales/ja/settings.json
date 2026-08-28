@@ -24,6 +24,7 @@
   "not_authorized": "権限がありません",
   "load_shop_info_failed": "店舗情報の読み込みに失敗しました",
   "shop_info_updated": "店舗情報が正常に更新されました！",
+  "restart_app_to_apply_changes": "変更を適用するにはアプリを再起動してください。",
   "shop_info_conflict": "編集している間に他のユーザーが店舗情報を変更しました。更新してやり直してください。",
   "shop_details": "店舗詳細",
   "shop_name": "店舗名",

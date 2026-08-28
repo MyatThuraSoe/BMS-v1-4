@@ -8,6 +8,7 @@ import { setCurrencyCode } from '../utils/helpers';
 import { CloudUpload as UploadIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import ShopLogo, { clearShopLogoCache } from '../components/ShopLogo';
+import { notifyInfo } from '../utils/notify';
 const SHOP_TYPES = ['MINI_MART','GROCERY','PHARMACY','FURNITURE_SHOP','ELECTRONICS','CLOTHING','RESTAURANT','OTHER'];
 
 const CURRENCIES = [
@@ -84,6 +85,7 @@ const ShopInfo = () => {
     mutationFn: (payload) => shopInfoService.update(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shopInfo'] });
+      notifyInfo(t('restart_app_to_apply_changes'));
     },
   });
 
@@ -111,6 +113,7 @@ const ShopInfo = () => {
 
           setLogoRefresh(v => v + 1);
           setLogoFile(null);
+            notifyInfo(t('restart_app_to_apply_changes'));
       }
     });
 
@@ -132,6 +135,7 @@ const ShopInfo = () => {
         });
 
         setLogoRefresh(v => v + 1);
+        notifyInfo(t('restart_app_to_apply_changes'));
     }
     });
 

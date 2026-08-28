@@ -24,6 +24,7 @@
   "not_authorized": "Not authorized",
   "load_shop_info_failed": "Failed to load shop info",
   "shop_info_updated": "Shop information updated successfully!",
+  "restart_app_to_apply_changes": "Please restart the app to apply these changes.",
   "shop_info_conflict": "Shop information was changed by someone else while you were editing it. Please refresh and try again.",
   "shop_details": "Shop Details",
   "shop_name": "Shop Name",

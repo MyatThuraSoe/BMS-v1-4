@@ -9,6 +9,7 @@
   "status_open": "開手中",
   "status_closed": "終了済み",
   "shift_active": "シフト実施中",
+  "shift_overdue": "このシフトは12時間以上開いています。シフトを閉じてください。",
   "opened_at": "{{time}} に開始",
   "close_shift": "シフト終了",
   "opening_amount": "開始金額",

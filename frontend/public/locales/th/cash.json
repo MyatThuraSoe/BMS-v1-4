@@ -9,6 +9,7 @@
   "status_open": "เปิดอยู่",
   "status_closed": "ปิดแล้ว",
   "shift_active": "กะกำลังดำเนินการ",
+  "shift_overdue": "กะนี้เปิดมานานกว่า 12 ชั่วโมงแล้ว กรุณาปิดกะ",
   "opened_at": "เปิดเมื่อ {{time}}",
   "close_shift": "ปิดกะ",
   "opening_amount": "จำนวนเงินเปิดกะ",

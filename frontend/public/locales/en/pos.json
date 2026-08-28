@@ -77,5 +77,6 @@
   "order_failed": "Failed to create order",
   "order_reserves_stock": "This creates a pending order. Stock will be reserved until the order is converted to a sale or cancelled.",
   "notes_optional": "Notes (optional)",
-  "print_at_counter": "Print at Counter"
+  "print_at_counter": "Print at Counter",
+  "print_by_main_computer": "Print by Main Computer"
 }

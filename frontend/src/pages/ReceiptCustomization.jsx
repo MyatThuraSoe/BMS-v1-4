@@ -33,7 +33,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { receiptCustomizationService, shopInfoService, counterPrintService } from '../api/services';
-import { notifySuccess, notifyError } from '../utils/notify';
+import { notifySuccess, notifyError, notifyInfo } from '../utils/notify';
 import ReceiptDocument from '../components/ReceiptDocument';
 import { getReceiptPreviewWidth } from '../utils/helpers';
 
@@ -194,6 +194,7 @@ const ReceiptCustomization = () => {
       await queryClient.invalidateQueries({ queryKey: ['receipt-customization'] });
       await queryClient.invalidateQueries({ queryKey: ['receipt-customization-preview'] });
       await queryClient.invalidateQueries({ queryKey: ['receipt-customization-pos'] });
+      notifyInfo(t('restart_app_to_apply_changes'));
     },
   });
 

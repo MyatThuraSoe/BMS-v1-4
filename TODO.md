@@ -14,21 +14,6 @@
 
 
 
-- add more option for key generation. with exp date
+-- i want to add a new feature, save draft. In pos cart, under Order button, add a new button save draft. i also want to add a new menu "Drafts" under POS,. we can see lists of saved drafts and (time and action button (delete button) should be included). The user can click each drafts and see details, and also a button to take the user to the POS page. and in the pos page, all the items should be selected inside cart. but there is one scenerio, if items in draft are no in stock, they won't be in cart in pos page.
 
-
- -- IN 58mm
--- tax is not really showing on receipt
--- product name really not showing
-
-
-
--- print at counter and direct print silent are not giving the same print. (Direct print slient button is correct)
--- i want printing from sale details to be the same as direct printing from POS page
-
-
--- Remove money unit in price column
-
-
--- add reset receipt customization button and (small font, 80 mm, solid, 12 hr format, header align center, logo size - 60px, footer text -"Thank you!", Header and main message leave blank, toggle on all except QR)
 

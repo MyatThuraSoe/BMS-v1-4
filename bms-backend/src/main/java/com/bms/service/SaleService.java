@@ -756,6 +756,7 @@ public class SaleService {
         response.setId(item.getId());
         response.setProductId(item.getProduct().getId());
         response.setProductName(item.getProduct().getName());
+        response.setUnit(item.getProduct().getUnit());
         response.setQuantity(item.getQuantity());
         response.setUnitPrice(item.getUnitPrice());
         response.setTotalPrice(item.getTotalPrice());

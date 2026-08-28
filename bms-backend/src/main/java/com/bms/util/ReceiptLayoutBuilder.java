@@ -85,22 +85,19 @@ public class ReceiptLayoutBuilder {
         addLine("");
         addDivider();
 
-        // Items (4-column: Item, Qty, Price, Amount — plain numbers, no currency unit)
-        int qtyW = 4;
-        int priceW = Math.max(7, formatPlain(BigDecimal.valueOf(9999999.99)).length());
-        int amountW = Math.max(9, formatPlain(BigDecimal.valueOf(9999999.99)).length());
-        int gap = 1;
-        int nameW = Math.max(6, lineWidth - qtyW - priceW - amountW - (gap * 3));
-
-        addLine(fourColumnRow("Item", "Qty", "Price", "Amount", nameW, qtyW, priceW, amountW, gap));
+        // Items use a flexible two-line layout: name and total, then quantity x unit price.
         for (var item : receipt.getItems()) {
             String name = item.getProductName() != null ? item.getProductName() : "";
-            addLine(fourColumnRow(
-                    name,
-                    String.valueOf(item.getQuantity()),
-                    formatPlain(item.getUnitPrice()),
-                    formatPlain(item.getSubtotal()),
-                    nameW, qtyW, priceW, amountW, gap));
+            String total = formatCurrency(item.getSubtotal());
+            int nameW = Math.max(1, lineWidth - total.length() - 1);
+            List<String> nameLines = wrapText(name, nameW);
+            addLine(padRight(nameLines.get(0), nameW) + " " + total);
+            for (int lineIndex = 1; lineIndex < nameLines.size(); lineIndex++) {
+                addLine(nameLines.get(lineIndex));
+            }
+                String unit = item.getUnit() == null ? "" : item.getUnit().trim();
+                addLine("  " + item.getQuantity() + (unit.isEmpty() ? "" : " " + unit)
+                    + " x " + formatPlain(item.getUnitPrice()));
         }
 
         addLine("");
@@ -299,20 +296,21 @@ public class ReceiptLayoutBuilder {
         return sb.toString();
     }
 
-    private String fourColumnRow(String name, String qty, String price, String amount,
-                                 int nameW, int qtyW, int priceW, int amountW, int gap) {
-        String pad = repeatChar(" ", gap);
-        return padRight(truncate(name, nameW), nameW) + pad
-                + padLeft(qty, qtyW) + pad
-                + padLeft(price, priceW) + pad
-                + padLeft(amount, amountW);
-    }
-
-    private String truncate(String text, int max) {
-        if (text == null) return "";
-        if (text.length() <= max) return text;
-        if (max <= 1) return text.substring(0, max);
-        return text.substring(0, max - 1) + ".";
+    private List<String> wrapText(String text, int width) {
+        List<String> result = new ArrayList<>();
+        String remaining = text == null ? "" : text.trim();
+        if (remaining.isEmpty()) {
+            result.add("");
+            return result;
+        }
+        while (remaining.length() > width) {
+            int breakAt = remaining.lastIndexOf(' ', width);
+            if (breakAt <= 0) breakAt = width;
+            result.add(remaining.substring(0, breakAt).trim());
+            remaining = remaining.substring(breakAt).trim();
+        }
+        result.add(remaining);
+        return result;
     }
 
     private String padLeft(String text, int width) {
@@ -357,7 +355,7 @@ public class ReceiptLayoutBuilder {
             case "INR": symbol = "₹"; break;
             default: symbol = "$"; break;
         }
-        return symbol + df.format(amount);
+        return df.format(amount) + " " + symbol;
     }
 
     /**

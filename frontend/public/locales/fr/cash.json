@@ -9,6 +9,7 @@
   "status_open": "Ouverte",
   "status_closed": "Clôturée",
   "shift_active": "Session en cours",
+  "shift_overdue": "Cette session de caisse est ouverte depuis plus de 12 heures. Veuillez la fermer.",
   "opened_at": "Ouverte à {{time}}",
   "close_shift": "Clôturer la session",
   "opening_amount": "Montant d'ouverture",

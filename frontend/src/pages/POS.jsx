@@ -395,7 +395,7 @@ const filteredProducts = products.filter(
       clearCart();
       if (printAfterCheckout) {
         setPrintAfterCheckout(false);
-        handleDirectPrint(sale);
+        handlePrintAfterCheckout(sale);
       }
       queryClient.invalidateQueries({ queryKey: ['products-pos'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
@@ -560,24 +560,32 @@ const filteredProducts = products.filter(
     setError('');
   };
 
-  // 👇 FIXED: Fetches HTML with JWT token, then opens it in a new window
-  const handlePrintReceipt = async () => {
-    if (lastSale?.invoiceNumber) {
-      try {
-        // This uses apiClient, which sends the JWT token automatically
-        const htmlContent = await receiptService.getPrintHtml(lastSale.invoiceNumber);
-        const printWindow = window.open('', '_blank');
-        if (printWindow) {
-          printWindow.document.write(htmlContent);
-          printWindow.document.close();
-          // Wait for the HTML to render before triggering the browser print dialog
-          printWindow.onload = () => {
-            printWindow.print();
-          };
-        }
-      } catch (err) {
-        notifyError(t('load_print_failed'));
+  // Browser printing uses the same self-contained renderer as silent printing.
+  const handlePrintReceipt = async (saleOverride) => {
+    const sale = saleOverride?.invoiceNumber ? saleOverride : lastSale;
+    if (!sale?.invoiceNumber) return;
+    try {
+      let logoDataUrl = null;
+      if (shopInfo?.hasLogo) {
+        const blob = await shopInfoService.getLogo();
+        logoDataUrl = await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        });
       }
+      const qrDataUrl = customization?.showQRCode
+        ? await generateQRDataUrl(sale.invoiceNumber)
+        : null;
+      const htmlContent = generatePrintHtml(sale, shopInfo || {}, customization, logoDataUrl, qrDataUrl);
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) throw new Error('Unable to open print window');
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+      printWindow.onload = () => printWindow.print();
+    } catch (err) {
+      notifyError(err.message || t('load_print_failed'));
     }
   };
 
@@ -644,7 +652,7 @@ const filteredProducts = products.filter(
           notifyError(result.error || t('print_failed'));
         }
       } else {
-        handlePrintReceipt();
+        handlePrintReceipt(sale);
       }
     } catch (err) {
       notifyError(err.message || t('print_failed'));
@@ -658,8 +666,11 @@ const filteredProducts = products.filter(
     handleCheckout();
   };
 
-  // Counter printing: sends the receipt to the printer attached to the
-  // SERVER computer — works from any device, no local installs needed.
+  async function handlePrintAfterCheckout(sale) {
+    if (!sale?.invoiceNumber) return;
+    await handleDirectPrint(sale);
+  }
+
   async function handleCounterPrint() {
     if (!lastSale?.invoiceNumber) return;
     setCounterPrinting(true);
@@ -668,7 +679,9 @@ const filteredProducts = products.filter(
       if (res?.success) notifySuccess(t('receipt_sent_printer'));
       else notifyError(res?.message || t('print_failed'));
     } catch (err) {
-      notifyError(err.friendlyMessage || err.response?.data?.message || t('print_failed'));
+      const reason = err.friendlyMessage || err.response?.data?.message || err.message || t('print_failed');
+      console.error('[Print queue] Unable to queue receipt', { invoiceNumber: lastSale.invoiceNumber, reason, error: err });
+      notifyError(`Print request failed: ${reason}`);
     } finally {
       setCounterPrinting(false);
     }
@@ -1285,8 +1298,8 @@ const filteredProducts = products.filter(
             {isDirectPrinting 
               ? t('printing') 
               : directPrint.isAvailable() 
-                ? '⚡ Direct Print (Silent)' 
-                : '⚡ Direct Print'}
+                ? '⚡ Print Button 1' 
+                : '⚡ Print Button 1'}
           </Button>
 
           <Button
@@ -1298,7 +1311,7 @@ const filteredProducts = products.filter(
             disabled={counterPrinting || !lastSale?.invoiceNumber}
             sx={{ py: 1.2, fontSize: '1rem' }}
           >
-            {counterPrinting ? t('printing') : t('print_at_counter')}
+            {counterPrinting ? t('printing') : 'Print Button 2'}
           </Button>
 
           <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>

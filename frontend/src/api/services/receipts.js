@@ -31,7 +31,17 @@ export const receiptService = {
 export const counterPrintService = {
   // Print a receipt at the counter printer attached to the server computer.
   printReceipt: async (invoiceNumber) => {
-    const response = await apiClient.post(`/counter-print/receipt/${encodeURIComponent(invoiceNumber)}`);
+    const response = await apiClient.post(`/counter-print/receipt/${encodeURIComponent(invoiceNumber)}`, null, { timeout: 10000 });
+    return response.data;
+  },
+
+  claimNextReceipt: async () => {
+    const response = await apiClient.get('/counter-print/receipt-jobs/next');
+    return response.data;
+  },
+
+  completeReceipt: async (jobId, success) => {
+    const response = await apiClient.post(`/counter-print/receipt-jobs/${encodeURIComponent(jobId)}/complete`, { success }, { timeout: 10000 });
     return response.data;
   },
 

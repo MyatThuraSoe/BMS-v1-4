@@ -21,6 +21,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
  * Prints receipts on printers attached to the SERVER computer.
@@ -43,6 +46,8 @@ public class CounterPrintService {
     private final ShopInfoService shopInfoService;
     private final ReceiptCustomizationService receiptCustomizationService;
     private final SystemSettingRepository systemSettingRepository;
+    private final ConcurrentLinkedQueue<PrintJob> pendingJobs = new ConcurrentLinkedQueue<>();
+    private final ConcurrentHashMap<String, PrintJobStatus> jobStatuses = new ConcurrentHashMap<>();
 
     public CounterPrintService(ReceiptService receiptService,
                                ShopInfoService shopInfoService,
@@ -93,6 +98,32 @@ public class CounterPrintService {
                 .orElse("");
     }
 
+    /** Queue a receipt for the Electron client running on this server. */
+    public Map<String, String> enqueueReceipt(String invoiceNumber) {
+        String jobId = UUID.randomUUID().toString();
+        pendingJobs.add(new PrintJob(jobId, invoiceNumber, getConfiguredPrinterName()));
+        jobStatuses.put(jobId, PrintJobStatus.QUEUED);
+        return Map.of("jobId", jobId, "invoiceNumber", invoiceNumber, "status", PrintJobStatus.QUEUED.name());
+    }
+
+    /** Claim the next queued receipt; only the Electron client should call this. */
+    public Map<String, String> claimNextReceipt() {
+        PrintJob job = pendingJobs.poll();
+        if (job == null) {
+            return Map.of("status", "EMPTY");
+        }
+        jobStatuses.put(job.id(), PrintJobStatus.PRINTING);
+        return Map.of("jobId", job.id(), "invoiceNumber", job.invoiceNumber(),
+            "printerName", job.printerName(), "status", PrintJobStatus.PRINTING.name());
+    }
+
+    /** Record the Electron client's final print result. */
+    public void completeReceipt(String jobId, boolean success) {
+        if (jobId != null && jobStatuses.containsKey(jobId)) {
+            jobStatuses.put(jobId, success ? PrintJobStatus.COMPLETED : PrintJobStatus.FAILED);
+        }
+    }
+
     /** Prints a short test page so admins can verify wiring in seconds. */
     public void printTestPage(String preferredPrinter) {
         List<String> lines = new ArrayList<>();
@@ -106,7 +137,7 @@ public class CounterPrintService {
         lines.add(java.time.LocalDateTime.now()
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
         lines.add("");
-        spool(preferredPrinter, lines, 80, null, 0, "center");
+        spool(preferredPrinter, lines, 80, null, 0, "center", "normal");
     }
 
     /** Renders the invoice as fixed-width receipt text and prints it. */
@@ -118,9 +149,7 @@ public class CounterPrintService {
 
         com.bms.util.ReceiptLayoutBuilder builder =
                 new com.bms.util.ReceiptLayoutBuilder(receipt, shopInfo, customization);
-        List<String> lines = new ArrayList<>(builder.build());
-        lines.add("");
-        lines.add("");
+        List<String> lines = builder.build();
 
         // Load the shop logo so it prints above the text (respects showLogo/logoSize/headerAlign)
         java.awt.image.BufferedImage logo = null;
@@ -134,8 +163,13 @@ public class CounterPrintService {
                 }
             }
         }
-        spool(preferredPrinter, lines, builder.getPaperWidthMm(), logo, builder.getLogoSize(), builder.getHeaderAlign());
+        spool(preferredPrinter, lines, builder.getPaperWidthMm(), logo, builder.getLogoSize(),
+            builder.getHeaderAlign(), builder.getFontSize());
     }
+
+    private enum PrintJobStatus { QUEUED, PRINTING, COMPLETED, FAILED }
+
+    private record PrintJob(String id, String invoiceNumber, String printerName) {}
 
     private String getDefaultPrinterName() {
         javax.print.PrintService def = javax.print.PrintServiceLookup.lookupDefaultPrintService();
@@ -166,7 +200,8 @@ public class CounterPrintService {
      * when provided, is drawn above the text on the first page.
      */
     private void spool(String preferredPrinter, List<String> lines, double paperWidthMm,
-                       java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign) {
+                       java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign,
+                       String fontSizeKey) {
         String target = (preferredPrinter != null && !preferredPrinter.isBlank())
                 ? preferredPrinter : getConfiguredPrinterName();
         javax.print.PrintService service = resolvePrinter(target);
@@ -175,12 +210,44 @@ public class CounterPrintService {
             PrinterJob job = PrinterJob.getPrinterJob();
             job.setPrintService(service);
             job.setJobName("LumiPOS Receipt");
-            job.setPrintable(new MonospacedPrintable(lines, paperWidthMm, logo, logoSizePx, headerAlign));
+                PageFormat pageFormat = createReceiptPageFormat(lines, paperWidthMm, logo, logoSizePx, fontSizeKey);
+                job.setPrintable(new MonospacedPrintable(lines, paperWidthMm, logo, logoSizePx, headerAlign,
+                    fontSizeKey), pageFormat);
             job.print();
         } catch (PrinterException e) {
             throw new BusinessException("Counter print failed on '" + service.getName() + "': "
                     + e.getMessage());
         }
+    }
+
+    private PageFormat createReceiptPageFormat(List<String> lines, double paperWidthMm,
+                                               java.awt.image.BufferedImage logo, int logoSizePx,
+                                               String fontSizeKey) {
+        double widthPt = mmToPt(Math.max(40, paperWidthMm));
+        double lineHeightPt = configuredFontSize(fontSizeKey) * 1.2;
+        double logoHeightPt = logo == null ? 0 : Math.min(widthPt * 0.45, logoSizePx * 0.75) + lineHeightPt * 0.5;
+        double heightPt = Math.max(mmToPt(80), lines.size() * lineHeightPt + logoHeightPt + lineHeightPt);
+
+        Paper paper = new Paper();
+        paper.setSize(widthPt, heightPt);
+        paper.setImageableArea(0, 0, widthPt, heightPt);
+
+        PageFormat pageFormat = new PageFormat();
+        pageFormat.setPaper(paper);
+        return pageFormat;
+    }
+
+    private static double mmToPt(double mm) {
+        return mm * 72.0 / 25.4;
+    }
+
+    private static float configuredFontSize(String fontSizeKey) {
+        return switch (fontSizeKey == null ? "normal" : fontSizeKey) {
+            // Match the frontend's CSS 10px / 13px / 15px at 96 DPI.
+            case "small" -> 7.5f;
+            case "large" -> 11.25f;
+            default -> 9.75f;
+        };
     }
 
     /**
@@ -194,14 +261,17 @@ public class CounterPrintService {
         private final java.awt.image.BufferedImage logo;
         private final int logoSizePx;
         private final String headerAlign;
+        private final String fontSizeKey;
 
         MonospacedPrintable(List<String> lines, double paperWidthMm,
-                            java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign) {
+                    java.awt.image.BufferedImage logo, int logoSizePx, String headerAlign,
+                    String fontSizeKey) {
             this.lines = lines;
             this.paperWidthMm = Math.max(40, paperWidthMm);
             this.logo = logo;
             this.logoSizePx = logoSizePx;
             this.headerAlign = headerAlign == null ? "center" : headerAlign;
+            this.fontSizeKey = fontSizeKey == null ? "normal" : fontSizeKey;
         }
 
         @Override
@@ -222,12 +292,13 @@ public class CounterPrintService {
                 maxCols = Math.max(maxCols, line.length());
             }
             // Monospace advance ≈ 0.6 × font size
-            float fontSize = (float) Math.max(6, Math.min(14, widthPt / (maxCols * 0.62)));
-            float lineHeight = fontSize * 1.25f;
+            float configuredSize = configuredFontSize(fontSizeKey);
+            float fontSize = Math.min(configuredSize, (float) Math.max(6, widthPt / (maxCols * 0.62)));
+            float lineHeight = fontSize * 1.2f;
 
             g2.translate(pageFormat.getImageableX(), pageFormat.getImageableY());
             Map<TextAttribute, Object> attrs = new java.util.HashMap<>();
-            attrs.put(TextAttribute.FONT, new Font(Font.MONOSPACED, Font.PLAIN, Math.round(fontSize)));
+            attrs.put(TextAttribute.FONT, new Font(Font.MONOSPACED, Font.PLAIN, 1).deriveFont(fontSize));
             g2.setFont(new Font(attrs));
             g2.setPaint(java.awt.Color.BLACK);
 

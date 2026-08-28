@@ -71,6 +71,7 @@ import LanguageSwitcher from './LanguageSwitcher';
 import useShopConfig from '../hooks/useShopConfig';
 import { preloadRouteChunks } from '../utils/preloadRouteChunks';
 import { useTranslation } from 'react-i18next';
+import { notifyWarning } from '../utils/notify';
 
 // Content-area skeleton shown while a lazy route chunk loads on FIRST visit.
 // Lives inside the persistent shell so the drawer/app bar never unmount.
@@ -209,6 +210,23 @@ const DashboardLayout = ({ children }) => {
 
   const currentShift = currentShiftData?.data;
   const shopName = shopInfoData?.data?.shopName;
+  const [remindedShiftId, setRemindedShiftId] = useState(null);
+
+  useEffect(() => {
+    if (!currentShift?.id || !currentShift.openingTime) {
+      setRemindedShiftId(null);
+      return;
+    }
+
+    const openedAt = new Date(currentShift.openingTime).getTime();
+    const isOlderThanTwelveHours = Number.isFinite(openedAt)
+      && Date.now() - openedAt >= 12 * 60 * 60 * 1000;
+
+    if (isOlderThanTwelveHours && remindedShiftId !== currentShift.id) {
+      notifyWarning(t('cash:shift_overdue'));
+      setRemindedShiftId(currentShift.id);
+    }
+  }, [currentShift, remindedShiftId, t]);
 
 
   const { data: licData } = useQuery({

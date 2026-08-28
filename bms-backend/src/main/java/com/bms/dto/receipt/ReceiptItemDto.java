@@ -8,6 +8,7 @@ public class ReceiptItemDto {
     private Long saleItemId;
     private String productName;
     private String sku;
+    private String unit;
     private Integer quantity;
     private Integer quantityRefunded;
     private BigDecimal unitPrice;
@@ -25,6 +26,7 @@ public class ReceiptItemDto {
             Long saleItemId,
             String productName,
             String sku,
+            String unit,
             Integer quantity,
             Integer quantityRefunded,
             BigDecimal unitPrice,
@@ -34,6 +36,7 @@ public class ReceiptItemDto {
         this.saleItemId = saleItemId;
         this.productName = productName;
         this.sku = sku;
+        this.unit = unit;
         this.quantity = quantity;
         this.quantityRefunded = quantityRefunded;
         this.unitPrice = unitPrice;
@@ -73,6 +76,14 @@ public class ReceiptItemDto {
 
     public void setSku(String sku) {
         this.sku = sku;
+    }
+
+    public String getUnit() {
+        return unit;
+    }
+
+    public void setUnit(String unit) {
+        this.unit = unit;
     }
 
 
