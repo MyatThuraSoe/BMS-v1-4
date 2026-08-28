@@ -35,6 +35,7 @@ import {
   ShoppingCart as CartIcon,
   PointOfSale as PosIcon,
   ListAlt as ListAltIcon,
+  Drafts as DraftsIcon,
   People as CustomersIcon,
   ManageAccounts as UsersIcon,
   Business as SupplierIcon,
@@ -101,6 +102,7 @@ const menuGroups = [
     items: [
       { textKey: 'pos', icon: <PosIcon />, path: '/pos', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'success.main' },
       { textKey: 'orders', icon: <ListAltIcon />, path: '/orders', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'text.secondary' },
+      { textKey: 'drafts', icon: <DraftsIcon />, path: '/drafts', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'secondary.main' },
       { textKey: 'sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
       { textKey: 'cash_shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
       { textKey: 'shift_history', icon: <HistoryIcon />, path: '/shift-history', roles: ['ADMIN', 'MANAGER'], color: 'text.secondary' },

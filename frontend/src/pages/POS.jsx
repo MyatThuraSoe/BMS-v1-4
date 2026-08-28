@@ -1,4 +1,5 @@
 import { useState,useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -52,13 +53,15 @@ import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, draftService, counterPrintService } from '../api/services';
 import directPrint from '../services/directPrintService';
 import useShopConfig from '../hooks/useShopConfig';
 
 const POS = () => {
 
   const { t } = useTranslation('pos');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const draftId = searchParams.get('draftId');
 
   // Focused number inputs change value when scrolling the page — blur them
   // so scrolling never mutates a typed amount (cash received / discount).
@@ -101,11 +104,18 @@ const POS = () => {
 
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
+  const [loadedDraftId, setLoadedDraftId] = useState(null);
 
   // Shop info (for receipt branding) — shared cache via useShopConfig
   const { data: shopInfoData } = useShopConfig();
 
   const shopInfo = shopInfoData?.data;
+
+  const { data: draftData } = useQuery({
+    queryKey: ['draft-for-pos', draftId],
+    queryFn: () => draftService.getById(draftId),
+    enabled: Boolean(draftId),
+  });
 
   const { data: customizationData } = useQuery({
     queryKey: ['receipt-customization-pos'],
@@ -139,6 +149,39 @@ const POS = () => {
   });
   const products = productsData?.data?.content || [];
   const totalPages = productsData?.data?.page?.totalPages || 0;
+
+  useEffect(() => {
+    if (!draftId || !draftData?.data || loadedDraftId === draftId) return;
+    let cancelled = false;
+    const loadDraft = async () => {
+      const draft = draftData.data;
+      const loadedItems = await Promise.all((draft.items || []).map(async (item) => {
+        try {
+          const response = await productService.getById(item.productId);
+          const product = response.data;
+          const available = Number(product?.stockQuantity ?? product?.availableQuantity ?? 0);
+          if (!product || available <= 0) return null;
+          return {
+            productId: product.id,
+            name: product.name,
+            price: product.unitPrice,
+            quantity: Math.min(Number(item.quantity) || 1, available),
+            stockQuantity: available,
+          };
+        } catch {
+          return null;
+        }
+      }));
+      if (cancelled) return;
+      const missingCount = (draft.items || []).length - loadedItems.filter(Boolean).length;
+      setCart(loadedItems.filter(Boolean));
+      setLoadedDraftId(draftId);
+      setSearchParams({}, { replace: true });
+      if (missingCount > 0) notifyWarning(t('draft_items_unavailable', { count: missingCount }));
+    };
+    loadDraft();
+    return () => { cancelled = true; };
+  }, [draftData, draftId, loadedDraftId, setSearchParams, t]);
 
   // Fetch customers
   const { data: customersData } = useQuery({
@@ -437,6 +480,34 @@ const filteredProducts = products.filter(
       notifyError(err.friendlyMessage || t('order_failed'));
     },
   });
+
+  const saveDraftMutation = useMutation({
+    mutationFn: ({ id, draft }) => id ? draftService.update(id, draft) : draftService.create(draft),
+    onSuccess: (response) => {
+      if (response?.data?.id) setLoadedDraftId(response.data.id);
+      notifySuccess(t('draft_saved'));
+      queryClient.invalidateQueries({ queryKey: ['drafts'] });
+      clearCart();
+    },
+    onError: (err) => notifyError(err.friendlyMessage || t('draft_save_failed')),
+  });
+
+  const handleSaveDraft = () => {
+    if (cart.length === 0) {
+      setError(t('empty_cart'));
+      return;
+    }
+    saveDraftMutation.mutate({
+      id: loadedDraftId,
+      draft: {
+        items: cart.map((item) => ({
+          productId: item.productId,
+          quantity: parseInt(item.quantity, 10) || 1,
+        })),
+        customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
+      },
+    });
+  };
 
   const handleOrderClick = () => {
     if (cart.length === 0) {
@@ -1168,6 +1239,16 @@ const filteredProducts = products.filter(
                 sx={{ mt: 1 }}
               >
                 {t('order_now')}
+              </Button>
+              <Button
+                fullWidth
+                variant="outlined"
+                startIcon={<CartIcon />}
+                onClick={handleSaveDraft}
+                disabled={cart.length === 0 || saveDraftMutation.isPending}
+                sx={{ mt: 1 }}
+              >
+                {saveDraftMutation.isPending ? t('saving_draft') : t('save_draft')}
               </Button>
             </Box>
             </Box>

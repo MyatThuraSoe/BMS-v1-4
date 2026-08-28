@@ -49,6 +49,7 @@ const CashShift = lazy(() => import('./pages/CashShift'));
 const ShiftHistory = lazy(() => import('./pages/ShiftHistory'));
 const AccountsReceivable = lazy(() => import('./pages/AccountsReceivable'));
 const Orders = lazy(() => import('./pages/Orders'));
+const Drafts = lazy(() => import('./pages/Drafts'));
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
@@ -216,6 +217,7 @@ function AppRoutes() {
         
         {/* Orders (all roles) */}
         <Route path="orders" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'CASHIER']}><Orders /></ProtectedRoute>} />
+        <Route path="drafts" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'CASHIER']}><Drafts /></ProtectedRoute>} />
         
         {/* Inventory Center (Admin & Manager only) */}
         <Route path="inventory" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Inventory /></ProtectedRoute>} />

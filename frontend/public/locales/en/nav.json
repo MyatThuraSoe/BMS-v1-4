@@ -30,6 +30,7 @@
   "entity_details": "{{name}} Details",
   "accounts_receivable": "Accounts Receivable",
   "orders": "Orders",
+  "drafts": "Drafts",
   "inventory": "Inventory",
   "fullscreen": "Full Screen",
   "exit_fullscreen": "Exit Full Screen"
