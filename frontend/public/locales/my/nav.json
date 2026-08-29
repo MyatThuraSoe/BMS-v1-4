@@ -7,6 +7,7 @@
   "group_people": "ဝန်ထမ်းနှင့် ဖောက်သည်",
   "group_insights": "အစီရင်ခံစာနှင့် စာရင်းအင်း",
   "group_administration": "စီမံခန့်ခွဲမှု",
+  "app_info": "App အချက်အလက်",
 
   "dashboard": "ပင်မစာမျက်နှာ",
   "pos": "အရောင်းကောင်တာ",
@@ -29,6 +30,7 @@
   "accounting": "စာရင်းကိုင်",
 
   "settings": "ဆက်တင်များ",
+  "about": "App အကြောင်း",
   "shop_info": "ဆိုင်အချက်အလက်",
   "backup_settings": "အရန်သိမ်းဆည်းမှု ဆက်တင်များ",
   "audit_logs": "လုပ်ဆောင်ချက်မှတ်တမ်းများ",
@@ -41,6 +43,7 @@
 
   "accounts_receivable": "အကြွေးရရန် စာရင်း",
   "orders": "အော်ဒါများ",
+  "drafts": "ယာယီရွေးချယ်မှု",
 
   "inventory": "လက်ကျန် Stock",
 

@@ -77,5 +77,21 @@
   "order_failed": "ไม่สามารถสร้างคำสั่งซื้อได้",
   "order_reserves_stock": "ระบบจะสร้างคำสั่งซื้อที่รอดำเนินการ สต็อกจะถูกสำรองไว้จนกว่าคำสั่งซื้อจะถูกแปลงเป็นยอดขายหรือยกเลิก",
   "notes_optional": "หมายเหตุ (ไม่บังคับ)",
-  "print_at_counter": "พิมพ์ที่เคาน์เตอร์"
+  "print_at_counter": "พิมพ์ที่เคาน์เตอร์",
+  "save_draft": "บันทึกร่าง",
+  "saving_draft": "กำลังบันทึกร่าง...",
+  "draft_saved": "บันทึกร่างสำเร็จแล้ว",
+  "draft_save_failed": "บันทึกร่างไม่สำเร็จ",
+  "draft_items_unavailable": "รายการร่าง {{count}} รายการไม่มีสต็อกและไม่ได้ถูกเพิ่ม",
+  "draft_deleted": "ลบร่างแล้ว",
+  "draft_delete_failed": "ลบร่างไม่สำเร็จ",
+  "drafts_load_failed": "โหลดร่างไม่สำเร็จ",
+  "drafts_title": "ร่าง",
+  "drafts_subtitle": "ตะกร้าร่างที่บันทึกไว้พร้อมกลับมาใช้งานได้",
+  "draft_created": "เวลาเก็บร่าง",
+  "draft_items": "รายการ",
+  "no_drafts": "ยังไม่มีร่างที่บันทึกไว้",
+  "delete_draft": "ลบร่าง",
+  "draft_details": "รายละเอียดร่าง",
+  "open_draft_in_pos": "เปิดใน POS"
 }

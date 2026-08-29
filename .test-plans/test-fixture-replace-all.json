@@ -1,0 +1,46 @@
+{
+  "exportedAt": "2026-08-29T10:00:00Z",
+  "data": {
+    "products": [
+      {
+        "id": 1,
+        "name": "TEST_REPLACE_ONLY_PRODUCT",
+        "barcode": "TEST-REPLACE-001",
+        "category": 1,
+        "costPrice": 100.00,
+        "retailPrice": 150.00,
+        "wholesalePrice": 130.00,
+        "stock": 10,
+        "isActive": true,
+        "createdAt": "2026-08-29T10:00:00Z",
+        "lastModified": "2026-08-29T10:00:00Z"
+      }
+    ],
+    "categories": [
+      {
+        "id": 1,
+        "name": "TEST_CATEGORY_REPLACE",
+        "description": "Minimal category for replace validation",
+        "displayOrder": 1,
+        "isActive": true,
+        "createdAt": "2026-08-29T10:00:00Z",
+        "lastModified": "2026-08-29T10:00:00Z"
+      }
+    ],
+    "customers": [],
+    "suppliers": [],
+    "sales": [],
+    "saleItems": [],
+    "purchases": [],
+    "purchaseItems": [],
+    "expenses": [],
+    "arPayments": [],
+    "receipts": [],
+    "orders": [],
+    "orderItems": [],
+    "receiptCustomizations": [],
+    "users": [],
+    "auditLogs": [],
+    "cashShifts": []
+  }
+}

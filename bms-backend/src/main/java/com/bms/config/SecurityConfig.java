@@ -56,13 +56,12 @@ public class SecurityConfig {
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        // Explicit origin allowlist only — no wildcard. Wildcard + credentials is
-        // rejected by browsers and broadens the attack surface for no benefit here
-        // (the app is served same-origin in production; only dev Vite + LAN dev
-        // origins need CORS).
-        configuration.setAllowedOrigins(List.of("http://localhost:5173", "http://localhost:3000",
-                "http://192.168.1.7:3000",  // Add this for mobile
-                "http://192.168.1.7:5173"
+        configuration.setAllowedOriginPatterns(List.of(
+                "http://localhost:*",
+                "http://127.0.0.1:*",
+                "http://192.168.*:*",
+                "http://10.*:*",
+                "http://172.16-31.*:*"
         ));
         configuration.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"));
         configuration.setAllowedHeaders(List.of("*"));
@@ -84,8 +83,9 @@ public class SecurityConfig {
                         // 1. Public API endpoints (No authentication required)
                         .requestMatchers("/api/auth/login").permitAll()
                         .requestMatchers("/api/auth/register-first-admin").permitAll()
-                        .requestMatchers("/api/license/**").permitAll()   
+                        .requestMatchers("/api/license/**").permitAll()
                         .requestMatchers("/api/public/**").permitAll()
+                        .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/api/backups/google/callback").permitAll()
                         .requestMatchers("/api/backups/google/success").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()

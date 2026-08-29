@@ -1,4 +1,4 @@
-import { useState,useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -80,7 +80,7 @@ const POS = () => {
 
 
   const [page, setPage] = useState(0);
-  const pageSize = 20;
+  const pageSize = 12;
 
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,6 +146,8 @@ const POS = () => {
     queryKey: ['products-pos', page],
     queryFn: () => productService.getAll(page, pageSize),
     keepPreviousData: true,
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1000,
   });
   const products = productsData?.data?.content || [];
   const totalPages = productsData?.data?.page?.totalPages || 0;
@@ -189,7 +191,9 @@ const POS = () => {
   const { data: customersData } = useQuery({
     queryKey: ['customers-pos', debouncedCustomerSearch],
     queryFn: () => customerService.search(debouncedCustomerSearch),
-    enabled: debouncedCustomerSearch.length >= 2, // Only fetch after 2 characters
+    enabled: debouncedCustomerSearch.length >= 2,
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1000,
   });
   const customers = customersData?.data?.content || [];
 
@@ -200,20 +204,23 @@ const POS = () => {
     queryKey: ['categories-pos'],
     queryFn: () => categoryService.getAll(0, 100),
     enabled: true,
+    staleTime: 60_000,
+    gcTime: 10 * 60 * 1000,
   });
+  const categories = useMemo(() => categoriesData?.data?.content || [], [categoriesData]);
 
-  const categories = categoriesData?.data?.content || [];
+  const normalizedSearch = searchQuery.trim().toLowerCase();
 
-const filteredProducts = products.filter(
-    (p) => {
-      const matchesSearch =
-        p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        p.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredProducts = useMemo(() => {
+    return products.filter((p) => {
+      const matchesSearch = !normalizedSearch ||
+        p.name?.toLowerCase().includes(normalizedSearch) ||
+        p.sku?.toLowerCase().includes(normalizedSearch);
 
       const matchesCategory = !selectedCategory || String(p.categoryId) === String(selectedCategory);
       return matchesSearch && matchesCategory;
-    }
-  );
+    });
+  }, [products, normalizedSearch, selectedCategory]);
 
 
   const addToCart = (product) => {

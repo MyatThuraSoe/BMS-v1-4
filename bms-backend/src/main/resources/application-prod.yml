@@ -1,37 +1,31 @@
 server:
-  port: 17234
-  # [CHANGE 1] Security: Restrict to localhost only.
-  address: 127.0.0.1
+  port: ${APP_PORT:17234}
+  address: ${APP_SERVER_ADDRESS:0.0.0.0}
 
 spring:
   application:
     name: bms-offline
 
   datasource:
-    # [CHANGE 2] Switch to local file-based H2 database (No MySQL required)
-    url: jdbc:h2:file:C:/LumiPOS/bms_db;AUTO_SERVER=TRUE
-    username: sa
-    password:
-    driver-class-name: org.h2.Driver
+    url: ${APP_DB_URL:jdbc:h2:file:C:/LumiPOS/bms_db;AUTO_SERVER=TRUE}
+    username: ${APP_DB_USERNAME:sa}
+    password: ${APP_DB_PASSWORD:}
+    driver-class-name: ${APP_DB_DRIVER:org.h2.Driver}
 
   jpa:
     hibernate:
-      # Note: 'update' works, but 'none' is safer once your schema is finalized
       ddl-auto: update
     show-sql: false
     properties:
       hibernate:
-        # [CHANGE 3] Switch Hibernate dialect to H2
-        dialect: org.hibernate.dialect.H2Dialect
-        format_sql: false # Disable formatting to save CPU
+        dialect: ${APP_HIBERNATE_DIALECT:org.hibernate.dialect.H2Dialect}
+        format_sql: false
 
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 10MB
 
-  # H2 web console is disabled in production (only reachable from a connected
-  # client locally anyway; leaving it on widens the attack surface for no benefit).
   h2:
     console:
       enabled: false
@@ -43,23 +37,20 @@ spring:
       fail-on-empty-beans: false
 
 jwt:
-  # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
-  # value is shipped; override via environment variable if needed.
-  secret: MySecureSecretKeyForJWTTokenGeneration2026!
-  expiration: 86400000
+  secret: ${JWT_SECRET:change-me-in-production}
+  expiration: ${JWT_EXPIRATION:86400000}
 
 logging:
   level:
-    com.bms: INFO # [CHANGE 4] Change to INFO to prevent massive log files on customer PCs
+    com.bms: INFO
     org.springframework.security: WARN
 
 google:
   oauth:
-    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
-    client-secret: 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
-    redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
-    frontend-redirect-base: http://127.0.0.1:17234
+    client-id: ${GOOGLE_CLIENT_ID:217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com}
+    client-secret: ${GOOGLE_CLIENT_SECRET:change-me-in-production}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://127.0.0.1:17234/api/backups/google/callback}
+    frontend-redirect-base: ${GOOGLE_FRONTEND_REDIRECT_BASE:http://127.0.0.1:17234}
 
-# [CHANGE 7] Custom property for saving product images and expense receipts locally
 app:
-  upload-dir: C:/LumiPOS/uploads
+  upload-dir: ${APP_UPLOAD_DIR:C:/LumiPOS/uploads}

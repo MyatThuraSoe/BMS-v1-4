@@ -1,8 +1,6 @@
 server:
-  port: 17234
-  # Bind to loopback only by default. If you truly need LAN access, change this
-  # to the specific LAN IP (or 0.0.0.0) AND use strong credentials / TLS.
-  address: 127.0.0.1
+  port: ${APP_PORT:17234}
+  address: ${APP_SERVER_ADDRESS:0.0.0.0}
 
 spring:
   application:
@@ -13,22 +11,21 @@ spring:
         cachecontrol:
           no-cache: true
   datasource:
-    url: jdbc:mysql://localhost:3306/bms_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
-    username: root
-    password: myat
-    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: ${APP_DB_URL:jdbc:h2:file:C:/LumiPOS/bms_db;AUTO_SERVER=TRUE}
+    username: ${APP_DB_USERNAME:sa}
+    password: ${APP_DB_PASSWORD:}
+    driver-class-name: ${APP_DB_DRIVER:org.h2.Driver}
   jpa:
     hibernate:
-      # Schema is created/updated automatically from entities — no SQL migrations needed
       ddl-auto: update
     show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQLDialect
-        format_sql: true
+        dialect: ${APP_HIBERNATE_DIALECT:org.hibernate.dialect.H2Dialect}
+        format_sql: false
         default_batch_fetch_size: 50
   flyway:
-    enabled: false # Schema is managed by Hibernate ddl-auto=update — no SQL migrations needed
+    enabled: false
   servlet:
     multipart:
       max-file-size: 10MB
@@ -39,21 +36,19 @@ spring:
       fail-on-empty-beans: false
 
 jwt:
-  # Override in production; the JWT signing key actually comes from the per-install
-  # JwtSecretService file, so this is only a fallback for dev.
-  secret: MySecureSecretKeyForJWTTokenGeneration2026!
-  expiration: 86400000
+  secret: ${JWT_SECRET:change-me-in-production}
+  expiration: ${JWT_EXPIRATION:86400000}
 
 logging:
   level:
-    com.bms: DEBUG
-    org.springframework.security: INFO
+    com.bms: INFO
+    org.springframework.security: WARN
 
 google:
   oauth:
-    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
-    client-secret: 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
-    redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
-    frontend-redirect-base: http://127.0.0.1:17234
+    client-id: ${GOOGLE_CLIENT_ID:217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com}
+    client-secret: ${GOOGLE_CLIENT_SECRET:change-me-in-production}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://127.0.0.1:17234/api/backups/google/callback}
+    frontend-redirect-base: ${GOOGLE_FRONTEND_REDIRECT_BASE:http://127.0.0.1:17234}
 
    

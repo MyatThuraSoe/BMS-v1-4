@@ -77,5 +77,21 @@
   "order_failed": "注文の作成に失敗しました",
   "order_reserves_stock": "保留中の注文を作成します。注文が売上に変換されるかキャンセルされるまで在庫が確保されます。",
   "notes_optional": "メモ（任意）",
-  "print_at_counter": "カウンターで印刷"
+  "print_at_counter": "カウンターで印刷",
+  "save_draft": "下書きを保存",
+  "saving_draft": "下書きを保存中...",
+  "draft_saved": "下書きを保存しました。",
+  "draft_save_failed": "下書きの保存に失敗しました。",
+  "draft_items_unavailable": "{{count}} 件の下書き商品は在庫切れのため追加されませんでした。",
+  "draft_deleted": "下書きを削除しました。",
+  "draft_delete_failed": "下書きの削除に失敗しました。",
+  "drafts_load_failed": "下書きの読み込みに失敗しました。",
+  "drafts_title": "下書き",
+  "drafts_subtitle": "保存済みのカートをすぐに戻せます。",
+  "draft_created": "保存時間",
+  "draft_items": "商品数",
+  "no_drafts": "保存された下書きはありません。",
+  "delete_draft": "下書きを削除",
+  "draft_details": "下書きの詳細",
+  "open_draft_in_pos": "POSで開く"
 }

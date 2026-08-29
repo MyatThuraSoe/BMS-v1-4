@@ -77,5 +77,21 @@
   "order_failed": "Échec de la création de la commande",
   "order_reserves_stock": "Ceci crée une commande en attente. Le stock sera réservé jusqu'à la conversion de la commande en vente ou son annulation.",
   "notes_optional": "Notes (facultatif)",
-  "print_at_counter": "Imprimer au comptoir"
+  "print_at_counter": "Imprimer au comptoir",
+  "save_draft": "Enregistrer le brouillon",
+  "saving_draft": "Enregistrement du brouillon...",
+  "draft_saved": "Brouillon enregistré avec succès.",
+  "draft_save_failed": "Échec de l'enregistrement du brouillon.",
+  "draft_items_unavailable": "{{count}} article(s) du brouillon n'est plus disponible et n'a pas été ajouté.",
+  "draft_deleted": "Brouillon supprimé.",
+  "draft_delete_failed": "Échec de la suppression du brouillon.",
+  "drafts_load_failed": "Échec du chargement des brouillons.",
+  "drafts_title": "Brouillons",
+  "drafts_subtitle": "Carts enregistrés prêts à être repris.",
+  "draft_created": "Heure de sauvegarde",
+  "draft_items": "Articles",
+  "no_drafts": "Aucun brouillon enregistré.",
+  "delete_draft": "Supprimer le brouillon",
+  "draft_details": "Détails du brouillon",
+  "open_draft_in_pos": "Ouvrir au PDV"
 }

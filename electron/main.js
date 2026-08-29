@@ -392,25 +392,37 @@ function cleanupZombieProcesses() {
 }
 
 function killServerProcess() {
-    if (!serverPid) {
+    const pid = serverPid || (serverProcess && serverProcess.pid);
+    if (!pid) {
         console.log('[Shutdown] No server PID to kill');
         return;
     }
 
-    console.log(`[Shutdown] Killing Java process (PID: ${serverPid})...`);
+    if (serverProcess && serverProcess.exitCode !== null) {
+        console.log('[Shutdown] Server already exited cleanly');
+        serverProcess = null;
+        serverPid = null;
+        return;
+    }
+
+    console.log(`[Shutdown] Killing Java process (PID: ${pid})...`);
 
     try {
         if (process.platform === 'win32') {
             // ✅ /F = Force kill, /T = Kill entire process tree (including child processes)
             const result = require('child_process').spawnSync(
                 'taskkill',
-                ['/F', '/T', '/PID', String(serverPid)],
+                ['/F', '/T', '/PID', String(pid)],
                 { stdio: 'ignore', windowsHide: true }
             );
             console.log(`[Shutdown] taskkill exit code: ${result.status}`);
-        } else {
-            // macOS/Linux
-            process.kill(serverPid, 'SIGKILL');
+        } else if (serverProcess) {
+            serverProcess.kill('SIGTERM');
+            setTimeout(() => {
+                if (serverProcess && !serverProcess.killed) {
+                    try { serverProcess.kill('SIGKILL'); } catch (e) { /* ignore */ }
+                }
+            }, 1000);
         }
     } catch (err) {
         console.error('[Shutdown] Error killing process:', err.message);
@@ -421,7 +433,10 @@ function killServerProcess() {
 }
 
 function quitApp() {
-    if (isQuitting) return; // ✅ Prevent double-execution
+    if (isQuitting) {
+        console.log('[Shutdown] Quit already in progress, ignoring duplicate request');
+        return;
+    }
     isQuitting = true;
 
     console.log('[Shutdown] Quitting LumiPOS...');
@@ -747,42 +762,37 @@ function waitForServerWithProgress(retries = 30, interval = 1000) {
     });
 }
 
-// Handle app quit
-app.on('before-quit', () => {
-    isQuitting = true;
-});
-
-app.on('will-quit', () => {
-    if (serverProcess) {
-        try {
-            if (process.platform === 'win32') {
-                spawn('taskkill', ['/pid', serverProcess.pid, '/f', '/t'], {
-                    stdio: 'ignore',
-                    windowsHide: true
-                });
-            } else {
-                serverProcess.kill('SIGTERM');
-            }
-        } catch (e) {
-            // Ignore
+function registerShutdownHandlers() {
+    app.on('before-quit', () => {
+        console.log('[Shutdown] before-quit triggered');
+        if (!isQuitting) {
+            isQuitting = true;
         }
-    }
-});
+        killServerProcess();
+    });
 
-// macOS specific (not needed for Windows but good practice)
-app.on('window-all-closed', () => {
-    if (process.platform !== 'darwin') {
-        // Don't quit - keep running in tray
-    }
-});
+    app.on('will-quit', () => {
+        console.log('[Shutdown] will-quit triggered');
+        killServerProcess();
+    });
 
-app.on('activate', () => {
-    if (mainWindow === null) {
-        createWindow();
-    } else {
-        mainWindow.show();
-    }
-});
+    app.on('window-all-closed', () => {
+        console.log('[Shutdown] All windows closed');
+        if (process.platform !== 'darwin') {
+            quitApp();
+        }
+    });
+
+    app.on('activate', () => {
+        if (mainWindow === null) {
+            createWindow();
+        } else {
+            mainWindow.show();
+        }
+    });
+}
+
+registerShutdownHandlers();
 
 
 
@@ -796,34 +806,11 @@ ipcMain.handle('open-external', async (event, url) => {
     return false;
 });
 
-// ✅ Ensure cleanup happens no matter HOW the app exits
-
-// When user clicks the X button
-app.on('window-all-closed', () => {
-    console.log('[Shutdown] All windows closed');
-    quitApp();
-});
-
-// Before the app starts quitting
-app.on('before-quit', () => {
-    console.log('[Shutdown] before-quit triggered');
-    isQuitting = true;
-    killServerProcess();
-});
-
-// Final cleanup before process exits
-app.on('will-quit', () => {
-    console.log('[Shutdown] will-quit triggered');
-    killServerProcess();
-});
-
-// If the app crashes or is force-closed
 process.on('exit', () => {
     console.log('[Shutdown] process.exit triggered');
     killServerProcess();
 });
 
-// Handle unexpected errors
 process.on('uncaughtException', (err) => {
     console.error('[Shutdown] Uncaught exception:', err);
     killServerProcess();

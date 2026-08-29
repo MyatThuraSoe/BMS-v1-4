@@ -15,7 +15,7 @@
 import { useEffect, useState } from 'react';
 import { Box, Typography } from '@mui/material';
 import ShopLogo from './ShopLogo';
-import { formatReceiptCurrency, formatAmountPlain, formatReceiptDateTime } from '../utils/helpers';
+import { formatCurrency, formatAmountPlain, formatReceiptDateTime } from '../utils/helpers';
 
 import QRCode from 'qrcode';
 
@@ -253,7 +253,7 @@ const ReceiptDocument = ({
                   {item.productName}
                 </span>
                 <span style={{ flexShrink: 0, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  {formatReceiptCurrency(itemTotal)}
+                  {formatCurrency(itemTotal)}
                 </span>
               </Box>
               <Box sx={{ pl: '8px', color: '#555' }}>
@@ -274,19 +274,19 @@ const ReceiptDocument = ({
       {Number(subTotal) > 0 && Number(subTotal) !== Number(totalAmount) && (
         <Box sx={rowStyle}>
           <span>Subtotal:</span>
-          <span>{formatReceiptCurrency(subTotal)}</span>
+          <span>{formatCurrency(subTotal)}</span>
         </Box>
       )}
       {showTax !== false && Number(taxAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Tax:</span>
-          <span>{formatReceiptCurrency(taxAmount)}</span>
+          <span>{formatCurrency(taxAmount)}</span>
         </Box>
       )}
       {showDiscount !== false && Number(discountAmount) > 0 && (
         <Box sx={rowStyle}>
           <span>Discount:</span>
-          <span>-{formatReceiptCurrency(discountAmount)}</span>
+          <span>-{formatCurrency(discountAmount)}</span>
         </Box>
       )}
 
@@ -294,16 +294,16 @@ const ReceiptDocument = ({
       <Box sx={{ ...dividerStyle_, py: '4px' }}>
         <Box sx={{ ...rowStyle, fontWeight: 700, fontSize: `calc(${fontSizeVal} + 0.05rem)` }}>
           <span>TOTAL:</span>
-          <span>{formatReceiptCurrency(totalAmount)}</span>
+          <span>{formatCurrency(totalAmount)}</span>
         </Box>
         <Box sx={rowStyle}>
           <span>Paid:</span>
-          <span>{formatReceiptCurrency(amountPaid)}</span>
+          <span>{formatCurrency(amountPaid)}</span>
         </Box>
         {change > 0 && (
           <Box sx={rowStyle}>
             <span>Change:</span>
-            <span>{formatReceiptCurrency(change)}</span>
+            <span>{formatCurrency(change)}</span>
           </Box>
         )}
       </Box>
@@ -314,7 +314,7 @@ const ReceiptDocument = ({
           <Box sx={{ textAlign: 'center', fontWeight: 700, mb: '4px' }}>*** CREDIT SALE ***</Box>
           <Box sx={rowStyle}>
             <span>Balance Due:</span>
-            <span>{formatReceiptCurrency(balanceDue)}</span>
+            <span>{formatCurrency(balanceDue)}</span>
           </Box>
           {dueDateLabel && (
             <Box sx={rowStyle}>
@@ -462,7 +462,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
       <div style="margin-bottom:4px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <span style="flex:1;min-width:0;margin-right:8px;overflow-wrap:anywhere;white-space:normal;">${escHtml(item.productName)}</span>
-          <span style="flex-shrink:0;font-weight:600;white-space:nowrap;">${escHtml(formatReceiptCurrency(itemTotal))}</span>
+          <span style="flex-shrink:0;font-weight:600;white-space:nowrap;">${escHtml(formatCurrency(itemTotal))}</span>
         </div>
         <div style="padding-left:8px;color:#555;">${item.quantity} ${escHtml(item.unit || '')} x ${escHtml(formatAmountPlain(item.unitPrice || 0))}</div>
         ${refundedHtml}
@@ -471,21 +471,21 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
 
   const showSubLine = Number(subTotal) > 0 && Number(subTotal) !== Number(totalAmount);
   let subtotalsHtml = `
-    ${showSubLine ? `<div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${escHtml(formatReceiptCurrency(subTotal))}</span></div>` : ''}
-    ${showTax !== false && Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatReceiptCurrency(taxAmount))}</span></div>` : ''}
-    ${showDiscount !== false && Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatReceiptCurrency(discountAmount))}</span></div>` : ''}`;
+    ${showSubLine ? `<div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><span>${escHtml(formatCurrency(subTotal))}</span></div>` : ''}
+    ${showTax !== false && Number(taxAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Tax:</span><span>${escHtml(formatCurrency(taxAmount))}</span></div>` : ''}
+    ${showDiscount !== false && Number(discountAmount) > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Discount:</span><span>-${escHtml(formatCurrency(discountAmount))}</span></div>` : ''}`;
 
   let totalsHtml = `
     <div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
-      <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatReceiptCurrency(totalAmount))}</span></div>
-      <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatReceiptCurrency(amountPaid))}</span></div>
-      ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatReceiptCurrency(change))}</span></div>` : ''}
+      <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatCurrency(totalAmount))}</span></div>
+      <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatCurrency(amountPaid))}</span></div>
+      ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatCurrency(change))}</span></div>` : ''}
     </div>`;
 
   let creditHtml = showCreditInfo_
     ? `<div style="${divBorder !== 'none' ? `border-top:${divBorder};border-bottom:${divBorder};` : ''}padding:4px 0;margin:6px 0;">
         <div style="text-align:center;font-weight:700;margin-bottom:4px;">*** CREDIT SALE ***</div>
-        <div style="display:flex;justify-content:space-between;"><span>Balance Due:</span><span>${escHtml(formatReceiptCurrency(balanceDue))}</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Balance Due:</span><span>${escHtml(formatCurrency(balanceDue))}</span></div>
         ${dueDateLabel ? `<div style="display:flex;justify-content:space-between;"><span>Due Date:</span><span>${escHtml(dueDateLabel)}</span></div>` : ''}
       </div>`
     : '';

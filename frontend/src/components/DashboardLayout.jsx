@@ -150,11 +150,9 @@ const menuGroups = [
     ],
   },
   {
-    labelKey: 'App Info',
+    labelKey: 'app_info',
     items: [
-
-      { textKey: 'About', icon: <InfoIcon />, path: '/about', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'primary.main' },
-
+      { textKey: 'about', icon: <InfoIcon />, path: '/about', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'primary.main' },
     ],
   },
 
