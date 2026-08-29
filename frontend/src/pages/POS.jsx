@@ -53,9 +53,15 @@ import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, draftService, counterPrintService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService } from '../api/services';
 import directPrint from '../services/directPrintService';
 import useShopConfig from '../hooks/useShopConfig';
+import {
+  readDrafts,
+  writeDrafts,
+  createDraftRecord,
+  DRAFT_TTL_MS,
+} from '../utils/draftStorage';
 
 const POS = () => {
 
@@ -111,12 +117,6 @@ const POS = () => {
 
   const shopInfo = shopInfoData?.data;
 
-  const { data: draftData } = useQuery({
-    queryKey: ['draft-for-pos', draftId],
-    queryFn: () => draftService.getById(draftId),
-    enabled: Boolean(draftId),
-  });
-
   const { data: customizationData } = useQuery({
     queryKey: ['receipt-customization-pos'],
     queryFn: () => receiptCustomizationService.get(),
@@ -151,10 +151,12 @@ const POS = () => {
   const totalPages = productsData?.data?.page?.totalPages || 0;
 
   useEffect(() => {
-    if (!draftId || !draftData?.data || loadedDraftId === draftId) return;
+    if (!draftId || loadedDraftId === draftId) return;
     let cancelled = false;
     const loadDraft = async () => {
-      const draft = draftData.data;
+      const allDrafts = readDrafts();
+      const draft = allDrafts.find((d) => d.id === draftId);
+      if (!draft) return;
       const loadedItems = await Promise.all((draft.items || []).map(async (item) => {
         try {
           const response = await productService.getById(item.productId);
@@ -181,7 +183,7 @@ const POS = () => {
     };
     loadDraft();
     return () => { cancelled = true; };
-  }, [draftData, draftId, loadedDraftId, setSearchParams, t]);
+  }, [draftId, loadedDraftId, setSearchParams, t]);
 
   // Fetch customers
   const { data: customersData } = useQuery({
@@ -481,32 +483,45 @@ const filteredProducts = products.filter(
     },
   });
 
-  const saveDraftMutation = useMutation({
-    mutationFn: ({ id, draft }) => id ? draftService.update(id, draft) : draftService.create(draft),
-    onSuccess: (response) => {
-      if (response?.data?.id) setLoadedDraftId(response.data.id);
-      notifySuccess(t('draft_saved'));
-      queryClient.invalidateQueries({ queryKey: ['drafts'] });
-      clearCart();
-    },
-    onError: (err) => notifyError(err.friendlyMessage || t('draft_save_failed')),
-  });
-
   const handleSaveDraft = () => {
     if (cart.length === 0) {
       setError(t('empty_cart'));
       return;
     }
-    saveDraftMutation.mutate({
-      id: loadedDraftId,
-      draft: {
-        items: cart.map((item) => ({
-          productId: item.productId,
-          quantity: parseInt(item.quantity, 10) || 1,
-        })),
-        customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
-      },
-    });
+
+    const allDrafts = readDrafts();
+    const draftItems = cart.map((item) => ({
+      productId: item.productId,
+      quantity: parseInt(item.quantity, 10) || 1,
+      productName: item.name || item.productName || '',
+      unitPrice: Number(item.price ?? item.unitPrice ?? 0),
+    }));
+
+    if (loadedDraftId) {
+      const idx = allDrafts.findIndex((d) => d.id === loadedDraftId);
+      if (idx >= 0) {
+        allDrafts[idx] = {
+          ...allDrafts[idx],
+          items: draftItems,
+          customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
+          expiresAt: Date.now() + DRAFT_TTL_MS,
+        };
+      }
+    } else {
+      const newDraftId = 'draft_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+      allDrafts.push(
+        createDraftRecord({
+          id: newDraftId,
+          items: draftItems,
+          customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
+        }),
+      );
+      setLoadedDraftId(newDraftId);
+    }
+
+    writeDrafts(allDrafts);
+    notifySuccess(t('draft_saved'));
+    clearCart();
   };
 
   const handleOrderClick = () => {
@@ -1245,10 +1260,10 @@ const filteredProducts = products.filter(
                 variant="outlined"
                 startIcon={<CartIcon />}
                 onClick={handleSaveDraft}
-                disabled={cart.length === 0 || saveDraftMutation.isPending}
+                disabled={cart.length === 0}
                 sx={{ mt: 1 }}
               >
-                {saveDraftMutation.isPending ? t('saving_draft') : t('save_draft')}
+                {t('save_draft')}
               </Button>
             </Box>
             </Box>

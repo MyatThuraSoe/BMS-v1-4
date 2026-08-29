@@ -1,39 +1,51 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent,
-  DialogTitle, IconButton, Paper, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography,
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  IconButton,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
 } from '@mui/material';
 import { Delete as DeleteIcon, ShoppingCart as CartIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
-import { draftService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
-import { notifyError, notifySuccess } from '../utils/notify';
+import { notifySuccess } from '../utils/notify';
+import { readDrafts, writeDrafts } from '../utils/draftStorage';
 
 const Drafts = () => {
   const { t } = useTranslation('pos');
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const [drafts, setDrafts] = useState([]);
   const [selectedDraft, setSelectedDraft] = useState(null);
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ['drafts'],
-    queryFn: () => draftService.getAll(),
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id) => draftService.delete(id),
-    onSuccess: () => {
-      notifySuccess(t('draft_deleted'));
-      setSelectedDraft(null);
-      queryClient.invalidateQueries({ queryKey: ['drafts'] });
-    },
-    onError: (err) => notifyError(err.friendlyMessage || t('draft_delete_failed')),
-  });
-  const drafts = data?.data || [];
 
-  if (isLoading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
-  if (isError) return <Alert severity="error">{t('drafts_load_failed')}</Alert>;
+  useEffect(() => {
+    setDrafts(readDrafts());
+  }, []);
+
+  const deleteDraft = (id) => {
+    setDrafts((prevDrafts) => {
+      const updated = prevDrafts.filter((d) => d.id !== id);
+      writeDrafts(updated);
+      return updated;
+    });
+
+    if (selectedDraft?.id === id) {
+      setSelectedDraft(null);
+    }
+
+    notifySuccess(t('draft_deleted'));
+  };
 
   return (
     <Box>
@@ -41,20 +53,24 @@ const Drafts = () => {
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{t('drafts_subtitle')}</Typography>
       <TableContainer component={Paper}>
         <Table>
-          <TableHead><TableRow>
-            <TableCell>{t('draft_created')}</TableCell>
-            <TableCell>{t('draft_items')}</TableCell>
-            <TableCell align="right">{t('action')}</TableCell>
-          </TableRow></TableHead>
+          <TableHead>
+            <TableRow>
+              <TableCell>{t('draft_created')}</TableCell>
+              <TableCell>{t('draft_items')}</TableCell>
+              <TableCell align="right">{t('action')}</TableCell>
+            </TableRow>
+          </TableHead>
           <TableBody>
             {drafts.length === 0 ? (
-              <TableRow><TableCell colSpan={3} align="center">{t('no_drafts')}</TableCell></TableRow>
+              <TableRow>
+                <TableCell colSpan={3} align="center">{t('no_drafts')}</TableCell>
+              </TableRow>
             ) : drafts.map((draft) => (
               <TableRow key={draft.id} hover onClick={() => setSelectedDraft(draft)} sx={{ cursor: 'pointer' }}>
                 <TableCell>{formatDateTime(draft.createdAt)}</TableCell>
                 <TableCell>{draft.items?.length || 0}</TableCell>
                 <TableCell align="right" onClick={(event) => event.stopPropagation()}>
-                  <IconButton color="error" aria-label={t('delete_draft')} onClick={() => deleteMutation.mutate(draft.id)} disabled={deleteMutation.isPending}>
+                  <IconButton color="error" aria-label={t('delete_draft')} onClick={() => deleteDraft(draft.id)}>
                     <DeleteIcon />
                   </IconButton>
                 </TableCell>
@@ -69,24 +85,32 @@ const Drafts = () => {
         <DialogContent dividers>
           {selectedDraft && (
             <Table size="small">
-              <TableHead><TableRow>
-                <TableCell>{t('product')}</TableCell>
-                <TableCell align="right">{t('quantity')}</TableCell>
-                <TableCell align="right">{t('price')}</TableCell>
-              </TableRow></TableHead>
-              <TableBody>{(selectedDraft.items || []).map((item) => (
-                <TableRow key={item.productId}>
-                  <TableCell>{item.productName}</TableCell>
-                  <TableCell align="right">{item.quantity}</TableCell>
-                  <TableCell align="right">{formatCurrency(item.unitPrice)}</TableCell>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('product')}</TableCell>
+                  <TableCell align="right">{t('quantity')}</TableCell>
+                  <TableCell align="right">{t('price')}</TableCell>
                 </TableRow>
-              ))}</TableBody>
+              </TableHead>
+              <TableBody>
+                {(selectedDraft.items || []).map((item) => (
+                  <TableRow key={item.productId ?? `${item.productName}-${item.quantity}`}>
+                    <TableCell>{item.productName || item.name || t('product')}</TableCell>
+                    <TableCell align="right">{item.quantity}</TableCell>
+                    <TableCell align="right">{formatCurrency(Number(item.unitPrice ?? 0))}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
             </Table>
           )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setSelectedDraft(null)}>{t('close')}</Button>
-          <Button variant="contained" startIcon={<CartIcon />} onClick={() => navigate(`/pos?draftId=${selectedDraft.id}`)}>
+          <Button
+            variant="contained"
+            startIcon={<CartIcon />}
+            onClick={() => selectedDraft && navigate(`/pos?draftId=${selectedDraft.id}`)}
+          >
             {t('open_draft_in_pos')}
           </Button>
         </DialogActions>
