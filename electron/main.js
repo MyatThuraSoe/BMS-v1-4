@@ -13,6 +13,36 @@ let isQuitting = false;
 let serverPid = null;
 let activePrintWindow = null;
 
+// Load secrets from a gitignored .env file (real credentials live here, not in
+// source or the JAR). Values are exported into process.env so the spawned Java
+// server inherits them and Spring's ${...} placeholders resolve at runtime.
+function loadDotEnv() {
+    const candidates = [
+        path.join(__dirname, '..', '.env'),                // dev: project root
+        path.join(process.resourcesPath || '', '.env'),    // packaged: resources/
+        path.join(path.dirname(process.execPath), '.env')  // packaged: exe directory
+    ];
+    for (const envPath of candidates) {
+        if (!envPath || !fs.existsSync(envPath)) continue;
+        try {
+            const raw = fs.readFileSync(envPath, 'utf8');
+            for (const line of raw.split(/\r?\n/)) {
+                const match = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
+                if (match && !(match[1] in process.env)) {
+                    process.env[match[1]] = match[2];
+                }
+            }
+            console.log(`[Electron] Loaded .env from ${envPath}`);
+            return;
+        } catch (err) {
+            console.log(`[Electron] Could not load ${envPath}: ${err.message}`);
+        }
+    }
+    console.log('[Electron] No .env file found - using system/registry environment variables.');
+}
+
+loadDotEnv();
+
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 

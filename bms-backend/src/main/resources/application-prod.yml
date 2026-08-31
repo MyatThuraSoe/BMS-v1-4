@@ -47,7 +47,7 @@ logging:
 
 google:
   oauth:
-    client-id: ${GOOGLE_CLIENT_ID:217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com}
+    client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:change-me-in-production}
     redirect-uri: ${GOOGLE_REDIRECT_URI:http://127.0.0.1:17234/api/backups/google/callback}
     frontend-redirect-base: ${GOOGLE_FRONTEND_REDIRECT_BASE:http://127.0.0.1:17234}

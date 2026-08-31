@@ -7,9 +7,13 @@
 #
 # One-time DB setup (run as MySQL root):
 #   CREATE DATABASE lumipos CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-#   CREATE USER 'lumi'@'localhost' IDENTIFIED BY 'LumiPOS26';
+#   CREATE USER 'lumi'@'localhost' IDENTIFIED BY '<your-strong-password>';
 #   GRANT ALL PRIVILEGES ON lumipos.* TO 'lumi'@'localhost';
 #   FLUSH PRIVILEGES;
+#
+# Credentials come from .env / environment variables, never from this file.
+#   MYSQL_USERNAME  (default: lumi)
+#   MYSQL_PASSWORD  (required)
 #
 # Schema tables/columns are created automatically on first start
 # (Hibernate ddl-auto=update) — no SQL import needed.
@@ -30,7 +34,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/lumipos?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&useUnicode=true&characterEncoding=UTF-8
     username: ${MYSQL_USERNAME:lumi}
-    password: ${MYSQL_PASSWORD:LumiPOS26}
+    password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -55,7 +59,7 @@ spring:
 jwt:
   # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
   # value is shipped; leave this as an env override only.
-  secret: MySecureSecretKeyForJWTTokenGeneration2026!
+  secret: ${JWT_SECRET:}
   expiration: 86400000
 
 logging:
@@ -65,8 +69,8 @@ logging:
 
 google:
   oauth:
-    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
-    client-secret: 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
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
     # Loopback ONLY — Google returns the consent result to THIS computer,
     # regardless of which device started the sign-in (phones get guided).
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback

@@ -43,7 +43,7 @@ spring:
 jwt:
   # Unused for signing (JwtSecretService uses C:/LumiPOS/jwt.secret). No hardcoded
   # value is shipped; leave this as an env override only.
-  secret: MySecureSecretKeyForJWTTokenGeneration2026!
+  secret: ${JWT_SECRET:}
   expiration: 86400000
 
 logging:
@@ -53,8 +53,8 @@ logging:
 
 google:
   oauth:
-    client-id: 217619565297-0igvbc0s4latr2ma2mb5kcpe9bvu3b6u.apps.googleusercontent.com
-    client-secret: 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
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: http://127.0.0.1:17234/api/backups/google/callback
     frontend-redirect-base: http://127.0.0.1:17234
 
