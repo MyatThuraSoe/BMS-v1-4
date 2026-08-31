@@ -7,6 +7,7 @@ import { reportService, saleService, inventoryService } from '../api/services';
 import { ShoppingCart, Inventory, TrendingUp, Add as AddIcon, TrendingDown as TrendingDownIcon } from '@mui/icons-material';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '../context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 import SetupChecklist from '../components/SetupChecklist';
@@ -42,6 +43,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const { t } = useTranslation('dashboard');
+  const { isAdmin } = useAuth();
   const today = new Date().toISOString().split('T')[0];
 
   const [period, setPeriod] = useState('today');
@@ -58,7 +60,7 @@ const Dashboard = () => {
   const { data: financialSummaryData } = useQuery({
     queryKey: ['financialSummary', dateRange.startDate, dateRange.endDate],
     queryFn: () => reportService.getFinancialSummary(dateRange.startDate, dateRange.endDate),
-    enabled: true,
+    enabled: isAdmin(),
   });
   const financialSummary = financialSummaryData?.data;
 
@@ -122,21 +124,23 @@ const Dashboard = () => {
       <SetupChecklist />
 
       <Grid container spacing={3}>
-        <Grid item xs={12}>
-          <Paper sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-              <Typography variant="h6">{t('financial_summary')}</Typography>
-              <PeriodToggle period={period} onChange={handlePeriodChange} />
-            </Box>
-            <FinancialSummaryCards
-              summary={financialSummary}
-              onCardClick={(key) => {
-                if (key === 'revenue') navigate(`/sales?range=${period}`);
-                else navigate(`/accounting?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
-              }}
-            />
-          </Paper>
-        </Grid>
+        {isAdmin() && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                <Typography variant="h6">{t('financial_summary')}</Typography>
+                <PeriodToggle period={period} onChange={handlePeriodChange} />
+              </Box>
+              <FinancialSummaryCards
+                summary={financialSummary}
+                onCardClick={(key) => {
+                  if (key === 'revenue') navigate(`/sales?range=${period}`);
+                  else navigate(`/accounting?startDate=${dateRange.startDate}&endDate=${dateRange.endDate}`);
+                }}
+              />
+            </Paper>
+          </Grid>
+        )}
 
         <Grid item xs={12} sm={6} md={3}>
           <StatCard

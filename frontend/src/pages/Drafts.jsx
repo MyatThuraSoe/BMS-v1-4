@@ -49,7 +49,6 @@ const Drafts = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{t('drafts_title')}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>{t('drafts_subtitle')}</Typography>
       <TableContainer component={Paper}>
         <Table>

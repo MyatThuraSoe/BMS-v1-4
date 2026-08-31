@@ -15,9 +15,14 @@ const NotFound = () => {
       <Typography variant="body2" color="text.secondary">
         {t('page_not_found_desc')}
       </Typography>
-      <Button variant="contained" onClick={() => navigate(defaultRoute)}>
-        {t('back_to_home')}
-      </Button>
+      <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+        <Button variant="contained" onClick={() => navigate(defaultRoute)}>
+          {t('back_to_home')}
+        </Button>
+        <Button variant="outlined" onClick={() => navigate(-1)}>
+          {t('go_back')}
+        </Button>
+      </Box>
     </Box>
   );
 };

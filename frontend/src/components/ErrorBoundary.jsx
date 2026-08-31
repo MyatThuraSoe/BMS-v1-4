@@ -25,6 +25,10 @@ class ErrorBoundary extends React.Component {
     window.location.reload();
   };
 
+  handleGoBack = () => {
+    window.history.back();
+  };
+
   render() {
     if (this.state.hasError) {
       return (
@@ -45,9 +49,14 @@ class ErrorBoundary extends React.Component {
               An unexpected error occurred. Your data is safe.
               Reload the app to continue.
             </Typography>
-            <Button variant="contained" onClick={this.handleReload}>
-              Reload LumiPOS
-            </Button>
+            <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <Button variant="contained" onClick={this.handleReload}>
+                Reload LumiPOS
+              </Button>
+              <Button variant="outlined" onClick={this.handleGoBack}>
+                Go Back
+              </Button>
+            </Box>
           </Paper>
         </Box>
       );
