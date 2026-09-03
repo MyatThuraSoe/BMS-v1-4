@@ -80,6 +80,11 @@ export const productService = {
     return response.data;
   },
 
+  getUnifiedPriceHistory: async (productId) => {
+    const response = await apiClient.get(`/products/${productId}/unified-price-history`);
+    return response.data;
+  },
+
   getTopCustomers: async (productId, limit = 10) => {
     const response = await apiClient.get(`/products/${productId}/top-customers?limit=${limit}`);
     return response.data;

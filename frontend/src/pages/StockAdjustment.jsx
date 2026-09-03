@@ -5,6 +5,7 @@ import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, Circu
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, inventoryService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
+import { preventNumberScroll } from '../utils/helpers';
 
 const ProductSearchField = ({ value, onSelect }) => {
   const [inputValue, setInputValue] = useState('');
@@ -131,6 +132,7 @@ const StockAdjustment = () => {
                   }
                 }} 
                 inputProps={{ min: formData.adjustmentType === 'REMOVE' ? '' : 1 }} 
+                onWheel={preventNumberScroll} 
                 required 
               />
             </Grid>

@@ -80,6 +80,13 @@ public class ProductController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Cost history retrieved successfully", history));
     }
 
+    @GetMapping("/{id}/unified-price-history")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<com.bms.dto.response.UnifiedPriceHistoryDto>>> getUnifiedPriceHistory(@PathVariable Long id) {
+        List<com.bms.dto.response.UnifiedPriceHistoryDto> history = productService.getUnifiedPriceHistory(id);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Unified price history retrieved successfully", history));
+    }
+
     @GetMapping("/sku/{sku}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<ProductResponse>> getProductBySku(@PathVariable String sku) {

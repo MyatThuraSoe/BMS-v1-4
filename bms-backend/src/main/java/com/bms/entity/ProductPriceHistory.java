@@ -11,6 +11,11 @@ import java.time.LocalDateTime;
 })
 public class ProductPriceHistory {
 
+    public enum PriceType {
+        SELLING,
+        COST
+    }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -29,8 +34,25 @@ public class ProductPriceHistory {
     @JoinColumn(name = "changed_by", nullable = true)
     private User changedBy;
 
+    @Column(name = "purchase_supplier_name", length = 255, nullable = true)
+    private String purchaseSupplierName;
+
+    @Column(name = "purchase_quantity", nullable = true)
+    private Integer purchaseQuantity;
+
+    @Column(name = "purchase_unit_price", precision = 10, scale = 2, nullable = true)
+    private BigDecimal purchaseUnitPrice;
+
     @Column(name = "changed_at", nullable = false, updatable = false)
     private LocalDateTime changedAt;
+
+    /**
+     * Distinguishes whether this record is a selling price change or a cost price change.
+     * Nullable for backward compatibility — existing rows without this column are treated as SELLING.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "price_type", length = 20, nullable = true)
+    private PriceType priceType;
 
     @PrePersist
     protected void onCreate() {
@@ -55,6 +77,18 @@ public class ProductPriceHistory {
     public User getChangedBy() { return changedBy; }
     public void setChangedBy(User changedBy) { this.changedBy = changedBy; }
 
+    public String getPurchaseSupplierName() { return purchaseSupplierName; }
+    public void setPurchaseSupplierName(String purchaseSupplierName) { this.purchaseSupplierName = purchaseSupplierName; }
+
+    public Integer getPurchaseQuantity() { return purchaseQuantity; }
+    public void setPurchaseQuantity(Integer purchaseQuantity) { this.purchaseQuantity = purchaseQuantity; }
+
+    public BigDecimal getPurchaseUnitPrice() { return purchaseUnitPrice; }
+    public void setPurchaseUnitPrice(BigDecimal purchaseUnitPrice) { this.purchaseUnitPrice = purchaseUnitPrice; }
+
     public LocalDateTime getChangedAt() { return changedAt; }
     public void setChangedAt(LocalDateTime changedAt) { this.changedAt = changedAt; }
+
+    public PriceType getPriceType() { return priceType; }
+    public void setPriceType(PriceType priceType) { this.priceType = priceType; }
 }

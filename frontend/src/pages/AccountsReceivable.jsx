@@ -14,6 +14,7 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { arService, receiptService, saleService, shopInfoService, receiptCustomizationService } from '../api/services';
 import { formatCurrency, formatDateTime, formatDate } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 import { notifyError } from '../utils/notify';
 import { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
@@ -271,6 +272,7 @@ const AccountsReceivable = () => {
                 type="number"
                 value={payAmount}
                 onChange={(e) => setPayAmount(e.target.value)}
+                onWheel={preventNumberScroll}
                 sx={{ mt: 2 }}
                 autoFocus
               />

@@ -155,7 +155,7 @@ public class ProductService {
             throw new ResourceNotFoundException("Product not found: " + id);
         }
 
-        String oldValues = product.toString();
+        String oldValues = product.toString() + ", costPrice:" + product.getCostPrice();
 
         validateNonNegativeValues(request);
 
@@ -173,6 +173,21 @@ if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.ex
             User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
             priceHistory.setChangedBy(changedBy);
             priceHistoryRepository.save(priceHistory);
+        }
+
+        BigDecimal oldCost = product.getCostPrice();
+        BigDecimal newCost = request.getCostPrice();
+        if ((oldCost == null && newCost != null)
+                || (oldCost != null && newCost == null)
+                || (oldCost != null && newCost != null && oldCost.compareTo(newCost) != 0)) {
+            ProductPriceHistory costHistory = new ProductPriceHistory();
+            costHistory.setProduct(product);
+            costHistory.setOldPrice(oldCost != null ? oldCost : BigDecimal.ZERO);
+            costHistory.setNewPrice(newCost != null ? newCost : BigDecimal.ZERO);
+            User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
+            costHistory.setChangedBy(changedBy);
+            costHistory.setPriceType(ProductPriceHistory.PriceType.COST);
+            priceHistoryRepository.save(costHistory);
         }
 
         product.setSku(request.getSku());
@@ -193,9 +208,10 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         }
 
         Product updatedProduct = productRepository.save(product);
+        String newValues = updatedProduct.toString() + ", costPrice:" + updatedProduct.getCostPrice();
         auditLogService.logAction(userId, "PRODUCT_UPDATE",
                 "Product updated: " + updatedProduct.getName(),
-                "Product", updatedProduct.getId(), oldValues, updatedProduct.toString());
+            "Product", updatedProduct.getId(), oldValues, newValues);
 
         return updatedProduct;
     }
@@ -412,6 +428,35 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
 
         return dtos;
     }
+
+    public List<UnifiedPriceHistoryDto> getUnifiedPriceHistory(Long productId) {
+        productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        List<UnifiedPriceHistoryDto> unifiedHistory = new ArrayList<>();
+
+        List<ProductPriceHistory> priceChanges =
+            priceHistoryRepository.findByProductIdOrderByChangedAtDesc(productId);
+        for (ProductPriceHistory record : priceChanges) {
+            boolean isCostChange = record.getPriceType() == ProductPriceHistory.PriceType.COST;
+
+            unifiedHistory.add(new UnifiedPriceHistoryDto(
+                record.getChangedAt(),
+                isCostChange ? UnifiedPriceHistoryDto.ChangeType.COST
+                    : UnifiedPriceHistoryDto.ChangeType.SELLING,
+                record.getOldPrice(),
+                record.getNewPrice(),
+                record.getChangedBy() != null ? record.getChangedBy().getUsername() : "unknown",
+                    record.getPurchaseSupplierName(),
+                    record.getPurchaseQuantity(),
+                    record.getPurchaseUnitPrice()
+            ));
+        }
+
+        unifiedHistory.sort((first, second) -> second.getChangedAt().compareTo(first.getChangedAt()));
+        return unifiedHistory;
+    }
+
 
     private ProductResponse convertToResponse(Product product) {
         ProductResponse response = new ProductResponse();

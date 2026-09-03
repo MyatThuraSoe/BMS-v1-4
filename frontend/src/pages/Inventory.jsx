@@ -29,6 +29,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { inventoryService, productService, categoryService } from '../api/services';
 import { formatCurrency, formatDateTime, downloadCsv } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
@@ -873,6 +874,7 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
                 label={t('quantity')}
                 value={quantityChange}
                 onChange={(e) => handleQty(e.target.value)}
+                onWheel={preventNumberScroll}
                 required
               />
             </Grid>

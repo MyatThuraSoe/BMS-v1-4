@@ -64,6 +64,8 @@
   "discount": "Discount",
   "print_failed": "Print failed",
   "printing": "Printing",
+  "print_button_1": "Print",
+  "print_button_2": "Print at Main Counter",
   "sale_type_cash": "Cash",
   "sale_type_credit": "Credit",
   "available_credit": "Available Credit",

@@ -7,6 +7,7 @@ import com.bms.dto.response.PurchaseResponse;
 import com.bms.dto.response.SupplierStatsResponse;
 import com.bms.dto.response.SupplierTopProductResponse;
 import com.bms.entity.Product;
+import com.bms.entity.ProductPriceHistory;
 import com.bms.entity.Purchase;
 import com.bms.entity.PurchaseItem;
 import com.bms.entity.StockMovement;
@@ -16,6 +17,7 @@ import com.bms.exception.BusinessException;
 import com.bms.service.CostCalculationUtils;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.PurchaseItemRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.StockMovementRepository;
@@ -49,6 +51,9 @@ public class PurchaseService {
 
     @Autowired
     private ProductRepository productRepository;
+
+    @Autowired
+    private ProductPriceHistoryRepository priceHistoryRepository;
 
     @Autowired
     private StockMovementRepository stockMovementRepository;
@@ -124,9 +129,26 @@ public class PurchaseService {
             subtotal = subtotal.add(item.getTotalCost());
         }
 
+        BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Discount amount cannot be negative");
+        }
+        taxAmount = request.getTaxAmount() != null ? request.getTaxAmount() : BigDecimal.ZERO;
+        if (taxAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Tax amount cannot be negative");
+        }
+
+        BigDecimal discountedSubtotal = subtotal.subtract(discountAmount);
+        BigDecimal totalAmount = discountedSubtotal.add(taxAmount);
+        if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Total cannot be negative; discount exceeds subtotal");
+        }
+
         purchase.setSubtotal(subtotal);
         purchase.setTaxAmount(taxAmount);
-        purchase.setTotalAmount(subtotal.add(taxAmount));
+        purchase.setDiscountAmount(discountAmount);
+        purchase.setTotalAmount(totalAmount);
+        purchase.setPaymentStatus(resolvePaymentStatus(request.getPaymentStatus()));
 
         Purchase savedPurchase = purchaseRepository.save(purchase);
 
@@ -199,6 +221,20 @@ public class PurchaseService {
             product.setStockQuantity(newStock);
             productRepository.save(product);
 
+            if (oldCostPrice.compareTo(newWeightedCost) != 0) {
+                ProductPriceHistory costHistory = new ProductPriceHistory();
+                costHistory.setProduct(product);
+                costHistory.setOldPrice(oldCostPrice);
+                costHistory.setNewPrice(newWeightedCost);
+                costHistory.setPriceType(ProductPriceHistory.PriceType.COST);
+                costHistory.setChangedBy(userRepository.findById(userId).orElse(null));
+                costHistory.setPurchaseSupplierName(purchase.getSupplier() != null
+                    ? purchase.getSupplier().getName() : null);
+                costHistory.setPurchaseQuantity(item.getQuantity());
+                costHistory.setPurchaseUnitPrice(item.getUnitCost());
+                priceHistoryRepository.save(costHistory);
+            }
+
             // Create stock movement record
             StockMovement movement = new StockMovement();
             movement.setProduct(product);
@@ -216,6 +252,17 @@ public class PurchaseService {
 
     private String generatePurchaseNumber() {
         return sequenceService.nextPurchaseNumber();
+    }
+
+    private com.bms.entity.Purchase.PaymentStatus resolvePaymentStatus(String paymentStatus) {
+        if (paymentStatus == null || paymentStatus.isBlank()) {
+            return com.bms.entity.Purchase.PaymentStatus.PENDING;
+        }
+        try {
+            return com.bms.entity.Purchase.PaymentStatus.valueOf(paymentStatus.toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("Invalid payment status. Allowed values: PENDING, PARTIAL, PAID");
+        }
     }
 
     public PurchaseResponse updatePaymentStatus(
@@ -383,8 +430,24 @@ public class PurchaseService {
         }
 
         purchase.setSubtotal(subtotal);
+        BigDecimal discountAmount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+        if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Discount amount cannot be negative");
+        }
+        taxAmount = request.getTaxAmount() != null ? request.getTaxAmount() : BigDecimal.ZERO;
+        if (taxAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Tax amount cannot be negative");
+        }
+        BigDecimal discountedSubtotal = subtotal.subtract(discountAmount);
+        BigDecimal totalAmount = discountedSubtotal.add(taxAmount);
+        if (totalAmount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Total cannot be negative; discount exceeds subtotal");
+        }
+        purchase.setSubtotal(subtotal);
         purchase.setTaxAmount(taxAmount);
-        purchase.setTotalAmount(subtotal.add(taxAmount));
+        purchase.setDiscountAmount(discountAmount);
+        purchase.setTotalAmount(totalAmount);
+        purchase.setPaymentStatus(resolvePaymentStatus(request.getPaymentStatus()));
 
         Purchase savedPurchase = purchaseRepository.save(purchase);
 

@@ -64,6 +64,8 @@
   "discount": "ส่วนลด",
   "print_failed": "พิมพ์ไม่สำเร็จ",
   "printing": "กำลังพิมพ์",
+  "print_button_1": "พิมพ์",
+  "print_button_2": "พิมพ์ที่เคาน์เตอร์หลัก",
   "sale_type_cash": "เงินสด",
   "sale_type_credit": "เครดิต",
   "available_credit": "วงเงินเครดิตคงเหลือ",

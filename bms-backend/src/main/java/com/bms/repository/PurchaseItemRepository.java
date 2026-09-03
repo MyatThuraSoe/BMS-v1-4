@@ -26,14 +26,16 @@ public interface PurchaseItemRepository extends JpaRepository<PurchaseItem, Long
     List<Object[]> findProductSupplierHistory(@Param("productId") Long productId);
 
     @Query("SELECT pi.purchase.purchaseDate as purchaseDate, " +
-           "pi.purchase.supplier.name as supplierName, " +
-           "pi.purchase.supplier.id as supplierId, " +
+           "supplier.name as supplierName, " +
+           "supplier.id as supplierId, " +
            "pi.quantity as quantity, " +
-           "pi.unitCost as unitCost " +
+           "pi.unitCost as unitCost, " +
+           "pi.purchase.createdAt as purchaseCreatedAt " +
            "FROM PurchaseItem pi " +
+           "LEFT JOIN pi.purchase.supplier supplier " +
            "WHERE pi.product.id = :productId " +
            "AND pi.purchase.isActive = true " +
            "AND pi.purchase.deletedAt IS NULL " +
-           "ORDER BY pi.purchase.purchaseDate DESC")
+           "ORDER BY pi.purchase.createdAt DESC")
     List<Object[]> findProductCostHistory(@Param("productId") Long productId);
 }

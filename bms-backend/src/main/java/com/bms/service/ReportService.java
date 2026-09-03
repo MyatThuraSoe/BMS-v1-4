@@ -9,6 +9,7 @@ import com.bms.dto.response.DeadStockDto;
 import com.bms.dto.response.SalesTimingDto;
 import com.bms.dto.response.SupplierProfitDto;
 import com.bms.entity.Expense;
+import com.bms.entity.Product;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleReturn;
 import com.bms.repository.ExpenseRepository;
@@ -74,30 +75,81 @@ public class ReportService {
         Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
         Page<Sale> salesPage = saleRepository.findByDateRange(startOfDay, endOfDay, pageable);
         List<Sale> sales = salesPage.getContent();
-        
+
         BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO;
         int totalTransactions = 0;
+        long totalItemsSold = 0;
+        Map<Long, BigDecimal> productRevenue = new HashMap<>();
         Map<Long, Integer> productQuantities = new HashMap<>();
+        Map<Long, BigDecimal> productTax = new HashMap<>();
+        Map<Long, BigDecimal> productCost = new HashMap<>();
+        Map<Long, Product> productCache = new HashMap<>();
 
         for (Sale sale : sales) {
-            if (!sale.getIsVoided()) {
-                totalRevenue = totalRevenue.add(calculateNetSaleRevenue(sale));
-                totalTransactions++;
-                
-                for (var item : sale.getItems()) {
-                    int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                    if (quantitySold > 0) {
-                        productQuantities.merge(item.getProduct().getId(), quantitySold, Integer::sum);
-                    }
+            if (sale.getIsVoided()) {
+                continue;
+            }
+            totalRevenue = totalRevenue.add(calculateNetSaleRevenue(sale));
+            totalTransactions++;
+
+            for (var item : sale.getItems()) {
+                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
+                if (quantitySold <= 0) {
+                    continue;
                 }
+                Product product = item.getProduct();
+                productCache.putIfAbsent(product.getId(), product);
+                productQuantities.merge(product.getId(), quantitySold, Integer::sum);
+                BigDecimal revenue = item.getUnitPrice() != null
+                        ? item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold))
+                        : BigDecimal.ZERO;
+                productRevenue.merge(product.getId(), revenue, BigDecimal::add);
+                BigDecimal tax = item.getTaxAmount() != null ? item.getTaxAmount() : BigDecimal.ZERO;
+                productTax.merge(product.getId(), tax, BigDecimal::add);
+                if (item.getCostPriceAtSale() != null) {
+                    BigDecimal cost = item.getCostPriceAtSale().multiply(BigDecimal.valueOf(quantitySold));
+                    productCost.merge(product.getId(), cost, BigDecimal::add);
+                    totalCost = totalCost.add(cost);
+                }
+                totalItemsSold += quantitySold;
             }
         }
+
+        List<Map<String, Object>> itemSales = new ArrayList<>();
+        for (Map.Entry<Long, Integer> entry : productQuantities.entrySet()) {
+            Long productId = entry.getKey();
+            int quantitySold = entry.getValue();
+            BigDecimal revenue = productRevenue.getOrDefault(productId, BigDecimal.ZERO);
+            BigDecimal cost = productCost.getOrDefault(productId, BigDecimal.ZERO);
+            BigDecimal unitPrice = quantitySold > 0
+                    ? revenue.divide(BigDecimal.valueOf(quantitySold), 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            Product product = productCache.get(productId);
+            Map<String, Object> row = new HashMap<>();
+            row.put("productId", productId);
+            row.put("productName", product != null ? product.getName() : "");
+            row.put("sku", product != null ? product.getSku() : "");
+            row.put("quantitySold", quantitySold);
+            row.put("unitPrice", unitPrice);
+            row.put("taxAmount", productTax.getOrDefault(productId, BigDecimal.ZERO));
+            row.put("totalPrice", revenue);
+            row.put("costAmount", cost);
+            row.put("profit", revenue.subtract(cost));
+            itemSales.add(row);
+        }
+        itemSales.sort(Comparator.comparing((Map<String, Object> r) ->
+                ((Number) r.get("totalPrice")).longValue()).reversed());
 
         Map<String, Object> report = new HashMap<>();
         report.put("date", date);
         report.put("totalRevenue", totalRevenue);
+        report.put("totalCost", totalCost);
+        report.put("totalProfit", totalRevenue.subtract(totalCost));
+        report.put("totalItemsSold", totalItemsSold);
         report.put("totalTransactions", totalTransactions);
         report.put("averageTransactionValue", totalTransactions > 0 ? totalRevenue.divide(BigDecimal.valueOf(totalTransactions), 2, java.math.RoundingMode.HALF_UP) : BigDecimal.ZERO);
+        report.put("itemSales", itemSales);
 
         return report;
     }

@@ -89,6 +89,13 @@ export const formatReceiptDateTime = (dateString, timeFormat = '12') => {
   return `${datePart} ${hour12}:${minutes}${ampm}`;
 };
 
+// Prevent a focused number input from changing when the page/container is
+// scrolled (wheel events change the value of <input type="number">). Blur it
+// on wheel so scroll never mutates a typed amount.
+export const preventNumberScroll = (e) => {
+  if (e.target === document.activeElement) e.target.blur();
+};
+
 export const validateEmail = (email) => {
   const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return re.test(email);

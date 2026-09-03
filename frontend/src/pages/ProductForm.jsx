@@ -10,6 +10,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
 
 import ProductImage from '../components/ProductImage';
+import { preventNumberScroll } from '../utils/helpers';
 
 const STANDARD_UNITS = ['PC', 'KG', 'G', 'LB', 'L', 'ML', 'BOX', 'PACK', 'DOZEN'];
 const CUSTOM_UNIT = '__custom__';
@@ -91,6 +92,9 @@ const ProductForm = () => {
     onSuccess: () => {
       setSuccess(isEdit ? t('product_updated') : t('product_created'));
       queryClient.invalidateQueries({ queryKey: ['products'] });
+      if (isEdit && id) {
+        queryClient.invalidateQueries({ queryKey: ['product-unified-price-history', id] });
+      }
       setTimeout(() => navigate('/products'), 1500);
     },
     onError: (err) => {
@@ -203,16 +207,16 @@ const ProductForm = () => {
               </TextField>
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('price')} name="price" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.price} onChange={handleChange} required />
+              <TextField fullWidth label={t('price')} name="price" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.price} onChange={handleChange} required onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('cost')} name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} />
+              <TextField fullWidth label={t('cost')} name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} />
+              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} />
+              <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label={t('description')} name="description" multiline rows={3} value={formData.description} onChange={handleChange} />

@@ -8,7 +8,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { reportService } from '../api/services';
-import { formatCurrency, formatDate, toLocalDateString, downloadCsv } from '../utils/helpers';
+import { formatCurrency, formatDate, toLocalDateString, downloadCsv, preventNumberScroll } from '../utils/helpers';
 
 import { useNavigate } from 'react-router-dom';
 import SalesHeatmap from '../components/SalesHeatmap';
@@ -169,12 +169,12 @@ const Reports = () => {
           )}
           {showTrendDays && (
             <Grid item xs={12} md={3}>
-              <TextField fullWidth label={t('days')} type="number" inputProps={{ min: 1, max: 90 }} value={trendDays} onChange={(e) => setTrendDays(Number(e.target.value) || 7)} />
+              <TextField fullWidth label={t('days')} type="number" inputProps={{ min: 1, max: 90 }} value={trendDays} onChange={(e) => setTrendDays(Number(e.target.value) || 7)} onWheel={preventNumberScroll} />
             </Grid>
           )}
           {showThreshold && (
             <Grid item xs={12} md={3}>
-              <TextField fullWidth label={t('dead_stock_threshold')} type="number" inputProps={{ min: 1, max: 999 }} value={deadStockDays} onChange={(e) => setDeadStockDays(Number(e.target.value) || 30)} />
+              <TextField fullWidth label={t('dead_stock_threshold')} type="number" inputProps={{ min: 1, max: 999 }} value={deadStockDays} onChange={(e) => setDeadStockDays(Number(e.target.value) || 30)} onWheel={preventNumberScroll} />
             </Grid>
           )}
         </Grid>
@@ -182,11 +182,29 @@ const Reports = () => {
 
       {reportType === 'daily' && (
         <Paper sx={{ p: 3 }}>
-          <Typography variant="h6" gutterBottom>{t('daily_sales_report_date', { date: formatDate(dateRange.start) })}</Typography>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 1 }}>
+            <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>{t('daily_sales_report_date', { date: formatDate(dateRange.start) })}</Typography>
+            {(dailySales.itemSales || []).length > 0 && (
+              <Button size="small" startIcon={<Download />} onClick={() => exportCsv(
+                'daily-sales-items-' + dateRange.start,
+                (dailySales.itemSales || []).map((it) => ({
+                  name: it.productName,
+                  sku: it.sku,
+                  quantity: it.quantitySold,
+                  unitPrice: it.unitPrice,
+                  tax: it.taxAmount,
+                  total: it.totalPrice,
+                  cost: it.costAmount,
+                  profit: it.profit,
+                })),
+                [t('product_name'), t('sku'), t('quantity_sold'), t('unit_price'), t('tax'), t('total_price'), t('cost'), t('profit')],
+              )}>{t('export_csv')}</Button>
+            )}
+          </Stack>
           <Grid container spacing={3} sx={{ mt: 1 }}>
-          <Grid item xs={12} md={4}>
+          <Grid item xs={6} md={2}>
             <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4">
+              <Typography variant="h5">
                 {dailySales.totalTransactions || 0}
               </Typography>
               <Typography color="text.secondary">
@@ -195,7 +213,51 @@ const Reports = () => {
             </Paper>
           </Grid>
 
-          <Grid item xs={12} md={4}>
+          <Grid item xs={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">
+                {dailySales.totalItemsSold || 0}
+              </Typography>
+              <Typography color="text.secondary">
+                {t('items_sold')}
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">
+                {formatCurrency(dailySales.totalRevenue || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                {t('total_revenue')}
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5">
+                {formatCurrency(dailySales.totalCost || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                {t('total_cost_reported')}
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={6} md={2}>
+            <Paper sx={{ p: 2, textAlign: 'center' }}>
+              <Typography variant="h5" color="success.main">
+                {formatCurrency(dailySales.totalProfit || 0)}
+              </Typography>
+              <Typography color="text.secondary">
+                {t('profit')}
+              </Typography>
+            </Paper>
+          </Grid>
+
+          <Grid item xs={6} md={2}>
             <Paper sx={{ p: 2, textAlign: 'center', cursor: 'pointer' }} onClick={() => navigate('/dashboard')}>
               <Typography variant="body2" color="text.secondary">
                 {t('see_dashboard_revenue')}
@@ -203,18 +265,47 @@ const Reports = () => {
               <Typography variant="caption" color="primary">{t('go_to_dashboard')}</Typography>
             </Paper>
           </Grid>
-
-          <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 2, textAlign: 'center' }}>
-              <Typography variant="h4">
-                {formatCurrency(dailySales.averageTransactionValue || 0)}
-              </Typography>
-              <Typography color="text.secondary">
-                {t('average_sale')}
-              </Typography>
-            </Paper>
-          </Grid>
         </Grid>
+
+          {(dailySales.itemSales || []).length > 0 && (
+            <TableContainer sx={{ mt: 3 }}>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t('product_name')}</TableCell>
+                    <TableCell>{t('sku')}</TableCell>
+                    <TableCell align="right">{t('quantity_sold')}</TableCell>
+                    <TableCell align="right">{t('unit_price')}</TableCell>
+                    <TableCell align="right">{t('tax')}</TableCell>
+                    <TableCell align="right">{t('total_price')}</TableCell>
+                    <TableCell align="right">{t('cost')}</TableCell>
+                    <TableCell align="right">{t('profit')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {(dailySales.itemSales || []).map((it) => (
+                    <TableRow key={it.productId} hover>
+                      <TableCell>{it.productName}</TableCell>
+                      <TableCell><Typography variant="caption" color="text.secondary">{it.sku || '—'}</Typography></TableCell>
+                      <TableCell align="right">{it.quantitySold}</TableCell>
+                      <TableCell align="right">{formatCurrency(it.unitPrice)}</TableCell>
+                      <TableCell align="right">{formatCurrency(it.taxAmount)}</TableCell>
+                      <TableCell align="right">{formatCurrency(it.totalPrice)}</TableCell>
+                      <TableCell align="right">{formatCurrency(it.costAmount)}</TableCell>
+                      <TableCell align="right">
+                        <Typography color={(it.profit || 0) < 0 ? 'error' : 'success.main'} fontWeight="medium">
+                          {formatCurrency(it.profit)}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+          {(dailySales.itemSales || []).length === 0 && (
+            <Typography color="text.secondary" sx={{ mt: 3 }}>{t('no_sales_data')}</Typography>
+          )}
         </Paper>
       )}
 

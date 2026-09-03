@@ -64,6 +64,8 @@
   "discount": "Remise",
   "print_failed": "Échec de l'impression",
   "printing": "Impression",
+  "print_button_1": "Imprimer",
+  "print_button_2": "Imprimer au comptoir principal",
   "sale_type_cash": "Espèces",
   "sale_type_credit": "Crédit",
   "available_credit": "Crédit disponible",

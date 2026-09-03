@@ -975,6 +975,7 @@ const POS = () => {
                                   value={item.quantity}
                                   onChange={(e) => handleQuantityInputChange(item.productId, e.target.value)}
                                   onBlur={() => handleQuantityInputBlur(item.productId)}
+                                  onWheel={preventWheelChange}
                                   inputProps={{ min: 1, max: item.stockQuantity }}
                                   sx={{ 
                                     mx: 0.5, 
@@ -1400,9 +1401,7 @@ const POS = () => {
           >
             {isDirectPrinting 
               ? t('printing') 
-              : directPrint.isAvailable() 
-                ? '⚡ Print Button 1' 
-                : '⚡ Print Button 1'}
+              : t('print_button_1')}
           </Button>
 
           <Button
@@ -1414,7 +1413,7 @@ const POS = () => {
             disabled={counterPrinting || !lastSale?.invoiceNumber}
             sx={{ py: 1.2, fontSize: '1rem' }}
           >
-            {counterPrinting ? t('printing') : 'Print Button 2'}
+            {counterPrinting ? t('printing') : t('print_button_2')}
           </Button>
 
           <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>

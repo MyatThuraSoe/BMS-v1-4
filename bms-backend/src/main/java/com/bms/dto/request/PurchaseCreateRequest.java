@@ -22,6 +22,12 @@ public class PurchaseCreateRequest {
 
     private String notes;
 
+    private BigDecimal discountAmount = BigDecimal.ZERO;
+
+    private BigDecimal taxAmount = BigDecimal.ZERO;
+
+    private String paymentStatus;
+
     public Long getSupplierId() { return supplierId; }
     public void setSupplierId(Long supplierId) { this.supplierId = supplierId; }
     public String getPurchaseDate() { return purchaseDate; }
@@ -30,6 +36,12 @@ public class PurchaseCreateRequest {
     public void setItems(List<PurchaseItemRequest> items) { this.items = items; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public BigDecimal getDiscountAmount() { return discountAmount; }
+    public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public BigDecimal getTaxAmount() { return taxAmount; }
+    public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+    public String getPaymentStatus() { return paymentStatus; }
+    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
 
     public static class PurchaseItemRequest {
         @NotNull(message = "Product ID is required")

@@ -8,6 +8,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { shiftService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
 
@@ -94,6 +95,7 @@ const CashShift = () => {
               value={openAmount}
               onChange={(e) => setOpenAmount(e.target.value)}
               inputProps={{ min: 0, step: 0.01 }}
+              onWheel={preventNumberScroll}
               fullWidth
               autoFocus
             />
@@ -170,6 +172,7 @@ const CashShift = () => {
               value={closeAmount}
               onChange={(e) => setCloseAmount(e.target.value)}
               inputProps={{ min: 0, step: 0.01 }}
+              onWheel={preventNumberScroll}
               fullWidth
               autoFocus
             />

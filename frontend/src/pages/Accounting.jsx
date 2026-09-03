@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { reportService, expenseService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -131,10 +132,10 @@ const Accounting = () => {
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
           <Grid item xs={12} md={4}>
-            <TextField fullWidth label={t('month')} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} inputProps={{ min: 1, max: 12 }} />
+            <TextField fullWidth label={t('month')} type="number" value={month} onChange={(e) => setMonth(Number(e.target.value))} inputProps={{ min: 1, max: 12 }} onWheel={preventNumberScroll} />
           </Grid>
           <Grid item xs={12} md={4}>
-            <TextField fullWidth label={t('year')} type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} />
+            <TextField fullWidth label={t('year')} type="number" value={year} onChange={(e) => setYear(Number(e.target.value))} onWheel={preventNumberScroll} />
           </Grid>
           <Grid item xs={12} md={4}>
             <Button fullWidth variant="outlined" sx={{ height: '56px' }} onClick={() => queryClient.invalidateQueries({ queryKey: ['accountingSummary'] })}>{t('refresh')}</Button>
@@ -233,7 +234,7 @@ const Accounting = () => {
               {categories.map((category) => <MenuItem key={category} value={category}>{categoryLabel(category)}</MenuItem>)}
             </TextField>
             <TextField label={t('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+            <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} onWheel={preventNumberScroll} />
             <TextField label={t('expense_date')} type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} />
             {editingExpense?.hasReceiptImage && !removeReceiptImage && !receiptFile && (
               <Stack direction="row" spacing={2} alignItems="center">

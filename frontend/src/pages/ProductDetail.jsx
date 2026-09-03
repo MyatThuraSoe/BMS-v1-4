@@ -14,12 +14,15 @@ import {
   Chip,
   Divider,
   Alert,
+  TablePagination,
 } from '@mui/material';
 import {
   Edit as EditIcon,
   ArrowBack as ArrowBackIcon,
   ShoppingCart as OrderIcon,
   Visibility as ViewSupplierIcon,
+  TrendingUp as TrendingUpIcon,
+  TrendingDown as TrendingDownIcon,
 } from '@mui/icons-material';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
@@ -32,7 +35,8 @@ const ProductDetail = () => {
   const { t } = useTranslation('inventory');
   const { id } = useParams();
   const navigate = useNavigate();
-  const [showAllCostHistory, setShowAllCostHistory] = useState(false);
+  const [priceHistoryPage, setPriceHistoryPage] = useState(0);
+  const [priceHistoryRowsPerPage, setPriceHistoryRowsPerPage] = useState(10);
 
   const { data: productData, isLoading: productLoading } = useQuery({
     queryKey: ['product', id],
@@ -46,15 +50,9 @@ const ProductDetail = () => {
     enabled: !!id,
   });
 
-  const { data: costHistoryData, isLoading: costHistoryLoading } = useQuery({
-    queryKey: ['product-cost-history', id],
-    queryFn: () => productService.getCostHistory(id),
-    enabled: !!id,
-  });
-
-  const { data: priceHistoryData } = useQuery({
-    queryKey: ['product-price-history', id],
-    queryFn: () => productService.getPriceHistory(id),
+  const { data: unifiedPriceHistoryData, isLoading: priceHistoryLoading } = useQuery({
+    queryKey: ['product-unified-price-history', id],
+    queryFn: () => productService.getUnifiedPriceHistory(id),
     enabled: !!id,
   });
 
@@ -78,17 +76,80 @@ const ProductDetail = () => {
 
   const product = productData?.data;
   const suppliers = suppliersData?.data || [];
-  const costHistory = costHistoryData?.data || [];
-  const priceHistory = priceHistoryData?.data || [];
+  const unifiedPriceHistory = unifiedPriceHistoryData?.data || [];
   const topCustomers = topCustomersData?.data || [];
   const salesSummary = salesSummaryData?.data;
   const basketAffinity = basketData?.data || [];
-  const displayedHistory = showAllCostHistory ? costHistory : costHistory.slice(0, 5);
+
+  const handlePriceHistoryChangePage = (event, newPage) => {
+    setPriceHistoryPage(newPage);
+  };
+
+  const handlePriceHistoryChangeRowsPerPage = (event) => {
+    setPriceHistoryRowsPerPage(parseInt(event.target.value, 10));
+    setPriceHistoryPage(0);
+  };
 
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleDateString();
   };
+
+  const getChangeTypeColor = (changeType) => {
+    return changeType === 'SELLING' ? '#1976d2' : '#f57c00';
+  };
+
+  const getChangeTypeLabel = (changeType) => {
+    return changeType === 'SELLING' ? 'Selling Price' : 'Cost';
+  };
+
+  const getChangeTypeChip = (changeType) => {
+    return changeType === 'SELLING' ? 
+      <Chip label="Selling Price" size="small" variant="outlined" color="primary" /> :
+      <Chip label="Cost" size="small" variant="outlined" sx={{ backgroundColor: '#fff3e0', borderColor: '#f57c00' }} />;
+  };
+
+  const getHistoryContext = (record) => {
+    if (record.changeType === 'COST' && record.quantity == null) {
+      return (
+        <Typography variant="caption">
+          Direct Cost Price Update
+        </Typography>
+      );
+    }
+
+    if (record.changeType === 'SELLING') {
+      return (
+        <Typography variant="caption">
+          Direct Selling Price Update
+        </Typography>
+      );
+    }
+
+    if (record.quantity != null) {
+      const purchaseUnit = product?.unit || 'units';
+      return (
+        <Typography variant="caption">
+          Purchases ({record.quantity} {purchaseUnit}) with the price {formatCurrency(record.purchaseUnitPrice ?? record.newValue)}
+        </Typography>
+      );
+    }
+
+    return (
+      <Typography variant="caption" color="text.secondary">
+        Cost Price Update
+      </Typography>
+    );
+  };
+
+  const sortedPriceHistory = [...unifiedPriceHistory].sort(
+    (first, second) => new Date(second.changedAt) - new Date(first.changedAt)
+  );
+
+  const paginatedPriceHistory = sortedPriceHistory.slice(
+    priceHistoryPage * priceHistoryRowsPerPage,
+    priceHistoryPage * priceHistoryRowsPerPage + priceHistoryRowsPerPage
+  );
 
   if (productLoading) {
     return <Typography>{t('loading_product_details')}</Typography>;
@@ -349,43 +410,114 @@ const ProductDetail = () => {
         )}
       </Paper>
 
-      {/* Section B — Selling Price History */}
+      {/* Unified Price & Cost History */}
       <Paper sx={{ p: 3, mb: 3 }}>
-        <Typography variant="h6" gutterBottom>Selling Price History</Typography>
-        {priceHistory.length === 0 ? (
-          <Typography variant="body2" color="text.secondary">
-            No price changes recorded yet. This only tracks changes made from now on.
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+          <Typography variant="h6">Price & Cost Changes History</Typography>
+          <Typography variant="caption" sx={{ 
+            backgroundColor: '#e3f2fd', 
+            px: 1, 
+            py: 0.5, 
+            borderRadius: 1, 
+            color: '#1565c0',
+            fontWeight: 600
+          }}>
+            {unifiedPriceHistory.length} Changes
           </Typography>
+        </Box>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+          Complete timeline of all selling price adjustments and cost changes. 
+          Blue indicates selling price changes, orange indicates cost/purchase price changes.
+        </Typography>
+
+        {priceHistoryLoading ? (
+          <Typography variant="body2" color="text.secondary">Loading price history...</Typography>
+        ) : unifiedPriceHistory.length === 0 ? (
+          <Alert severity="info" sx={{ mt: 1 }}>
+            No price or cost changes recorded yet. Changes will appear here as you update prices and make purchases.
+          </Alert>
         ) : (
-          <TableContainer>
-            <Table size="small">
-              <TableHead>
-                <TableRow>
-                  <TableCell>Date</TableCell>
-                  <TableCell align="right">Old Price</TableCell>
-                  <TableCell align="right">New Price</TableCell>
-                  <TableCell align="right">Change</TableCell>
-                  <TableCell>Changed By</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {priceHistory.map((h, idx) => {
-                  const diff = h.newPrice - h.oldPrice;
-                  return (
-                    <TableRow key={idx}>
-                      <TableCell>{formatDateTime(h.changedAt)}</TableCell>
-                      <TableCell align="right">{formatCurrency(h.oldPrice)}</TableCell>
-                      <TableCell align="right">{formatCurrency(h.newPrice)}</TableCell>
-                      <TableCell align="right" sx={{ color: diff >= 0 ? 'success.main' : 'error.main' }}>
-                        {diff >= 0 ? '+' : ''}{formatCurrency(diff)}
-                      </TableCell>
-                      <TableCell>{h.changedByUsername}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </TableContainer>
+          <>
+            <TableContainer>
+              <Table size="small">
+                <TableHead sx={{ backgroundColor: '#fafafa' }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 600 }}>Date & Time</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="center">Type</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">Old Value</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">New Value</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="right">Change</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }} align="center">Change %</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Context</TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>Changed By</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {paginatedPriceHistory.map((record, idx) => {
+                    const isIncrease = record.changeAmount >= 0;
+                    const changeColor = isIncrease ? '#2e7d32' : '#c62828';
+
+                    return (
+                      <TableRow 
+                        key={idx}
+                        sx={{ 
+                          '&:hover': { backgroundColor: '#f5f5f5' },
+                          borderLeft: `4px solid ${getChangeTypeColor(record.changeType)}`
+                        }}
+                      >
+                        <TableCell>
+                          <Typography variant="body2">
+                            {formatDateTime(record.changedAt)}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          {getChangeTypeChip(record.changeType)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {record.oldValue != null ? formatCurrency(record.oldValue) : <Typography variant="caption" color="text.secondary">N/A</Typography>}
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 600 }}>
+                          {formatCurrency(record.newValue)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ color: changeColor, fontWeight: 600 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 0.5 }}>
+                            {isIncrease ? <TrendingUpIcon sx={{ fontSize: 16 }} /> : <TrendingDownIcon sx={{ fontSize: 16 }} />}
+                            {isIncrease ? '+' : ''}{formatCurrency(record.changeAmount)}
+                          </Box>
+                        </TableCell>
+                        <TableCell align="center" sx={{ color: changeColor, fontWeight: 600 }}>
+                          {record.changePercent != null ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.3 }}>
+                              {isIncrease ? <TrendingUpIcon sx={{ fontSize: 14 }} /> : <TrendingDownIcon sx={{ fontSize: 14 }} />}
+                              {record.changePercent.toFixed(1)}%
+                            </Box>
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {getHistoryContext(record)}
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="body2">{record.changedByUsername}</Typography>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            <TablePagination
+              rowsPerPageOptions={[5, 10, 25, 50]}
+              component="div"
+              count={unifiedPriceHistory.length}
+              rowsPerPage={priceHistoryRowsPerPage}
+              page={priceHistoryPage}
+              onPageChange={handlePriceHistoryChangePage}
+              onRowsPerPageChange={handlePriceHistoryChangeRowsPerPage}
+              sx={{ borderTop: '1px solid #e0e0e0', mt: 1 }}
+            />
+          </>
         )}
       </Paper>
 
@@ -467,59 +599,6 @@ const ProductDetail = () => {
               </TableBody>
             </Table>
           </TableContainer>
-        )}
-      </Paper>
-
-      {/* Cost History */}
-      <Paper sx={{ p: 3 }}>
-        <Typography variant="h6" gutterBottom>
-          Cost History
-        </Typography>
-
-        {costHistoryLoading ? (
-          <Typography variant="body2" color="text.secondary">Loading cost history...</Typography>
-        ) : costHistory.length === 0 ? (
-          <Alert severity="info" sx={{ mt: 1 }}>
-            No purchase history yet for this product.
-          </Alert>
-        ) : (
-          <>
-            <TableContainer>
-              <Table size="small">
-                <TableHead>
-                  <TableRow>
-                    <TableCell>Purchase Date</TableCell>
-                    <TableCell>Supplier</TableCell>
-                    <TableCell align="right">Quantity</TableCell>
-                    <TableCell align="right">Unit Cost</TableCell>
-                    <TableCell align="right">Current Selling Price</TableCell>
-                    <TableCell align="right">Implied Margin %</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {displayedHistory.map((entry, idx) => (
-                    <TableRow key={idx}>
-                      <TableCell>{formatDate(entry.purchaseDate)}</TableCell>
-                      <TableCell>{entry.supplierName}</TableCell>
-                      <TableCell align="right">{entry.quantity}</TableCell>
-                      <TableCell align="right">{formatCurrency(entry.unitCost)}</TableCell>
-                      <TableCell align="right">{formatCurrency(entry.currentSellingPrice)}</TableCell>
-                      <TableCell align="right">
-                        <Typography color={entry.impliedMarginPercent >= 0 ? 'success.main' : 'error.main'}>
-                          {entry.impliedMarginPercent}%
-                        </Typography>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-            {costHistory.length > 5 && (
-              <Button onClick={() => setShowAllCostHistory(!showAllCostHistory)} sx={{ mt: 1 }}>
-                {showAllCostHistory ? 'Show Less' : `Show All (${costHistory.length} entries)`}
-              </Button>
-            )}
-          </>
         )}
       </Paper>
     </Box>

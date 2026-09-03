@@ -6,6 +6,7 @@ import { Add as AddIcon, Search as SearchIcon, RemoveCircleOutline as RemoveIcon
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { orderService, customerService, productService, shiftService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
 import { notifySuccess, notifyError } from '../utils/notify';
 
@@ -453,6 +454,7 @@ const Orders = () => {
                 value={qty}
                 onChange={(e) => setQty(e.target.value)}
                 inputProps={{ min: 1 }}
+                onWheel={preventNumberScroll}
                 sx={{ width: 100 }}
               />
               <Button variant="outlined" onClick={addToCart}>{t('add')}</Button>
@@ -516,7 +518,7 @@ const Orders = () => {
                 {convertMethod === 'CASH' ? (
                   <>
                     {!shift?.data && <Alert severity="warning">{t('require_open_shift')}</Alert>}
-                    <TextField size="small" label={t('amount_paid')} type="number" value={convertAmount} onChange={(e) => setConvertAmount(e.target.value)} />
+                    <TextField size="small" label={t('amount_paid')} type="number" value={convertAmount} onChange={(e) => setConvertAmount(e.target.value)} onWheel={preventNumberScroll} />
                   </>
                 ) : (
                   <>

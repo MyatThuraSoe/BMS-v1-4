@@ -64,6 +64,8 @@
   "discount": "割引",
   "print_failed": "印刷に失敗しました",
   "printing": "印刷中",
+  "print_button_1": "印刷",
+  "print_button_2": "メインカウンターで印刷",
   "sale_type_cash": "現金",
   "sale_type_credit": "掛売り",
   "available_credit": "利用可能枠",

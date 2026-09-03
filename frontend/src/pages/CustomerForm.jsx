@@ -5,6 +5,7 @@ import { Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgres
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
+import { preventNumberScroll } from '../utils/helpers';
 
 const CustomerForm = () => {
   const { id } = useParams();
@@ -117,6 +118,7 @@ const CustomerForm = () => {
                 type="number"
                 value={formData.creditLimit}
                 onChange={(e) => setFormData({ ...formData, creditLimit: e.target.value })}
+                onWheel={preventNumberScroll}
                 helperText={t('credit_limit_hint')}
               />
             </Grid>

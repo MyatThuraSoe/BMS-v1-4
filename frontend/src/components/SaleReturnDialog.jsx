@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AssignmentReturn as ReturnIcon } from '@mui/icons-material';
 import { saleService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
+import { preventNumberScroll } from '../utils/helpers';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useTranslation } from 'react-i18next';
 
@@ -169,6 +170,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                             inputProps={{ min: 0, max: item.quantityReturnable }}
                             value={qty > 0 ? qty : ''}
                             onChange={(e) => setQuantity(item, e.target.value)}
+                            onWheel={preventNumberScroll}
                             sx={{ width: 90 }}
                           />
                         </TableCell>
