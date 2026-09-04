@@ -1,4 +1,4 @@
-{
+﻿{
   "purchases": "ဝယ်ယူမှုများ",
   "add_purchase": "ဝယ်ယူမှုထည့်ရန်",
   "supplier": "ပေးသွင်းသူ",
@@ -40,6 +40,7 @@
   "delete_supplier_confirm": "\"{{name}}\" ကို ဖျက်ရန် သေချာပါသလား။",
   "edit_supplier": "ပေးသွင်းသူ ပြင်ဆင်ရန်",
   "email": "အီးမေးလ်",
+  "email_or_account": "အီးမေးလ် / အကောင့်",
   "grand_total": "စုစုပေါင်းကျသင့်ငွေ",
   "payment_summary": "ငွေပေးချေမှုအကျဉ်းချုပ်",
   "subtotal": "ပြားစာရင်းမ",

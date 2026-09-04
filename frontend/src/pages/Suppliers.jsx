@@ -91,7 +91,7 @@ const Suppliers = () => {
               <TableCell>{t('name')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('contact')}</TableCell>
               <TableCell>{t('phone')}</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email_or_account')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('created')}</TableCell>
               {isManager() && <TableCell align="right">{t('actions')}</TableCell>}
             </TableRow>

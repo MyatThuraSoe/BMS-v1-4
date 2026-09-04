@@ -88,7 +88,7 @@ const SupplierDetails = () => {
               <Typography variant="body1">{supplier.phone || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Typography variant="body2" color="text.secondary">{t('email')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('email_or_account')}</Typography>
               <Typography variant="body1">{supplier.email || t('n_a')}</Typography>
             </Grid>
             <Grid item xs={12} md={6}>

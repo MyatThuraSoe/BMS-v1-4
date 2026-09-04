@@ -45,7 +45,8 @@ public class SupplierService {
         if (supplierRepository.existsByName(request.getName())) {
             throw new BusinessException("Supplier with name '" + request.getName() + "' already exists");
         }
-        if (supplierRepository.existsByEmail(request.getEmail())) {
+        if (request.getEmail() != null && !request.getEmail().isBlank()
+                && supplierRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Supplier with email '" + request.getEmail() + "' already exists");
         }
         if (supplierRepository.existsByPhone(request.getPhone())) {
@@ -55,7 +56,7 @@ public class SupplierService {
         Supplier supplier = new Supplier();
         supplier.setName(request.getName());
         supplier.setContactPerson(request.getContactPerson());
-        supplier.setEmail(request.getEmail());
+        supplier.setEmail(request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail() : null);
         supplier.setPhone(request.getPhone());
         supplier.setAddress(request.getAddress());
         supplier.setTaxId(request.getTaxId());
@@ -83,7 +84,9 @@ public class SupplierService {
         if (!supplier.getName().equals(request.getName()) && supplierRepository.existsByName(request.getName())) {
             throw new BusinessException("Supplier with name '" + request.getName() + "' already exists");
         }
-        if (!supplier.getEmail().equals(request.getEmail()) && supplierRepository.existsByEmail(request.getEmail())) {
+        if (request.getEmail() != null && !request.getEmail().isBlank()
+                && !request.getEmail().equals(supplier.getEmail())
+                && supplierRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Supplier with email '" + request.getEmail() + "' already exists");
         }
         if (!supplier.getPhone().equals(request.getPhone()) && supplierRepository.existsByPhone(request.getPhone())) {
@@ -92,7 +95,7 @@ public class SupplierService {
 
         supplier.setName(request.getName());
         supplier.setContactPerson(request.getContactPerson());
-        supplier.setEmail(request.getEmail());
+        supplier.setEmail(request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail() : null);
         supplier.setPhone(request.getPhone());
         supplier.setAddress(request.getAddress());
         supplier.setTaxId(request.getTaxId());

@@ -108,7 +108,7 @@ const Customers = () => {
             <TableRow>
               <TableCell>{t('name')}</TableCell>
               <TableCell>{t('phone')}</TableCell>
-              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email')}</TableCell>
+              <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('email_or_account')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('city')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('address')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('created')}</TableCell>

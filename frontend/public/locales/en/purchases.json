@@ -1,4 +1,4 @@
-{
+﻿{
   "purchases": "Purchases",
   "add_purchase": "Add Purchase",
   "supplier": "Supplier",
@@ -40,6 +40,7 @@
   "delete_supplier_confirm": "Are you sure you want to delete \"{{name}}\"?",
   "edit_supplier": "Edit Supplier",
   "email": "Email",
+  "email_or_account": "Email / Account",
   "grand_total": "Grand Total:",
   "payment_summary": "Payment Summary",
   "subtotal": "Subtotal",

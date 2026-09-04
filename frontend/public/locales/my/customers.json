@@ -1,10 +1,11 @@
-{
+﻿{
   "add_customer": "ဖောက်သည် ထည့်ရန်",
   "edit_customer": "ဖောက်သည် တည်းဖြတ်ရန်",
   "search_placeholder": "ဖောက်သည်များကို ရှာဖွေရန်...",
   "name": "အမည်",
   "phone": "ဖုန်း",
   "email": "အီးမေးလ်",
+  "email_or_account": "အီးမေးလ် / အကောင့်",
   "address": "လိပ်စာ",
   "city": "မြို့",
   "all_cities": "မြို့အားလုံး",

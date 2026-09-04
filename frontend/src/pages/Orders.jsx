@@ -264,7 +264,7 @@ const Orders = () => {
       key={s}
       label={s === 'ALL' ? t('all') : t(`status_${s.toLowerCase()}`)}
       onClick={() => { setStatus(s); setPage(0); }}
-      color={status === s ? 'primary' : 'default'}
+      color={status === s ? getStatusColor(s) : 'default'}
       variant={status === s ? 'filled' : 'outlined'}
       size="small"
     />

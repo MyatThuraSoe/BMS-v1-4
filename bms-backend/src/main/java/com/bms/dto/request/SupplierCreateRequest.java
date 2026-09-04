@@ -11,7 +11,6 @@ public class SupplierCreateRequest {
 
     private String contactPerson;
 
-    @NotBlank(message = "Email is required")
     private String email;
 
     @NotBlank(message = "Phone is required")

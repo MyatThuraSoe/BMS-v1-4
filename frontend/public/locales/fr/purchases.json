@@ -1,4 +1,4 @@
-{
+﻿{
   "purchases": "Achats",
   "add_purchase": "Ajouter un achat",
   "supplier": "Fournisseur",
@@ -40,6 +40,7 @@
   "delete_supplier_confirm": "Voulez-vous vraiment supprimer « {{name}} » ?",
   "edit_supplier": "Modifier le fournisseur",
   "email": "E-mail",
+  "email_or_account": "E-mail / Compte",
   "grand_total": "Total général :",
   "payment_summary": "Résumé du paiement",
   "subtotal": "Sous-total",

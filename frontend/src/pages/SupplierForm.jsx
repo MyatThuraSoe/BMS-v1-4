@@ -77,7 +77,7 @@ const SupplierForm = () => {
               <TextField fullWidth label={t('phone')} name="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('email')} name="email" type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+              <TextField fullWidth label={t('email_or_account')} name="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label={t('address')} name="address" multiline rows={2} value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} />

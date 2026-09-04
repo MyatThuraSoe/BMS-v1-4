@@ -237,8 +237,13 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        product.setImageData(file.getBytes());
-        product.setImageType(com.bms.util.ImageValidationUtil.mimeToExtension(mime));
+        // Resize and compress: max 800 px, JPEG 85 % quality, all formats normalised to JPEG.
+        byte[] original = file.getBytes();
+        com.bms.util.ImageResizeUtil.ResizeResult optimised =
+                com.bms.util.ImageResizeUtil.resizeIfLarger(original);
+
+        product.setImageData(optimised.data());
+        product.setImageType(optimised.extension());
         productRepository.save(product);
 
         auditLogService.logAction(userId, "PRODUCT_IMAGE_UPLOAD",

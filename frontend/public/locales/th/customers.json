@@ -1,10 +1,11 @@
-{
+﻿{
   "add_customer": "เพิ่มลูกค้า",
   "edit_customer": "แก้ไขลูกค้า",
   "search_placeholder": "ค้นหาลูกค้า...",
   "name": "ชื่อ",
   "phone": "โทรศัพท์",
   "email": "อีเมล",
+  "email_or_account": "อีเมล / บัญชี",
   "address": "ที่อยู่",
   "city": "เมือง",
   "all_cities": "ทุกเมือง",

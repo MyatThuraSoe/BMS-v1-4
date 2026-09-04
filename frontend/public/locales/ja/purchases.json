@@ -1,4 +1,4 @@
-{
+﻿{
   "purchases": "仕入れ",
   "add_purchase": "仕入れを追加",
   "supplier": "仕入先",
@@ -40,6 +40,7 @@
   "delete_supplier_confirm": "「{{name}}」を削除してもよろしいですか？",
   "edit_supplier": "仕入先を編集",
   "email": "メール",
+  "email_or_account": "メール・アカウント",
   "grand_total": "合計:",
   "payment_summary": "支払い概要",
   "subtotal": "小計",

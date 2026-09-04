@@ -1,10 +1,11 @@
-{
+﻿{
   "add_customer": "顧客を追加",
   "edit_customer": "顧客を編集",
   "search_placeholder": "顧客を検索...",
   "name": "名前",
   "phone": "電話番号",
   "email": "メール",
+  "email_or_account": "メール・アカウント",
   "address": "住所",
   "city": "市区町村",
   "all_cities": "すべての市区町村",

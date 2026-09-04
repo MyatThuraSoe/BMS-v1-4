@@ -1,4 +1,4 @@
-{
+﻿{
   "purchases": "การสั่งซื้อ",
   "add_purchase": "เพิ่มการสั่งซื้อ",
   "supplier": "ซัพพลายเออร์",
@@ -40,6 +40,7 @@
   "delete_supplier_confirm": "คุณแน่ใจหรือว่าต้องการลบ \"{{name}}\"?",
   "edit_supplier": "แก้ไขซัพพลายเออร์",
   "email": "อีเมล",
+  "email_or_account": "อีเมล / บัญชี",
   "grand_total": "ยอดรวม:",
   "payment_summary": "สรุปการชำระเงิน",
   "subtotal": "ยอดรวมย่อย",
