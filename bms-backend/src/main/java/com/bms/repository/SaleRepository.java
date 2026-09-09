@@ -81,6 +81,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     AND (:endDate IS NULL OR s.saleDate < :endDate)
     AND (:customerId IS NULL OR s.customer.id = :customerId)
     AND (:invoice IS NULL OR LOWER(s.invoiceNumber) LIKE LOWER(CONCAT('%', :invoice, '%')))
+    AND (:cashierId IS NULL OR s.cashierId = :cashierId)
     ORDER BY s.saleDate DESC
     """)
     Page<Sale> findFilteredSales(
@@ -88,6 +89,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         @Param("endDate") LocalDateTime endDate,
         @Param("customerId") Long customerId,
         @Param("invoice") String invoice,
+        @Param("cashierId") Long cashierId,
         Pageable pageable
     );
 

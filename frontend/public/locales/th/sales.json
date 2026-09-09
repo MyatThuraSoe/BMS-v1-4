@@ -1,4 +1,4 @@
-{
+﻿{
   "range_today": "วันนี้",
   "range_week": "สัปดาห์นี้",
   "range_month": "เดือนนี้",
@@ -11,6 +11,9 @@
   "start_date": "วันที่เริ่มต้น",
   "end_date": "วันที่สิ้นสุด",
   "clear_filters": "ล้างตัวกรอง",
+  "employee": "พนักงาน",
+  "all_employees": "พนักงานทั้งหมด",
+  "filter_by_employee": "กรองตามพนักงาน",
   "invoice_number": "ใบกำกับ #",
   "customer": "ลูกค้า",
   "total": "รวม",

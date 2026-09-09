@@ -3,13 +3,14 @@ import apiClient from '../apiClient';
 // Auto-split from services.js — domain: sales
 
 export const saleService = {
-  getAll: async (page = 0, size = 20, sortBy = 'saleDate', range = null, startDate = null, endDate = null, customerId = null, invoice = null) => {
+  getAll: async (page = 0, size = 20, sortBy = 'saleDate', range = null, startDate = null, endDate = null, customerId = null, invoice = null, cashierId = null) => {
     const params = new URLSearchParams({ page: String(page), size: String(size), sortBy });
     if (range) params.append('range', range);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
     if (customerId) params.append('customerId', customerId);
     if (invoice) params.append('invoice', invoice);
+    if (cashierId) params.append('cashierId', cashierId);
     const response = await apiClient.get(`/sales?${params.toString()}`);
     return response.data;
   },

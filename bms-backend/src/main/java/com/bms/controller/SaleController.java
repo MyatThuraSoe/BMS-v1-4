@@ -47,10 +47,11 @@ public class SaleController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
             @RequestParam(required = false) Long customerId,
-            @RequestParam(required = false) String invoice) {
+            @RequestParam(required = false) String invoice,
+            @RequestParam(required = false) Long cashierId) {
         Pageable pageable = PageRequest.of(page, size, Sort.by(sortBy).descending());
         Page<SaleResponse> sales = saleService.convertToResponses(
-                saleService.getFilteredSales(range, startDate, endDate, customerId, invoice, pageable));
+                saleService.getFilteredSales(range, startDate, endDate, customerId, invoice, cashierId, pageable));
         return ResponseEntity.ok(new ApiResponse<>(true, "Sales retrieved successfully", sales));
     }
 

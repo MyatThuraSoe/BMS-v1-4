@@ -1,4 +1,4 @@
-{
+﻿{
   "range_today": "Aujourd'hui",
   "range_week": "Cette semaine",
   "range_month": "Ce mois",
@@ -11,6 +11,9 @@
   "start_date": "Date de début",
   "end_date": "Date de fin",
   "clear_filters": "Effacer les filtres",
+  "employee": "Employe",
+  "all_employees": "Tous les employes",
+  "filter_by_employee": "Filtrer par employe",
   "invoice_number": "Facture #",
   "customer": "Client",
   "total": "Total",

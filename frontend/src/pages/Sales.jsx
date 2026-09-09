@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete,
+  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete, MenuItem,
 } from '@mui/material';
 import { Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { saleService, customerService } from '../api/services';
+import { saleService, customerService, userService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
@@ -30,6 +30,7 @@ const Sales = () => {
   const [debouncedInvoice, setDebouncedInvoice] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerInput, setCustomerInput] = useState('');
+  const [selectedCashierId, setSelectedCashierId] = useState('');
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const navigate = useNavigate();
@@ -57,6 +58,13 @@ const Sales = () => {
     enabled: customerInput.length > 0,
   });
 
+  const { data: usersData } = useQuery({
+    queryKey: ['users-for-sales-filter'],
+    queryFn: () => userService.getAll(0, 100),
+    enabled: isManager(),
+  });
+  const employees = usersData?.data || [];
+
   const { data: salesData, isLoading, isFetching } = useQuery({
     queryKey: [
       'sales',
@@ -67,6 +75,7 @@ const Sales = () => {
       customEndDate,
       selectedCustomer?.id,
       debouncedInvoice,
+      selectedCashierId,
     ],
     queryFn: () =>
       saleService.getAll(
@@ -77,7 +86,8 @@ const Sales = () => {
         range === 'CUSTOM' ? customStartDate : null,
         range === 'CUSTOM' ? customEndDate : null,
         selectedCustomer?.id || null,
-        debouncedInvoice || null
+        debouncedInvoice || null,
+        selectedCashierId || null
       ),
     staleTime: 0,
     refetchOnMount: 'always',
@@ -98,6 +108,7 @@ const Sales = () => {
     setInvoiceSearch('');
     setDebouncedInvoice('');
     setSelectedCustomer(null);
+    setSelectedCashierId('');
     setCustomStartDate('');
     setCustomEndDate('');
     setPage(0);
@@ -138,7 +149,7 @@ const Sales = () => {
     return 'default';
   };
 
-  const hasActiveFilters = range !== 'today' || debouncedInvoice || selectedCustomer || (range === 'CUSTOM' && (customStartDate || customEndDate));
+  const hasActiveFilters = range !== 'today' || debouncedInvoice || selectedCustomer || selectedCashierId || (range === 'CUSTOM' && (customStartDate || customEndDate));
 
   return (
     <Box>
@@ -181,6 +192,21 @@ const Sales = () => {
             renderInput={(params) => <TextField {...params} label={t('filter_by_customer')} />}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
+          {isManager() && (
+            <TextField
+              select
+              size="small"
+              label={t('filter_by_employee')}
+              value={selectedCashierId}
+              onChange={(e) => { setSelectedCashierId(e.target.value); setPage(0); }}
+              sx={{ minWidth: 220 }}
+            >
+              <MenuItem value="">{t('all_employees')}</MenuItem>
+              {employees.map((emp) => (
+                <MenuItem key={emp.id} value={emp.id}>{emp.firstName} {emp.lastName}</MenuItem>
+              ))}
+            </TextField>
+          )}
           {range === 'CUSTOM' && (
             <>
               <TextField
@@ -215,6 +241,7 @@ const Sales = () => {
             <TableRow>
               <TableCell>{t('invoice_number')}</TableCell>
               <TableCell>{t('customer')}</TableCell>
+              <TableCell>{t('employee')}</TableCell>
               <TableCell align="right">{t('total')}</TableCell>
               <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{t('paid')}</TableCell>
               <TableCell>{t('status')}</TableCell>
@@ -224,9 +251,9 @@ const Sales = () => {
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={7} align="center">{t('loading')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center">{t('loading')}</TableCell></TableRow>
             ) : sales.length === 0 ? (
-              <TableRow><TableCell colSpan={7} align="center">{t('no_sales_found')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center">{t('no_sales_found')}</TableCell></TableRow>
             ) : (
               sales.map((s) => {
                 const status = getSaleStatus(s);
@@ -239,6 +266,7 @@ const Sales = () => {
                   >
                     <TableCell>{s.invoiceNumber}</TableCell>
                     <TableCell>{s.customerName || t('walk_in')}</TableCell>
+                    <TableCell>{s.cashierName || t('unknown_cashier')}</TableCell>
                     <TableCell align="right">{formatCurrency(s.totalAmount)}</TableCell>
                     <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{formatCurrency(s.amountPaid)}</TableCell>
                     <TableCell><Chip label={t(`status_${status.toLowerCase().replace(/\s+/g, '_')}`)} size="small" color={getStatusColor(status)} /></TableCell>

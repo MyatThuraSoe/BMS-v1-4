@@ -1,4 +1,4 @@
-{
+﻿{
   "range_today": "今日",
   "range_week": "今週",
   "range_month": "今月",
@@ -11,6 +11,9 @@
   "start_date": "開始日",
   "end_date": "終了日",
   "clear_filters": "フィルタをクリア",
+  "employee": "従業員",
+  "all_employees": "全従業員",
+  "filter_by_employee": "従業員で絞り込む",
   "invoice_number": "請求書 #",
   "customer": "顧客",
   "total": "合計",

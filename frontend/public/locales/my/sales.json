@@ -1,4 +1,4 @@
-{
+﻿{
   "range_today": "ယနေ့",
   "range_week": "ဤအပတ်",
   "range_month": "ဤလ",
@@ -11,6 +11,9 @@
   "start_date": "စတင်ရက်",
   "end_date": "ပြီးဆုံးရက်",
   "clear_filters": "စစ်ထုတ်မှုများ ရှင်းရန်",
+  "employee": "ဝန်ထမ်း",
+  "all_employees": "ဝန်ထမ်းအားလုံး",
+  "filter_by_employee": "ဝန်ထမ်းဖြင့်ရှာရန်",
   "invoice_number": "ဘောင်ချာနံပါတ်",
   "customer": "ဖောက်သည်",
   "total": "စုစုပေါင်း",
