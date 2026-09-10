@@ -95,7 +95,7 @@ const PrintJobWorker = () => {
     };
 
     processPrintJob();
-    const timer = window.setInterval(processPrintJob, 1000);
+    const timer = window.setInterval(processPrintJob, 3000);
     return () => {
       stopped = true;
       window.clearInterval(timer);
