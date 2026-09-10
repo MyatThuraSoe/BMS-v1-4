@@ -1,6 +1,11 @@
 server:
   port: ${APP_PORT:17234}
   address: ${APP_SERVER_ADDRESS:0.0.0.0}
+  # Compress static bundles and API JSON on the wire (big Lighthouse perf gain —
+  # the ~830KB initial JS drops to ~250KB with gzip). Spring Boot's default
+  # compressible mime-types cover text/html, css, javascript and json.
+  compression:
+    enabled: true
 
 spring:
   application:
@@ -9,6 +14,9 @@ spring:
     resources:
       cache:
         cachecontrol:
+          # Hashed /assets/** bundles get a 1-year immutable-style cache via
+          # StaticResourceCacheConfig; index.html and other root files are left
+          # uncached so updates are always picked up.
           no-cache: true
   datasource:
     url: ${APP_DB_URL:jdbc:h2:file:C:/LumiPOS/bms_db;AUTO_SERVER=TRUE}

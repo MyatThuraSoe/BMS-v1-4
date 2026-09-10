@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell, session } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -689,6 +689,23 @@ if (!gotTheLock) {
 
     // App lifecycle
     app.whenReady().then(async () => {
+
+    // Strict Content-Security-Policy for the renderer (kills Electron's
+    // "Insecure Content-Security-Policy" warning). The bundled frontend has
+    // no inline scripts and MUI/Emotion injects <style> tags, so only
+    // style-src needs 'unsafe-inline'; script-src stays hardened.
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+        callback({
+            responseHeaders: {
+                ...details.responseHeaders,
+                'Content-Security-Policy': [
+                    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+                    "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; " +
+                    "worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'"
+                ]
+            }
+        });
+    });
 
     cleanupZombieProcesses();
     // Show splash screen immediately
