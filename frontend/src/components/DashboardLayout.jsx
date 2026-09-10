@@ -301,7 +301,7 @@ const lic = licData?.data;
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Box
               component="img"
-              src="/LumiPOS-logo.png"
+              src="/LumiPOS.ico"
               alt="BMS logo"
               sx={{ width: 50, height: 50, display: 'block' }}
             />
@@ -310,7 +310,7 @@ const lic = licData?.data;
             </Typography>
           </Box>
         )}
-        <IconButton onClick={() => setCollapsed(!collapsed)} size="small">
+        <IconButton onClick={() => setCollapsed(!collapsed)} size="small" aria-label={collapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}>
           {collapsed ? <ChevronLeftIcon sx={{ transform: 'rotate(180deg)' }} /> : <ChevronLeftIcon />}
         </IconButton>
       </Toolbar>
@@ -410,6 +410,7 @@ const lic = licData?.data;
             color="inherit" 
             edge="start" 
             onClick={handleDrawerToggle} 
+            aria-label="Toggle Sidebar"
             sx={{ mr: 1, display: { sm: 'none' }, color: 'white', p: 1 }}
           >
             <MenuIcon />

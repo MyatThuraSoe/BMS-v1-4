@@ -107,7 +107,7 @@ const handleActivateNewKey = async () => {
       >
         <Box
           component="img"
-          src="/LumiPOS-logo.png"
+          src="/LumiPOS.ico"
           alt="LumiPOS logo"
           sx={{
             width: 80,

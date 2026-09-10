@@ -38,7 +38,7 @@ export default function LanguageSwitcher({ compact = false }) {
           onChange={(e) => changeLanguage(e.target.value)}
           size="small"
           variant="outlined"
-          aria-label={t('language')}
+          inputProps={{ 'aria-label': 'Select Language' }}
           sx={{ fontSize: '0.8rem', minWidth: 86, color: 'inherit', '.MuiOutlinedInput-notchedOutline': { borderColor: 'currentColor', opacity: 0.35 } }}
         >
           {LANGUAGES.map((lang) => (
@@ -56,7 +56,7 @@ export default function LanguageSwitcher({ compact = false }) {
         value={current}
         onChange={(e) => changeLanguage(e.target.value)}
         fullWidth
-        aria-label={t('language')}
+        inputProps={{ 'aria-label': 'Select Language' }}
       >
         {LANGUAGES.map((lang) => (
           <MenuItem key={lang.code} value={lang.code}>{lang.label}</MenuItem>
