@@ -107,6 +107,15 @@ CREATE TABLE suppliers (
     INDEX idx_supplier_is_active (is_active)
 );
 
+-- Supplier phones (multiple phone numbers per supplier)
+CREATE TABLE supplier_phones (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    supplier_id BIGINT NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    INDEX idx_supplier_phone_number (phone),
+    CONSTRAINT fk_supplier_phones_supplier FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE CASCADE
+);
+
 -- Purchases table
 CREATE TABLE purchases (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
@@ -170,6 +179,15 @@ CREATE TABLE customers (
     INDEX idx_customer_email (email),
     INDEX idx_customer_phone (phone),
     INDEX idx_customer_is_active (is_active)
+);
+
+-- Customer phones (multiple phone numbers per customer)
+CREATE TABLE customer_phones (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    customer_id BIGINT NOT NULL,
+    phone VARCHAR(50) NOT NULL,
+    INDEX idx_customer_phone_number (phone),
+    CONSTRAINT fk_customer_phones_customer FOREIGN KEY (customer_id) REFERENCES customers(id) ON DELETE CASCADE
 );
 
 -- Sales table

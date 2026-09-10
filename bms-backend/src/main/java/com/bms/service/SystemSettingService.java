@@ -7,6 +7,8 @@ import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SystemSettingRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +25,7 @@ public class SystemSettingService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Cacheable(cacheNames = "systemSettings")
     public List<SystemSettingResponse> getAllSettings() {
         return systemSettingRepository.findAll().stream()
                 .map(this::convertToResponse)
@@ -41,6 +44,7 @@ public class SystemSettingService {
         return convertToResponse(setting);
     }
 
+    @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse createSetting(SystemSettingRequest request, Long userId) {
         if (systemSettingRepository.existsBySettingKey(request.getSettingKey())) {
             throw new BusinessException("Setting with key '" + request.getSettingKey() + "' already exists");
@@ -62,6 +66,7 @@ public class SystemSettingService {
         return convertToResponse(savedSetting);
     }
 
+    @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSetting(Long id, SystemSettingRequest request, Long userId) {
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));
@@ -88,6 +93,7 @@ public class SystemSettingService {
         return convertToResponse(updatedSetting);
     }
 
+    @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSettingByKey(String key, String settingValue, Long userId) {
         SystemSetting setting = systemSettingRepository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
@@ -105,6 +111,7 @@ public class SystemSettingService {
         return convertToResponse(updatedSetting);
     }
 
+    @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public void deleteSetting(Long id, Long userId) {
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));

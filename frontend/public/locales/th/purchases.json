@@ -61,6 +61,8 @@
   "no_suppliers_found": "ไม่พบซัพพลายเออร์",
   "notes": "หมายเหตุ",
   "phone": "โทรศัพท์",
+  "add_phone": "เพิ่มเบอร์โทร",
+  "remove_phone": "ลบเบอร์โทร",
   "product": "สินค้า",
   "product_id": "รหัสสินค้า: {{id}}",
   "purchase_details": "รายละเอียดการสั่งซื้อ",

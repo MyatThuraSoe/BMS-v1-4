@@ -157,6 +157,16 @@ public class ProductController {
                 .body(imageData);
     }
 
+    @GetMapping("/{id}/thumbnail")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<byte[]> getProductThumbnail(@PathVariable Long id) {
+        byte[] thumbnail = productService.getProductThumbnail(id);
+        return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_JPEG)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"product_" + id + "_thumb.jpg\"")
+                .body(thumbnail);
+    }
+
     @DeleteMapping("/{id}/image")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<Void>> deleteProductImage(

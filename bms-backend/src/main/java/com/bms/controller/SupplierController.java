@@ -4,6 +4,7 @@ import com.bms.dto.request.SupplierCreateRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.SupplierResponse;
 import com.bms.entity.Supplier;
+import com.bms.entity.SupplierPhone;
 import com.bms.service.SupplierService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/suppliers")
@@ -88,6 +91,9 @@ public class SupplierController {
         response.setContactPerson(supplier.getContactPerson());
         response.setEmail(supplier.getEmail());
         response.setPhone(supplier.getPhone());
+        response.setPhones(supplier.getPhones().stream()
+                .map(SupplierPhone::getPhone)
+                .collect(Collectors.toList()));
         response.setAddress(supplier.getAddress());
         response.setTaxId(supplier.getTaxId());
         response.setPaymentTerms(supplier.getPaymentTerms());

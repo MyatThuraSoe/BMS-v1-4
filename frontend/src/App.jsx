@@ -117,14 +117,22 @@ const theme = createTheme({
     divider: '#DEDFD6',
   },
   typography: {
-    fontFamily: '"Noto Sans", "Noto Sans Myanmar", "Noto Sans Thai", "Noto Sans JP", "Work Sans", "Helvetica", "Arial", sans-serif',
-    h1: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    h2: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    h3: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    h4: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    h5: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    h6: { fontFamily: '"Fraunces", serif', fontWeight: 600 },
-    button: { fontFamily: '"Noto Sans", "Noto Sans Myanmar", "Noto Sans Thai", "Noto Sans JP", "Work Sans", sans-serif', fontWeight: 600, textTransform: 'none' },
+    // System font stack — zero network requests, so the UI renders instantly and
+    // never shifts when webfonts arrive. Multi-script: Windows/Android/macOS ship
+    // all glyphs (Latin, Thai, Japanese, Myanmar, CJK) via installed system fonts.
+    fontFamily:
+      "'Segoe UI', 'Noto Sans Myanmar UI', 'Leelawadee UI', 'Noto Sans Thai UI', 'Noto Sans', 'Meiryo', 'Yu Gothic UI', 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif",
+    h1: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    h2: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    h3: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    h4: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    h5: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    h6: { fontFamily: '"Fraunces", Georgia, serif', fontWeight: 600 },
+    button: {
+      fontFamily:
+        "'Segoe UI', 'Noto Sans Myanmar UI', 'Leelawadee UI', 'Noto Sans Thai UI', 'Noto Sans', 'Meiryo', 'Yu Gothic UI', 'Microsoft YaHei', 'PingFang SC', 'Helvetica Neue', Arial, sans-serif",
+      fontWeight: 600, textTransform: 'none',
+    },
   },
   shape: {
     borderRadius: 10,

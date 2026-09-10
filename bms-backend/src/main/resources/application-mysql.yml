@@ -36,6 +36,25 @@ spring:
     username: ${MYSQL_USERNAME:lumi}
     password: ${MYSQL_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 5000
+      initialization-fail-timeout: 1000
+      pool-name: LumiPOS-HikariPool
+      data-source-properties:
+        # Remove per-query MySQL round trips (prepare/execute metadata/session state).
+        useServerPrepStmts: true
+        cachePrepStmts: true
+        prepStmtCacheSize: 300
+        prepStmtCacheSqlLimit: 2048
+        useLocalSessionState: true
+        rewriteBatchedStatements: true
+        cacheResultSetMetadata: true
+        cacheServerConfiguration: true
+        elideSetAutoCommits: true
+        maintainTimeStats: false
 
   jpa:
     hibernate:

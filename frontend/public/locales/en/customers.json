@@ -4,6 +4,8 @@
   "search_placeholder": "Search customers...",
   "name": "Name",
   "phone": "Phone",
+  "add_phone": "Add Phone",
+  "remove_phone": "Remove Phone",
   "email": "Email",
   "email_or_account": "Email / Account",
   "address": "Address",

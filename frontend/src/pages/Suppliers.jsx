@@ -111,7 +111,7 @@ const Suppliers = () => {
                 >
                   <TableCell>{s.name}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{s.contactPerson || '-'}</TableCell>
-                  <TableCell>{s.phone || '-'}</TableCell>
+                  <TableCell>{(s.phones && s.phones.length) ? s.phones.join(', ') : (s.phone || '-')}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{s.email || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.createdAt)}</TableCell>
                   {isManager() && (

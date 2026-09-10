@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress } from '@mui/material';
+import { Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, IconButton } from '@mui/material';
+import { Add as AddIcon, RemoveCircleOutline as RemoveIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
@@ -18,7 +19,7 @@ const CustomerForm = () => {
   const [formData, setFormData] = useState({
       firstName: '',
       lastName: '',
-      phone: '',
+      phones: [''],
       email: '',
       address: '',
       city: '',
@@ -36,7 +37,7 @@ const CustomerForm = () => {
       setFormData({
           firstName: c.firstName || '',
           lastName: c.lastName || '',
-          phone: c.phone || '',
+          phones: (c.phones && c.phones.length) ? c.phones : (c.phone ? [c.phone] : ['']),
           email: c.email || '',
           address: c.address || '',
           city: c.city || '',
@@ -73,7 +74,8 @@ const CustomerForm = () => {
         firstName: formData.firstName,
         lastName: formData.lastName,
         email: formData.email,
-        phone: formData.phone,
+        phone: formData.phones[0] || '',
+        phones: formData.phones.map((p) => p.trim()).filter(Boolean),
         address: formData.address,
         city: formData.city,
         creditLimit: formData.creditLimit === '' ? null : parseFloat(formData.creditLimit),
@@ -81,6 +83,12 @@ const CustomerForm = () => {
 
     saveMutation.mutate(customerRequest);
   };
+
+  const addPhone = () => setFormData({ ...formData, phones: [...formData.phones, ''] });
+  const removePhone = (index) => setFormData({
+    ...formData,
+    phones: formData.phones.length > 1 ? formData.phones.filter((_, i) => i !== index) : formData.phones,
+  });
 
   if (!isManager()) return <Alert severity="error">{t('access_denied')}</Alert>;
 
@@ -99,7 +107,26 @@ const CustomerForm = () => {
               <TextField fullWidth label={t('lastname')} name="lastName" value={formData.lastName} onChange={(e) => setFormData({ ...formData, lastName: e.target.value })} required />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('phone')} name="phone" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+              {formData.phones.map((p, i) => (
+                <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <TextField
+                    fullWidth
+                    label={i === 0 ? t('phone') : `${t('phone')} ${i + 1}`}
+                    value={p}
+                    onChange={(e) => {
+                      const phones = [...formData.phones];
+                      phones[i] = e.target.value;
+                      setFormData({ ...formData, phones });
+                    }}
+                  />
+                  {formData.phones.length > 1 && (
+                    <IconButton size="small" color="error" onClick={() => removePhone(i)} aria-label={t('remove_phone')}>
+                      <RemoveIcon />
+                    </IconButton>
+                  )}
+                </Box>
+              ))}
+              <Button startIcon={<AddIcon />} size="small" onClick={addPhone}>{t('add_phone')}</Button>
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('email_or_account')} name="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />

@@ -41,7 +41,8 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
             "LOWER(c.email) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(c.phone) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
             "LOWER(c.customerCode) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-            "LOWER(c.city) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+            "LOWER(c.city) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+            "EXISTS (SELECT 1 FROM c.phones cp WHERE LOWER(cp.phone) LIKE LOWER(CONCAT('%', :keyword, '%'))))")
     Page<Customer> searchActiveCustomers(@Param("keyword") String keyword, @Param("city") String city, Pageable pageable);
 
     @Query("SELECT DISTINCT c.city FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL " +
@@ -52,6 +53,7 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("SELECT c FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL AND " +
             "(LOWER(c.firstName) LIKE LOWER(CONCAT('%', :name, '%')) OR " +
             "LOWER(c.lastName) LIKE LOWER(CONCAT('%', :name, '%')) OR " +
-            "LOWER(c.phone) LIKE LOWER(CONCAT('%', :phone, '%')))")
+            "LOWER(c.phone) LIKE LOWER(CONCAT('%', :phone, '%')) OR " +
+            "EXISTS (SELECT 1 FROM c.phones cp WHERE LOWER(cp.phone) LIKE LOWER(CONCAT('%', :phone, '%'))))")
     List<Customer> findByNameOrPhone(@Param("name") String name, @Param("phone") String phone, Pageable pageable);
 }

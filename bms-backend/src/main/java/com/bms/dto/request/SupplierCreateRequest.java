@@ -4,6 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
+import java.util.List;
 
 public class SupplierCreateRequest {
     @NotBlank(message = "Supplier name is required")
@@ -15,6 +16,8 @@ public class SupplierCreateRequest {
 
     @NotBlank(message = "Phone is required")
     private String phone;
+
+    private List<String> phones;
 
     private String address;
     private String taxId;
@@ -29,6 +32,8 @@ public class SupplierCreateRequest {
     public void setEmail(String email) { this.email = email; }
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+    public List<String> getPhones() { return phones; }
+    public void setPhones(List<String> phones) { this.phones = phones; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public String getTaxId() { return taxId; }

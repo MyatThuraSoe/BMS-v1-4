@@ -4,6 +4,8 @@
   "search_placeholder": "ဖောက်သည်များကို ရှာဖွေရန်...",
   "name": "အမည်",
   "phone": "ဖုန်း",
+  "add_phone": "ဖုန်းထည့်ရန်",
+  "remove_phone": "ဖုန်းဖျက်ရန်",
   "email": "အီးမေးလ်",
   "email_or_account": "အီးမေးလ် / အကောင့်",
   "address": "လိပ်စာ",

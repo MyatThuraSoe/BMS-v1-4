@@ -4,6 +4,8 @@
   "search_placeholder": "Rechercher des clients...",
   "name": "Nom",
   "phone": "Téléphone",
+  "add_phone": "Ajouter un téléphone",
+  "remove_phone": "Supprimer le téléphone",
   "email": "E-mail",
   "email_or_account": "E-mail / Compte",
   "address": "Adresse",

@@ -61,6 +61,8 @@
   "no_suppliers_found": "ပေးသွင်းသူ မတွေ့ပါ။",
   "notes": "မှတ်ချက်",
   "phone": "ဖုန်းနံပါတ်",
+  "add_phone": "ဖုန်းထည့်ရန်",
+  "remove_phone": "ဖုန်းဖျက်ရန်",
   "product": "ကုန်ပစ္စည်း",
   "product_id": "ကုန်ပစ္စည်း ID: {{id}}",
   "purchase_details": "ဝယ်ယူမှုအသေးစိတ်",

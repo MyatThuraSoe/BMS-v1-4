@@ -33,10 +33,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Page<Product> searchActiveProducts(@Param("keyword") String keyword, Pageable pageable);
 
     // OPTIMIZED: Database-level filtering for low stock (fixes broken pagination)
+    @EntityGraph(attributePaths = {"category"})
     @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL AND p.stockQuantity <= p.minStockLevel")
     Page<Product> findLowStockProducts(Pageable pageable);
 
     // OPTIMIZED: Database-level filtering for low stock BY CATEGORY (fixes broken pagination)
+    @EntityGraph(attributePaths = {"category"})
     @Query("SELECT p FROM Product p WHERE p.category.id = :categoryId AND p.isActive = true AND p.deletedAt IS NULL AND p.stockQuantity <= p.minStockLevel")
     Page<Product> findLowStockProductsByCategoryId(@Param("categoryId") Long categoryId, Pageable pageable);
 
@@ -49,6 +51,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p WHERE p.id = :id")
     Optional<Product> findByIdForUpdate(@Param("id") Long id);
 
+    @EntityGraph(attributePaths = {"category"})
     @Query("""
         SELECT p
         FROM Product p
@@ -62,6 +65,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     """)
     Page<Product> findMostSoldProducts(Pageable pageable);
 
+    @EntityGraph(attributePaths = {"category"})
     @Query("""
         SELECT p
         FROM Product p

@@ -64,6 +64,9 @@ public class Supplier {
     @JsonIgnore
     private List<Purchase> purchases = new ArrayList<>();
 
+    @OneToMany(mappedBy = "supplier", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<SupplierPhone> phones = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -123,4 +126,7 @@ public class Supplier {
 
     public List<Purchase> getPurchases() { return purchases; }
     public void setPurchases(List<Purchase> purchases) { this.purchases = purchases; }
+
+    public List<SupplierPhone> getPhones() { return phones; }
+    public void setPhones(List<SupplierPhone> phones) { this.phones = phones; }
 }

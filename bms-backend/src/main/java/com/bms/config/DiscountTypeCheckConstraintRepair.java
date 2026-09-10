@@ -41,6 +41,14 @@ public class DiscountTypeCheckConstraintRepair implements ApplicationRunner {
         try (Connection connection = jdbcTemplate.getDataSource().getConnection()) {
             String url = connection.getMetaData().getURL().toLowerCase();
             boolean isH2 = url.contains(":h2:");
+            boolean isSqlite = url.contains(":sqlite:");
+
+            // SQLite has no native enum type — Hibernate always creates
+            // discount_type as VARCHAR there, so there is never anything to fix.
+            if (isSqlite) {
+                log.info("DiscountTypeCheckConstraintRepair: SQLite stores enums as VARCHAR — no repair needed");
+                return;
+            }
 
             // --- Step 1: convert native ENUM column to VARCHAR ---
             String dataType;

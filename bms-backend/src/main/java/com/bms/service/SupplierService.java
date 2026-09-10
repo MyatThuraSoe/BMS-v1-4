@@ -3,6 +3,7 @@ package com.bms.service;
 import com.bms.dto.request.SupplierCreateRequest;
 import com.bms.dto.response.SupplierResponse;
 import com.bms.entity.Supplier;
+import com.bms.entity.SupplierPhone;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SupplierRepository;
@@ -13,6 +14,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -49,15 +54,18 @@ public class SupplierService {
                 && supplierRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Supplier with email '" + request.getEmail() + "' already exists");
         }
-        if (supplierRepository.existsByPhone(request.getPhone())) {
-            throw new BusinessException("Supplier with phone '" + request.getPhone() + "' already exists");
+        List<String> phones = normalizePhones(request.getPhones(), request.getPhone());
+        for (String p : phones) {
+            if (supplierRepository.existsByPhone(p)) {
+                throw new BusinessException("Supplier with phone '" + p + "' already exists");
+            }
         }
 
         Supplier supplier = new Supplier();
         supplier.setName(request.getName());
         supplier.setContactPerson(request.getContactPerson());
         supplier.setEmail(request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail() : null);
-        supplier.setPhone(request.getPhone());
+        fillPhones(supplier, phones);
         supplier.setAddress(request.getAddress());
         supplier.setTaxId(request.getTaxId());
         supplier.setPaymentTerms(request.getPaymentTerms());
@@ -89,14 +97,20 @@ public class SupplierService {
                 && supplierRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Supplier with email '" + request.getEmail() + "' already exists");
         }
-        if (!supplier.getPhone().equals(request.getPhone()) && supplierRepository.existsByPhone(request.getPhone())) {
-            throw new BusinessException("Supplier with phone '" + request.getPhone() + "' already exists");
+        Set<String> currentPhones = supplier.getPhones().stream()
+                .map(SupplierPhone::getPhone)
+                .collect(Collectors.toSet());
+        List<String> phones = normalizePhones(request.getPhones(), request.getPhone());
+        for (String p : phones) {
+            if (!currentPhones.contains(p) && supplierRepository.existsByPhone(p)) {
+                throw new BusinessException("Supplier with phone '" + p + "' already exists");
+            }
         }
 
         supplier.setName(request.getName());
         supplier.setContactPerson(request.getContactPerson());
         supplier.setEmail(request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail() : null);
-        supplier.setPhone(request.getPhone());
+        fillPhones(supplier, phones);
         supplier.setAddress(request.getAddress());
         supplier.setTaxId(request.getTaxId());
         supplier.setPaymentTerms(request.getPaymentTerms());
@@ -131,6 +145,9 @@ public class SupplierService {
         response.setContactPerson(supplier.getContactPerson());
         response.setEmail(supplier.getEmail());
         response.setPhone(supplier.getPhone());
+        response.setPhones(supplier.getPhones().stream()
+                .map(SupplierPhone::getPhone)
+                .collect(Collectors.toList()));
         response.setAddress(supplier.getAddress());
         response.setTaxId(supplier.getTaxId());
         response.setPaymentTerms(supplier.getPaymentTerms());
@@ -139,5 +156,34 @@ public class SupplierService {
         response.setCreatedAt(supplier.getCreatedAt());
         response.setUpdatedAt(supplier.getUpdatedAt());
         return response;
+    }
+
+    private List<String> normalizePhones(List<String> phones, String primary) {
+        List<String> result = new ArrayList<>();
+        if (phones != null) {
+            for (String p : phones) {
+                if (p != null && !p.isBlank() && !result.contains(p.trim())) {
+                    result.add(p.trim());
+                }
+            }
+        }
+        if (primary != null && !primary.isBlank() && !result.contains(primary.trim())) {
+            result.add(0, primary.trim());
+        }
+        return result;
+    }
+
+    private void fillPhones(Supplier supplier, List<String> phones) {
+        if (phones.isEmpty()) {
+            throw new BusinessException("At least one phone number is required");
+        }
+        supplier.getPhones().clear();
+        for (String p : phones) {
+            SupplierPhone sp = new SupplierPhone();
+            sp.setSupplier(supplier);
+            sp.setPhone(p);
+            supplier.getPhones().add(sp);
+        }
+        supplier.setPhone(phones.get(0));
     }
 }

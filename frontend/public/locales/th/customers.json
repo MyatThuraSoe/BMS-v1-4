@@ -4,6 +4,8 @@
   "search_placeholder": "ค้นหาลูกค้า...",
   "name": "ชื่อ",
   "phone": "โทรศัพท์",
+  "add_phone": "เพิ่มเบอร์โทร",
+  "remove_phone": "ลบเบอร์โทร",
   "email": "อีเมล",
   "email_or_account": "อีเมล / บัญชี",
   "address": "ที่อยู่",

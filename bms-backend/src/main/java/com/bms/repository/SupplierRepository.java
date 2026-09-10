@@ -24,6 +24,7 @@ public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     @Query("SELECT s FROM Supplier s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
            "(LOWER(s.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
            "LOWER(s.email) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
-           "LOWER(s.phone) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+           "LOWER(s.phone) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
+           "EXISTS (SELECT 1 FROM s.phones sp WHERE LOWER(sp.phone) LIKE LOWER(CONCAT('%', :keyword, '%'))))")
     Page<Supplier> searchActiveSuppliers(@Param("keyword") String keyword, Pageable pageable);
 }

@@ -24,13 +24,33 @@ public final class MachineFingerprint {
 
     private static final Path CACHE_FILE = Path.of("C:/LumiPOS/machine.fingerprint");
 
+    // Recomputed result is immutable for the lifetime of the JVM, so memoize it.
+    // Without this, isLicensed() -> getMachineId() spawns TWO PowerShell
+    // processes on EVERY API request (~4s each), which is what made every
+    // endpoint feel seconds-slow even though the values are also on disk.
+    private static volatile String cachedMachineId;
+
     private MachineFingerprint() {}
 
     public static String getMachineId() {
-        String guid = hardwareValue(
+        String id = cachedMachineId;
+        if (id == null) {
+            synchronized (MachineFingerprint.class) {
+                id = cachedMachineId;
+                if (id == null) {
+                    id = computeMachineId();
+                    cachedMachineId = id;
+                }
+            }
+        }
+        return id;
+    }
+
+    private static String computeMachineId() {
+        String guid = hardwareSlot(
                 "(Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Cryptography' -Name MachineGuid).MachineGuid",
                 "MachineGuid");
-        String uuid = hardwareValue(
+        String uuid = hardwareSlot(
                 "(Get-CimInstance -ClassName Win32_ComputerSystemProduct).UUID",
                 "ProductUUID");
 
@@ -39,17 +59,20 @@ public final class MachineFingerprint {
                 + hash.substring(8, 12) + "-" + hash.substring(12, 16)).toUpperCase();
     }
 
-    private static String hardwareValue(String script, String slot) {
+    private static String hardwareSlot(String script, String slot) {
+        // The persisted cache is authoritative when present: read it FIRST so the
+        // hot path (every API request) never spawns a PowerShell process.
+        String cached = cachedSlot(slot);
+        if (cached != null && !cached.isBlank()) {
+            return cached;
+        }
+        // Cache miss (first run on a machine): probe PowerShell once, then persist.
         String probe = exec("powershell", "-Command", script);
         if (probe != null && !probe.isBlank() && !"UNKNOWN".equals(probe)) {
             cacheSlot(slot, probe);
             return probe;
         }
-        // Probe failed or returned nothing: last known good value, else per-install token.
-        String cached = cachedSlot(slot);
-        if (cached != null && !cached.isBlank()) {
-            return cached;
-        }
+        // Probe failed or returned nothing: last resort is the per-install token.
         return installToken();
     }
 

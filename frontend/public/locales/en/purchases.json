@@ -61,6 +61,8 @@
   "no_suppliers_found": "No suppliers found",
   "notes": "Notes",
   "phone": "Phone",
+  "add_phone": "Add Phone",
+  "remove_phone": "Remove Phone",
   "product": "Product",
   "product_id": "Product ID: {{id}}",
   "purchase_details": "Purchase Details",

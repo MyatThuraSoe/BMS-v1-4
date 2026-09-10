@@ -46,6 +46,7 @@ const Customers = () => {
   const { data: citiesData } = useQuery({
     queryKey: ['customerCities'],
     queryFn: () => customerService.getCities(),
+    staleTime: 5 * 60 * 1000,
   });
 
   const deleteMutation = useMutation({
@@ -134,7 +135,7 @@ const Customers = () => {
                       {c.isQuickAdd && <Chip label={t('quick_add')} size="small" color="warning" variant="outlined" icon={<QuickAddIcon />} />}
                     </Box>
                   </TableCell>
-                  <TableCell>{c.phone || '-'}</TableCell>
+                  <TableCell>{(c.phones && c.phones.length) ? c.phones.join(', ') : (c.phone || '-')}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.email || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.city || '-'}</TableCell>
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{c.address || '-'}</TableCell>

@@ -61,6 +61,8 @@
   "no_suppliers_found": "仕入先が見つかりません",
   "notes": "メモ",
   "phone": "電話番号",
+  "add_phone": "電話を追加",
+  "remove_phone": "電話を削除",
   "product": "商品",
   "product_id": "商品ID: {{id}}",
   "purchase_details": "仕入れ詳細",

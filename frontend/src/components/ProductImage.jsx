@@ -8,6 +8,9 @@ const ProductImage = ({ productId, hasImage, size = 60 }) => {
   const [isVisible, setIsVisible] = useState(false);
   const imgRef = useRef(null);
 
+  // Use the 150px thumbnail for grid/list cells (<=200px target); full image is bigger.
+  const useThumbnail = size <= 200;
+
   useEffect(() => {
     if (!imgRef.current || !hasImage || !productId) {
       setIsVisible(false);
@@ -40,7 +43,10 @@ const ProductImage = ({ productId, hasImage, size = 60 }) => {
     let cancelled = false;
 
     if (hasImage && productId && isVisible) {
-      productService.getImage(productId)
+      const fetcher = useThumbnail
+        ? productService.getThumbnail(productId)
+        : productService.getImage(productId);
+      fetcher
         .then((blob) => {
           if (cancelled) return;
           objectUrl = URL.createObjectURL(blob);
@@ -57,7 +63,7 @@ const ProductImage = ({ productId, hasImage, size = 60 }) => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [productId, hasImage, isVisible]);
+  }, [productId, hasImage, isVisible, useThumbnail]);
 
   const placeholder = (
     <Box

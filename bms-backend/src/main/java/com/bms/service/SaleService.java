@@ -23,6 +23,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -702,13 +703,22 @@ public class SaleService {
     }
 
     public SaleResponse convertToResponse(Sale sale, List<SaleReturn> returns) {
+        return convertToResponse(sale, returns, Map.of());
+    }
+
+    public SaleResponse convertToResponse(Sale sale, List<SaleReturn> returns, Map<Long, String> cashierNames) {
         SaleResponse response = new SaleResponse();
         response.setId(sale.getId());
         response.setInvoiceNumber(sale.getInvoiceNumber());
         response.setCashierId(sale.getCashierId());
-        userRepository.findById(sale.getCashierId()).ifPresent(cashier ->
-            response.setCashierName(cashier.getFirstName() + " " + cashier.getLastName())
-        );
+        String cashierName = cashierNames.get(sale.getCashierId());
+        if (cashierName != null) {
+            response.setCashierName(cashierName);
+        } else {
+            userRepository.findById(sale.getCashierId()).ifPresent(cashier ->
+                response.setCashierName(cashier.getFirstName() + " " + cashier.getLastName())
+            );
+        }
         response.setSaleDate(sale.getSaleDate());
         response.setSubtotal(sale.getSubtotal());
         response.setTaxAmount(sale.getTaxAmount());
@@ -744,12 +754,27 @@ public class SaleService {
         return response;
     }
 
-    // Batch map a page of sales to DTOs so returns reload in a single query instead of one per sale.
+    // Batch map a page of sales to DTOs so returns AND cashier names are loaded in single queries.
     public Page<SaleResponse> convertToResponses(Page<Sale> salePage) {
         List<Sale> sales = salePage.getContent();
         List<Long> saleIds = sales.stream().map(Sale::getId).toList();
         Map<Long, List<SaleReturn>> returnsBySale = saleReturnService.findBySaleIds(saleIds);
-        return salePage.map(sale -> convertToResponse(sale, returnsBySale.getOrDefault(sale.getId(), List.of())));
+        Map<Long, String> cashierNames = loadCashierNames(sales);
+        return salePage.map(sale -> convertToResponse(sale, returnsBySale.getOrDefault(sale.getId(), List.of()), cashierNames));
+    }
+
+    private Map<Long, String> loadCashierNames(List<Sale> sales) {
+        Set<Long> cashierIds = sales.stream()
+                .map(Sale::getCashierId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (cashierIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, String> names = new HashMap<>(cashierIds.size() * 2);
+        userRepository.findAllById(cashierIds).forEach(user ->
+            names.put(user.getId(), user.getFirstName() + " " + user.getLastName()));
+        return names;
     }
 
     public SaleItemResponse convertItemToResponse(SaleItem item) {

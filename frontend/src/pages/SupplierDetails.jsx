@@ -85,7 +85,13 @@ const SupplierDetails = () => {
             </Grid>
             <Grid item xs={12} md={6}>
               <Typography variant="body2" color="text.secondary">{t('phone')}</Typography>
-              <Typography variant="body1">{supplier.phone || t('n_a')}</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                {(supplier.phones && supplier.phones.length)
+                  ? supplier.phones.map((p, i) => <Chip key={i} size="small" label={p} />)
+                  : (supplier.phone
+                      ? <Chip size="small" label={supplier.phone} />
+                      : <Typography variant="body1">{t('n_a')}</Typography>)}
+              </Box>
             </Grid>
             <Grid item xs={12} md={6}>
               <Typography variant="body2" color="text.secondary">{t('email_or_account')}</Typography>

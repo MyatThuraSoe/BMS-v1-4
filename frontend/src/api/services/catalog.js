@@ -38,6 +38,13 @@ export const productService = {
     return response.data;
   },
 
+  getThumbnail: async (productId) => {
+    const response = await apiClient.get(`/products/${productId}/thumbnail`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
+
   uploadImage: async (productId, file) => {
     const formData = new FormData();
     formData.append('file', file);

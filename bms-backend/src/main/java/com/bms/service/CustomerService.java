@@ -3,6 +3,7 @@ package com.bms.service;
 import com.bms.dto.request.CustomerCreateRequest;
 import com.bms.dto.response.CustomerResponse;
 import com.bms.entity.Customer;
+import com.bms.entity.CustomerPhone;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
@@ -13,8 +14,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -53,8 +57,11 @@ public class CustomerService {
         if (request.getEmail() != null && !request.getEmail().isBlank() && customerRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Customer with email '" + request.getEmail() + "' already exists");
         }
-        if (request.getPhone() != null && !request.getPhone().isBlank() && customerRepository.existsByPhone(request.getPhone())) {
-            throw new BusinessException("Customer with phone '" + request.getPhone() + "' already exists");
+        List<String> phones = normalizePhones(request.getPhones(), request.getPhone());
+        for (String p : phones) {
+            if (customerRepository.existsByPhone(p)) {
+                throw new BusinessException("Customer with phone '" + p + "' already exists");
+            }
         }
 
         Customer customer = new Customer();
@@ -62,7 +69,7 @@ public class CustomerService {
         customer.setFirstName(request.getFirstName());
         customer.setLastName(request.getLastName());
         customer.setEmail(request.getEmail());
-        customer.setPhone(request.getPhone());
+        fillPhones(customer, phones);
         customer.setAddress(request.getAddress());
         customer.setCity(request.getCity());
         customer.setState(request.getState());
@@ -97,16 +104,20 @@ public class CustomerService {
                 && customerRepository.existsByEmail(request.getEmail())) {
             throw new BusinessException("Customer with email '" + request.getEmail() + "' already exists");
         }
-        if (request.getPhone() != null && !request.getPhone().isBlank()
-                && !request.getPhone().equals(customer.getPhone())
-                && customerRepository.existsByPhone(request.getPhone())) {
-            throw new BusinessException("Customer with phone '" + request.getPhone() + "' already exists");
+        Set<String> currentPhones = customer.getPhones().stream()
+                .map(CustomerPhone::getPhone)
+                .collect(Collectors.toSet());
+        List<String> phones = normalizePhones(request.getPhones(), request.getPhone());
+        for (String p : phones) {
+            if (!currentPhones.contains(p) && customerRepository.existsByPhone(p)) {
+                throw new BusinessException("Customer with phone '" + p + "' already exists");
+            }
         }
 
         customer.setFirstName(request.getFirstName());
         customer.setLastName(request.getLastName());
         customer.setEmail(request.getEmail() != null && !request.getEmail().isBlank() ? request.getEmail() : null);
-        customer.setPhone(request.getPhone() != null && !request.getPhone().isBlank() ? request.getPhone() : null);
+        fillPhones(customer, phones);
         customer.setIsQuickAdd(false);
         customer.setAddress(request.getAddress());
         customer.setCity(request.getCity());
@@ -173,6 +184,9 @@ public class CustomerService {
         response.setLastName(customer.getLastName());
         response.setEmail(customer.getEmail());
         response.setPhone(customer.getPhone());
+        response.setPhones(customer.getPhones().stream()
+                .map(CustomerPhone::getPhone)
+                .collect(Collectors.toList()));
         response.setAddress(customer.getAddress());
         response.setCity(customer.getCity());
         response.setState(customer.getState());
@@ -186,5 +200,31 @@ public class CustomerService {
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());
         return response;
+    }
+
+    private List<String> normalizePhones(List<String> phones, String primary) {
+        List<String> result = new ArrayList<>();
+        if (phones != null) {
+            for (String p : phones) {
+                if (p != null && !p.isBlank() && !result.contains(p.trim())) {
+                    result.add(p.trim());
+                }
+            }
+        }
+        if (primary != null && !primary.isBlank() && !result.contains(primary.trim())) {
+            result.add(0, primary.trim());
+        }
+        return result;
+    }
+
+    private void fillPhones(Customer customer, List<String> phones) {
+        customer.getPhones().clear();
+        for (String p : phones) {
+            CustomerPhone cp = new CustomerPhone();
+            cp.setCustomer(customer);
+            cp.setPhone(p);
+            customer.getPhones().add(cp);
+        }
+        customer.setPhone(phones.isEmpty() ? null : phones.get(0));
     }
 }

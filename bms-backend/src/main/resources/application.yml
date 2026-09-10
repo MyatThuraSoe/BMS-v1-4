@@ -26,6 +26,13 @@ spring:
         default_batch_fetch_size: 50
   flyway:
     enabled: false
+
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=500,expireAfterWrite=10m
+    cache-names: categoriesActive,shopInfo,systemSettings
+
   servlet:
     multipart:
       max-file-size: 10MB

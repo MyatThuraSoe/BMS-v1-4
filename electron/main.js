@@ -46,11 +46,15 @@ loadDotEnv();
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
 
-// DB engine per launch: production default is MySQL (shop-server mode,
-// application-mysql.yml). Opt back into the built-in H2 for dev/testing
-// with LUMIPOS_DB=electron or LUMIPOS_DB=h2 (see scripts/start-electron.js).
+// DB engine per launch:
+//   default            -> SQLite (zero-config embedded file, application-sqlite.yml)
+//   LUMIPOS_DB=mysql   -> MySQL server mode for shared/shop-server installs
+//   LUMIPOS_DB=electron/h2 -> built-in H2 for dev/testing (application-electron.yml)
 const requestedDb = (process.env.LUMIPOS_DB || '').toLowerCase();
-const DB_PROFILE = (requestedDb === 'electron' || requestedDb === 'h2') ? 'electron' : 'mysql';
+const DB_PROFILE = requestedDb === 'mysql'
+    ? 'mysql'
+    : (requestedDb === 'electron' || requestedDb === 'h2') ? 'electron'
+    : 'sqlite';
 
 // First usable LAN IPv4, preferring real private ranges over virtual
 // adapters (VMware/Hyper-V/WSL often register first).
@@ -137,15 +141,24 @@ function startServer() {
     console.log(`Starting server with Java: ${javaPath}`);
     console.log(`JAR path: ${jarPath}`);
     
-    // Optional override only — if GOOGLE_CLIENT_SECRET isn't set, the value
-    // from application-electron.yml is used instead.
-    // DB engine: production default MySQL; H2 via LUMIPOS_DB=electron/h2 (see DB_PROFILE)
+    // DB engine: default SQLite; MySQL via LUMIPOS_DB=mysql; H2 via LUMIPOS_DB=electron/h2
     console.log('[LumiPOS] Database profile: ' + DB_PROFILE);
     const spawnArgs = [
         '-Dspring.profiles.active=' + DB_PROFILE,
         '-Dspring.main.banner-mode=off',
-        '-Dserver.port=' + APP_PORT
+        '-Dserver.port=' + APP_PORT,
+        // JVM memory + GC tuning: keep heap bounded, use low-pause G1 as default collector.
+        '-Xms256m',
+        '-Xmx512m',
+        '-XX:+UseG1GC',
+        '-XX:MaxGCPauseMillis=200'
     ];
+    // One-time data move for existing MySQL users switching to SQLite:
+    // the backend copies MySQL -> SQLite on startup, then serves from SQLite.
+    if (process.env.LUMIPOS_MIGRATE_MYSQL_TO_SQLITE === '1') {
+        spawnArgs.push('-Dlumipos.migration.mysql-to-sqlite=true');
+        console.log('[LumiPOS] One-time MySQL -> SQLite migration requested (LUMIPOS_MIGRATE_MYSQL_TO_SQLITE=1)');
+    }
     if (process.env.GOOGLE_CLIENT_SECRET) {
         spawnArgs.push('-Dgoogle.oauth.client-secret=' + process.env.GOOGLE_CLIENT_SECRET);
     }
@@ -739,7 +752,9 @@ if (!gotTheLock) {
         closeSplashWindow();
         dialog.showErrorBox(
             'Startup Error',
-            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. MySQL is running and reachable\n3. Port 17234 is not in use\n4. The application files are not corrupted'
+            'The BMS server failed to start.\n\nPlease check that:\n1. Java is installed\n2. ' +
+            (DB_PROFILE === 'mysql' ? 'MySQL is running and reachable' : 'Port 17234 is not in use') +
+            '\n3. Port 17234 is not in use\n4. The application files are not corrupted'
         );
         quitApp();
     }

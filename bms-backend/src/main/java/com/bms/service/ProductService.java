@@ -244,6 +244,7 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
 
         product.setImageData(optimised.data());
         product.setImageType(optimised.extension());
+        product.setThumbnailData(com.bms.util.ImageResizeUtil.createThumbnail(original));
         productRepository.save(product);
 
         auditLogService.logAction(userId, "PRODUCT_IMAGE_UPLOAD",
@@ -260,12 +261,32 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         return product.getImageData();
     }
 
+    public byte[] getProductThumbnail(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        if (product.getThumbnailData() != null) {
+            return product.getThumbnailData();
+        }
+        // Legacy products (uploaded before thumbnails existed): generate once on first access.
+        if (product.getImageData() == null) {
+            throw new ResourceNotFoundException("Product " + productId + " has no image");
+        }
+        byte[] thumbnail = com.bms.util.ImageResizeUtil.createThumbnail(product.getImageData());
+        if (thumbnail == null) {
+            throw new ResourceNotFoundException("Product " + productId + " image cannot be decoded");
+        }
+        product.setThumbnailData(thumbnail);
+        productRepository.save(product);
+        return thumbnail;
+    }
+
     public void deleteProductImage(Long productId, Long userId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
         product.setImageData(null);
         product.setImageType(null);
+        product.setThumbnailData(null);
         productRepository.save(product);
 
         auditLogService.logAction(userId, "PRODUCT_IMAGE_DELETE",

@@ -62,6 +62,7 @@ const Sales = () => {
     queryKey: ['users-for-sales-filter'],
     queryFn: () => userService.getAll(0, 100),
     enabled: isManager(),
+    staleTime: 5 * 60 * 1000,
   });
   const employees = usersData?.data || [];
 

@@ -4,6 +4,8 @@
   "search_placeholder": "顧客を検索...",
   "name": "名前",
   "phone": "電話番号",
+  "add_phone": "電話を追加",
+  "remove_phone": "電話を削除",
   "email": "メール",
   "email_or_account": "メール・アカウント",
   "address": "住所",

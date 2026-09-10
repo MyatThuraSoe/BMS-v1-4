@@ -4,6 +4,7 @@ import com.bms.dto.request.CustomerCreateRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.CustomerResponse;
 import com.bms.entity.Customer;
+import com.bms.entity.CustomerPhone;
 import com.bms.service.CustomerService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,6 +18,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/customers")
@@ -94,6 +96,9 @@ public class CustomerController {
         response.setLastName(customer.getLastName());
         response.setEmail(customer.getEmail());
         response.setPhone(customer.getPhone());
+        response.setPhones(customer.getPhones().stream()
+                .map(CustomerPhone::getPhone)
+                .collect(Collectors.toList()));
         response.setAddress(customer.getAddress());
         response.setCity(customer.getCity());
         response.setState(customer.getState());

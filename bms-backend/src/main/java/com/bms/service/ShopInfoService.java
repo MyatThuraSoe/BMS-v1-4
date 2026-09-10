@@ -4,6 +4,8 @@ import com.bms.dto.response.ShopInfoResponse;
 import com.bms.entity.ShopInfo;
 import com.bms.repository.ShopInfoRepository;
 import jakarta.transaction.Transactional;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -21,6 +23,7 @@ public class ShopInfoService {
     }
 
     @Transactional
+    @Cacheable(cacheNames = "shopInfo")
     public ShopInfoResponse getShopInfo() {
         Optional<ShopInfo> maybe = shopInfoRepository.findTopByOrderByIdAsc();
         if (maybe.isEmpty()) {
@@ -58,6 +61,7 @@ public class ShopInfoService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "shopInfo", allEntries = true)
     public ShopInfoResponse upsertShopInfo(ShopInfoRequest req) {
         ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElseGet(ShopInfo::new);
 
@@ -83,6 +87,7 @@ public class ShopInfoService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "shopInfo", allEntries = true)
     public void uploadLogo(MultipartFile file) throws IOException {
         // Trust magic bytes, never the client Content-Type. Prevents storing (then
         // serving inline) HTML/JS payloads that would execute in the browser.
@@ -94,6 +99,7 @@ public class ShopInfoService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "shopInfo", allEntries = true)
     public void deleteLogo() {
         ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElse(null);
         if (info == null) return;

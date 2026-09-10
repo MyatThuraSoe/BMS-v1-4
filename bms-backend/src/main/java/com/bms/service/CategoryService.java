@@ -6,6 +6,8 @@ import com.bms.entity.Category;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CategoryRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -35,7 +37,9 @@ public class CategoryService {
                 .map(c -> toResponseDto(c, stockStats, lowStock, outOfStock, salesStats));
     }
 
+    // Hot read used by the POS treeview, category dropdowns and product filters.
     @Transactional(readOnly = true)
+    @Cacheable(cacheNames = "categoriesActive")
     public List<CategoryResponseDto> getAllActiveCategories() {
         return categoryRepository.findAllActive().stream()
                 .map(this::toResponseDto)
@@ -72,6 +76,7 @@ public class CategoryService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "categoriesActive", allEntries = true)
     public CategoryResponseDto createCategory(CategoryRequestDto request) {
         Category category = new Category();
         category.setName(request.getName());
@@ -83,6 +88,7 @@ public class CategoryService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "categoriesActive", allEntries = true)
     public CategoryResponseDto updateCategory(Long id, CategoryRequestDto request) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
@@ -95,6 +101,7 @@ public class CategoryService {
     }
 
     @Transactional
+    @CacheEvict(cacheNames = "categoriesActive", allEntries = true)
     public void deleteCategory(Long id) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));

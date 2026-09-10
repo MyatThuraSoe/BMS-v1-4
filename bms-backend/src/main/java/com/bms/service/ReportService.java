@@ -718,8 +718,8 @@ public class ReportService {
             SupplierProfitDto dto = new SupplierProfitDto();
             dto.setSupplierId(((Number) row.get("id")).longValue());
             dto.setSupplierName((String) row.get("name"));
-            dto.setTotalSuppliedCost((BigDecimal) row.get("total_supplied_cost"));
-            dto.setEstimatedRevenue((BigDecimal) row.get("estimated_revenue"));
+            dto.setTotalSuppliedCost(toBigDecimal(row.get("total_supplied_cost")));
+            dto.setEstimatedRevenue(toBigDecimal(row.get("estimated_revenue")));
 
             BigDecimal profit = dto.getEstimatedRevenue().subtract(dto.getTotalSuppliedCost());
             dto.setEstimatedProfit(profit);
@@ -959,6 +959,24 @@ public class ReportService {
             }
         }
         return revenue;
+    }
+
+    /**
+     * sqlite-jdbc returns SUM()/aggregate columns whose inputs are all integer
+     * as Integer/Long (no DECIMAL affinity), whereas MySQL returned BigDecimal.
+     * Convert whatever JDBC hands back to a precise BigDecimal.
+     */
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
+        if (value instanceof Number n) {
+            return new BigDecimal(n.toString());
+        }
+        return new BigDecimal(value.toString());
     }
 
         private LocalDate resolveStartDate(String period, LocalDate endDate) {

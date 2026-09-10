@@ -60,6 +60,10 @@ public class Product {
     @Column(name = "image_data", columnDefinition = "LONGBLOB")
     private byte[] imageData;
 
+    @Basic(fetch = FetchType.LAZY)
+    @Column(name = "thumbnail_data", columnDefinition = "LONGBLOB")
+    private byte[] thumbnailData;
+
     private String imageType;
     
     @Column(name = "is_active", nullable = false)
@@ -156,6 +160,9 @@ public class Product {
 
     public byte[] getImageData() { return imageData; }
     public void setImageData(byte[] imageData) { this.imageData = imageData; }
+
+    public byte[] getThumbnailData() { return thumbnailData; }
+    public void setThumbnailData(byte[] thumbnailData) { this.thumbnailData = thumbnailData; }
 
     public String getImageType() { return imageType; }
     public void setImageType(String imageType) { this.imageType = imageType; }

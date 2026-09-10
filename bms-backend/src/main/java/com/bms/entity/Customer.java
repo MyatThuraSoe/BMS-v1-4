@@ -5,6 +5,8 @@ import jakarta.persistence.*;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
@@ -60,6 +62,9 @@ public class Customer {
 
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
+
+    @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<CustomerPhone> phones = new ArrayList<>();
 
     @Version
     private Long version;
@@ -132,6 +137,9 @@ public class Customer {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public List<CustomerPhone> getPhones() { return phones; }
+    public void setPhones(List<CustomerPhone> phones) { this.phones = phones; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }

@@ -12,6 +12,7 @@ public class CustomerResponse {
     private String lastName;
     private String email;
     private String phone;
+    private List<String> phones;
     private String address;
     private String city;
     private String state;
@@ -37,6 +38,8 @@ public class CustomerResponse {
     public void setEmail(String email) { this.email = email; }
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+    public List<String> getPhones() { return phones; }
+    public void setPhones(List<String> phones) { this.phones = phones; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public String getCity() { return city; }

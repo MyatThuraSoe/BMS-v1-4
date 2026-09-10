@@ -3,6 +3,7 @@ package com.bms.dto.response;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 public class SupplierResponse {
     private Long id;
@@ -10,6 +11,7 @@ public class SupplierResponse {
     private String contactPerson;
     private String email;
     private String phone;
+    private List<String> phones;
     private String address;
     private String taxId;
     private String paymentTerms;
@@ -28,6 +30,8 @@ public class SupplierResponse {
     public void setEmail(String email) { this.email = email; }
     public String getPhone() { return phone; }
     public void setPhone(String phone) { this.phone = phone; }
+    public List<String> getPhones() { return phones; }
+    public void setPhones(List<String> phones) { this.phones = phones; }
     public String getAddress() { return address; }
     public void setAddress(String address) { this.address = address; }
     public String getTaxId() { return taxId; }

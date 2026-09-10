@@ -28,6 +28,58 @@ public final class ImageResizeUtil {
     private static final float JPEG_QUALITY = 0.85f;
     private static final String OUTPUT_FORMAT = "jpeg";
 
+    private static final int THUMBNAIL_SIZE = 150;
+    private static final float THUMBNAIL_QUALITY = 0.7f;
+
+    /**
+     * Creates a small square thumbnail (150×150 px center crop) for grid/list views.
+     * JPEG quality 0.7 keeps thumbnails well under 50 KB, cutting transfer size and
+     * request latency for products, POS and low-stock lists.
+     *
+     * @return JPEG thumbnail bytes, or {@code null} when the image cannot be decoded
+     */
+    public static byte[] createThumbnail(byte[] original) {
+        if (original == null || original.length == 0) {
+            return null;
+        }
+        BufferedImage src;
+        try {
+            src = ImageIO.read(new ByteArrayInputStream(original));
+        } catch (IOException e) {
+            return null;
+        }
+        if (src == null) {
+            return null;
+        }
+        int w = src.getWidth();
+        int h = src.getHeight();
+        if (w == 0 || h == 0) {
+            return null;
+        }
+
+        // Scale so the image FILLS the thumbnail box, then center-crop to a square.
+        double scale = Math.max((double) THUMBNAIL_SIZE / w, (double) THUMBNAIL_SIZE / h);
+        int scaledW = (int) Math.round(w * scale);
+        int scaledH = (int) Math.round(h * scale);
+        BufferedImage scaled = new BufferedImage(scaledW, scaledH, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = scaled.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g.drawImage(src, 0, 0, scaledW, scaledH, null);
+        g.dispose();
+
+        int srcX = (scaledW - THUMBNAIL_SIZE) / 2;
+        int srcY = (scaledH - THUMBNAIL_SIZE) / 2;
+        BufferedImage thumb = scaled.getSubimage(srcX, srcY, THUMBNAIL_SIZE, THUMBNAIL_SIZE);
+
+        try {
+            return toJpeg(thumb, THUMBNAIL_QUALITY);
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
     /**
      * If the image exceeds MAX_DIMENSION on either side, resize it down and
      * re-encode as JPEG.  Returns the original bytes unchanged when:

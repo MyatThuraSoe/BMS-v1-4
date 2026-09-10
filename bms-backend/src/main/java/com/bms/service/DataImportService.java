@@ -108,12 +108,19 @@ public class DataImportService {
     private void wipeAllData() {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
-        String disableFk = isH2
-                ? "SET REFERENTIAL_INTEGRITY FALSE"
-                : "SET FOREIGN_KEY_CHECKS = 0";
-        String enableFk = isH2
-                ? "SET REFERENTIAL_INTEGRITY TRUE"
-                : "SET FOREIGN_KEY_CHECKS = 1";
+        boolean isSqlite = url.contains(":sqlite:");
+        String disableFk;
+        String enableFk;
+        if (isH2) {
+            disableFk = "SET REFERENTIAL_INTEGRITY FALSE";
+            enableFk = "SET REFERENTIAL_INTEGRITY TRUE";
+        } else if (isSqlite) {
+            disableFk = "PRAGMA foreign_keys = OFF";
+            enableFk = "PRAGMA foreign_keys = ON";
+        } else {
+            disableFk = "SET FOREIGN_KEY_CHECKS = 0";
+            enableFk = "SET FOREIGN_KEY_CHECKS = 1";
+        }
 
         String[] tables = {
             "ar_payments", "receipt_customizations",
@@ -215,10 +222,16 @@ public class DataImportService {
     private void resetIdentityCounters() {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
+        boolean isSqlite = url.contains(":sqlite:");
         String[] tables = {"categories", "customers", "suppliers", "products",
                 "sales", "sale_items", "purchases", "purchase_items", "ar_payments", "receipt_customizations"};
         for (String table : tables) {
             try {
+                if (isSqlite) {
+                    // SQLite INTEGER PRIMARY KEY is a rowid alias — inserts after a
+                    // restored explicit max id automatically continue from there.
+                    continue;
+                }
                 Long max = jdbcTemplate.queryForObject(
                         "SELECT COALESCE(MAX(id), 0) FROM " + table, Long.class);
                 if (max == null || max == 0) continue;
