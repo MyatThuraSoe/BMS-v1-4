@@ -103,3 +103,25 @@ bms-backend/src/main/resources/static/
 # GitHub
 # ===========================================
 .github/*.zip
+# ===========================================
+# Android (self-contained module under Android/)
+# ===========================================
+*.jks
+*.keystore
+*.jks.enc
+keystore.properties
+**/keystore.properties
+local.properties
+.gradle/
+**/.gradle/
+.cxx/
+**/.cxx/
+.externalNativeBuild
+**/.externalNativeBuild/
+captures/
+**/captures/
+*.apk
+*.aab
+*.ap_
+*.dex
+renderscript/

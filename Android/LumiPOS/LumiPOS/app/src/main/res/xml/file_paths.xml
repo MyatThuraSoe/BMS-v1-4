@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path
+        name="lumipos_export_public"
+        path="Documents/LumiPOS_Backup/" />
+    <external-files-path
+        name="lumipos_export_app"
+        path="Documents/LumiPOS_Backup/" />
+    <cache-path
+        name="lumipos_cache"
+        path="." />
+</paths>

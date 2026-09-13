@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LumiPOS</string>
+    <string name="something_wrong_title">Something went wrong</string>
+    <string name="something_wrong_message">Unexpected error occurred. Error message: %s</string>
+
+    <!--  Store menus  -->
+    <string name="sales_recap_menu_title">Sales Recap</string>
+    <string name="outcome_menu_title">Expenses</string>
+    <string name="payment_menu_title">Payments</string>
+    <string name="promo_menu_title">Promos</string>
+    <string name="products_menu_title">Products</string>
+    <string name="stores_menu_title">Store Branches</string>
+    <string name="store_users_menu_title">Users</string>
+</resources>

@@ -1,0 +1,14 @@
+<resources>
+    <!-- Base application theme. Compose handles the Material 3 theming at runtime. -->
+    <style name="Theme.LumiPOS" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/white</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+
+    <style name="NoActionBar" parent="Theme.LumiPOS">
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

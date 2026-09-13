@@ -1,0 +1,401 @@
+📋 MASTER PROMPT: Solite-POS to LumiPOS Android Transformation
+Role: Act as an Expert Android Architect and Senior Kotlin Developer specializing in Jetpack Compose, Clean Architecture, and offline-first applications.
+Objective: Transform the existing open-source Solite-POS (Kotlin/Jetpack Compose) into a new, modernized Android application named LumiPOS. The new app must be 100% offline (no server/network connections required), feature a modern UI inspired by the web-based LumiPOS design, and be fully responsive across both mobile phones and tablets. All dependencies must be upgraded to their latest stable versions.
+
+1. 🛠️ Target Tech Stack & Dependency Upgrades
+Upgrade the project to the latest modern Android standards:
+Language: Kotlin 2.0+ (with Kotlin DSL for Gradle).
+UI Framework: Jetpack Compose (latest stable BOM), utilizing Material 3 for modern theming.
+Architecture: MVVM + Clean Architecture (Domain, Data, Presentation layers).
+Dependency Injection: Dagger Hilt (latest version).
+Local Database: Room 2.6+ with Kotlin Coroutines & Flow.
+Local Preferences: Jetpack DataStore (Preferences & Proto) replacing legacy SharedPreferences.
+Navigation: Jetpack Compose Navigation 2.7+ with type-safe navigation.
+Concurrency: Kotlin Coroutines 1.8+ & Flow.
+Image Loading: Coil 2.6+ (for product images).
+PDF/Export: iText7 or Apache POI (Android-compatible) for local receipt/data export.
+Printing: Android Bluetooth Printing libraries (e.g., EscPosPrinter or native Bluetooth Socket).
+Removed Dependencies: Completely remove Retrofit, OkHttp, Firebase (Crashlytics/Remote Config), and any cloud-sync logic to enforce the 100% offline mandate.
+
+2. 🏗️ Architectural & Core Changes (Offline-First Mandate)
+No Network Layer: Delete all Retrofit, API interfaces, and remote data sources.
+Local-Only Authentication: Replace server-based login/register with a local User entity in Room. The first run should trigger a "Setup Local Admin" screen (PIN/Password). Subsequent logins validate against the local Room database.
+Local Data Export/Import: Replace "Online Backup" with Local Backup/Restore. Allow users to export the entire database to a .json or .xlsx file in the device's local storage (e.g., Downloads/LumiPOS_Backup/), and import it back (with MERGE or REPLACE_ALL modes, inspired by web LumiPOS).
+Device Binding: Remove multi-device cloud sync. If "Multiple Branches" are needed, they are managed as logical branches within the same local database, not synced across devices.
+
+
+3. 📱 UI/UX & Responsive Design Requirements
+The UI must mirror the clean, professional aesthetic of the web-based LumiPOS, but adapt fluidly to screen size.
+Responsive Layouts: Use Compose WindowSizeClass (isCompact, isMedium, isExpanded) to dynamically change layouts:
+Mobile (Compact): Single-column layouts, bottom navigation bar, stacked forms.
+Tablet (Expanded): Dual-pane layouts (e.g., Master-Detail for Product Lists, side navigation rail instead of bottom nav, split-screen POS checkout).
+Theming: Implement a modern Light/Dark mode Material 3 theme. Primary colors should align with LumiPOS branding (e.g., clean whites, soft grays, and a distinct primary accent color like deep blue or teal).
+Touch Targets: Ensure all buttons and interactive elements meet Android's 48x48dp minimum touch target size for retail environments.
+Typography: Use a clean, legible font (e.g., Inter or Roboto) with clear hierarchy for prices and totals.
+
+
+4. 🔄 Feature Mapping & Modifications
+Adapt Solite-POS features to the new offline LumiPOS paradigm:
+Original Solite-POS Feature
+New LumiPOS Offline Implementation
+Login / Register
+Local Admin Setup (First Run) + Local PIN/Password Login.
+Offline Process
+Default & Only Mode. All queries, storage, and processing are strictly local via Room.
+Order Process
+Statuses: Draft → On Progress → Need Pay → Done / Canceled. Add local timestamping.
+Order History
+Local Room query with date-range filtering and local pagination.
+Sales Report / Recap
+Local aggregation using Room SQL SUM/GROUP BY by date range and logical branch. Exportable to PDF/Excel.
+Master Data
+Local CRUD for: Store Info, Payment Methods, Expenses (Outcome), Promos, Categories, Products, Variants, Customers.
+Bluetooth Print
+Keep and modernize. Support ESC/POS for receipts and daily queue summaries.
+Online Backup
+REPLACED BY: Local JSON/Excel Export & Import (Save to device storage or external SD card).
+Multiple Branch Store
+Logical branches only. A branch_id in local tables to segment reports, but no cross-device sync.
+
+
+5. 💾 Local Data Model (Room Entities)
+Ensure the following core entities exist with proper relationships and indexes for fast offline querying:
+User (id, username, passwordHash, role, pin)
+StoreBranch (id, name, address, logoUri)
+Category (id, name, branchId)
+Product (id, name, categoryId, variant, price, cost, stock, imageUrl)
+Customer (id, name, phone, email, address)
+Order (id, orderNumber, branchId, customerId, status, totalAmount, timestamp, paymentMethod)
+OrderItem (id, orderId, productId, quantity, unitPrice, subtotal)
+Expense (id, category, amount, description, timestamp)
+BackupLog (id, timestamp, type [EXPORT/IMPORT], status)
+
+
+6. 🚀 Step-by-Step Implementation Prompt for AI/Dev Team
+When you are ready to begin, execute the transformation in the following phases. Ask for my confirmation before moving to the next phase.
+Phase 1: Project Scaffolding & Dependency Upgrade
+Provide the updated build.gradle.kts (project and app level) with the latest stable dependencies.
+Set up the Clean Architecture folder structure (app, domain, data, presentation).
+Configure Hilt, Room, and DataStore.
+Phase 2: Data Layer & Offline-First Logic
+Write the Room Entities, DAOs, and Database class.
+Implement Repository interfaces and their local implementations.
+Create the local Export/Import (JSON/Excel) utility services.
+Phase 3: Responsive UI Foundation
+Set up Material 3 Theme (Light/Dark).
+Create the responsive shell: NavigationRail for tablets, BottomNavigationBar for mobile.
+Implement the Local Admin Setup and Login screens.
+Phase 4: Core Feature Implementation (Iterative)
+Build the Master Data screens (Products, Categories, Customers) with responsive lists and forms.
+Build the POS Checkout screen (split view for tablet: product grid on left, cart on right).
+Build the Reports and Local Backup/Restore screens.
+Phase 5: Hardware & Polish
+Integrate Bluetooth ESC/POS printing logic.
+Add comprehensive error handling (e.g., "Storage permission denied" for exports).
+Ensure all UI matches the polished, professional LumiPOS aesthetic.
+
+
+7. ✅ Definition of Done (Acceptance Criteria)
+The app compiles and runs on Android 8.0 (API 26) to Android 15 (API 35).
+Zero network permissions (INTERNET) are declared in the AndroidManifest.xml (unless strictly required for local Wi-Fi printing).
+The UI automatically adapts from a phone layout to a tablet dual-pane layout when the window size changes.
+A full database export and import cycle works flawlessly without data loss.
+All legacy Solite-POS branding is replaced with "LumiPOS".
+
+8. 📈 PROGRESS LOG (per-phase, maintained by the dev agent)
+Phase 1 - Project Scaffolding & Dependency Upgrade: ✅ DONE
+- Gradle 8.11.1, AGP 8.7.3, Kotlin 2.1.0, KSP 2.1.0-1.0.29, Hilt 2.53.1, Room 2.6.1, Compose BOM 2024.12.01, Nav 2.8.5, Coil 2.7.0, DataStore 1.1.1, JVM 17, compileSdk/target 35, minSdk 26.
+- Modules: app / data / domain / common (namespace com.lumipos.*, applicationId com.lumipos.app).
+- Removed Retrofit, OkHttp, Firebase, Accompanist, Play In-App Update, EasyLauncher, SonarQube, .circleci, google-services.json, INTERNET permission.
+
+Phase 2 - Data Layer & Offline-First Logic: ✅ DONE (compiles)
+- 20 Room entities, 24 DAOs (incl. RoleSeeder), AppDatabase v1 "lumipos.db".
+- 15 repositories + impls, SessionRepository (DataStore "lumipos_session").
+- ExportImportManager (JSON, Documents/LumiPOS_Backup, MERGE/REPLACE_ALL).
+- Domain use cases: auth, product, category, customer, order, sale, report, expense, purchase, inventory, export, session.
+- common: DataState, DispatcherModule (Io/Main qualifiers). DI: DatabaseModule, RepositoryModule (@Binds), DataStoreModule.
+
+Phase 3 - Responsive UI Foundation: ✅ DONE (assembleDebug builds, 19MB app-debug.apk)
+- New app module sources: LumiPOSApplication, MainActivity (edge-to-edge), LumiPOSTheme (M3 light/dark, teal branding), Type.kt.
+- Type-safe navigation (kotlinx-serialization) + StartDestination dispatch (Setup→Login→Main via session + user count).
+- Responsive shell LumiPOSAppScaffold: NavigationRail (tablet >=600dp) / NavigationBar (phone), 5 tabs (POS, Orders, Inventory, Reports, Settings) with placeholders.
+- SetupAdminScreen + LoginScreen (username/password + PIN quick login) with @HiltViewModel.
+- Rewrote resources: strings.xml (English), colors.xml, themes.xml + values-night, teal launcher background. Removed legacy drawables (unused Solite icons, solite.webp).
+- AndroidManifest: only MainActivity (launcher) + LumiPOSApplication named; blob lock name resolved.
+- Build fixes discovered: (a) app module also declares implementation(project(":data")) because domain use cases expose data entities; (b) Hilt switched from kapt to KSP in ALL modules — kapt + Hilt 2.53.1 + JDK 21 on Windows fails with "Invalid relative name: META-INF\proguard\...LazyClassKeys.pro" (google/dagger#4533); clean build after the switch; (c) fillMaxWidth() has no maxWidth param (use .widthIn(max=)).
+
+Phase 4 - Core Feature Implementation: ✅ DONE (assembleDebug builds, 19.35MB app-debug.apk)
+- EnsureDefaultBranchUseCase seeds "Main Branch" if none exist; MainViewModel ensures a branch on Main start.
+- Master Data: CategoriesViewModel/Screen, CustomersViewModel/Screen (search), ProductsViewModel/Screen (search + category filter, grid 2/3 col). Responsive: split panes + ModalBottomSheet forms >=600dp, full-screen sheets on phone. CRUD with delete confirm.
+- POS: PosViewModel (cart, stock checks, pay() -> CreateSaleUseCase, invoices INV-yyyyMMddHHmmss) + PosScreen (>=900dp split grid+cart; phone: CompactCartBar + bottom-sheet cart/checkout).
+- Orders: OrdersViewModel (OrderStatus DRAFT/ON_PROGRESS/NEED_PAY/DONE/CANCELED, filter chips, markStatus) + OrdersScreen (list + detail dialog with items + mark done/cancel).
+- Reports: ReportsViewModel (Today/This Week/This Month/All Time via SalesReportUseCase + ProfitReportUseCase) + ReportsScreen (Net Profit/Revenue/COGS/Gross Profit/Expenses cards).
+- Backup & Restore: BackupViewModel (ExportBackupUseCase, file-picker import via contentResolver -> cache) + BackupScreen (export, OpenDocument picker, MERGE/REPLACE_ALL confirm).
+- LumiPOSAppScaffold rewired: NavigationRail+content in Row (no more overlap), 5 tabs map to real screens.
+- Deferred polish: Order detail product names (IDs shown), PK/customer pickers in forms, reports date-range picker.
+
+Phase 5 - Hardware & Polish: ✅ DONE (assembleDebug builds, 19.47MB app-debug.apk)
+- Bluetooth ESC/POS printing (no external lib, native RFCOMM socket, SPP UUID 00001101-...FB34):
+  - data/print: ReceiptData/ReceiptLine/PrinterDevice models, EscPosBuilder (ESC @ init, ESC a align, ESC E bold, GS ! double-width, CP437 code page, UTF-8 text, GS V cut), BluetoothPrinterManager (getPairedPrinters, printReceipt).
+  - domain usecases: GetPairedPrintersUseCase, PrintReceiptUseCase.
+  - app: PrinterViewModel + BluetoothPrinterSheet (requests BLUETOOTH_CONNECT on API 31+, lists paired printers, print per device). PosViewModel builds ReceiptData (shop name/address from ShopInfoRepository, invoice, items, totals, change) on pay success; POS success dialog now has "Print Receipt".
+- Manifest: BLUETOOTH/BLUETOOTH_ADMIN maxSdk=30, BLUETOOTH_CONNECT/SCAN neverForLocation, uses-feature bluetooth required=false.
+- Export robustness: getExportDir falls back to app-specific external files dir if public Documents/Documents/LumiPOS_Backup can't be created (scoped storage).
+- Deferred: print from Orders screen, printer-address persistence (DataStore), receipt logo.
+
+Phase 5 Extras - Release Build, POS Pickers, Orders Print: ✅ DONE (assembleDebug + assembleRelease build)
+- Release build: generated keystore/lumipos-release.jks (RSA-2048, CN=LumiPOS; keytool from JDK21), app/keystore.properties (storeFile ../keystore/lumipos-release.jks, passwords), signingConfigs.release wired into build.gradle.kts (reads props only if file exists). ProGuard-rules rewritten (removed stale com.socialite refs): keep com.lumipos.data.schema.** and data.export.** for Gson, kotlinx.serialization keep rules (routes). assembleRelease → signed app-release.apk 1.83MB (minify+shrink on).
+- POS pickers: PosViewModel now observes active customers (GetCustomersUseCase) + PaymentMethod object (CASH/CARD/BANK/OTHER). Payment dialog adds Payment method dropdown + Customer dropdown (walk-in default). pay() passes selectedCustomerId + paymentMethod (saleType=paymentMethod); receipt header shows Customer + Method; resets customer after sale.
+- Orders print: OrdersViewModel.printSelected() builds ReceiptData (Order #, date, status, items via GetProductsUseCase name map, total; shop name from ShopInfoRepository); OrdersScreen detail dialog adds Print button + BluetoothPrinterSheet (dismissPrintReceipt clears).
+- Deferred: printer-address persistence (DataStore), receipt logo/barcode, release signing secrets in keystore.properties (local, not committed).
+
+Phase 6 - Reporting & Master-Data Completion: ✅ DONE (assembleDebug + assembleRelease build, 1.85MB signed APK)
+- Orders date-range filter: added getOrdersByBranchDateRange to DAO/repo/usecase; OrdersViewModel toggles ALL/7D/30D (OrderRange enum) via Job-based reload; OrdersScreen shows date-range chips above status chips.
+- Expenses (Outcome) CRUD: ExpensesViewModel (category suggestions, total, add form with FilterChips for categories, delete confirm) + ExpensesScreen (list with delete icons, summary total card).
+- Store Info editor: StoreInfoViewModel (loads existing ShopInfoEntity via getShopInfo flow, save via insertOrUpdateShopInfo; validates name + tax) + StoreInfoScreen (form fields for name/address/phone/email/currency/tax, back button).
+- Settings hub: SettingsHubScreen (internal navigation HOME→STORE/EXPENSES/BACKUP; icon ListItems with chevrons). LumiPOSAppScaffold Settings tab now shows hub instead of backup directly. BackupScreen gained optional onBack navigation.
+- Reports CSV export: ExportImportManager.exportCsv(fileName, content) reusing getExportDir; domain ExportCsvUseCase; ReportsViewModel builds CSV (Range, Revenue, COGS, Gross Profit, Expenses, Net Profit, Total Sales) and saves to Documents/LumiPOS_Backup; ReportsScreen shows Export CSV button + spinner + message/error dialogs.
+- Deferred: Expenses date-range filter, CSV columns for individual orders.
+
+Phase 7 - Data-Layer Parity + Room DB v2: ✅ DONE (assembleDebug + assembleRelease build, 1.88MB signed APK)
+- Expanded entities to match web backend columns (destructive migration; new fields have defaults so existing code compiles):
+  - Product: barcode, description, unit, tax_rate, is_taxable, is_track_stock, min_stock_quantity, reserved_quantity.
+  - Customer: first_name/last_name (name kept for back-compat), customer_code, city/state/zip/country, notes, credit_limit, current_balance, total_spent, total_visits, last_visit_date.
+  - User: email, phone, failed_login_attempts, locked_until, preferred_language (web 5-attempt/15-min lockout).
+  - Sale: discount_type, return_status, cash_shift_id, due_date, notes, is_active/deleted_at; sale_type default REGULAR, payment_status UNPAID/PARTIAL/PAID.
+  - Order: order_type (DINE_IN/TAKEAWAY/DELIVERY/OTHERS), subtotal, tax_amount, notes, converted_sale_id, cancel_reason, completed_at, cancelled_at; status flow target PENDING/CONFIRMED/IN_PROGRESS/READY/COMPLETED/CANCELLED.
+  - SaleItem: quantity_refunded (return caps). OrderItem: notes. Expense: payment_method, reason. Supplier: tax_id, payment_terms, notes.
+  - ShopInfo: tagline, tax_id, logo_data BLOB, logo_type (shop_type/discount prefs already present).
+- New tables: audit_logs, ar_payments, receipt_customizations, invoice_sequences, order_sequences, purchase_sequences (daily per-date numbering).
+- AppDatabase v1→v2 with fallbackToDestructiveMigration; all 26 entities + 26 DAOs registered.
+- ExportImportManager rewritten: full-table JSON export/import (30 datasets) using first-class DAO reads (getAll*) and Room withTransaction; dependency-ordered inserts; saleReturns/saleReturnItems on their own DAOs.
+- SequencesRepository + impl + RepositoryModule binding + domain SequenceUseCases (NextInvoiceNumberUseCase INV-yyyyMMdd-#### / NextOrderNumberUseCase ORD- / NextPurchaseNumberUseCase PUR-). Not wired to VMs yet (Phase 8/10/11).
+- KNOWN: order status constants in OrdersViewModel still old (DRAFT/ON_PROGRESS/NEED_PAY/DONE/CANCELED) — reconciled to web statuses in Phase 11 with convert-to-sale.
+
+Phase 8 - Sales Module (parity): ✅ DONE (assembleDebug + assembleRelease build, 1.91MB signed APK)
+- New Sales tab (MainTab.Sales, Receipt icon) in scaffold rail/bottom bar; LumiPOSAppScaffold maps it to SalesScreen.
+- Data layer: SalesDao.updateReturnStatus, SaleItemsDao.updateQuantityRefunded (+ repo/impl methods); new SaleReturnsRepository(+Impl) wrapping SaleReturnsDao/SaleReturnItemsDao and AuditLogsRepository(+Impl) wrapping AuditLogsDao; bound in RepositoryModule. DatabaseModule now provides ALL 26 DAOs incl. the 6 new ones (Invoice/Order/PurchaseSequencesDao, AuditLogsDao, ArPaymentsDao, ReceiptCustomizationDao) — Hilt binding gap found & fixed.
+- CreateSaleUseCase: auto-generates invoice number via NextInvoiceNumberUseCase when invoiceNumber blank; new params cashShiftId/discountType/dueDate/notes (defaults, back-compat); updates customer current_balance (unpaid credit) + total_spent/total_visits/last_visit_date; writes SALE_CREATE audit log. PosViewModel.pay() now sends invoiceNumber="" (sequence-generated), saleType=REGULAR.
+- VoidSaleUseCase: restores stock, reverses customer credit balance, decrements total_spent/total_visits, writes SALE_VOID audit log (now takes userId).
+- CreateSaleReturnUseCase: per-item returns capped at qty - quantity_refunded, creates SaleReturn + items (tax-inclusive unit price), restores stock + RETURN stock movements, updates quantity_refunded, sets sale return_status FULL/PARTIAL, reverses credited balance, writes SALE_RETURN audit log.
+- SalesViewModel + SalesScreen: date-range chips (All/Today/7d/30d), payment-status filter (PAID/PARTIAL/UNPAID), invoice search, sale cards; detail dialog (customer/method/status/items with refund badges, subtotal/tax/discount/total, print/return/void); ReturnDialog (steppers with max-returnable caps + refund total + reason), VoidDialog (required reason), BluetoothPrinterSheet for receipt reprint; message/error dialogs.
+- Known: customerName in SalesScreen vs id; returns dialog fine-grained; CashShiftId still null (Phase 11 wires it).
+
+Phase 9 - Users Management & Lockout: ✅ DONE (assembleDebug + assembleRelease build)
+- Lockout enforcement in UsersRepositoryImpl.authenticate(): resets attempts on success; increments failed attempts on wrong password; locks for 15 min after 5 failures (web parity).
+- UsersRepository +changePassword(userId, hash) + resetLockout(userId); UsersDao untouched (uses @Update).
+- New domain UserManagementUseCases: GetRolesUseCase, ChangePasswordUseCase (audit USER_PASSWORD_CHANGE), ManageUserUseCase (updateProfile/updateRole/setActive/resetLockout/deleteUser + audit logs).
+- UsersViewModel + UsersScreen (Settings hub → "Users"): user cards (name/username/role badge/active/lockout state), FAB add, click-to-edit ModalBottomSheet form (first/last name, username immutable on edit, password on create, PIN, role picker dialog), change-password dialog, enable/disable, reset lockout, delete; manager actions only shown when current user is ROLE_ADMIN (computed from session + roleById map).
+- SettingsHubScreen: added USERS section entry with People icon + back nav.
+- Builds: release APK still signed (CN=LumiPOS).
+
+Phase 10 - Suppliers, Purchases, Stock Control (parity): ✅ DONE (assembleDebug + assembleRelease build, 1.89MB signed APK)
+- Domain use cases: PurchaseUseCases.kt (GetPurchasesUseCase, CreatePurchaseUseCase with NextPurchaseNumberUseCase + stock IN + product cost update + PURCHASE_CREATE audit log); SupplierUseCases.kt (GetSuppliersUseCase, AddSupplierUseCase, UpdateSupplierUseCase with delete); InventoryUseCases.kt (GetStockMovementsUseCase, GetInventoryUseCase); AdjustStockUseCase.kt rewritten with delta/reason parameter, STOCK_ADJUST audit log.
+- InventoryHubScreen: 6-entry hub (Products, Categories, Customers, Suppliers, Purchases, Stock Control) wired to Inventory tab (Products/Customers/Categories screens now accept optional onBack for hub navigation).
+- SuppliersViewModel + SuppliersScreen: full CRUD, ModalBottomSheet form (name/contact/phone/email/address/taxId/payment terms/notes), list with delete confirm, message/error dialogs.
+- PurchasesViewModel + PurchasesScreen: purchase list (payment status chip, supplier name, total, detail dialog with items + mark paid); form: supplier picker (AlertDialog), add-product picker dialog, per-line qty + unit cost editable fields, tax rate %, computed subtotal/tax/total, save → CreatePurchaseUseCase.
+- StockControlViewModel + StockControlScreen: segmented bottom tabs Products/History; Products tab (search, product stock cards with min-stock low-stock highlighting, adjust dialog with delta + reason); History tab (last 200 movements with product names, +qty in green / -qty in red, reference type + date).
+- LumiPOSAppScaffold Inventory tab → InventoryHubScreen (was ProductsScreen).
+- Fixed: AdjustStockUseCase redeclaration conflict (merged into single file with AuditLogsRepository).
+- Builds: clean kapt stub issue was avoided (no data entity changes this phase).
+
+Phase 11 - Orders → Web Statuses + Convert-to-Sale + Cash Shifts: ✅ DONE (assembleDebug + assembleRelease build, 1.995MB signed APK)
+- Order status reconciled to web statuses: OrderStatus object now PENDING/IN_PROGRESS/READY/COMPLETED/CANCELLED in domain OrderUseCases.kt (old DRAFT/ON_PROGRESS/NEED_PAY/DONE/CANCELED removed from OrdersViewModel/Screen).
+- CreateOrderUseCase: status=PENDING (was DRAFT), accepts orderType (DINE_IN/TAKEAWAY/DELIVERY/OTHERS) + tax + notes + auto order number via NextOrderNumberUseCase; computes subtotal/tax_amount/total_amount correctly.
+- UpdateOrderUseCase: +markCompleted (sets completed_at), +markCancelled (sets cancel_reason + cancelled_at); OrdersDao/repo +updateOrderConvertedSaleId +updateOrderCompleted +updateOrderCancelled.
+- New ConvertOrderToSaleUseCase: converts an order → SaleEntity (saleType ORDER_SALE, next invoice number, items from order items, cashShiftId pass-through), inserts sale + items, sets order.converted_sale_id + status COMPLETED + completed_at.
+- CleanupStaleDraftOrdersUseCase + OrdersDao.deleteStaleDraftOrders: deletes PENDING/DRAFT unconverted orders older than 12h TTL (web parity); called on OrdersViewModel init (best-effort).
+- OrdersViewModel/Screen: flow PENDING→Start→IN_PROGRESS→Ready→READY→Convert to Sale (payment dialog: amount paid + method CASH/CARD/MOBILE/OTHER); Cancel Order uses markCancelled; converted orders show status Completed.
+- Cash shift module (parity): domain CashShiftUseCases (GetCurrentOpenShiftUseCase, GetShiftByIdUseCase, GetAllShiftsUseCase, OpenCashShiftUseCase (one-open-per-cashier guard), CloseCashShiftUseCase computes expected = openingAmount + Σ non-voided shift sales via new SalesDao.getSalesByShift, variance = counted − expected); ShiftsViewModel + ShiftsScreen in Settings hub ("Cash Shifts", AccountBalanceWallet icon): current-shift card (open/close dialogs with opening/counting amount + notes) + shift history (expected/counted/variance, +/- coloring).
+- PosViewModel.pay() now fetches GetCurrentOpenShiftUseCase and passes cashShiftId so POS sales are attributed to the open shift.
+- Builds pass (debug + release signed, CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03). No Room schema change (queries only).
+
+Phase 12 - AR / Customer Balances + Audit Logs + Expenses Filter: ✅ DONE (assembleDebug + assembleRelease build, 2.012MB signed APK)
+- AR data layer: new ArPaymentsRepository + ArPaymentsRepositoryImpl wrapping ArPaymentsDao (getAllPayments, getPaymentsByCustomer/ByInvoice, getTotalPaidBy*, insertPayment, deletePaymentById); bound in RepositoryModule.
+- Domain AR use cases (ArPaymentUseCases.kt): GetArPaymentsUseCase (all + by customer), RecordArPaymentUseCase (validates amount > 0, inserts ArPayment, decrements customer.current_balance (floored at 0), writes AR_PAYMENT audit log with createdBy).
+- UI: CustomerBalancesViewModel + CustomerBalancesScreen (Inventory hub → "Customer Balances", Payments icon): total-outstanding card, per-customer balance cards with Record Payment button, detail dialog (balance/credit limit/total spent + last 5 AR payments), payment dialog (amount + method CASH/CARD/MOBILE/OTHER + reference + notes), success/error dialogs.
+- Audit Logs: AuditLogUseCases.kt (GetAuditLogsUseCase: all + date range + action), AuditLogsViewModel + AuditLogsScreen (Settings hub → "Audit Logs", FactCheck icon): date-range chips (All/7D/30D) + action filter chips, log cards showing action/entity/entityId/detail/time + resolved user name (from UsersRepository getAllUsers map, "System" fallback).
+- Expenses date-range filter (earlier deferral cleared): ExpensesViewModel now has ExpenseRange (All/7D/30D) with Job-based reload using GetExpensesUseCase.getExpensesByDateRange; ExpensesScreen shows range FilterChips above the list.
+- Builds pass (debug + release signed, CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03). No Room schema change (queries/repos only).
+
+Phase 13 - Receipt Customization + Product Images (parity): ✅ DONE (assembleDebug + assembleRelease build, 2.267MB signed APK)
+- Receipt customization data layer: new ReceiptCustomizationsRepository + Impl wrapping ReceiptCustomizationDao (get flow/once + save); bound in RepositoryModule.
+- Domain: ReceiptCustomizationUseCases.kt (GetReceiptCustomizationUseCase flow/once, SaveReceiptCustomizationUseCase with all 19 fields).
+- UI: ReceiptCustomizationViewModel + ReceiptCustomizationScreen (Settings hub → "Receipt Settings", LocalPrintshop icon): Messages section (header text/main message/footer text), Layout section (header alignment LEFT/CENTER/RIGHT, divider SOLID/DASHED, time format 12h/24h, paper 58/80mm, font size 10/12/14/16), Content toggles (shop name, bold name, address, phone, logo, QR, tax, discount, credit, item SKU), Save.
+- POS receipts now honor customization: PosViewModel.pay() fetches customization once; buildReceipt uses showShopName/showAddress toggles, prepends main message to header, overrides footer text.
+- Product images: Coil AsyncImage (ContentScale.Crop, 72dp) in ProductsScreen catalog grid when product.imageUrl is set (Image URL field existed in the form).
+- i18n polish: consistent date/currency formatting retained (asDate/asDateTime/asCurrency) across all new screens.
+- Builds pass (debug + release signed, CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03). No Room schema change (repos/use cases/UI only).
+- All planned phases 7-13 complete → full web↔Android parity minus native-only items.
+
+Phase 14 - First-Run Setup Flow Fix (crash after admin signup): ✅ DONE (assembleDebug + assembleRelease build, signed APK 2,266,730 B)
+- BUG (crash): LumiNavHost's Setup branch only registered SetupRoute, but onSetupComplete called navController.navigate(LoginRoute) → IllegalArgumentException (destination not in graph) → app force-stops right after creating the first admin; reopening worked only because the admin now existed (userCount>0 → Login branch).
+- BUG (latent redirect): MainViewModel used flow { emit(getUsersUseCase.getUserCount()) } (one-shot) as the combine source; the cached userCount stayed 0 forever, so after login the destination re-resolved to Setup instead of Main.
+- Fix 1 (MainViewModel.kt): replaced one-shot count with reactive getUsersUseCase.getAllUsers().map { it.size } → startDestination now flips Setup→Login on admin creation (Room flow re-emits) and Login→Main after session save.
+- Fix 2 (LumiNavHost.kt): single NavHost registering ALL routes (Setup/Login/Main) so cross-destination navigation always resolves; mounted only after StartDestination.Loading resolves; explicit navigations kept with launchSingleTop; added LaunchedEffect(startDestination) safety net that jumps to the resolved destination (popUpTo graph root inclusive + launchSingleTop) and no-ops when the current destination already matches (NavDestination.hasRoute).
+- Result: after creating the first admin, app transitions straight to Login (no restart); after login, lands on Main (no bounce back to Setup); logout/session-clear now also reactively returns to Login.
+- Verified: no other navController.navigate() calls exist outside LumiNavHost; debug + release R8 builds pass; APK signed (CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03).
+
+Phase 15 - Local Product Images + Web-Style UI Re-theme: ✅ DONE (assembleDebug + assembleRelease build, signed APK; dex verified to contain ImageStorageService)
+- Product images now stored LOCALLY: new ImageStorageService (app/storage, @ApplicationContext filesDir/product_images) copies picked images into app internal storage via contentResolver; ProductsViewModel.onImagePicked/clearImage import + delete files with full lifecycle cleanup (replace → delete old file, clear → delete picked file, cancel form → delete unsaved pick, deleteProduct → delete image file); stored path saved into existing image_url column (no Room migration).
+- Products form: replaced "Image URL (optional)" raw-text field with web-style photo picker (ActivityResultContracts.PickVisualMedia / PickVisualMediaRequest.ImageOnly), 120dp preview (Coil AsyncImage from File, Inventory placeholder icon), Choose photo / Remove buttons.
+- Image display now uses local File model: ProductsScreen grid (72dp crop) + POS ProductTile (64dp crop) — web parity (web POS tiles show product photos).
+- Re-theme to web LumiPOS spec (from frontend/src/App.jsx createTheme): primary #2B6E4F grocer's green (+light #4A8A6C, dark #1F5239), secondary #B8862E brass/gold, error #B23A2E, background #F3F5F1, surface #FFFFFF, text #1C2620/#5B655D, divider #DEDFD6; full M3 lightColorScheme mapped (+ dark mode forest-night palette); shapes 8dp buttons / 10dp corners (web borderRadius 8/10); serif headings (FontFamily.Serif ≈ Fraunces), sans body, labelLarge 600.
+- Shell/icons mirror web DashboardLayout: tabs relabeled (POS/Sales/Orders/Inventory/Reports/Settings), icons PointOfSale/Receipt/ListAlt(AutoMirrored)/Warehouse/Assessment/Settings; NavigationRail header "LumiPOS" in primary serif, selected item = primary-green pill w/ white icon+label (web 'Mui-selected' primary.main); prices/totals in POS + Products tinted secondary (brass) like web price emphasis.
+- Builds pass (debug + release signed, CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03). No Room schema change.
+
+Phase 16 - Folder Rename to LumiPOS + Web Launcher Logo: ✅ DONE (assembleDebug + assembleRelease build)
+- Parent project folder renamed from Solite-POS-master to LumiPOS: D:\Projects\Spring\RMS-Offline\BMS-v1-4-main\Android\LumiPOS\LumiPOS (gradle rootProject.name remains "LumiPOS"; keystore.properties uses relative ../keystore path so signing config survives the move).
+- App launcher icon replaced with web LumiPOS logo: extracted the 256x256 PNG frame (offset 161878, 86154B, Format32bppArgb) from frontend/public/LumiPOS.ico (System.Drawing.Icon.ToBitmap only returned the 32x32 frame, so parsed ICONDIR manually); regenerated res/mipmap-{mdpi,hdpi,xhdpi,xxhdpi,xxxhdpi}/ic_launcher_foreground.png at 108/162/216/324/432px with artwork scaled 0.80 on a white field.
+- Adapted ic_launcher_background.xml color from legacy teal #00696E to brand white #FFFFFF (matches web favicon white field; minSdk 26 = adaptive icons cover all devices).
+- Verified: release APK signed (CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03); APK res contains 5 square PNGs at 108/162/216/324/432px; rendered 432px foreground pixel-sampled = 70129 non-white px incl. ~49k green (#026630 mark) + ~1.3k black (wordmark) px (not blank).
+- NOTE: reopen the project in Android Studio from the new D:\...\LumiPOS\LumiPOS path (old absolute paths in .idea are stale).
+
+Phase 17 - Receipt Preview WYSIWYG + Bluetooth Print Reliability: ✅ DONE (assembleDebug + assembleRelease build)
+- Receipt customization preview (was missing entirely): ReceiptCustomizationScreen now has a live WYSIWYG panel that renders the exact ESC/POS output (monospace "paper" strip at 58/80mm width) using the SAME ReceiptBuilder used for printing, so the preview shows exactly what prints. Responsive: preview beside controls on >=900dp, above controls on phones. Uses real shop name/address/phone (ShopInfoRepository) + mock items (INV-1001, sizes, SKUs, CASH $20.00).
+- New data/print/ReceiptBuilder: single source of truth for receipt construction (shared by POS print + customization preview). Honours ALL settings that previously did nothing: paperSize (58mm=24 cols / 80mm=32 cols), headerAlign (LEFT/CENTER/RIGHT), headerText banner, mainMessage, footerText, boldShopName, dividerStyle (SOLID vs DASHED), timeFormat (12h/24h), showShopName/showAddress/showPhone, showItemSku (SKU line under each item), showQRCode (invoice QR).
+- ReceiptData/ReceiptLine extended: paperSize, headerAlign, headerText, showBoldShopName, mainMessage, qrContent; ReceiptLine.dashed for divider styles.
+- EscPosBuilder refreshed: columns per paper size, dashed/solid dividers regenerated at width, header-aligned store block, bold banner, QR via ESC/POS GS ( k (model 2, module 6, L), footer. UTF-8 text preserved.
+- PosViewModel.buildReceipt now delegates to ReceiptBuilder (barcode/SKU, cashier id, method, customer).
+- Bluetooth thermal print reliability (BluetoothPrinterManager): bluetooth-off guard added, adapter.cancelDiscovery() before connecting, RFCOMM fallback — try SPP UUID (00001101-...FB34) then legacy channel-1 socket (createRfcommSocket(1) via reflection) for budget printers, plus an 8s watchdog that force-closes a hung socket.connect() so the UI can't freeze on an unresponsive printer. Permissions (BLUETOOTH_CONNECT runtime on API 31+) already in manifest/sheet.
+- KNOWN: QR prints best-effort (printers without GS ( k support ignore it, no crash); logo raster image printing not implemented; showTaxInfo/showDiscountInfo/showCreditInfo toggles are no-ops (POS sale has no tax/discount/credit lines); Sales/Orders screen reprint receipts keep defaults (paperSize 80, center, solid dividers) since they build without customization.
+- Builds pass (debug + release signed, CN=LumiPOS, SHA-256 84216575614d0e280ace7b76e8e6be7b59c859dc458d10222ad627237213dc03). No Room schema change.
+- NOTE: a stale data module incremental intermediate from the Phase 16 folder rename breaks :app:mergeLibDexDebug (file outside root dir) — run `gradlew clean` once before the first build from the renamed path.
+
+Phase 18 - POS Sale + UX Fixes (7 items): ✅ DONE (assembleDebug + assembleRelease pass, release signed CN=LumiPOS)
+1) FK constraint 787 fixing: Charges failed with "foreign key constraint failed (code 787 sqlite constraint foreignkey)". Root cause: sales.branch_id FK -> store_branches.id, but PosViewModel grabbed session before MainViewModel.ensureBranchSelected() wrote the branch, so branchId stayed 0L and INSERT violated the FK. Fixed PosViewModel: on init it now resolves the branch itself (ensureDefaultBranchUseCase + setSelectedBranchUseCase when branchId == null) and re-reads the session; pay() guards `branchId <= 0`. ALSO wrapped the whole CreateSaleUseCase persistence in a single DB transaction via new data/database/TransactionRunner (AppDatabase.withTransaction, room-ktx) so a failure in any FK (branch/customer/cashier/item) rolls back cleanly instead of leaving an orphan sale. NO Room schema change needed.
+2) Bigger checkout view: The old tiny AlertDialog "Payment" is gone. "Checkout" now opens a FULLSCREEN Dialog (usePlatformDefaultWidth=false): full cart item list with +/- controls, then customer + payment-method dropdowns, large right-aligned "Amount tendered" field, live Total + Change-due line, and a big 56dp Charge button. Cancel/back dismisses.
+3) Amount tendered auto-fill: showCheckout() prefills amountPaid with the exact cart total ("%.2f", Locale.US). Charging only enabled once amount >= total; change due computed live.
+4) App background white: PaperBackground #F3F5F1 -> #FFFFFF, PaperSurfaceVariant lightened to #F2F4F1 (cards read near-white), MainActivity's root Surface now explicitly color = colorScheme.background so the whole app is pure white (dark mode unchanged).
+5) Product images in POS: new app/ui/components/ProductImage.kt used by ProductTile. Resolves absolute path, appends missing path to filesDir/product_images (relative stored paths), passes http(s) URLs straight to Coil, and renders a placeholder icon box when the file is missing (e.g. after restore/import on another device) instead of an empty tile.
+6) Search + category sizing: category ExposedDropdownMenuBox now widthIn(120..150dp) so it no longer eats layout width; the search field keeps weight(1f) and gets the rest.
+7) Back button: LumiPOSAppScaffold adds BackHandler(enabled = selectedTab != POS) { select POS }. System back on any non-POS tab now returns to the POS (previous/parent) screen instead of quitting the app; dialogs/sheets still dismiss first via onDismissRequest.
+- Verified: debug + release BUILD SUCCESSFUL; release APK 2.53MB signed (SHA-256 84216576...dc03); R8 usage.txt keeps PosViewModel/TransactionRunner/ProductImageKt/CheckoutScreenKt.
+
+Phase 19 - Offline License Key Activation (Android): ✅ DONE (debug + release build pass, signed)
+- Uses the EXISTING LumiKeyGen tooling at repo root (D:\Projects\Spring\RMS-Offline\LumiKeyGen): license key = Base64URL(payload) "." Base64URL(SHA256withRSA signature), payload = {"machineId","customer","plan","expiresAt"}. Generator: .\keygen.bat <machineId> "<customer>" <trial|year|lifetime|d-m-yyyy>, writes license-history.csv. Private key stays on the vendor's machine (never ships).
+- New data/license/LicenseVerifier (embeds RSA public key from LumiKeyGen\license-public.pem; SHA256withRSA verify; android.util.Base64 URL_SAFE|NO_* with trailing '=' stripped so padded AND unpadded keys both work); LicenseModels (LicenseInfo + LicenseCheck sealed Valid/Expired/WrongDevice/Invalid); DeviceIdentity (machineId = Settings.Secure.ANDROID_ID uppercased).
+- New data/preference/LicensePreferences (stores the raw key in the existing DataStore, key "license_key") + data/repository/LicenseRepository(Impl) bound in RepositoryModule.
+- New domain/usecase/license/LicenseUseCases: GetLicenseStatusUseCase (Flow, re-verifies stored key each read: activated/expired/etc), ActivateLicenseUseCase (verifies + saves only Valid keys; clear messages for expired / wrong-device / invalid), GetMachineIdUseCase.
+- Startup gate: MainViewModel now combines session + user count + license status -> new StartDestination.Activation shown first when NOT activated (also re-gates if a stored key turns invalid or expires). New ActivationRoute in nav; LumiNavHost renders ActivationScreen before Setup/Login.
+- New app/ui/activation/ActivationScreen + ViewModel: shows this device's machine ID with Copy button, key input (3-line field), Activate button, error/success text. On success the gate flow auto-advances to Setup/Login/Main via MainViewModel — no manual navigation.
+- E2E verified: generated a real key with java KeyGen.java (TEST123 / "Test Shop" / lifetime + trial), confirmed SHA256withRSA + url-safe decode (padding stripped) validates against the exact embedded public key.
+- TESTING: fresh install shows Activation screen; send the displayed machine ID to vendor -> run .\keygen.bat <machineId> "<shop>" year -> paste key (starts with "eyJ") -> Activate. App then proceeds to Setup/Login.
+- NOTE: ANDROID_ID is per-app-signing+user+device; uninstall/reinstall does NOT change it, but a wiped device or new signing key = new machine ID (needs a new key).
+
+- E2E verified (device): signed release APK installed on Android 13 tablet emulator:
+
+  * Fresh install shows Activation screen (machine ID F3691B2AE8F631AF = app-scoped ANDROID_ID; NOTE: differs from `adb shell settings get secure android_id` because ANDROID_ID is per app-signing-key+user+device since Android 8).
+  * Key generated via `java KeyGen.java F3691B2AE8F631AF "LumiPOS Test" year` (477 chars, padded base64url) pasted + Activate -> advances to admin Setup screen.
+  * Relaunch after force-stop -> goes straight to Setup (license persisted in DataStore, re-verified at startup).
+  * Wrong-device key (for AAAA1111BBBB2222) -> error "This license belongs to machine AAAA1111BBBB2222 and cannot be used on this device."
+  * Recovery: cleared field, entered the correct key -> activated and advanced to Setup.
+  * Testing quirk: Gboard's touchable region on this tablet starts at y=764; with the soft keyboard open the Activate button is under it (imePadding pushes text too little). Workaround used via adb: type key, `input keyevent 4` (closes IME; BackHandler disabled on default POS tab so no nav), re-dump for button bounds, tap.
+
+Phase 20 - Web UX Parity: Menu Bar + Overlays + White Background (Android): ✅ DONE (assembleDebug + assembleRelease pass, release signed CN=LumiPOS)
+- Permanent white background: `ui/theme/Theme.kt` LumiPOSTheme signature changed to `darkTheme: Boolean = false` default (removed isSystemInDarkTheme import/arg) so the app is always light; `res/values/themes.xml` `windowBackground` now `@color/white` (was mint brand_mint) so the launch/blank window is white too.
+- Navigation rework (ui/main/MainViewModel.kt): MainTab now 5 entries (POS, Sales, Orders, Inventory, Reports); new `enum MainOverlayPage` (Dashboard, AccountsReceivable, CashShift, Expenses, Products, Categories, Stock, Purchases, Customers, Suppliers, Settings, Users, StoreInfo, ReceiptSettings, Backup, AuditLogs, About); MainUiState(selectedTab, overlayPage, drawerOpen); MainScreen signature -> (uiState, onTabSelected, onSelectOverlay, onCloseOverlay, onToggleDrawer, onCloseDrawer); removed unused viewModelScope import.
+- NEW ui/main/MainMenu.kt: `sealed interface MenuAction { Tab, Page }`, MenuItem(label, icon, action), MenuGroup(label, items), full grouped menu (OVERVIEW: Dashboard; SALES: Accounts Receivable, Cash Shift, Expenses; CATALOG: Products, Categories, Stock Control, Purchases; PEOPLE: Customers, Suppliers; INSIGHTS; ADMINISTRATION: Settings, Users, Store Info, Receipt Settings, Backup & Restore, Audit Logs; APP: About); LumiMenuContent = drawer content (LumiPOS header + grouped rows with primary icon + KeyboardArrowRight) rendered inside ModalDrawerSheet(width 320dp); menuRailShortcuts (Dashboard/Settings/Users/Cash Shift/Backup/Audit Logs/About); LumiMenuRail = NavigationRail with "Menu" header, "All" trigger, divider + shortcut items (right-side bar on wide screens).
+- NEW ui/main/LumiPOSAppScaffold.kt: replaced ModalNavigationDrawer (no end-drawer API in this Material3 version) with a custom end-drawer overlay = scrim Box (32% black, click-to-close) + ModalDrawerSheet aligned CenterEnd; three ordered BackHandlers (drawer->close, overlay->close, non-POS tab->POS); MainContent renders overlay via OverlayContent when-branch else tab switch; LumiLeftRail (tablet) + LumiNavigationBar (phones: 5 tabs + Menu button) + LumiMenuRail on widths >= 600dp (EXPANDED_WIDTH_DP).
+- NEW screens (overlay-capable, optional onBack like the other overlay screens): ui/dashboard/DashboardScreen + DashboardViewModel (today's revenue/orders/items from SalesRepository.getSalesByDateRange + getSaleItems, product/customer counts, low-stock <=10 via getLowStockProducts, open cash-shift banner via CashShiftsRepository.getCurrentOpenShift, currency symbol from ShopInfoEntity; Refresh action; "Manage" -> onOpenStock; StatCards; low-stock list w/ stock coloring); ui/about/AboutScreen + AboutViewModel (version from BuildConfig, license card plan/customer/expiry + machine ID, shop card name/address/phone/currency, support card, currency code->symbol label); ui/stock/StockControlScreen + StockControlViewModel (low-stock alert summary card + list, FAB hook, Refresh); ui/settings/StoreInfoScreen + StoreInfoViewModel (read-only Store / Tax & Pricing / Payment cards from ShopInfoEntity).
+- Signature updates: SettingsHubScreen(onBack: (() -> Unit)? = null) with back arrow in SettingsHome + ShiftsScreen(onBack: (() -> Unit)? = null); internal hubs keep their sub-navigation.
+- Both variants built: :app:assembleDebug + :app:assembleRelease (offline), R8 keeps new screen classes (verified in mapping/usage.txt), release APK re-signed with CN=LumiPOS.
+- TESTING STATUS (emulator flaky, user offered to run final device test): release+debug APKs built; activation keys generated for release machineId F3691B2AE8F631AF (year, expires 2027-09-12) and debug machineId 14343F3312E50CF9 (year, expires 2027-09-12) via java KeyGen.java; both written to LumiKeyGen\license-history.csv. Emulator drive-through was interrupted by adb/i-manager flakiness (headless SystemUI ANRs + unreliable `adb shell input text` for 430+ char keys on slow AVD); verified up to: Activation screen shows fresh machine ID, field typing truncated, used run-as DataStore seeding (lumina_session.preferences_pb) to inject license protobuf as a fallback (worked to file level; final GPU not yet confirmed). Follow-up if needed: install app-release.apk on real/stable device -> enter key for F3691B2AE8F631AF -> verify 5-tab bar + Menu drawer (Settings inside) + right rail on tablet + Dashboard/About/Stock/StoreInfo overlays + white background.
+
+KNOWN ISSUES / NOTES
+- Build uses JAVA_HOME=C:\Program Files\Java\jdk-21 (system java 23.0.1 also present). Do NOT use kapt for Hilt on this machine (see Phase 3 build fixes).
+- Release signing: keystore/lumipos-release.jks + app/keystore.properties (alias lumipos, pw lumipos2026). keystore.properties is local-only; keep out of any VCS if repo is later initialized.
+- Product images (Coil) done in Phase 13; iText/Apache POI not yet added to app.
+- Old app/java/com/socialite deleted; no legacy code remains.
+
+
+
+[Phase 21 - WEB-PARITY FEATURES - BLOCKED at domain KSP - SESSION HANDOFF]
+
+STATUS: common + data modules are GREEN and verified (fixed ProductsDao.kt: removed THIS-session duplicate getLowStockByOwnThreshold() that caused Conflicting overloads; single copy now; Products/Users repo + impl compile clean).
+
+BLOCKER (NOT introduced this session; predates it): :domain:kspDebugKotlin fails InjectProcessingStep with error.NonExistentClass on EXACTLY 4 report use cases:
+ - TopProductsReportUseCase(SalesRepository, ProductsRepository)
+ - CashierPerformanceReportUseCase(SalesRepository, UsersRepository)
+ - InventoryValuationReportUseCase(ProductsRepository)
+ - DeadStockReportUseCase(SalesRepository, ProductsRepository)
+  while SalesRepository/ExpensesRepository in the SAME files/packages/domain module resolve fine.
+
+WHY PRE-EXISTING: identical 4-error KSP set appears in the FIRST session build log (before any domain file change) and in session memory flagged as predating the DAO issue; ProductsRepository.class/UsersRepository.class and single sources all verified present + data compiles green. Classic stale ABI snapshot at the domain boundary, not a real missing type.
+
+REPRO (one fresh JVM): gradlew.bat :domain:kspDebugKotlin :domain:compileDebugKotlin --rerun-tasks --offline
+
+DO NOT append Phase 21 to Todo as done until :domain green AND :app:assembleDebug/:app:assembleRelease (offline) pass. Right now :app is RED (inherits the domain KSP failure).
+
+TODO-TO-CONTINUE (POST-BLOCKER): (1) Reports tabs + Canvas charts + per-section CSV share (FileProvider authority=@{applicationId}.fileprovider + res/xml/file_paths.xml + INTERNET perm + share helper; ExportImportManager.exportCsv exists; ReportsViewModel/ReportsScreen are app-layer); (2) Product Detail pane; (3) Editable Store Info (StoreInfoViewModel/StoreInfoScreen; ShopInfoRepository editable); (4) per-product low-stock via ProductsRepository.getLowStockByOwnThreshold (ProductsDao.getLowStockByOwnThreshold exists, min_stock_quantity column present, no migration needed); (5) CSV share via FileProvider.
+
+NOTES: JDK=C:\Program Files\Java\jdk-21 (domain KSP on this machine); system java 23.0.1 also present. ProductEntity fields: id/name/categoryId/sku/barcode/description/unit/taxRate/isTaxable/isTrackStock/minStockQuantity/reservedQuantity/price/cost/stock/imageUrl/isActive (no displayName on UserEntity -> cashier name = firstName+lastName trimmed, fallback username). SalesEntity cashierId/saleDate/total; SaleItemEntity productId/quantity/costPriceAtSale/totalPrice.
+
+
+[Phase 21 - IMPLEMENTATION SPEC (POST-GATE) - VERIFIED, BUILD-READY]
+
+All facts below come from single verified file reads + clean :data/:domain compile output. Nothing below touches the build gate; apply only after :domain kspDebugKotlin is green AND :app:assembleDebug+assembleRelease (offline) pass.
+
+--- REPORTS (tabbed + charts + per-section CSV share) ---
+Verified signals: ReportsViewModel.kt already injects SalesReportUseCase, ProfitReportUseCase, ExportCsvUseCase, ObserveSessionUseCase; ReportsUiState(selectedRange, profit, totalSales, isLoading, isExporting, message, error); ReportRange enum TODAY/WEEK/MONTH/ALL. ReportsScreen.kt is currently a plain scrollable Card/FilterChip list (no tabs, no charts) - replace with a 3-tab layout (Sales/Profit/Inventory) + androidx.compose.foundation.Canvas line/bar charts + per-section "Export CSV"/"Share" buttons.
+CSV share: com.lumipos.data.export.ExportImportManager.exportCsv(fileName, content): Result<String> already exists. To share via intent: (a) AndroidManifest.xml add <uses-permission android:name="android.permission.INTERNET"/> and a <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true"><meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths"/></provider>; (b) create res/xml/file_paths.xml with <paths><files-path name="exports" path="."/><external-files-path name="external_exports" path="."/></paths>; (c) share via FileProvider.getUriForFile(context, "$applicationId.fileprovider", file) + ACTION_SEND + FLAG_GRANT_READ_URI_PERMISSION. ExportImportManager writes to getExternalFilesDir(DIRECTORY_DOCUMENTS). (Manifest currently has BLUETOOTH_* + POST_NOTIFICATIONS but NO FileProvider, NO INTERNET - both still to add.)
+
+--- PRODUCT DETAIL ---
+Add a ProductDetail pane to ProductsScreen/ProductsViewModel: tap product -> drawer/overlay showing image (Coil), name, SKU, barcode, price/cost, stock (per-branch if branch-based stock exists in data; verified SalesEntity has cashierId/saleDate/total, SaleItemEntity productId/quantity/costPriceAtSale/totalPrice), min-stock, category, tax rate, isActive toggle, edits (via ProductsRepository.updateProduct).
+
+--- EDITABLE STORE INFO ---
+ShopInfoRepository is editable (verified). Build ui/settings/StoreInfoViewModel + StoreInfoScreen: read-only Store/Tax&Pricing/Payment cards from ShopInfoEntity -> make them editable forms (shop name, address, phone, custom receipt message, currency, tax rate, receipt footer, payment methods) + Save via ShopInfoRepository update.
+
+--- PER-PRODUCT LOW-STOCK ---
+ProductsRepository.getLowStockByOwnThreshold(): Flow<List<ProductEntity>> exists (returns products where stock <= min_stock_quantity AND is_active=1); ProductsDao.getLowStockByOwnThreshold (SELECT * FROM products WHERE stock <= min_stock_quantity AND is_active = 1 ORDER BY name ASC) + ProductsDao.getLowStockProducts(threshold) both present; min_stock_quantity column is present on ProductEntity (Int, default 0) => NO Room migration needed. Show per-product low-stock thresholds in the low-stock report/list (each product uses its own min_stock_quantity, not a single global threshold).
+
+--- ENTITY/NAME NOTES (recheck before UI) ---
+ProductEntity fields: id,name,categoryId,sku,barcode,description,unit,taxRate,isTaxable,isTrackStock,minStockQuantity,reservedQuantity,price,cost,stock,imageUrl,isActive. UserEntity has NO displayName -> cashier label = "${firstName} ${lastName}".trim().ifEmpty { username }. Report value classes: DailySalesSummary(totalRevenue,totalOrders,totalItemsSold); ProfitReport(totalRevenue,totalCost,totalProfit,totalExpenses,netProfit); SalesTrendPoint(timeLabel,revenue,orders); TopProductEntry(productId,productName,unitsSold,revenue); CashierPerformanceEntry(cashierId,cashierName,orders,revenue); InventoryValueItem(productId,productName,stock,unitCost,totalValue); DeadStockProduct(productId,productName,stock,lastSoldAt); SalesTimingBucket(hourOfDay,weekday,orders,revenue).
+
+--- VERIFIED FRESH-COLD REPRO (attached to the block above, reused if needed) ---
+gradlew.bat :domain:kspDebugKotlin :domain:compileDebugKotlin --rerun-tasks --offline
+
+DO NOT mark Phase 21 done until :domain green AND both app variants (offline) build; do not append to Todo as complete earlier.
+
+
+
+--- PHASE 21 — POST-GATE WORKLIST (checkbox state; none done yet — :domain gate still RED) ---
+
+[ ] P21.1 REPORTS REBOOT — ReportsScreen.kt: replace current single scrollable Card/FilterChip list with 3-tab layout (Sales / Profit / Inventory via primaryTabIndex + TabRow).
+      - Tab 1 SALES: SummaryCard(DailySalesSummary) + SalesTrendCanvasChart(applyCanvasMinutes falls back to Coil fallback; use androidx.compose.foundation.Canvas LineChart on SalesTrendPoint list + per-section CSV share(ShareHelper.shareCsv(activity,title,fileName,content) + FileProvider authority "${applicationId}.fileprovider").
+      - Tab 2 PROFIT: ProfitReportCard + expense card + netProfit emphasis.
+      - Tab 3 INVENTORY: InventoryValuation list + DeadStock list (per-product) + SalesTiming section (SalesTimingBucket).
+      - Chart impl via androidx activity-compose Canvas (verified Canvas has no size param; pass Modifier.fillMaxWidth().height()).
+      - ReportsViewModel.kt: already injects SalesReportUseCase, ProfitReportUseCase, ExportCsvUseCase, ObserveSessionUseCase; add flows for SalesTrend/TopProducts/CashierPerformance/InventoryValuation/DeadStock/SalesTiming (domain use cases exist). Add isLoading/error backoff; Refresh.
+      - Branch filter: session.hasSelectedBranch + branchId param if repo API requires it.
+
+[ ] P21.2 CSV SHARE — AndroidManifest: <uses-permission android:name="android.permission.INTERNET"/> + FileProvider provider (android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.fileprovider" android:exported="false" android:grantUriPermissions="true" + meta-data FILE_PROVIDER_PATHS -> @xml/file_paths).
+      - res/xml/file_paths.xml: <paths><files-path name="exports" path="."/></paths>.
+      - New helper (e.g. app/ui/reports/ShareHelper.kt) fun shareCsv(context,title,fileName,content): builds temp CSV via ExportImportManager.exportCsv(fileName,content) -> FileProvider.getUriForFile -> ACTION_SEND chooser with text/plain + FLAG_GRANT_READ_URI_PERMISSION + FLAG_ACTIVITY_NEW_DOCUMENT.
+      - Test: share sheet opens, CSV lands in fallback; on emulator verify file in Documents dir.
+
+[ ] P21.3 PRODUCT DETAIL — ProductsScreen.kt: navigate on card click to ProductDetailScreen (nested nav) with ProductEntity fields read from ProductsViewModel.selectedProduct: image (Coil via ImageStorageService), name, category, sku, barcode, description, unit, taxRate/isTaxable, isTrackStock, minStockQuantity, reservedQuantity, price, cost, stock, isActive toggle.
+      - ProductsRepository.getProductById(id) suspend exists; ProductDetailViewModel @Inject constructor(productsRepository).
+
+[ ] P21.4 STORE INFO EDIT — StoreInfoScreen.kt: replace static read Store card with editable form.
+      - New StoreInfoViewModel @Inject constructor(shopInfoRepository, observeSessionUseCase) exposing state + save/update; ShopInfoRepository impl has getShopInfo()/updateShopInfo()/name/address/phone/currency  suspend methods (verify exact names in impl file).
+      - StoreInfoScreen.kt: fields shop name, address, phone, currency, tax rate, receipt customization text, payment terms; Save persists via repository and reloads.
+      - Test: edit + save, app restart keeps values (Room-backed).
+
+[ ] P21.5 PER-PRODUCT LOW-STOCK — ProductsScreen low-stock section now uses ProductsRepository.getLowStockByOwnThreshold(): Flow<List<ProductEntity>> directly (each product compares stock vs its own minStockQuantity).
+      - Present a per-product threshold column in the low-stock list + color highlight when stock<=minStockQuantity.
+      - Optionally per-store-branch: ProductsRepositoryImpl.getLowStockByOwnThreshold uses filter(isTrackStock && stock<=minStockQuantity && isActive=1) — no branch split needed (no branchId column on products).
+      - No Room migration required (min_stock_quantity already on ProductEntity).
+
+[ ] P21.6 VERIFY-AND-COMPLETE — Only after :domain gate green AND :app:assembleDebug+Release(offline) green:
+      - Run device smoke: Dashboard, Products low-stock section, Product Detail, Store Info edit, Reports 3 tabs + chart render, CSV share sheet, Backup/Restore, POS checkout.
+      - Update Todo.txt (mark P21.1-21.6 done) + write Phase 21 synthesis line + list files changed.
+
+--- Phase 21 KNOWN STATE (do not re-edit blindly) ---
+- ExportImportManager.exportCsv(fileName:String, content:String):Result<String> exists; writes to getExternalFilesDir(DIRECTORY_DOCUMENTS).
+- ExportCsvUseCase / SalesReportUseCase / ProfitReportUseCase / ObserveSessionUseCase already injected into ReportsViewModel (verified).
+- Domain report use cases (TopProducts/CashierPerformance/InventoryValuation/DeadStock/SalesTiming + value classes) exist but domain KSP BLOCKED on ProductsRepository/UsersRepository resolution (pre-existing ABI-state issue; see BLOCKER block above) — re-run gradlew.bat :domain:kspDebugKotlin :domain:compileDebugKotlin --rerun-tasks --offline on a FRESH JVM to clear.
+- FileProvider / INTERNET / file_paths.xml / ShareHelper NOT yet present (add in P21.2).
+- ProductsRepository has getLowStockByOwnThreshold() (interface+impl verified) + getLowStockProducts(threshold); getLowStockByOwnThreshold uses each product own min_stock_quantity (minStockQuantity).
+- ReportsScreen currently the old single-scroll list (Phase 20). ReportsViewModel already injects the 4 use cases above.
+
