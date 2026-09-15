@@ -79,13 +79,20 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
     0
   );
 
+  const resetState = () => {
+    setQuantities({});
+    setReason('');
+    setStep('form');
+  };
+
   const mutation = useMutation({
     mutationFn: (payload) => saleService.createSaleReturn(saleId, payload),
     onSuccess: () => {
       notifySuccess(t('return_success'));
       INVALIDATION_KEYS.forEach((key) => queryClient.invalidateQueries({ queryKey: key }));
       queryClient.invalidateQueries({ queryKey: ['returnable-items', saleId] });
-      handleClose();
+      resetState();
+      onClose();
     },
     onError: (err) =>
       notifyError(err.response?.data?.message || err.friendlyMessage || t('return_failed')),
@@ -93,9 +100,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
 
   function handleClose() {
     if (mutation.isPending) return;
-    setQuantities({});
-    setReason('');
-    setStep('form');
+    resetState();
     onClose();
   }
 
