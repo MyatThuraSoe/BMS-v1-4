@@ -21,6 +21,10 @@
     ],
     "extraResources": [
       {
+        "from": ".env",
+        "to": ".env"
+      },
+      {
         "from": "bms-backend/target/bms-backend-1.0.0.jar",
         "to": "app/bms-backend-1.0.0.jar"
       },
