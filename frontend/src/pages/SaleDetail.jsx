@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { 
   Box, Typography, Paper, Table, TableHead, TableBody, TableCell, 
   TableContainer, TableRow, Button, CircularProgress, Grid, Chip, 
@@ -70,6 +70,7 @@ const StatCard = ({ label, value, color, icon, highlight, highlightColor = 'succ
 const SaleDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation('sales');
   const { isManager } = useAuth();
   const [isDirectPrinting, setIsDirectPrinting] = useState(false);
@@ -232,7 +233,7 @@ const SaleDetail = () => {
     <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
       <Button 
         startIcon={<BackIcon />} 
-        onClick={() => navigate('/sales')} 
+        onClick={() => navigate(`/sales${location.search}`)} 
         sx={{ mb: 3, color: 'text.secondary', textTransform: 'none', fontWeight: 500 }}
       >
         {t('back_to_sales')}

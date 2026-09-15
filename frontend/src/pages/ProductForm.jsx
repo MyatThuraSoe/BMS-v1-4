@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Box, Typography, TextField, Button, Grid, Paper, Alert, MenuItem, CircularProgress,
 } from '@mui/material';
@@ -21,6 +21,7 @@ const ProductForm = () => {
   const { t } = useTranslation('inventory');
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const isEdit = !!id;
@@ -95,7 +96,7 @@ const ProductForm = () => {
       if (isEdit && id) {
         queryClient.invalidateQueries({ queryKey: ['product-unified-price-history', id] });
       }
-      setTimeout(() => navigate('/products'), 1500);
+      setTimeout(() => navigate(`/products${location.search}`), 1500);
     },
     onError: (err) => {
       if (err.response?.status === 409) {
@@ -243,7 +244,7 @@ const ProductForm = () => {
               <Button type="submit" variant="contained" disabled={saveMutation.isPending}>
                 {saveMutation.isPending ? <CircularProgress size={24} /> : (isEdit ? t('update') : t('create'))}
               </Button>
-              <Button onClick={() => navigate('/products')} sx={{ ml: 1 }}>{t('cancel')}</Button>
+              <Button onClick={() => navigate(`/products${location.search}`)} sx={{ ml: 1 }}>{t('cancel')}</Button>
             </Grid>
           </Grid>
         </form>

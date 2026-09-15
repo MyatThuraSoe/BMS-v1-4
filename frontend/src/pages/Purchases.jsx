@@ -10,10 +10,14 @@ import { purchaseService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import { notifyError, notifySuccess } from '../utils/notify';
+import useListFilters from '../hooks/useListFilters';
 
 const Purchases = () => {
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
+  const { filters, update, detailUrl } = useListFilters({
+    page: { init: 0, parse: Number, serialize: (v) => String(v) },
+    size: { init: 10, parse: Number },
+  });
+  const { page, size } = filters;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
   
@@ -78,7 +82,7 @@ const Purchases = () => {
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" fontWeight={600}>{t('purchases')}</Typography>
         {isManager() && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/purchases/new')}>
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate(detailUrl('/purchases/new'))}>
             {t('new_purchase')}
           </Button>
         )}
@@ -106,7 +110,7 @@ const Purchases = () => {
                 <TableRow
                   key={p.id}
                   hover
-                  onClick={() => navigate(`/purchases/${p.id}`)}
+                  onClick={() => navigate(detailUrl(`/purchases/${p.id}`))}
                   sx={{ cursor: 'pointer', '&:last-child td': { borderBottom: 0 } }}
                 >
                   <TableCell sx={{ fontWeight: 500 }}>{p.purchaseNumber}</TableCell>
@@ -198,8 +202,8 @@ const Purchases = () => {
           count={totalElements} 
           page={page} 
           rowsPerPage={size} 
-          onPageChange={(e, newPage) => setPage(newPage)} 
-          onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} 
+          onPageChange={(e, newPage) => update({ page: newPage })} 
+          onRowsPerPageChange={(e) => { update({ size: parseInt(e.target.value), page: 0 }); }} 
           rowsPerPageOptions={[10, 25, 50]} 
         />
       </TableContainer>

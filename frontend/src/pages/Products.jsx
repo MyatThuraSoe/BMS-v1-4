@@ -13,6 +13,7 @@ import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import ProductImage from '../components/ProductImage';
 import { useTranslation } from 'react-i18next';
+import useListFilters from '../hooks/useListFilters';
 
 const VIEW_PRESETS = [
   { value: '', key: 'all_products' },
@@ -29,19 +30,21 @@ const stockStatus = (p) => {
 
 const ProductsTab = () => {
   const { t } = useTranslation('inventory');
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
-  const [search, setSearch] = useState('');
+  const { filters, update, detailUrl } = useListFilters({
+    page: { init: 0, parse: Number, serialize: (v) => String(v) },
+    size: { init: 10, parse: Number },
+    view: { init: '', serialize: (v) => (v ? v : null) },
+    category: { init: '' },
+    search: { init: '' },
+  });
+  const { page, size, search, category, view } = filters;
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [categoryId, setCategoryId] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
-  const view = searchParams.get('view') || '';
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(search), 300);
@@ -55,10 +58,10 @@ const ProductsTab = () => {
   const categories = categoryData?.data?.content || [];
 
   const { data: productsData, isLoading } = useQuery({
-    queryKey: ['products', page, size, debouncedSearch, categoryId, view],
+    queryKey: ['products', page, size, debouncedSearch, category, view],
     queryFn: () => {
       if (debouncedSearch) return productService.search(debouncedSearch, page, size);
-      return productService.getAll(page, size, 'createdAt', categoryId || null, view || null);
+      return productService.getAll(page, size, 'createdAt', category || null, view || null);
     },
   });
 
@@ -68,10 +71,7 @@ const ProductsTab = () => {
   });
   const lowStock = lowStockData?.data || [];
 
-  const handleViewChange = (newView) => {
-    setSearchParams(newView ? { view: newView } : {});
-    setPage(0);
-  };
+  const handleViewChange = (newView) => update({ view: newView, page: 0 });
 
   const deleteMutation = useMutation({
     mutationFn: (id) => productService.delete(id),
@@ -133,7 +133,7 @@ const ProductsTab = () => {
               fullWidth
               placeholder={t('search_products')}
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => update({ search: e.target.value, page: 0 }, { replace: true })}
               InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
               size="small"
             />
@@ -143,8 +143,8 @@ const ProductsTab = () => {
             <Select
               labelId="category-filter-label"
               label={t('category')}
-              value={categoryId}
-              onChange={(e) => { setCategoryId(e.target.value); setPage(0); }}
+              value={category}
+              onChange={(e) => { update({ category: e.target.value, page: 0 }); }}
             >
               <MenuItem value="">{t('all_categories')}</MenuItem>
               {categories.map((c) => <MenuItem key={c.id} value={c.id}>{c.name}</MenuItem>)}
@@ -181,7 +181,7 @@ const ProductsTab = () => {
                   <TableRow
                     key={product.id}
                     hover
-                    onClick={() => navigate(`/products/${product.id}`)}
+                    onClick={() => navigate(detailUrl(`/products/${product.id}`))}
                     sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>{page * size + index + 1}</TableCell>
@@ -199,7 +199,7 @@ const ProductsTab = () => {
                     <TableCell><Chip size="small" label={t(status.key)} color={status.color} /></TableCell>
                     {isManager() && (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(`/products/${product.id}/edit`); }} title={t('edit')}><EditIcon /></IconButton>
+                        <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(detailUrl(`/products/${product.id}/edit`)); }} title={t('edit')}><EditIcon /></IconButton>
                         <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setSelectedProduct(product); setDeleteDialogOpen(true); }} title={t('delete')}><DeleteIcon /></IconButton>
                       </TableCell>
                     )}
@@ -214,8 +214,8 @@ const ProductsTab = () => {
           count={totalElements}
           page={page}
           rowsPerPage={size}
-          onPageChange={(e, newPage) => setPage(newPage)}
-          onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }}
+          onPageChange={(e, newPage) => update({ page: newPage })}
+          onRowsPerPageChange={(e) => { update({ size: parseInt(e.target.value), page: 0 }); }}
           rowsPerPageOptions={[5, 10, 25]}
         />
       </TableContainer>

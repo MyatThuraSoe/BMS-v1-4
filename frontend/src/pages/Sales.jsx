@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
+import { useListFilters } from '../hooks/useListFilters';
 import {
   Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Chip, InputAdornment, Autocomplete, MenuItem,
 } from '@mui/material';
@@ -47,36 +48,44 @@ const RANGE_PRESETS = [
 ];
 
 const Sales = () => {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
+  // All filters live in the URL query string so navigating to a sale and back
+  // (or hitting browser back / refresh) restores the exact list state.
+  const { filters, update, reset, detailUrl } = useListFilters({
+    page: { init: 0, parse: (v) => parseInt(v, 10) || 0 },
+    size: { init: 10, parse: (v) => parseInt(v, 10) || 10 },
+    q: { init: '', parse: (v) => v || '' },
+    customer: { init: null, parse: (v) => v || null },
+    customerName: { init: '', parse: (v) => v || '' },
+    cashier: { init: '', parse: (v) => v || '' },
+    range: { init: 'today', parse: (v) => v || 'today' },
+    start: { init: '', parse: (v) => v || '' },
+    end: { init: '', parse: (v) => v || '' },
+  });
+  const { page, size, q, customer, customerName, cashier, range, start, end } = filters;
+  const selectedCustomer = customer ? { id: Number(customer), label: customerName || '' } : null;
   const [voidSale, setVoidSale] = useState(null);
   const [voidReason, setVoidReason] = useState('');
-  const [invoiceSearch, setInvoiceSearch] = useState('');
-  const [debouncedInvoice, setDebouncedInvoice] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerInput, setCustomerInput] = useState('');
-  const [selectedCashierId, setSelectedCashierId] = useState('');
-  const [customStartDate, setCustomStartDate] = useState('');
-  const [customEndDate, setCustomEndDate] = useState('');
+  const [debouncedInvoice, setDebouncedInvoice] = useState('');
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const { t } = useTranslation('sales');
 
-  const range = searchParams.get('range') || 'today';
+  const getCustomerLabel = (opt) =>
+    opt?.label || `${opt.firstName} ${opt.lastName} (${opt.phone || opt.email})`;
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedInvoice(invoiceSearch), 300);
+    const timer = setTimeout(() => setDebouncedInvoice(q), 300);
     return () => clearTimeout(timer);
-  }, [invoiceSearch]);
+  }, [q]);
 
+  // Custom-range dates only make sense while the CUSTOM range chip is selected.
   useEffect(() => {
-    if (range !== 'CUSTOM') {
-      setCustomStartDate('');
-      setCustomEndDate('');
+    if (range !== 'CUSTOM' && (start || end)) {
+      update({ start: '', end: '' }, { replace: true });
     }
-  }, [range]);
+  }, [range, start, end, update]);
 
   const { data: customerResults } = useQuery({
     queryKey: ['customer-search', customerInput],
@@ -98,11 +107,11 @@ const Sales = () => {
       page,
       size,
       range,
-      customStartDate,
-      customEndDate,
-      selectedCustomer?.id,
+      start,
+      end,
+      customer,
       debouncedInvoice,
-      selectedCashierId,
+      cashier,
     ],
     queryFn: () =>
       saleService.getAll(
@@ -110,11 +119,11 @@ const Sales = () => {
         size,
         'saleDate',
         range || null,
-        range === 'CUSTOM' ? customStartDate : null,
-        range === 'CUSTOM' ? customEndDate : null,
-        selectedCustomer?.id || null,
+        range === 'CUSTOM' ? start : null,
+        range === 'CUSTOM' ? end : null,
+        customer || null,
         debouncedInvoice || null,
-        selectedCashierId || null
+        cashier || null
       ),
     staleTime: 0,
     refetchOnMount: 'always',
@@ -122,23 +131,17 @@ const Sales = () => {
   });
 
   const handleRangeChange = (newRange) => {
-    setSearchParams(newRange && newRange !== 'today' ? { range: newRange } : {});
-    setPage(0);
-    if (newRange !== 'CUSTOM') {
-      setCustomStartDate('');
-      setCustomEndDate('');
-    }
+    update({
+      range: newRange || 'today',
+      page: 0,
+      ...(newRange !== 'CUSTOM' ? { start: '', end: '' } : {}),
+    });
   };
 
   const clearFilters = () => {
-    setSearchParams({});
-    setInvoiceSearch('');
+    setCustomerInput('');
     setDebouncedInvoice('');
-    setSelectedCustomer(null);
-    setSelectedCashierId('');
-    setCustomStartDate('');
-    setCustomEndDate('');
-    setPage(0);
+    reset();
   };
 
   const sales = salesData?.data?.content || [];
@@ -161,7 +164,7 @@ const Sales = () => {
     return 'default';
   };
 
-  const hasActiveFilters = range !== 'today' || debouncedInvoice || selectedCustomer || selectedCashierId || (range === 'CUSTOM' && (customStartDate || customEndDate));
+  const hasActiveFilters = range !== 'today' || q || customer || cashier || (range === 'CUSTOM' && (start || end));
 
   const voidMutation = useMutation({
     mutationFn: ({ id, reason }) => saleService.voidSale(id, reason),
@@ -209,8 +212,8 @@ const Sales = () => {
           <TextField
             size="small"
             placeholder={t('search_by_invoice')}
-            value={invoiceSearch}
-            onChange={(e) => setInvoiceSearch(e.target.value)}
+            value={q}
+            onChange={(e) => update({ q: e.target.value, page: 0 }, { replace: true })}
             sx={{ minWidth: 220 }}
             InputProps={{
               startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
@@ -220,9 +223,9 @@ const Sales = () => {
             size="small"
             sx={{ minWidth: 250 }}
             options={customerResults?.data?.content || []}
-            getOptionLabel={(option) => `${option.firstName} ${option.lastName} (${option.phone || option.email})`}
+            getOptionLabel={getCustomerLabel}
             value={selectedCustomer}
-            onChange={(e, newValue) => { setSelectedCustomer(newValue); setPage(0); }}
+            onChange={(e, newValue) => update({ customer: newValue ? newValue.id : null, customerName: newValue ? getCustomerLabel(newValue) : '', page: 0 })}
             inputValue={customerInput}
             onInputChange={(e, newValue) => setCustomerInput(newValue)}
             renderInput={(params) => <TextField {...params} label={t('filter_by_customer')} />}
@@ -233,8 +236,8 @@ const Sales = () => {
               select
               size="small"
               label={t('filter_by_employee')}
-              value={selectedCashierId}
-              onChange={(e) => { setSelectedCashierId(e.target.value); setPage(0); }}
+              value={cashier}
+              onChange={(e) => update({ cashier: e.target.value, page: 0 })}
               sx={{ minWidth: 220 }}
             >
               <MenuItem value="">{t('all_employees')}</MenuItem>
@@ -249,8 +252,8 @@ const Sales = () => {
                 size="small"
                 type="date"
                 label={t('start_date')}
-                value={customStartDate}
-                onChange={(e) => { setCustomStartDate(e.target.value); setPage(0); }}
+                value={start}
+                onChange={(e) => update({ start: e.target.value, page: 0 })}
                 InputLabelProps={{ shrink: true }}
                 sx={{ minWidth: 160 }}
               />
@@ -258,8 +261,8 @@ const Sales = () => {
                 size="small"
                 type="date"
                 label={t('end_date')}
-                value={customEndDate}
-                onChange={(e) => { setCustomEndDate(e.target.value); setPage(0); }}
+                value={end}
+                onChange={(e) => update({ end: e.target.value, page: 0 })}
                 InputLabelProps={{ shrink: true }}
                 sx={{ minWidth: 160 }}
               />
@@ -297,7 +300,7 @@ const Sales = () => {
                   <TableRow
                     key={s.id}
                     hover
-                    onClick={() => navigate(`/sales/${s.id}`)}
+                    onClick={() => navigate(detailUrl(`/sales/${s.id}`))}
                     sx={{ cursor: 'pointer' }}
                   >
                     <TableCell>{s.invoiceNumber}</TableCell>
@@ -318,7 +321,7 @@ const Sales = () => {
             )}
           </TableBody>
         </Table>
-        <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => setPage(newPage)} onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} rowsPerPageOptions={[5, 10, 25]} />
+        <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => update({ page: newPage })} onRowsPerPageChange={(e) => { update({ size: parseInt(e.target.value), page: 0 }); }} rowsPerPageOptions={[5, 10, 25]} />
       </TableContainer>
 
       <Dialog open={!!voidSale} onClose={handleVoidClose} fullWidth maxWidth="sm">

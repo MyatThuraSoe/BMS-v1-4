@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, IconButton } from '@mui/material';
 import { Add as AddIcon, RemoveCircleOutline as RemoveIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -11,6 +11,7 @@ import { preventNumberScroll } from '../utils/helpers';
 const CustomerForm = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const { t } = useTranslation('customers');
@@ -54,7 +55,7 @@ const CustomerForm = () => {
     onSuccess: () => {
       setSuccess(isEdit ? t('customer_updated') : t('customer_created'));
       queryClient.invalidateQueries({ queryKey: ['customers'] });
-      setTimeout(() => navigate('/customers'), 1500);
+      setTimeout(() => navigate(`/customers${location.search}`), 1500);
     },
     onError: (err) => {
       if (err.response?.status === 409) {
@@ -153,7 +154,7 @@ const CustomerForm = () => {
               <Button type="submit" variant="contained" disabled={saveMutation.isPending}>
                 {saveMutation.isPending ? <CircularProgress size={24} /> : (isEdit ? t('update') : t('create'))}
               </Button>
-              <Button onClick={() => navigate('/customers')} sx={{ ml: 1 }}>{t('cancel')}</Button>
+              <Button onClick={() => navigate(`/customers${location.search}`)} sx={{ ml: 1 }}>{t('cancel')}</Button>
             </Grid>
           </Grid>
         </form>

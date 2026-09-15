@@ -9,16 +9,17 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerService } from '../api/services';
 import { formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import useListFilters from '../hooks/useListFilters';
 
 const Customers = () => {
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
-  
-  // ✅ 2. Single, clean declaration of search states (removed the duplicate)
-  const [search, setSearch] = useState('');
+  const { filters, update, detailUrl } = useListFilters({
+    page: { init: 0, parse: Number, serialize: (v) => String(v) },
+    size: { init: 10, parse: Number },
+    search: { init: '' },
+    city: { init: '' },
+  });
+  const { page, size, search, city } = filters;
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [city, setCity] = useState('');
-  
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const navigate = useNavigate();
@@ -83,7 +84,7 @@ const Customers = () => {
             sx={{ flexGrow: 1, minWidth: 220 }}
             placeholder={t('search_placeholder')} 
             value={search} 
-            onChange={(e) => setSearch(e.target.value)} 
+            onChange={(e) => update({ search: e.target.value, page: 0 }, { replace: true })} 
             InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }} 
             size="small" 
           />
@@ -91,7 +92,7 @@ const Customers = () => {
             select
             label={t('city')}
             value={city}
-            onChange={(e) => { setCity(e.target.value); setPage(0); }}
+            onChange={(e) => { update({ city: e.target.value, page: 0 }); }}
             size="small"
             sx={{ minWidth: 180 }}
           >
@@ -126,7 +127,7 @@ const Customers = () => {
                 <TableRow 
                   key={c.id} 
                   hover 
-                  onClick={() => navigate(`/customers/${c.id}`)} 
+                  onClick={() => navigate(detailUrl(`/customers/${c.id}`))} 
                   sx={{ cursor: 'pointer' }}
                 >
                   <TableCell>
@@ -146,7 +147,7 @@ const Customers = () => {
                         <Button 
                           size="small" 
                           variant="outlined" 
-                          onClick={(e) => { e.stopPropagation(); navigate(`/customers/${c.id}/edit`); }} 
+                          onClick={(e) => { e.stopPropagation(); navigate(detailUrl(`/customers/${c.id}/edit`)); }} 
                           sx={{ mr: 1 }}
                         >
                           {t('complete_profile')}
@@ -155,7 +156,7 @@ const Customers = () => {
                       {!c.isQuickAdd && (
                         <IconButton 
                           size="small" 
-                          onClick={(e) => { e.stopPropagation(); navigate(`/customers/${c.id}/edit`); }}
+                          onClick={(e) => { e.stopPropagation(); navigate(detailUrl(`/customers/${c.id}/edit`)); }}
                         >
                           <EditIcon />
                         </IconButton>
@@ -179,8 +180,8 @@ const Customers = () => {
           count={totalElements} 
           page={page} 
           rowsPerPage={size} 
-          onPageChange={(e, newPage) => setPage(newPage)} 
-          onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} 
+          onPageChange={(e, newPage) => update({ page: newPage })} 
+          onRowsPerPageChange={(e) => { update({ size: parseInt(e.target.value), page: 0 }); }} 
           rowsPerPageOptions={[5, 10, 25]} 
         />
       </TableContainer>

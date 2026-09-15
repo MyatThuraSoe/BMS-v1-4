@@ -30,6 +30,7 @@ import { useTranslation } from 'react-i18next';
 import { inventoryService, productService, categoryService } from '../api/services';
 import { formatCurrency, formatDateTime, downloadCsv } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
+import useListFilters from '../hooks/useListFilters';
 
 // ── Shared bits ──────────────────────────────────────────────────────────────
 
@@ -330,13 +331,24 @@ const StockTab = ({ onAdjust }) => {
   const { t } = useTranslation('inventory');
   const navigate = useNavigate();
 
-  const [search, setSearch] = useState('');
-  const [categoryId, setCategoryId] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [orderBy, setOrderBy] = useState('name');
-  const [order, setOrder] = useState('asc');
-  const [page, setPage] = useState(0);
-  const [rowsPerPage, setRowsPerPage] = useState(10);
+  const { filters, update, detailUrl } = useListFilters({
+    s_page: { init: 0, parse: Number, serialize: (v) => String(v) },
+    s_rows: { init: 10, parse: Number },
+    s_search: { init: '' },
+    s_category: { init: '' },
+    s_status: { init: 'all' },
+    s_orderBy: { init: 'name' },
+    s_order: { init: 'asc' },
+  });
+  const {
+    s_page: page,
+    s_rows: rowsPerPage,
+    s_search: search,
+    s_category: categoryId,
+    s_status: statusFilter,
+    s_orderBy: orderBy,
+    s_order: order,
+  } = filters;
 
   const productsQ = useQuery({
     queryKey: ['inventory-products'],
@@ -378,10 +390,9 @@ const StockTab = ({ onAdjust }) => {
 
   const handleSort = (field) => {
     if (orderBy === field) {
-      setOrder((cur) => (cur === 'asc' ? 'desc' : 'asc'));
+      update({ s_order: order === 'asc' ? 'desc' : 'asc' });
     } else {
-      setOrderBy(field);
-      setOrder('asc');
+      update({ s_orderBy: field, s_order: 'asc' });
     }
   };
 
@@ -413,7 +424,7 @@ const StockTab = ({ onAdjust }) => {
           size="small"
           placeholder={t('search_products')}
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ s_search: e.target.value, s_page: 0 }); }}
           InputProps={{
             startAdornment: (
               <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>
@@ -426,7 +437,7 @@ const StockTab = ({ onAdjust }) => {
           select
           label={t('category')}
           value={categoryId}
-          onChange={(e) => { setCategoryId(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ s_category: e.target.value, s_page: 0 }); }}
           sx={{ minWidth: 160 }}
         >
           <MenuItem value="">{t('all_categories')}</MenuItem>
@@ -439,7 +450,7 @@ const StockTab = ({ onAdjust }) => {
           select
           label={t('status')}
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ s_status: e.target.value, s_page: 0 }); }}
           sx={{ minWidth: 140 }}
         >
           <MenuItem value="all">{t('filter_all')}</MenuItem>
@@ -481,7 +492,7 @@ const StockTab = ({ onAdjust }) => {
                       <TableCell sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: 12 }}>{p.sku}</TableCell>
                       <TableCell
                         sx={{ cursor: 'pointer', fontWeight: 500, '&:hover': { color: 'primary.main' } }}
-                        onClick={() => navigate(`/products/${p.id}`)}
+                        onClick={() => navigate(detailUrl(`/products/${p.id}`))}
                       >
                         {p.name}
                       </TableCell>
@@ -501,7 +512,7 @@ const StockTab = ({ onAdjust }) => {
                           <Button size="small" onClick={() => onAdjust(p)}><AdjustIcon fontSize="small" /></Button>
                         </Tooltip>
                         <Tooltip title={t('view_details')}>
-                          <Button size="small" onClick={() => navigate(`/products/${p.id}`)}><ViewIcon fontSize="small" /></Button>
+                          <Button size="small" onClick={() => navigate(detailUrl(`/products/${p.id}`))}><ViewIcon fontSize="small" /></Button>
                         </Tooltip>
                       </TableCell>
                     </TableRow>
@@ -520,9 +531,9 @@ const StockTab = ({ onAdjust }) => {
             component="div"
             count={filtered.length}
             page={page}
-            onPageChange={(e, newPage) => setPage(newPage)}
+            onPageChange={(e, newPage) => update({ s_page: newPage })}
             rowsPerPage={rowsPerPage}
-            onRowsPerPageChange={(e) => { setRowsPerPage(parseInt(e.target.value, 10)); setPage(0); }}
+            onRowsPerPageChange={(e) => { update({ s_rows: parseInt(e.target.value, 10), s_page: 0 }); }}
             rowsPerPageOptions={[10, 25, 50]}
             labelRowsPerPage={t('rows_per_page')}
           />
@@ -548,15 +559,24 @@ const toIsoEndExclusive = (dateStr) => {
 const MovementsTab = () => {
   const { t } = useTranslation('inventory');
 
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const [type, setType] = useState('');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
-  const [page, setPage] = useState(0);
+  const { filters, update, reset: clearMovementsFilters } = useListFilters({
+    m_page: { init: 0, parse: Number },
+    m_search: { init: '' },
+    m_type: { init: '' },
+    m_dateFrom: { init: '' },
+    m_dateTo: { init: '' },
+  });
+  const {
+    m_page: page,
+    m_search: search,
+    m_type: type,
+    m_dateFrom: dateFrom,
+    m_dateTo: dateTo,
+  } = filters;
+  const [searchInput, setSearchInput] = useState(search);
 
   useEffect(() => {
-    const timer = setTimeout(() => { setSearch(searchInput); setPage(0); }, 350);
+    const timer = setTimeout(() => { update({ m_search: searchInput, m_page: 0 }); }, 350);
     return () => clearTimeout(timer);
   }, [searchInput]);
 
@@ -598,7 +618,7 @@ const MovementsTab = () => {
           select
           label={t('movement_type')}
           value={type}
-          onChange={(e) => { setType(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ m_type: e.target.value, m_page: 0 }); }}
           sx={{ minWidth: 170 }}
         >
           <MenuItem value="">{t('filter_all')}</MenuItem>
@@ -612,7 +632,7 @@ const MovementsTab = () => {
           type="date"
           label={t('date_from')}
           value={dateFrom}
-          onChange={(e) => { setDateFrom(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ m_dateFrom: e.target.value, m_page: 0 }); }}
           InputLabelProps={{ shrink: true }}
           sx={{ width: 165 }}
         />
@@ -621,15 +641,15 @@ const MovementsTab = () => {
           type="date"
           label={t('date_to')}
           value={dateTo}
-          onChange={(e) => { setDateTo(e.target.value); setPage(0); }}
+          onChange={(e) => { update({ m_dateTo: e.target.value, m_page: 0 }); }}
           InputLabelProps={{ shrink: true }}
           sx={{ width: 165 }}
         />
         {hasFilters && (
           <Button
             onClick={() => {
-              setType(''); setDateFrom(''); setDateTo('');
-              setSearchInput(''); setSearch(''); setPage(0);
+              setSearchInput('');
+              clearMovementsFilters();
             }}
           >
             {t('clear_filters')}
@@ -732,7 +752,7 @@ const MovementsTab = () => {
             component="div"
             count={totalElements}
             page={page}
-            onPageChange={(e, newPage) => setPage(newPage)}
+            onPageChange={(e, newPage) => update({ m_page: newPage })}
             rowsPerPage={20}
             rowsPerPageOptions={[20]}
           />
