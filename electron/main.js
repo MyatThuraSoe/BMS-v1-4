@@ -159,6 +159,9 @@ function startServer() {
         spawnArgs.push('-Dlumipos.migration.mysql-to-sqlite=true');
         console.log('[LumiPOS] One-time MySQL -> SQLite migration requested (LUMIPOS_MIGRATE_MYSQL_TO_SQLITE=1)');
     }
+    if (process.env.GOOGLE_CLIENT_ID) {
+        spawnArgs.push('-Dgoogle.oauth.client-id=' + process.env.GOOGLE_CLIENT_ID);
+    }
     if (process.env.GOOGLE_CLIENT_SECRET) {
         spawnArgs.push('-Dgoogle.oauth.client-secret=' + process.env.GOOGLE_CLIENT_SECRET);
     }
