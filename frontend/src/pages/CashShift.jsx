@@ -11,9 +11,10 @@ import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
+import ShiftHistory from './ShiftHistory';
 
 const CashShift = () => {
-  const { user } = useAuth();
+  const { user, isManager } = useAuth();
   const { t } = useTranslation('cash');
   const queryClient = useQueryClient();
 
@@ -245,6 +246,15 @@ const CashShift = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {isManager() && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant="h6" fontWeight={600} gutterBottom>
+            {t('shift_history')}
+          </Typography>
+          <ShiftHistory />
+        </Box>
+      )}
     </Box>
   );
 };
