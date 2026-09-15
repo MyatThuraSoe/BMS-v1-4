@@ -40,6 +40,8 @@
   "unknown_cashier": "Unknown cashier",
   "print_receipt": "Print Receipt",
   "void_reason_label": "Void reason:",
+  "void_success": "Sale voided",
+  "void_failed": "Failed to void sale",
   "subtotal": "Subtotal",
   "tax": "Tax",
   "discount": "Discount",
