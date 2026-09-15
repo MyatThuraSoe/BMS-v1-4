@@ -1,15 +1,40 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Chip, InputAdornment, Autocomplete, MenuItem,
+  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Chip, InputAdornment, Autocomplete, MenuItem,
 } from '@mui/material';
-import { AssignmentReturn as RefundIcon, Search as SearchIcon } from '@mui/icons-material';
-import { useQuery } from '@tanstack/react-query';
+import { Block as VoidIcon, Search as SearchIcon } from '@mui/icons-material';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { saleService, customerService, userService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { notifySuccess, notifyError } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
-import SaleReturnDialog from '../components/SaleReturnDialog';
+
+// Cache prefixes that reflect a voided sale: sale data, stock, and money reports.
+const INVALIDATION_KEYS = [
+  ['sale'],
+  ['sales'],
+  ['receipt'],
+  ['recentSales'],
+  ['products'],
+  ['products-pos'],
+  ['low-stock'],
+  ['inventoryReport'],
+  ['financialSummary'],
+  ['dailySales'],
+  ['salesTrend'],
+  ['accountingSummary'],
+  ['profitSummary'],
+  ['profitTrend'],
+  ['topProducts'],
+  ['topSellingProducts'],
+  ['topCategories'],
+  ['cashierPerformance'],
+  ['inventory-summary'],
+  ['stock-movements'],
+  ['movement-stats'],
+];
 
 const RANGE_PRESETS = [
   { value: 'today', label: 'Today' },
@@ -25,7 +50,8 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const [refundSaleId, setRefundSaleId] = useState(null);
+  const [voidSale, setVoidSale] = useState(null);
+  const [voidReason, setVoidReason] = useState('');
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [debouncedInvoice, setDebouncedInvoice] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -34,6 +60,7 @@ const Sales = () => {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const { t } = useTranslation('sales');
 
@@ -135,6 +162,30 @@ const Sales = () => {
   };
 
   const hasActiveFilters = range !== 'today' || debouncedInvoice || selectedCustomer || selectedCashierId || (range === 'CUSTOM' && (customStartDate || customEndDate));
+
+  const voidMutation = useMutation({
+    mutationFn: ({ id, reason }) => saleService.voidSale(id, reason),
+    onSuccess: () => {
+      notifySuccess(t('void_success'));
+      INVALIDATION_KEYS.forEach((key) => queryClient.invalidateQueries({ queryKey: key }));
+      setVoidSale(null);
+      setVoidReason('');
+    },
+    onError: (err) =>
+      notifyError(err.response?.data?.message || err.friendlyMessage || t('void_failed')),
+  });
+
+  const handleVoidConfirm = () => {
+    if (voidSale && voidReason.trim()) {
+      voidMutation.mutate({ id: voidSale.id, reason: voidReason.trim() });
+    }
+  };
+
+  const handleVoidClose = () => {
+    if (voidMutation.isPending) return;
+    setVoidSale(null);
+    setVoidReason('');
+  };
 
   return (
     <Box>
@@ -258,7 +309,7 @@ const Sales = () => {
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.saleDate)}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {isManager() && (
-                        <IconButton size="small" color="warning" title={t('refund')} aria-label={t('refund')} onClick={(e) => { e.stopPropagation(); setRefundSaleId(s.id); }}><RefundIcon /></IconButton>
+                        <IconButton size="small" color="error" title={t('void_sale')} aria-label={t('void_sale')} disabled={s.isVoided} onClick={(e) => { e.stopPropagation(); setVoidSale(s); }}><VoidIcon /></IconButton>
                       )}
                     </TableCell>
                   </TableRow>
@@ -270,7 +321,24 @@ const Sales = () => {
         <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => setPage(newPage)} onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} rowsPerPageOptions={[5, 10, 25]} />
       </TableContainer>
 
-      <SaleReturnDialog open={!!refundSaleId} saleId={refundSaleId} onClose={() => setRefundSaleId(null)} />
+      <Dialog open={!!voidSale} onClose={handleVoidClose} fullWidth maxWidth="sm">
+        <DialogTitle>{t('void_sale')}</DialogTitle>
+        <DialogContent>
+          <TextField
+            fullWidth
+            required
+            multiline
+            rows={2}
+            label={t('void_reason_label')}
+            value={voidReason}
+            onChange={(e) => setVoidReason(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleVoidClose} disabled={voidMutation.isPending}>{t('cancel')}</Button>
+          <Button onClick={handleVoidConfirm} color="error" variant="contained" disabled={!voidReason.trim() || voidMutation.isPending}>{t('void')}</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
