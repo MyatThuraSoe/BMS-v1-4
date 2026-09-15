@@ -131,17 +131,6 @@ public class SaleController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Returnable items retrieved successfully", items));
     }
 
-    @DeleteMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> deleteSale(@PathVariable Long id, Authentication authentication) {
-        // Extract authenticated user from SecurityContext
-        org.springframework.security.core.userdetails.UserDetails userDetails = 
-            (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
-        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
-        saleService.deleteSale(id, userId);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Sale deleted successfully", null));
-    }
-
     @DeleteMapping("/old")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> deleteOldSales(

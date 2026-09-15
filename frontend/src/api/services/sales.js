@@ -45,11 +45,6 @@ export const saleService = {
     return response.data;
   },
 
-  delete: async (id) => {
-    const response = await apiClient.delete(`/sales/${id}`);
-    return response.data;
-  },
-
   deleteOld: async (olderThanYears = 1) => {
     const response = await apiClient.delete(`/sales/old?olderThanYears=${olderThanYears}`);
     return response.data;

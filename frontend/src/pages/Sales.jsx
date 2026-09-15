@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
-  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, InputAdornment, Autocomplete, MenuItem,
+  Box, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TextField, TablePagination, Chip, InputAdornment, Autocomplete, MenuItem,
 } from '@mui/material';
-import { Delete as DeleteIcon, Search as SearchIcon } from '@mui/icons-material';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { AssignmentReturn as RefundIcon, Search as SearchIcon } from '@mui/icons-material';
+import { useQuery } from '@tanstack/react-query';
 import { saleService, customerService, userService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import { useTranslation } from 'react-i18next';
+import SaleReturnDialog from '../components/SaleReturnDialog';
 
 const RANGE_PRESETS = [
   { value: 'today', label: 'Today' },
@@ -24,8 +25,7 @@ const Sales = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(10);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [selectedSale, setSelectedSale] = useState(null);
+  const [refundSaleId, setRefundSaleId] = useState(null);
   const [invoiceSearch, setInvoiceSearch] = useState('');
   const [debouncedInvoice, setDebouncedInvoice] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState(null);
@@ -34,7 +34,6 @@ const Sales = () => {
   const [customStartDate, setCustomStartDate] = useState('');
   const [customEndDate, setCustomEndDate] = useState('');
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const { t } = useTranslation('sales');
 
@@ -113,21 +112,6 @@ const Sales = () => {
     setCustomStartDate('');
     setCustomEndDate('');
     setPage(0);
-  };
-
-  const deleteMutation = useMutation({
-    mutationFn: (id) => saleService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['sales'] });
-      queryClient.invalidateQueries({ queryKey: ['products'] });
-      queryClient.invalidateQueries({ queryKey: ['low-stock'] });
-      queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
-      setDeleteDialogOpen(false);
-    },
-  });
-
-  const handleDelete = () => {
-    if (selectedSale) deleteMutation.mutate(selectedSale.id);
   };
 
   const sales = salesData?.data?.content || [];
@@ -274,7 +258,7 @@ const Sales = () => {
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{formatDateTime(s.saleDate)}</TableCell>
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {isManager() && (
-                        <IconButton size="small" color="error" onClick={(e) => { e.stopPropagation(); setSelectedSale(s); setDeleteDialogOpen(true); }}><DeleteIcon /></IconButton>
+                        <IconButton size="small" color="warning" title={t('refund')} aria-label={t('refund')} onClick={(e) => { e.stopPropagation(); setRefundSaleId(s.id); }}><RefundIcon /></IconButton>
                       )}
                     </TableCell>
                   </TableRow>
@@ -286,14 +270,7 @@ const Sales = () => {
         <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => setPage(newPage)} onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} rowsPerPageOptions={[5, 10, 25]} />
       </TableContainer>
 
-      <Dialog open={deleteDialogOpen} onClose={() => setDeleteDialogOpen(false)}>
-        <DialogTitle>{t('confirm_delete')}</DialogTitle>
-        <DialogContent>{t('delete_sale_confirm', { number: selectedSale?.invoiceNumber })}</DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
-          <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
-        </DialogActions>
-      </Dialog>
+      <SaleReturnDialog open={!!refundSaleId} saleId={refundSaleId} onClose={() => setRefundSaleId(null)} />
     </Box>
   );
 };

@@ -605,19 +605,6 @@ public class SaleService {
         customerRepository.save(creditCustomer);
     }
 
-    public void deleteSale(Long id, Long userId) {
-        Sale sale = saleRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + id));
-        
-        sale.setDeletedAt(LocalDateTime.now());
-        sale.setIsActive(false);
-        saleRepository.save(sale);
-
-        auditLogService.logAction(userId, "SALE_DELETE", 
-            "Sale deleted: " + sale.getInvoiceNumber(), 
-            "Sale", sale.getId(), sale.toString(), null);
-    }
-
     public Map<String, Object> deleteSalesOlderThanYears(int years, Long userId) {
         if (years < 1) {
             throw new BusinessException("Years must be at least 1");
