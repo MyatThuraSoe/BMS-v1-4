@@ -154,7 +154,7 @@ const ProductForm = () => {
 
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>{isEdit ? t('edit_product') : t('add_product')}</Typography>
+      {!isEdit && <Typography variant="h4" gutterBottom>{t('add_product')}</Typography>}
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
       <Paper sx={{ p: 3 }}>
@@ -214,7 +214,7 @@ const ProductForm = () => {
               <TextField fullWidth label={t('cost')} name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onWheel={preventNumberScroll} />
+              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onWheel={preventNumberScroll} disabled={isEdit} />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} onWheel={preventNumberScroll} />
