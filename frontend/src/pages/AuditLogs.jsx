@@ -13,15 +13,24 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { auditLogService } from '../api/services';
+import { notifySuccess, notifyError } from '../utils/notify';
 
 const AuditLogs = () => {
   const { t } = useTranslation('settings');
+  const queryClient = useQueryClient();
   const [page, setPage] = useState(0);
   const [size] = useState(20);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [purging, setPurging] = useState(false);
   const [filters, setFilters] = useState({
     action: '',
     startDate: '',
@@ -62,12 +71,25 @@ const AuditLogs = () => {
     return 'default';
   };
 
+  const handleDeleteOldLogs = async () => {
+    setPurging(true);
+    try {
+      const response = await auditLogService.deleteOlderThan(1);
+      const deleted = response?.data?.deletedCount ?? 0;
+      const cutoffDate = response?.data?.cutoffDate;
+      notifySuccess(t('old_audit_logs_deleted', { count: deleted, date: cutoffDate }));
+      setConfirmOpen(false);
+      setPage(0);
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+    } catch (err) {
+      notifyError(err.friendlyMessage || t('delete_old_audit_logs_failed'));
+    } finally {
+      setPurging(false);
+    }
+  };
+
   return (
     <Box>
-      <Typography variant="h4" gutterBottom>
-        {t('audit_logs')}
-      </Typography>
-
       <Paper sx={{ p: 2, mb: 2 }}>
         <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
           <TextField
@@ -133,7 +155,6 @@ const AuditLogs = () => {
               <TableCell>{t('action')}</TableCell>
               <TableCell>{t('col_entity')}</TableCell>
               <TableCell>{t('col_description')}</TableCell>
-              <TableCell>{t('col_ip')}</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
@@ -159,7 +180,6 @@ const AuditLogs = () => {
                     {log.description}
                   </Typography>
                 </TableCell>
-                <TableCell>{log.ipAddress || '-'}</TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -185,6 +205,48 @@ const AuditLogs = () => {
           </Button>
         </Box>
       </Box>
+
+      <Box
+        sx={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: 2,
+          flexWrap: 'wrap',
+          mt: 2,
+          p: 2,
+          border: '1px solid',
+          borderColor: 'divider',
+          borderRadius: 1,
+        }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          {t('audit_log_cleanup')}
+        </Typography>
+        <Button
+          variant="contained"
+          color="error"
+          onClick={() => setConfirmOpen(true)}
+          disabled={purging}
+        >
+          {t('delete')}
+        </Button>
+      </Box>
+
+      <Dialog open={confirmOpen} onClose={() => !purging && setConfirmOpen(false)}>
+        <DialogTitle>{t('delete_old_audit_logs_title')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>{t('delete_old_audit_logs_confirm')}</DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)} disabled={purging}>
+            {t('cancel')}
+          </Button>
+          <Button onClick={handleDeleteOldLogs} color="error" variant="contained" disabled={purging}>
+            {purging ? <CircularProgress size={20} color="inherit" /> : t('delete')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
