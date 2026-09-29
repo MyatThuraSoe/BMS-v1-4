@@ -143,7 +143,7 @@ const POS = () => {
 
   // Fetch products
 
-  const { data: productsData, isLoading } = useQuery({
+  const { data: productsData, isLoading, isError: productsError } = useQuery({
     queryKey: ['products-pos', page],
     queryFn: () => productService.getAll(page, pageSize),
     keepPreviousData: true,
@@ -659,6 +659,11 @@ const POS = () => {
     } else if (!cashAmount || parseFloat(cashAmount) <= 0) {
       setError(t('enter_cash_amount'));
       return;
+    } else if (parseFloat(cashAmount) < displayTotal) {
+      // Matches the confirmation dialog guard — the "Checkout & Print" path
+      // skips the dialog, so enforce the same under-tender rule here.
+      setError(t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) }));
+      return;
     }
     verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
   };
@@ -862,6 +867,12 @@ const POS = () => {
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
           {error}
+        </Alert>
+      )}
+
+      {productsError && !searchActive && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {t('failed_to_load_products')}
         </Alert>
       )}
 

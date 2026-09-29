@@ -94,8 +94,26 @@ public class ProductService {
         return products.map(this::convertToResponse);
     }
 
-    public Page<ProductResponse> searchProducts(String keyword, Pageable pageable) {
-        return productRepository.searchActiveProducts(keyword, pageable).map(this::convertToResponse);
+    public Page<ProductResponse> searchProducts(String keyword, Long categoryId, String view, Pageable pageable) {
+        Page<Product> products;
+        switch (view == null ? "" : view) {
+            case "most-sold":
+                products = productRepository.searchMostSoldProducts(keyword, categoryId, pageable);
+                break;
+
+            case "least-sold":
+                products = productRepository.searchLeastSoldProducts(keyword, categoryId, pageable);
+                break;
+
+            case "low-stock":
+                products = productRepository.searchLowStockProducts(keyword, categoryId, pageable);
+                break;
+
+            default:
+                products = productRepository.searchActiveProducts(keyword, categoryId, pageable);
+                break;
+        }
+        return products.map(this::convertToResponse);
     }
 
     public ProductResponse getProductById(Long id) {

@@ -27,10 +27,55 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL ORDER BY p.name")
     Page<Product> findActiveProducts(Pageable pageable);
 
-    // OPTIMIZED: Fetches category in a single JOIN query
+    // OPTIMIZED: Fetches category in a single JOIN query. The optional
+    // categoryId keeps the products-page category filter active while searching.
     @EntityGraph(attributePaths = {"category"})
-    @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))")
-    Page<Product> searchActiveProducts(@Param("keyword") String keyword, Pageable pageable);
+    @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL " +
+        "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
+        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+    Page<Product> searchActiveProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
+
+    // Same search, but restricted to low-stock items (view = "low-stock").
+    @EntityGraph(attributePaths = {"category"})
+    @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL " +
+        "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
+        "AND p.stockQuantity <= p.minStockLevel " +
+        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
+        "ORDER BY p.stockQuantity")
+    Page<Product> searchLowStockProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
+
+    // Same search, ranked by lifetime units sold (views "most-sold"/"least-sold").
+    @EntityGraph(attributePaths = {"category"})
+    @Query("""
+        SELECT p
+        FROM Product p
+        LEFT JOIN SaleItem si ON si.product.id = p.id
+        LEFT JOIN Sale s ON s.id = si.sale.id
+        WHERE p.isActive = true
+        AND p.deletedAt IS NULL
+        AND (:categoryId IS NULL OR p.category.id = :categoryId)
+        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))
+        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        GROUP BY p.id
+        ORDER BY COALESCE(SUM(si.quantity), 0) DESC
+    """)
+    Page<Product> searchMostSoldProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
+
+    @EntityGraph(attributePaths = {"category"})
+    @Query("""
+        SELECT p
+        FROM Product p
+        LEFT JOIN SaleItem si ON si.product.id = p.id
+        LEFT JOIN Sale s ON s.id = si.sale.id
+        WHERE p.isActive = true
+        AND p.deletedAt IS NULL
+        AND (:categoryId IS NULL OR p.category.id = :categoryId)
+        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))
+        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        GROUP BY p.id
+        ORDER BY COALESCE(SUM(si.quantity), 0) ASC
+    """)
+    Page<Product> searchLeastSoldProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
 
     // OPTIMIZED: Database-level filtering for low stock (fixes broken pagination)
     @EntityGraph(attributePaths = {"category"})

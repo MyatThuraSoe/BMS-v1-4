@@ -350,9 +350,23 @@ const StockTab = ({ onAdjust }) => {
     s_order: order,
   } = filters;
 
+  // Fetch ALL products (not just the first 1000) by walking every page so the
+  // Stock tab and CSV export never silently truncate a large catalog.
   const productsQ = useQuery({
     queryKey: ['inventory-products'],
-    queryFn: () => inventoryService.getProducts({ size: 1000 }),
+    queryFn: async () => {
+      const all = [];
+      let page = 0;
+      let totalPages = 1;
+      do {
+        const res = await inventoryService.getProducts({ page, size: 1000 });
+        const content = res?.data?.content;
+        if (content) all.push(...content);
+        totalPages = res?.data?.page?.totalPages ?? 1;
+        page += 1;
+      } while (page < totalPages);
+      return { data: { content: all } };
+    },
   });
 
   const categoriesQ = useQuery({

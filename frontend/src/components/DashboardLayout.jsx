@@ -231,7 +231,7 @@ const DashboardLayout = ({ children }) => {
     queryKey: ['license-status'],
     queryFn: () => licenseService.getStatus(),
 });
-const lic = licData?.data;
+const lic = licData?.data?.data;
 
   // Warm all route chunks during idle so first menu clicks never flash
   useEffect(() => { preloadRouteChunks(); }, []);
@@ -515,16 +515,14 @@ const lic = licData?.data;
             area only — the drawer and app bar stay mounted, so navigating
             never flashes the whole window. */}
         <Suspense fallback={<ContentSkeleton />}>
+          {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {t('trial_banner_message', { count: lic.daysLeft })}
+            </Alert>
+          )}
           {children || <Outlet />}
         </Suspense>
       </Box>
-
-      {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
-      <Alert severity="info" sx={{ mb: 2 }}>
-          ⏳ Your trial ends in <strong>{lic.daysLeft} days</strong>.
-          Contact MegaCode to upgrade — your data stays safe.
-      </Alert>
-  )}
 
       <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>{t('common:change_password')}</DialogTitle>

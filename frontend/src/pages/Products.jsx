@@ -12,6 +12,7 @@ import { productService, categoryService, inventoryService, reportService } from
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import ProductImage from '../components/ProductImage';
+import { notifyError } from '../utils/notify';
 import { useTranslation } from 'react-i18next';
 import useListFilters from '../hooks/useListFilters';
 
@@ -57,10 +58,10 @@ const ProductsTab = () => {
   });
   const categories = categoryData?.data?.content || [];
 
-  const { data: productsData, isLoading } = useQuery({
+  const { data: productsData, isLoading, isError: productsError } = useQuery({
     queryKey: ['products', page, size, debouncedSearch, category, view],
     queryFn: () => {
-      if (debouncedSearch) return productService.search(debouncedSearch, page, size);
+      if (debouncedSearch) return productService.search(debouncedSearch, page, size, category || null, view || null);
       return productService.getAll(page, size, 'createdAt', category || null, view || null);
     },
   });
@@ -80,7 +81,10 @@ const ProductsTab = () => {
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       setDeleteDialogOpen(false);
     },
-    onError: () => setDeleteDialogOpen(false),
+    onError: (err) => {
+      setDeleteDialogOpen(false);
+      notifyError(err.friendlyMessage || t('failed_to_delete'));
+    },
   });
 
   const products = productsData?.data?.content || [];
@@ -172,6 +176,10 @@ const ProductsTab = () => {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={9 + (isManager() ? 1 : 0)} align="center">{t('loading')}</TableCell></TableRow>
+            ) : productsError ? (
+              <TableRow><TableCell colSpan={9 + (isManager() ? 1 : 0)} align="center">
+                <Alert severity="error" sx={{ display: 'inline-flex' }}>{t('failed_to_load_products')}</Alert>
+              </TableCell></TableRow>
             ) : products.length === 0 ? (
               <TableRow><TableCell colSpan={9 + (isManager() ? 1 : 0)} align="center">{t('no_products_found')}</TableCell></TableRow>
             ) : (

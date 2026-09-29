@@ -194,6 +194,7 @@
   "export_csv": "Export CSV",
   "failed_to_load_summary": "Failed to load inventory summary",
   "failed_to_load_products": "Failed to load products",
+  "failed_to_delete": "Failed to delete. It may still be referenced by other records.",
   "failed_to_load_movements": "Failed to load movements",
   "rows_per_page": "Rows per page",
   "date_from": "From",

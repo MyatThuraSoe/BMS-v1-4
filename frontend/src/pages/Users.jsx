@@ -23,6 +23,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
+import { notifyError } from '../utils/notify';
 
 const Users = () => {
   const [page, setPage] = useState(0);
@@ -34,7 +35,7 @@ const Users = () => {
   const { t } = useTranslation('users');
   const { user: currentUser } = useAuth();
 
-  const { data: usersData, isLoading } = useQuery({
+  const { data: usersData, isLoading, isError } = useQuery({
     queryKey: ['users', page, size],
     queryFn: () => userService.getAll(page, size),
   });
@@ -49,8 +50,9 @@ const Users = () => {
       queryClient.invalidateQueries({ queryKey: ['users'] });
       setDeleteDialogOpen(false);
     },
-    onError: () => {
+    onError: (err) => {
       setDeleteDialogOpen(false);
+      notifyError(err.friendlyMessage || t('failed_to_delete'));
     },
   });
 
@@ -118,7 +120,13 @@ const Users = () => {
             </TableRow>
           </TableHead>
           <TableBody>
-            {users.map((user) => (
+            {isError ? (
+              <TableRow>
+                <TableCell colSpan={8} align="center">
+                  <Typography color="error">{t('failed_to_load_users')}</Typography>
+                </TableCell>
+              </TableRow>
+            ) : users.map((user) => (
               <TableRow
                 key={user.id}
                 hover

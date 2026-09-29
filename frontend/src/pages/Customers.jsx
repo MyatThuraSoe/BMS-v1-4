@@ -10,6 +10,7 @@ import { customerService } from '../api/services';
 import { formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import useListFilters from '../hooks/useListFilters';
+import { notifyError } from '../utils/notify';
 
 const Customers = () => {
   const { filters, update, detailUrl } = useListFilters({
@@ -34,7 +35,7 @@ const Customers = () => {
   }, [search]);
 
   // ✅ 4. useQuery now depends on debouncedSearch, NOT search
-  const { data: customersData, isLoading } = useQuery({
+  const { data: customersData, isLoading, isError } = useQuery({
     queryKey: ['customers', page, size, debouncedSearch, city],
     queryFn: () => {
       if (debouncedSearch.trim() || city) {
@@ -56,8 +57,9 @@ const Customers = () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       setDeleteDialogOpen(false);
     },
-    onError: () => {
+    onError: (err) => {
       setDeleteDialogOpen(false);
+      notifyError(err.friendlyMessage || t('failed_to_delete'));
     },
   });
 
@@ -120,6 +122,10 @@ const Customers = () => {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={7} align="center">{t('loading')}</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={7} align="center">
+                <Alert severity="error" sx={{ display: 'inline-flex' }}>{t('failed_to_load_customers')}</Alert>
+              </TableCell></TableRow>
             ) : customers.length === 0 ? (
               <TableRow><TableCell colSpan={7} align="center">{t('no_customers_found')}</TableCell></TableRow>
             ) : (

@@ -9,6 +9,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supplierService } from '../api/services';
 import { formatDateTime } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
+import { notifyError } from '../utils/notify';
 
 const Suppliers = () => {
   const [page, setPage] = useState(0);
@@ -32,7 +33,7 @@ const Suppliers = () => {
   }, [search]);
 
   // ✅ 4. useQuery now uses debouncedSearch AND actually performs the search
-  const { data: suppliersData, isLoading } = useQuery({
+  const { data: suppliersData, isLoading, isError } = useQuery({
     queryKey: ['suppliers', page, size, debouncedSearch],
     queryFn: () => {
       if (debouncedSearch.trim()) {
@@ -50,8 +51,9 @@ const Suppliers = () => {
       queryClient.invalidateQueries({ queryKey: ['suppliers'] });
       setDeleteDialogOpen(false);
     },
-    onError: () => {
+    onError: (err) => {
       setDeleteDialogOpen(false);
+      notifyError(err.friendlyMessage || t('failed_to_delete'));
     },
   });
 
@@ -99,6 +101,10 @@ const Suppliers = () => {
           <TableBody>
             {isLoading ? (
               <TableRow><TableCell colSpan={6} align="center">{t('loading')}</TableCell></TableRow>
+            ) : isError ? (
+              <TableRow><TableCell colSpan={6} align="center">
+                <Alert severity="error" sx={{ display: 'inline-flex' }}>{t('failed_to_load_suppliers')}</Alert>
+              </TableCell></TableRow>
             ) : suppliers.length === 0 ? (
               <TableRow><TableCell colSpan={6} align="center">{t('no_suppliers_found')}</TableCell></TableRow>
             ) : (

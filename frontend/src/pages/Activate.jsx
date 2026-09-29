@@ -1,9 +1,24 @@
 import { useState, useEffect } from 'react';
 import { Box, Paper, Typography, TextField, Button, IconButton, InputAdornment, Chip, CircularProgress, Alert } from '@mui/material';
-import { ContentCopy as CopyIcon, Verified as VerifiedIcon, FlashOn as FlashIcon } from '@mui/icons-material';
+import { ContentCopy as CopyIcon, Verified as VerifiedIcon, FlashOn as FlashIcon, FileDownload as FileDownloadIcon } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { licenseService } from '../api/services';
+import apiClient from '../api/apiClient';
 import { notifySuccess, notifyError } from '../utils/notify';
+
+
+const reasonKey = (reason) => {
+  if (!reason) return null;
+  const map = {
+    'No license key installed': 'reason_no_license',
+    'License is bound to another machine': 'reason_wrong_machine',
+    'License has expired': 'reason_expired',
+    'License file could not be verified': 'reason_corrupt',
+    'License key failed verification': 'reason_invalid',
+    'License key is malformed': 'reason_invalid',
+  };
+  return map[reason] || null;
+};
 
 
 const Activate = () => {
@@ -47,12 +62,38 @@ const Activate = () => {
                 notifySuccess(t('activated_success'));
                 setTimeout(() => { window.location.href = '/'; }, 1200);
             } else {
-                notifyError(res.data.message || t('invalid_machine'));
+                const reason = res.data.data.reason;
+                notifyError(reasonKey(reason) ? t(reasonKey(reason)) : (reason || res.data.message || t('invalid_machine')));
             }
         } catch (err) {
             notifyError(err.friendlyMessage || t('activation_failed'));
         } finally {
             setActivating(false);
+        }
+    };
+
+    const [exporting, setExporting] = useState(false);
+    // Escape hatch: if the license is lost/expired, an installed ADMIN can still
+    // pull a JSON backup before re-licensing. The endpoint requires an ADMIN JWT.
+    const handleExportData = async () => {
+        setExporting(true);
+        try {
+            const res = await apiClient.get('/data/export', { responseType: 'blob' });
+            const blob = new Blob([res.data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            const today = new Date().toISOString().slice(0, 10);
+            a.href = url;
+            a.download = `lumipos-backup-${today}.json`;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            notifySuccess(t('export_success'));
+        } catch (err) {
+            notifyError(err.friendlyMessage || t('export_failed'));
+        } finally {
+            setExporting(false);
         }
     };
 
@@ -73,6 +114,11 @@ const Activate = () => {
                     {licenseStatus?.expired && (
                         <Alert severity="warning" sx={{ mb: 2, textAlign: 'left' }}>
                             {t('expired_warning', { plan: planLabel(licenseStatus.plan) })}
+                        </Alert>
+                    )}
+                    {licenseStatus?.reason && !licenseStatus.licensed && (
+                        <Alert severity="info" sx={{ mb: 2, textAlign: 'left' }}>
+                            {reasonKey(licenseStatus.reason) ? t(reasonKey(licenseStatus.reason)) : licenseStatus.reason}
                         </Alert>
                     )}
                         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5, textAlign: 'left' }}>
@@ -119,6 +165,17 @@ const Activate = () => {
                         </Button>
 
                         <Box sx={{ mt: 3 }}>
+                            <Button
+                                fullWidth
+                                size="small"
+                                variant="outlined"
+                                onClick={handleExportData}
+                                disabled={exporting}
+                                startIcon={exporting ? <CircularProgress size={16} /> : <FileDownloadIcon fontSize="small" />}
+                                sx={{ mb: 2 }}
+                            >
+                                {exporting ? t('exporting') : t('export_data')}
+                            </Button>
                             <Chip size="small" variant="outlined" icon={<FlashIcon />} label="MegaCode Software Development" />
                             <Typography variant="caption" display="block" color="text.secondary" sx={{ mt: 1 }}>
                                 facebook.com/MegaCodemm - LinkedIn: MegaCode Software Development

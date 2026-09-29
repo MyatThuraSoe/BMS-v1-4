@@ -8,7 +8,7 @@ import { setCurrencyCode } from '../utils/helpers';
 import { CloudUpload as UploadIcon, Delete as DeleteIcon, Save as SaveIcon } from '@mui/icons-material';
 import { useAuth } from '../context/AuthContext';
 import ShopLogo, { clearShopLogoCache } from '../components/ShopLogo';
-import { notifyInfo } from '../utils/notify';
+import { notifySuccess, notifyInfo } from '../utils/notify';
 const SHOP_TYPES = ['MINI_MART','GROCERY','PHARMACY','FURNITURE_SHOP','ELECTRONICS','CLOTHING','RESTAURANT','OTHER'];
 
 const CURRENCIES = [
@@ -83,9 +83,12 @@ const ShopInfo = () => {
 
   const updateMutation = useMutation({
     mutationFn: (payload) => shopInfoService.update(payload),
-    onSuccess: () => {
+    onSuccess: (updatedShop) => {
       queryClient.invalidateQueries({ queryKey: ['shopInfo'] });
-      notifyInfo(t('restart_app_to_apply_changes'));
+      // Only flip the display currency once the server actually accepted the
+      // change — otherwise a failed save silently switches the UI currency.
+      if (updatedShop?.currency) setCurrencyCode(updatedShop.currency);
+      notifySuccess(t('shop_info_updated'));
     },
   });
 
@@ -153,7 +156,6 @@ const ShopInfo = () => {
       discountType: form.discountType,
       discountValue: parseTaxPercentage(form.discountValue) || '0',
     });
-    setCurrencyCode(form.currency);
   };
 
   if (!isAdmin()) {

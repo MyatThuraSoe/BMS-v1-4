@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { 
   Box, Typography, Paper, Button, Chip, Divider, Stack, Link as MuiLink,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField 
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Alert
 } from '@mui/material';
 import { 
   Info as InfoIcon, 
@@ -86,8 +86,22 @@ const handleActivateNewKey = async () => {
         setNewKey('');
         refetch();
     } else {
-        notifyError(res.data.message || t('invalid_key'));
+        const reason = res.data.data.reason;
+        notifyError(reasonKey(reason) ? t(reasonKey(reason)) : (reason || res.data.message || t('invalid_key')));
     }
+};
+
+  const reasonKey = (reason) => {
+  if (!reason) return null;
+  const map = {
+    'No license key installed': 'reason_no_license',
+    'License is bound to another machine': 'reason_wrong_machine',
+    'License has expired': 'reason_expired',
+    'License file could not be verified': 'reason_corrupt',
+    'License key failed verification': 'reason_invalid',
+    'License key is malformed': 'reason_invalid',
+  };
+  return map[reason] || null;
 };
 
   return (
@@ -216,6 +230,12 @@ const handleActivateNewKey = async () => {
                 </Box>
             </Box>
         </Stack>
+
+        {lic.reason && !lic.licensed && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+                {reasonKey(lic.reason) ? t(reasonKey(lic.reason)) : lic.reason}
+            </Alert>
+        )}
 
         <Dialog open={keyDialog} onClose={() => setKeyDialog(false)} fullWidth maxWidth="sm">
             <DialogTitle>{t('upgrade_renew')}</DialogTitle>

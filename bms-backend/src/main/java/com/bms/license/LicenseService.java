@@ -35,22 +35,49 @@ public class LicenseService {
     }
 
     public synchronized boolean activate(String licenseKey) {
+        return activateWithReason(licenseKey) == null;
+    }
+
+    /**
+     * Attempts activation and returns {@code null} on success, or a
+     * human-readable reason for the failure (wrong machine, expired,
+     * malformed/unsigned key). Lets the UI stop guessing why a key was rejected.
+     */
+    public synchronized String activateWithReason(String licenseKey) {
         try {
             Map<String, String> payload = parseAndVerify(licenseKey.trim());
-
-            // 🔒 THE COPY-PROTECTION CHECK:
-            if (!machineId().equals(payload.get("machineId"))) return false;
-
-            // ✅ Check expiry
-            if (isExpired(payload)) return false;
-
+            if (!machineId().equals(payload.get("machineId"))) {
+                return "License is bound to another machine";
+            }
+            if (isExpired(payload)) return "License has expired";
             Files.createDirectories(LICENSE_FILE.getParent());
             Files.writeString(LICENSE_FILE, licenseKey.trim());
-            this.cachedLicense = payload;   // ✅ Update cache
-            return true;
+            this.cachedLicense = payload;
+            return null;
+        } catch (SecurityException e) {
+            return "License key failed verification";
         } catch (Exception e) {
-            return false;
+            return "License key is malformed";
         }
+    }
+
+    /**
+     * Explains why the installed license is not valid, or {@code null} when the
+     * install is licensed. Distinguishes missing / corrupt / wrong-machine /
+     * expired so the UI can give an actionable message instead of a bare 403.
+     */
+    public String statusReason() {
+        if (isLicensed()) return null;
+        Map<String, String> payload;
+        try {
+            if (!Files.exists(LICENSE_FILE)) return "No license key installed";
+            payload = parseAndVerify(Files.readString(LICENSE_FILE).trim());
+        } catch (Exception e) {
+            return "License file could not be verified";
+        }
+        if (!machineId().equals(payload.get("machineId"))) return "License is bound to another machine";
+        if (isExpired(payload)) return "License has expired";
+        return "License is not valid";
     }
 
     public boolean isLicensed() {

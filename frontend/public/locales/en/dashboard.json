@@ -43,5 +43,6 @@
   "stock_movements_last_14_days": "Stock Movements (Last 14 Days)",
   "stock_in": "Stock In",
   "stock_out": "Stock Out",
-  "net_change": "Net Change"
+  "net_change": "Net Change",
+  "load_failed": "Some dashboard data failed to load. Values shown as — may be out of date; check the server connection and refresh."
 }

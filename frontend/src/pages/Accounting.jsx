@@ -18,6 +18,8 @@ const Accounting = () => {
   const [year, setYear] = useState(today.getFullYear());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [formError, setFormError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const [form, setForm] = useState({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0] });
   const [receiptFile, setReceiptFile] = useState(null);
   const [removeReceiptImage, setRemoveReceiptImage] = useState(false);
@@ -98,9 +100,10 @@ const Accounting = () => {
 
   const categoryLabel = (cat) => t(`category_${String(cat).toLowerCase()}`, { defaultValue: cat });
 
-  const openCreate = () => { setEditingExpense(null); resetForm(); setDialogOpen(true); };
+  const openCreate = () => { setEditingExpense(null); setFormError(''); resetForm(); setDialogOpen(true); };
   const openEdit = (expense) => {
     setEditingExpense(expense);
+    setFormError('');
     setReceiptFile(null);
     setRemoveReceiptImage(false);
     setForm({ category: expense.category, description: expense.description || '', amount: expense.amount || '', expenseDate: expense.expenseDate || today.toISOString().split('T')[0] });
@@ -113,7 +116,17 @@ const Accounting = () => {
   }
 
   const handleSubmit = () => {
-    const payload = { category: form.category, description: form.description, amount: Number(form.amount), expenseDate: form.expenseDate };
+    const amount = Number(form.amount);
+    if (!form.expenseDate) {
+      setFormError(t('expense_date_required'));
+      return;
+    }
+    if (form.amount === '' || form.amount == null || Number.isNaN(amount) || amount <= 0) {
+      setFormError(t('amount_must_be_positive'));
+      return;
+    }
+    setFormError('');
+    const payload = { category: form.category, description: form.description, amount, expenseDate: form.expenseDate };
     if (editingExpense) {
       updateMutation.mutate({ id: editingExpense.id, payload, file: receiptFile, removeImage: removeReceiptImage });
     } else {
@@ -214,7 +227,7 @@ const Accounting = () => {
                     <TableCell>{expense.expenseDate}</TableCell>
                     <TableCell align="right">
                       <Button size="small" onClick={() => openEdit(expense)}>{t('edit')}</Button>
-                      <Button size="small" color="error" onClick={() => deleteMutation.mutate(expense.id)}>{t('delete')}</Button>
+                      <Button size="small" color="error" onClick={() => setDeleteTarget(expense)}>{t('delete')}</Button>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -230,12 +243,13 @@ const Accounting = () => {
         <DialogTitle>{editingExpense ? t('edit_expense') : t('add_expense')}</DialogTitle>
         <DialogContent>
           <Stack spacing={2} sx={{ mt: 1 }}>
+            {formError && <Alert severity="error">{formError}</Alert>}
             <TextField select label={t('category')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
               {categories.map((category) => <MenuItem key={category} value={category}>{categoryLabel(category)}</MenuItem>)}
             </TextField>
             <TextField label={t('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} onWheel={preventNumberScroll} />
-            <TextField label={t('expense_date')} type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} />
+            <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} onWheel={preventNumberScroll} required />
+            <TextField label={t('expense_date')} type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} required />
             {editingExpense?.hasReceiptImage && !removeReceiptImage && !receiptFile && (
               <Stack direction="row" spacing={2} alignItems="center">
                 <ExpenseReceiptImage expenseId={editingExpense.id} hasImage size={72} />
@@ -249,8 +263,33 @@ const Accounting = () => {
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setDialogOpen(false)}>{t('cancel')}</Button>
-          <Button variant="contained" onClick={handleSubmit}>{t('save')}</Button>
+          <Button onClick={() => setDialogOpen(false)} disabled={createMutation.isPending || updateMutation.isPending}>{t('cancel')}</Button>
+          <Button variant="contained" onClick={handleSubmit} disabled={createMutation.isPending || updateMutation.isPending}>
+            {createMutation.isPending || updateMutation.isPending ? t('processing') : t('save')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)}>
+        <DialogTitle>{t('delete_expense')}</DialogTitle>
+        <DialogContent>
+          {t('delete_expense_confirm', {
+            description: deleteTarget?.description || '',
+            amount: deleteTarget ? formatCurrency(deleteTarget.amount) : '',
+          })}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)} disabled={deleteMutation.isPending}>{t('cancel')}</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={deleteMutation.isPending}
+            onClick={() => {
+              if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+            }}
+          >
+            {deleteMutation.isPending ? t('processing') : t('delete')}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>
