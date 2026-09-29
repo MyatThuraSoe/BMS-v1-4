@@ -17,8 +17,13 @@ import java.util.Optional;
 public interface CustomerRepository extends JpaRepository<Customer, Long> {
 
     boolean existsByCustomerCode(String customerCode);
-    boolean existsByEmail(String email);
-    boolean existsByPhone(String phone);
+
+    // Uniqueness checks ignore soft-deleted rows so deleted accounts' values reuse works.
+    @Query("SELECT COUNT(c) > 0 FROM Customer c WHERE c.deletedAt IS NULL AND c.email = :email")
+    boolean existsByEmail(@Param("email") String email);
+
+    @Query("SELECT COUNT(c) > 0 FROM Customer c WHERE c.deletedAt IS NULL AND (c.phone = :phone OR EXISTS (SELECT 1 FROM c.phones cp WHERE cp.phone = :phone))")
+    boolean existsByPhone(@Param("phone") String phone);
 
     Optional<Customer> findByCustomerCode(String customerCode);
     Optional<Customer> findByEmail(String email);

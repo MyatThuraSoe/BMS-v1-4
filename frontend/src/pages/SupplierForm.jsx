@@ -44,7 +44,7 @@ const SupplierForm = () => {
     },
     onError: (err) => {
       if (err.response?.status === 409) {
-        setError(t('supplier_conflict_409'));
+        setError(err.friendlyMessage || t('supplier_conflict_409'));
       } else {
         setError(err.response?.data?.message || t('save_failed'));
       }

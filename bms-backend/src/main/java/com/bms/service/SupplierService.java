@@ -129,6 +129,9 @@ public class SupplierService {
         Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + id));
         
+        // Free the unique name/email values so a new supplier can reuse them after this soft delete.
+        supplier.setName(com.bms.util.SoftDeleteKeys.release(supplier.getName(), supplier.getId(), 255));
+        supplier.setEmail(com.bms.util.SoftDeleteKeys.release(supplier.getEmail(), supplier.getId(), 255));
         supplier.setDeletedAt(LocalDateTime.now());
         supplier.setIsActive(false);
         supplierRepository.save(supplier);

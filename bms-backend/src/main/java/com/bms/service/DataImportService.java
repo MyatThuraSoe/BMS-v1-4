@@ -32,6 +32,13 @@ public class DataImportService {
     private final ReceiptCustomizationRepository receiptCustomizationRepository;
     private final OrderRepository orderRepository;
     private final OrderSequenceRepository orderSequenceRepository;
+    private final SaleReturnRepository saleReturnRepository;
+    private final ExpenseRepository expenseRepository;
+    private final CashShiftRepository cashShiftRepository;
+    private final UserRepository userRepository;
+    private final RoleRepository roleRepository;
+    private final ShopInfoRepository shopInfoRepository;
+    private final SystemSettingRepository systemSettingRepository;
     private final JdbcTemplate jdbcTemplate;
     private final Environment env;
 
@@ -70,32 +77,75 @@ public class DataImportService {
         List<com.bms.entity.Order> orders = readOrders(mapper, rawData.get("orders"));
         List<OrderSequence> orderSequences = readList(mapper, rawData.get("orderSequences"), OrderSequence.class);
 
+        // Sale returns are stored flattened (saleId / returnedById / saleItemId) —
+        // re-attach the associations by id and re-parent the items.
+        List<SaleReturn> saleReturns = readSaleReturns(mapper, rawData.get("saleReturns"));
+
+        // Users are stored flattened (roleName only) — re-attach the Role entity.
+        List<User> users = readUsers(mapper, rawData.get("users"));
+
+        List<Expense> expenses = readList(mapper, rawData.get("expenses"), Expense.class);
+        List<CashShift> cashShifts = readList(mapper, rawData.get("cashShifts"), CashShift.class);
+        List<ShopInfo> shopInfoRows = readList(mapper, rawData.get("shopInfo"), ShopInfo.class);
+        List<SystemSetting> systemSettings = readList(mapper, rawData.get("systemSettings"), SystemSetting.class);
+
         // 2️⃣ REPLACE mode: wipe existing data with FK checks disabled so child
         //    tables (stock_movements, refunds, *_items, product_images, ...) never
-        //    block the delete or get orphaned.
+        //    block the delete or get orphaned. Tables added in newer backup
+        //    versions (users, expenses, ...) are only wiped when the incoming
+        //    backup actually contains their data — a restore from an old file can
+        //    never lock you out by replacing everything else with nothing.
         if (mode == ImportMode.REPLACE_ALL) {
-            wipeAllData();
+            wipeAllData(rawData);
         }
 
         // 3️⃣ Re-link children (back-refs were stripped by @JsonIgnore)
         sales.forEach(s -> { if (s.getItems() != null) s.getItems().forEach(i -> i.setSale(s)); });
         purchases.forEach(p -> { if (p.getItems() != null) p.getItems().forEach(i -> i.setPurchase(p)); });
 
-        // 4️⃣ Save (parents first). IDs are preserved →
-        //    MERGE = existing IDs updated, new IDs inserted.
+        // 4️⃣ MERGE = insert-only for records we do NOT already have. Existing IDs
+        //    are left untouched — nothing in the store is ever silently overwritten
+        //    by a "safe" merge.
+        if (mode == ImportMode.MERGE) {
+            users = keepOnlyNewUsers(users);
+            categories = keepOnlyNew(categories, categoryRepository::findAll);
+            customers = keepOnlyNew(customers, customerRepository::findAll);
+            suppliers = keepOnlyNew(suppliers, supplierRepository::findAll);
+            products = keepOnlyNew(products, productRepository::findAll);
+            purchases = keepOnlyNew(purchases, purchaseRepository::findAll);
+            sales = keepOnlyNew(sales, saleRepository::findAll);
+            receiptCustomizations = keepOnlyNew(receiptCustomizations, receiptCustomizationRepository::findAll);
+            arPayments = keepOnlyNew(arPayments, arPaymentRepository::findAll);
+            orders = keepOnlyNew(orders, orderRepository::findAll);
+            orderSequences = keepOnlyNew(orderSequences, orderSequenceRepository::findAll);
+            saleReturns = keepOnlyNew(saleReturns, saleReturnRepository::findAll);
+            expenses = keepOnlyNew(expenses, expenseRepository::findAll);
+            cashShifts = keepOnlyNew(cashShifts, cashShiftRepository::findAll);
+            shopInfoRows = keepOnlyNew(shopInfoRows, shopInfoRepository::findAll);
+            systemSettings = keepOnlyNew(systemSettings, systemSettingRepository::findAll);
+        }
+
+        // 5️⃣ Save (parents first, FK-safe order). IDs are preserved so
+        //    REPLACE_ALL re-inserts the exact rows and MERGE inserts new ones.
         Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("users", userRepository.saveAll(users).size());
         counts.put("categories", categoryRepository.saveAll(categories).size());
         counts.put("customers",  customerRepository.saveAll(customers).size());
         counts.put("suppliers",  supplierRepository.saveAll(suppliers).size());
         counts.put("products",   productRepository.saveAll(products).size());
-        counts.put("sales",      saleRepository.saveAll(sales).size());
         counts.put("purchases",  purchaseRepository.saveAll(purchases).size());
+        counts.put("sales",      saleRepository.saveAll(sales).size());
+        counts.put("saleReturns", saleReturnRepository.saveAll(saleReturns).size());
         counts.put("receiptCustomizations", receiptCustomizationRepository.saveAll(receiptCustomizations).size());
         counts.put("arPayments", arPaymentRepository.saveAll(arPayments).size());
         counts.put("orders", orderRepository.saveAll(orders).size());
         counts.put("orderSequences", orderSequenceRepository.saveAll(orderSequences).size());
+        counts.put("cashShifts", cashShiftRepository.saveAll(cashShifts).size());
+        counts.put("expenses", expenseRepository.saveAll(expenses).size());
+        counts.put("shopInfo", shopInfoRepository.saveAll(shopInfoRows).size());
+        counts.put("systemSettings", systemSettingRepository.saveAll(systemSettings).size());
 
-        // 5️⃣ Reset auto-increment counters so NEW records don't collide
+        // 6️⃣ Reset auto-increment counters so NEW records don't collide
         resetIdentityCounters();
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -105,7 +155,57 @@ public class DataImportService {
         return result;
     }
 
-    private void wipeAllData() {
+    /** In MERGE mode, drops records whose ID already exists in the destination. */
+    private <T> List<T> keepOnlyNew(List<T> incoming, java.util.function.Supplier<List<T>> existingLoader) {
+        if (incoming == null || incoming.isEmpty()) return List.of();
+        java.util.Set<Object> existingIds = existingLoader.get().stream()
+                .map(e -> {
+                    try {
+                        java.lang.reflect.Method m = e.getClass().getMethod("getId");
+                        return m.invoke(e);
+                    } catch (Exception ex) {
+                        return null;
+                    }
+                })
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        return incoming.stream()
+                .filter(e -> {
+                    try {
+                        java.lang.reflect.Method m = e.getClass().getMethod("getId");
+                        Object id = m.invoke(e);
+                        return id == null || !existingIds.contains(id);
+                    } catch (Exception ex) {
+                        return true;
+                    }
+                })
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    /** Users must never collide on username/email (unique columns), not just ID. */
+    private List<User> keepOnlyNewUsers(List<User> incoming) {
+        if (incoming == null || incoming.isEmpty()) return List.of();
+        java.util.Set<String> usernames = incoming.stream()
+                .map(User::getUsername).filter(java.util.Objects::nonNull).map(String::toLowerCase)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> emails = incoming.stream()
+                .map(User::getEmail).filter(java.util.Objects::nonNull).map(String::toLowerCase)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> existingUsernames = userRepository.findAll().stream()
+                .map(User::getUsername).filter(java.util.Objects::nonNull).map(String::toLowerCase)
+                .collect(java.util.stream.Collectors.toSet());
+        java.util.Set<String> existingEmails = userRepository.findAll().stream()
+                .map(User::getEmail).filter(java.util.Objects::nonNull).map(String::toLowerCase)
+                .collect(java.util.stream.Collectors.toSet());
+        usernames.removeAll(existingUsernames);
+        emails.removeAll(existingEmails);
+        return incoming.stream()
+                .filter(u -> u.getUsername() == null || usernames.contains(u.getUsername().toLowerCase()))
+                .filter(u -> u.getEmail() == null || emails.contains(u.getEmail().toLowerCase()))
+                .collect(java.util.stream.Collectors.toList());
+    }
+
+    private void wipeAllData(Map<String, Object> rawData) {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
         boolean isSqlite = url.contains(":sqlite:");
@@ -122,7 +222,7 @@ public class DataImportService {
             enableFk = "SET FOREIGN_KEY_CHECKS = 1";
         }
 
-        String[] tables = {
+        List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
             "sale_items", "sales",
@@ -130,8 +230,22 @@ public class DataImportService {
             "order_items", "orders", "order_sequences",
             "stock_movements",
             "product_price_history", "product_images",
-            "products", "categories", "customers", "suppliers"
-        };
+            "products", "categories", "customers", "suppliers",
+            "customer_phones", "supplier_phones"
+        ));
+
+        // Tables introduced in newer backup versions are only wiped when the
+        // incoming backup actually contains their data. This keeps old backups
+        // usable (no wiping users "away" just because the old file lacks them)
+        // while still making new backups restore completely.
+        wipeIfPresent(tables, "users", rawData.get("users"));
+        wipeIfPresent(tables, "expenses", rawData.get("expenses"));
+        wipeIfPresent(tables, "cash_shifts", rawData.get("cashShifts"));
+        // shop_info / system_settings carry the app identity (name, currency,
+        // printer/time settings): always restore them when the backup provides
+        // them, but never delete them when the backup doesn't.
+        wipeIfPresent(tables, "shop_info", rawData.get("shopInfo"));
+        wipeIfPresent(tables, "system_settings", rawData.get("systemSettings"));
 
         jdbcTemplate.execute(disableFk);
         try {
@@ -148,6 +262,12 @@ public class DataImportService {
         // Drop any JPA entities currently cached; SQL deletes bypass the
         // persistence context and stale state would corrupt the upcoming saveAll.
         entityManager.clear();
+    }
+
+    private void wipeIfPresent(List<String> tables, String table, Object raw) {
+        if (raw instanceof List<?> list && !list.isEmpty()) {
+            tables.add(table);
+        }
     }
 
     private <T> List<T> readList(ObjectMapper mapper, Object raw, Class<T> type) {
@@ -213,6 +333,67 @@ public class DataImportService {
         return result;
     }
 
+    /** Rebuilds SaleReturn rows from the flattened backup format and re-attaches
+     *  the Sale / User / SaleItem associations by id, and re-parents the items. */
+    @SuppressWarnings("unchecked")
+    private List<SaleReturn> readSaleReturns(ObjectMapper mapper, Object raw) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        List<SaleReturn> result = new ArrayList<>();
+        for (Object item : list) {
+            SaleReturn saleReturn = mapper.convertValue(item, SaleReturn.class);
+            Map<String, Object> row = (Map<String, Object>) item;
+            Long saleId = numericOrNull(row.get("saleId"));
+            Long returnedById = numericOrNull(row.get("returnedById"));
+            if (saleId != null) {
+                saleReturn.setSale(entityManager.getReference(Sale.class, saleId));
+            }
+            if (returnedById != null) {
+                saleReturn.setReturnedBy(entityManager.getReference(User.class, returnedById));
+            }
+            saleReturn.getItems().clear();
+            Object rawItems = row.get("items");
+            if (rawItems instanceof List<?> itemRows) {
+                for (Object itemRowRaw : itemRows) {
+                    Map<String, Object> ir = (Map<String, Object>) itemRowRaw;
+                    SaleReturnItem sri = mapper.convertValue(itemRowRaw, SaleReturnItem.class);
+                    Long saleItemId = numericOrNull(ir.get("saleItemId"));
+                    if (saleItemId != null) {
+                        sri.setSaleItem(entityManager.getReference(SaleItem.class, saleItemId));
+                    }
+                    sri.setSaleReturn(saleReturn);
+                    saleReturn.getItems().add(sri);
+                }
+            }
+            result.add(saleReturn);
+        }
+        return result;
+    }
+
+    /** Rebuilds User rows from the flattened backup format and re-attaches the
+     *  Role entity by its name (roles are reference data, never restored). */
+    @SuppressWarnings("unchecked")
+    private List<User> readUsers(ObjectMapper mapper, Object raw) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        List<User> result = new ArrayList<>();
+        for (Object item : list) {
+            Map<String, Object> row = (Map<String, Object>) item;
+            Map<String, Object> clean = new LinkedHashMap<>(row);
+            clean.remove("roleName");
+            User user = mapper.convertValue(clean, User.class);
+            Object roleName = row.get("roleName");
+            if (roleName != null) {
+                try {
+                    roleRepository.findByName(Role.RoleName.valueOf(roleName.toString()))
+                            .ifPresent(user::setRole);
+                } catch (IllegalArgumentException ignored) {
+                    // Unknown role name in backup — role stays null (login still blocked).
+                }
+            }
+            result.add(user);
+        }
+        return result;
+    }
+
     private Long numericOrNull(Object value) {
         if (value == null) return null;
         if (value instanceof Number number) return number.longValue();
@@ -223,8 +404,10 @@ public class DataImportService {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
         boolean isSqlite = url.contains(":sqlite:");
-        String[] tables = {"categories", "customers", "suppliers", "products",
-                "sales", "sale_items", "purchases", "purchase_items", "ar_payments", "receipt_customizations"};
+        String[] tables = {"users", "categories", "customers", "suppliers", "products",
+                "sales", "sale_items", "purchases", "purchase_items", "ar_payments", "receipt_customizations",
+                "orders", "order_items", "order_sequences", "sale_returns", "sale_return_items",
+                "expenses", "cash_shifts", "shop_info", "system_settings"};
         for (String table : tables) {
             try {
                 if (isSqlite) {

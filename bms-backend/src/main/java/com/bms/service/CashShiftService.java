@@ -65,6 +65,14 @@ public class CashShiftService {
         CashShiftResponse response = convertToResponse(shift);
         BigDecimal cashSalesTotal = saleRepository.sumNetCashSalesByShiftId(shift.getId());
         response.setCashSalesTotal(cashSalesTotal != null ? cashSalesTotal : BigDecimal.ZERO);
+        // Expected drawer = opening + cash sales − refunds. Refunds leave the
+        // drawer (or legally must be reconciled), so ignoring them overstates
+        // the expected amount and produces a bogus variance at close time.
+        BigDecimal returnsTotal = saleRepository.sumReturnsDuringShift(shift.getId(), shift.getOpeningTime());
+        response.setReturnsTotal(returnsTotal != null ? returnsTotal : BigDecimal.ZERO);
+        response.setExpectedAmount(shift.getOpeningAmount()
+                .add(response.getCashSalesTotal())
+                .subtract(response.getReturnsTotal()));
         return response;
     }
 

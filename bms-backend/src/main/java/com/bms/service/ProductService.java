@@ -220,6 +220,8 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
 
+        // Free the unique SKU so a new product can reuse it after this soft delete.
+        product.setSku(com.bms.util.SoftDeleteKeys.release(product.getSku(), product.getId(), 255));
         product.setDeletedAt(LocalDateTime.now());
         product.setIsActive(false);
         productRepository.save(product);

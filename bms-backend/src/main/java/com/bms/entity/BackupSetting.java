@@ -25,6 +25,14 @@ public class BackupSetting {
 
     private LocalDateTime nextBackupDate;
 
+    // IDLE / SUCCESS / FAILED — last outcome of a backup attempt
+    private String backupStatus = "IDLE";
+
+    @Column(length = 2000)
+    private String lastErrorMessage;
+
+    private LocalDateTime lastBackupAttempt;
+
     @Column(length = 1000)
     private String googleRefreshToken;
 
@@ -78,6 +86,30 @@ public class BackupSetting {
 
     public void setNextBackupDate(LocalDateTime nextBackupDate) {
         this.nextBackupDate = nextBackupDate;
+    }
+
+    public String getBackupStatus() {
+        return backupStatus;
+    }
+
+    public void setBackupStatus(String backupStatus) {
+        this.backupStatus = backupStatus;
+    }
+
+    public String getLastErrorMessage() {
+        return lastErrorMessage;
+    }
+
+    public void setLastErrorMessage(String lastErrorMessage) {
+        this.lastErrorMessage = lastErrorMessage;
+    }
+
+    public LocalDateTime getLastBackupAttempt() {
+        return lastBackupAttempt;
+    }
+
+    public void setLastBackupAttempt(LocalDateTime lastBackupAttempt) {
+        this.lastBackupAttempt = lastBackupAttempt;
     }
 
     public String getGoogleRefreshToken() {

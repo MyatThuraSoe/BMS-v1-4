@@ -76,7 +76,19 @@ const StockAdjustment = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.productId) { setError(t('product_required')); return; }
-    if (!formData.quantityChange || parseInt(formData.quantityChange) <= 0) { setError(t('quantity_must_be_positive')); return; }
+
+    const qty = parseInt(formData.quantityChange, 10);
+    if (!qty) { setError(t('quantity_must_be_positive')); return; }
+
+    // REMOVE sends a negative change; make sure it never drives stock below zero.
+    if (formData.adjustmentType === 'REMOVE' && selectedProduct) {
+      const current = Number(selectedProduct.stockQuantity) || 0;
+      if (Math.abs(qty) > current) {
+        setError(t('remove_exceeds_stock', { current }));
+        return;
+      }
+    }
+
     if (!formData.reason) { setError(t('reason_required')); return; }
     setError('');
     setSuccess('');

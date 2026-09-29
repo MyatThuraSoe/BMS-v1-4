@@ -142,6 +142,9 @@ public class CustomerService {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + id));
         
+        // Free the unique customer code so it can be reused after this soft delete
+        // (phone/email checks already ignore soft-deleted customers).
+        customer.setCustomerCode(com.bms.util.SoftDeleteKeys.release(customer.getCustomerCode(), customer.getId(), 255));
         customer.setDeletedAt(LocalDateTime.now());
         customer.setIsActive(false);
         customerRepository.save(customer);

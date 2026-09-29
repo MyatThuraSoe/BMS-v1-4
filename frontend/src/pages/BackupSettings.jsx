@@ -36,10 +36,6 @@ const BackupSettings = () => {
   const pollRef = useRef(null);
   const pollStopRef = useRef(null);
 
-  // Inside the BackupSettings component, add state for dates:
-  const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
-
-  
   const [settings, setSettings] = useState({
     isEnabled: false,
     frequency: 'WEEKLY',
@@ -191,16 +187,18 @@ const BackupSettings = () => {
     }
   };
 
-  // Update the handleRunNow function:
+  // Backups are always full restorable copies, so run-now needs no date range.
   const handleRunNow = async () => {
     setIsRunning(true);
     setMessage(null);
     try {
-      const res = await backupService.runNow(dateRange.startDate || null, dateRange.endDate || null);
-      setMessage({ type: 'success', text: `${res.message} ${t('backup_saved_to', { location: res.data })}` });
+      const res = await backupService.runNow();
+      const { message: msg, data: link } = res.data || {};
+      setMessage({ type: 'success', text: `${msg || t('backup_completed')} ${link ? t('backup_saved_to', { location: link }) : ''}` });
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
     } catch (error) {
       setMessage({ type: 'error', text: error.response?.data?.message || t('backup_failed') });
+      queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
     } finally {
       setIsRunning(false);
     }
@@ -214,6 +212,9 @@ const BackupSettings = () => {
   const isConnected = !!settingsData?.data?.googleRefreshToken;
   const lastBackup = settingsData?.data?.lastBackupDate;
   const nextBackup = settingsData?.data?.nextBackupDate;
+  const backupStatus = settingsData?.data?.backupStatus || 'IDLE';
+  const lastBackupAttempt = settingsData?.data?.lastBackupAttempt;
+  const lastError = settingsData?.data?.lastErrorMessage;
 
   return (
     <Box sx={{ p: 3, maxWidth: 800, mx: 'auto' }}>
@@ -309,42 +310,6 @@ const BackupSettings = () => {
           )}
 
           <Divider sx={{ my: 3 }} />
-            <Typography variant="subtitle1" gutterBottom>{t('custom_date_range')}</Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              {t('custom_date_range_helper')}
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>
-              <TextField
-                label={t('start_date')}
-                type="date"
-                value={dateRange.startDate}
-                onChange={(e) => setDateRange({ ...dateRange, startDate: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-                sx={{ flex: 1, minWidth: '150px' }}
-              />
-              <TextField
-                label={t('end_date')}
-                type="date"
-                value={dateRange.endDate}
-                onChange={(e) => setDateRange({ ...dateRange, endDate: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-                size="small"
-                sx={{ flex: 1, minWidth: '150px' }}
-              />
-              {(dateRange.startDate || dateRange.endDate) && (
-                <Button 
-                  size="small" 
-                  variant="text" 
-                  color="secondary" 
-                  onClick={() => setDateRange({ startDate: '', endDate: '' })}
-                  sx={{ alignSelf: 'center' }}
-                >
-                  {t('clear_range')}
-                </Button>
-              )}
-            </Box>
 
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
             <Button
@@ -373,12 +338,31 @@ const BackupSettings = () => {
         <CardContent>
           <Typography variant="h6" gutterBottom>{t('backup_status')}</Typography>
           <Divider sx={{ mb: 2 }} />
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="body2" color="text.secondary">{t('last_attempt_status')}</Typography>
+            {backupStatus === 'SUCCESS' && <Chip label={t('status_ok')} color="success" size="small" />}
+            {backupStatus === 'FAILED' && <Chip label={t('status_failed')} color="error" size="small" />}
+            {backupStatus !== 'SUCCESS' && backupStatus !== 'FAILED' && <Chip label={t('status_idle')} size="small" variant="outlined" />}
+          </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography variant="body2" color="text.secondary">{t('last_successful_backup')}</Typography>
             <Typography variant="body2" fontWeight="medium">
               {formatDateTime(lastBackup, t('never'))}
             </Typography>
           </Box>
+          {backupStatus === 'FAILED' && (
+            <>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                <Typography variant="body2" color="text.secondary">{t('last_attempt')}</Typography>
+                <Typography variant="body2" fontWeight="medium">
+                  {formatDateTime(lastBackupAttempt, t('never'))}
+                </Typography>
+              </Box>
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {lastError || t('backup_failed_generic')}
+              </Alert>
+            </>
+          )}
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography variant="body2" color="text.secondary">{t('next_scheduled_backup')}</Typography>
             <Typography variant="body2" fontWeight="medium" color={settings.isEnabled && isConnected ? 'success.main' : 'text.disabled'}>

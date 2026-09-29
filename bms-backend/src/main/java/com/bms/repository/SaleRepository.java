@@ -76,7 +76,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("""
     SELECT s FROM Sale s
-    WHERE s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false
+    WHERE s.isActive = true AND s.deletedAt IS NULL
+    AND (:includeVoided = true OR s.isVoided = false)
     AND (:startDate IS NULL OR s.saleDate >= :startDate)
     AND (:endDate IS NULL OR s.saleDate < :endDate)
     AND (:customerId IS NULL OR s.customer.id = :customerId)
@@ -85,6 +86,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     ORDER BY s.saleDate DESC
     """)
     Page<Sale> findFilteredSales(
+        @Param("includeVoided") Boolean includeVoided,
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate,
         @Param("customerId") Long customerId,
@@ -214,9 +216,10 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     Page<Sale> findOutstandingAr(@Param("keyword") String keyword, Pageable pageable);
 
     // Total money still owed across all outstanding credit invoices
-    // (SUM(totalAmount) - SUM(amountPaid)), matching the findOutstandingAr filter.
+    // (SUM(totalAmount) - SUM(amountPaid) - SUM(amountReturned)), matching the
+    // findOutstandingAr filter. Returns settle debt, never creating phantom totals.
     @Query("""
-        SELECT COALESCE(SUM(s.totalAmount) - COALESCE(SUM(s.amountPaid), 0), 0)
+        SELECT COALESCE(SUM(s.totalAmount) - COALESCE(SUM(s.amountPaid), 0) - COALESCE(SUM(s.amountReturned), 0), 0)
         FROM Sale s
         WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
           AND s.paymentStatus <> com.bms.entity.Sale.PaymentStatus.PAID

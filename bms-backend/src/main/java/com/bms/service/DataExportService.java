@@ -26,6 +26,12 @@ public class DataExportService {
     private final ReceiptCustomizationRepository receiptCustomizationRepository;
     private final OrderRepository orderRepository;
     private final OrderSequenceRepository orderSequenceRepository;
+    private final SaleReturnRepository saleReturnRepository;
+    private final ExpenseRepository expenseRepository;
+    private final CashShiftRepository cashShiftRepository;
+    private final UserRepository userRepository;
+    private final ShopInfoRepository shopInfoRepository;
+    private final SystemSettingRepository systemSettingRepository;
     // ⚠️ If a repository name is different in your project, adjust it here.
 
     /**
@@ -45,6 +51,58 @@ public class DataExportService {
             data.put("suppliers", supplierRepository.findAll());
             data.put("sales", saleRepository.findAll());
             data.put("purchases", purchaseRepository.findAll());
+
+            // Sale returns are flattened (sale_id / returned_by / sale_item_id only).
+            data.put("saleReturns", saleReturnRepository.findAll().stream()
+                    .map(r -> {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("id", r.getId());
+                        row.put("saleId", r.getSale() != null ? r.getSale().getId() : null);
+                        row.put("returnedById", r.getReturnedBy() != null ? r.getReturnedBy().getId() : null);
+                        row.put("returnDate", r.getReturnDate());
+                        row.put("reason", r.getReason());
+                        row.put("totalReturnAmount", r.getTotalReturnAmount());
+                        row.put("items", r.getItems() == null ? List.of() : r.getItems().stream()
+                                .map(it -> {
+                                    Map<String, Object> item = new LinkedHashMap<>();
+                                    item.put("id", it.getId());
+                                    item.put("saleItemId", it.getSaleItem() != null ? it.getSaleItem().getId() : null);
+                                    item.put("quantityReturned", it.getQuantityReturned());
+                                    item.put("returnAmount", it.getReturnAmount());
+                                    return item;
+                                })
+                                .toList());
+                        return row;
+                    })
+                    .toList());
+            data.put("expenses", expenseRepository.findAll());
+            data.put("cashShifts", cashShiftRepository.findAll());
+
+            // Users are flattened so the password hash travels with the backup but
+            // Jackson never re-serializes the UserDetails/security properties. The
+            // role is exported by name (roles table is never wiped/restored).
+            data.put("users", userRepository.findAll().stream()
+                    .map(u -> {
+                        Map<String, Object> row = new LinkedHashMap<>();
+                        row.put("id", u.getId());
+                        row.put("username", u.getUsername());
+                        row.put("email", u.getEmail());
+                        row.put("password", u.getPassword());
+                        row.put("firstName", u.getFirstName());
+                        row.put("lastName", u.getLastName());
+                        row.put("phone", u.getPhone());
+                        row.put("roleName", u.getRole() != null && u.getRole().getName() != null ? u.getRole().getName().name() : null);
+                        row.put("isActive", u.getIsActive());
+                        row.put("deletedAt", u.getDeletedAt());
+                        row.put("preferredLanguage", u.getPreferredLanguage());
+                        row.put("createdAt", u.getCreatedAt());
+                        row.put("updatedAt", u.getUpdatedAt());
+                        return row;
+                    })
+                    .toList());
+            data.put("shopInfo", shopInfoRepository.findAll());
+            data.put("systemSettings", systemSettingRepository.findAll());
+
             // AR payments are flattened (invoice_id / recorded_by_id only) so the
             // associations never pull in nested Sale/User objects.
             data.put("arPayments", arPaymentRepository.findAll().stream()
@@ -101,8 +159,9 @@ public class DataExportService {
                     })
                     .toList());
             data.put("orderSequences", orderSequenceRepository.findAll());
-            // 🔒 Users are intentionally EXCLUDED (password hashes shouldn't travel).
-            //    If you want them, add: data.put("users", userRepository.findAll());
+            // 🔐 Users ARE exported (flattened, with password hash + role name) so a
+            //    restore reproduces logins. Roles themselves are reference data and
+            //    are never exported/restored — the role is re-attached by name.
 
             Map<String, Object> backup = new LinkedHashMap<>();
             backup.put("app", "LumiPOS");

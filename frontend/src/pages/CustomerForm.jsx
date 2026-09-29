@@ -59,7 +59,7 @@ const CustomerForm = () => {
     },
     onError: (err) => {
       if (err.response?.status === 409) {
-        setError(t('conflict_error'));
+        setError(err.friendlyMessage || t('conflict_error'));
       } else {
         setError(err.response?.data?.message || t('failed_to_save'));
       }

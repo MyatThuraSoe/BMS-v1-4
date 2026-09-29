@@ -53,7 +53,7 @@ const ProductForm = () => {
       setCustomUnitMode(!isStandardUnit(p.unit));
       setFormData({
         name: p.name || '', sku: p.sku || '', unit: p.unit || '', description: p.description || '',
-        price: p.unitPrice || '', cost: p.costPrice || '', stockQuantity: p.stockQuantity || '', lowStockThreshold: p.minStockLevel || '10',
+        price: p.unitPrice ?? '', cost: p.costPrice ?? '', stockQuantity: p.stockQuantity ?? '', lowStockThreshold: p.minStockLevel ?? '10',
         categoryId: p.categoryId || '',
       });
     }
@@ -62,12 +62,14 @@ const ProductForm = () => {
   const saveMutation = useMutation({
     mutationFn: async (data) => {
       // Step 1: Create/update product with JSON data only (no images in this request)
-      // Map frontend field names to backend DTO field names
+      // Map frontend field names to backend DTO field names and coerce numbers so
+      // 0 (free items, out-of-stock products) is sent as a real number, never ''.
       const jsonData = {
         ...data,
-        unitPrice: data.price,
-        costPrice: data.cost,
-        minStockLevel: data.lowStockThreshold,
+        unitPrice: Number(data.price) || 0,
+        costPrice: Number(data.cost) || 0,
+        stockQuantity: Number(data.stockQuantity) || 0,
+        minStockLevel: Number(data.lowStockThreshold) || 0,
       };
       delete jsonData.price;
       delete jsonData.cost;
@@ -100,7 +102,9 @@ const ProductForm = () => {
     },
     onError: (err) => {
       if (err.response?.status === 409) {
-        setError(t('conflict_error'));
+        // 409 covers BOTH "changed by someone else" (optimistic lock) and
+        // duplicate-value conflicts; the backend message says which one it is.
+        setError(err.friendlyMessage || t('conflict_error'));
       } else {
         setError(err.response?.data?.message || t('failed_to_save_product'));
       }
@@ -214,7 +218,7 @@ const ProductForm = () => {
               <TextField fullWidth label={t('cost')} name="cost" type="number" InputProps={{ inputProps: { step: '0.01' } }} value={formData.cost} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
-              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onWheel={preventNumberScroll} disabled={isEdit} />
+              <TextField fullWidth label={t('stock_quantity')} name="stockQuantity" type="number" value={formData.stockQuantity} onChange={handleChange} onWheel={preventNumberScroll} />
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} onWheel={preventNumberScroll} />

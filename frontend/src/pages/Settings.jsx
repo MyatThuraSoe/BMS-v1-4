@@ -27,7 +27,7 @@ const Settings = () => {
       const url = window.URL.createObjectURL(new Blob([blob]));
       const link = document.createElement('a');
       link.href = url;
-      link.download = `bms-backup-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      link.download = `lumipos-backup-${new Date().toISOString().slice(0, 10)}.json`;
       link.click();
       window.URL.revokeObjectURL(url);
       notifySuccess(t('backup_downloaded'));

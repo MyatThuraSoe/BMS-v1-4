@@ -19,7 +19,7 @@ public class ProductCreateRequest {
     private Long categoryId;
     
     @NotNull(message = "Unit price is required")
-    @DecimalMin(value = "0.0", inclusive = false, message = "Unit price must be positive")
+    @DecimalMin(value = "0.0", message = "Unit price cannot be negative")
     private BigDecimal unitPrice;
     
     @DecimalMin(value = "0.0", message = "Cost price cannot be negative")

@@ -13,8 +13,13 @@ import java.util.Optional;
 @Repository
 public interface SupplierRepository extends JpaRepository<Supplier, Long> {
     boolean existsByName(String name);
-    boolean existsByEmail(String email);
-    boolean existsByPhone(String phone);
+
+    // Uniqueness checks ignore soft-deleted rows so deleted suppliers' values reuse works.
+    @Query("SELECT COUNT(s) > 0 FROM Supplier s WHERE s.deletedAt IS NULL AND s.email = :email")
+    boolean existsByEmail(@Param("email") String email);
+
+    @Query("SELECT COUNT(s) > 0 FROM Supplier s WHERE s.deletedAt IS NULL AND (s.phone = :phone OR EXISTS (SELECT 1 FROM s.phones sp WHERE sp.phone = :phone))")
+    boolean existsByPhone(@Param("phone") String phone);
     
     Optional<Supplier> findByName(String name);
     

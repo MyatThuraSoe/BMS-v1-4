@@ -5,7 +5,7 @@ import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService, inventoryService } from '../api/services';
 import { ShoppingCart, Inventory, TrendingUp, Add as AddIcon, TrendingDown as TrendingDownIcon } from '@mui/icons-material';
-import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { formatDateTime, formatCurrency, toLocalDateString } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -44,12 +44,13 @@ const Dashboard = () => {
   const theme = useTheme();
   const { t } = useTranslation('dashboard');
   const { isAdmin } = useAuth();
-  const today = new Date().toISOString().split('T')[0];
+  // Local calendar day, NOT UTC: the server stores sale dates in local time, so
+  // an ISO/UTC "today" puts pre-dawn Myanmar/Thailand sales on yesterday.
+  const today = toLocalDateString(new Date());
 
   const [period, setPeriod] = useState('today');
   const [dateRange, setDateRange] = useState(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return { startDate: today, endDate: today };
+    return { startDate: toLocalDateString(new Date()), endDate: toLocalDateString(new Date()) };
   });
 
   const handlePeriodChange = (newPeriod, startDate, endDate) => {
@@ -76,7 +77,7 @@ const Dashboard = () => {
 
   const { data: recentSalesData } = useQuery({
     queryKey: ['recentSales'],
-    queryFn: () => saleService.getAll(0, 5, 'saleDate'),
+    queryFn: () => saleService.getAll(0, 5, 'saleDate', null, null, null, null, null, null, false),
   });
 
   const { data: salesTrendData } = useQuery({

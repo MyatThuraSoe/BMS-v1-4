@@ -43,7 +43,7 @@ const CategoryForm = () => {
     },
     onError: (err) => {
       if (err.response?.status === 409) {
-        setError(t('conflict_error_category'));
+        setError(err.friendlyMessage || t('conflict_error_category'));
       } else {
         setError(err.response?.data?.message || t('failed_to_save'));
       }

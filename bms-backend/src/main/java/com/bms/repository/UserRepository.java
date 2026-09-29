@@ -1,5 +1,6 @@
 package com.bms.repository;
 
+import com.bms.entity.Role;
 import com.bms.entity.User;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -37,4 +38,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     // Add this right below your existing findByUsername
     @Query("SELECT u FROM User u WHERE LOWER(u.username) = LOWER(:username)")
     Optional<User> findByUsernameIgnoreCase(@Param("username") String username);
+
+    // Active (non-deleted, non-deactivated) users holding the given role —
+    // used by the last-administrator guards.
+    @Query("SELECT COUNT(u) FROM User u WHERE u.deletedAt IS NULL AND u.isActive = true AND u.role.name = :role")
+    long countActiveByRole(@Param("role") Role.RoleName role);
 }

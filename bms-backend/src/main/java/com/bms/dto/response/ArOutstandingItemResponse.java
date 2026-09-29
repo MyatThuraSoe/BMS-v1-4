@@ -6,8 +6,10 @@ import java.time.LocalDateTime;
 
 /**
  * Row shown in the Accounts Receivable screens (outstanding list and
- * per-customer history). balanceDue is always totalAmount - amountPaid so the
- * UI never has to recompute in a way that can drift from the ledger.
+ * per-customer history). balanceDue is always
+ * totalAmount - amountPaid - amountReturned so the UI never has to recompute
+ * in a way that can drift from the ledger, and so returns on credit invoices
+ * actually reduce (or clear) the perceived debt.
  */
 public class ArOutstandingItemResponse {
     private Long invoiceId;
@@ -16,6 +18,7 @@ public class ArOutstandingItemResponse {
     private String customerName;
     private BigDecimal totalAmount;
     private BigDecimal amountPaid;
+    private BigDecimal amountReturned;
     private BigDecimal balanceDue;
     private LocalDate dueDate;
     private LocalDateTime saleDate;
@@ -33,6 +36,8 @@ public class ArOutstandingItemResponse {
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public BigDecimal getAmountPaid() { return amountPaid; }
     public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
+    public BigDecimal getAmountReturned() { return amountReturned; }
+    public void setAmountReturned(BigDecimal amountReturned) { this.amountReturned = amountReturned; }
     public BigDecimal getBalanceDue() { return balanceDue; }
     public void setBalanceDue(BigDecimal balanceDue) { this.balanceDue = balanceDue; }
     public LocalDate getDueDate() { return dueDate; }

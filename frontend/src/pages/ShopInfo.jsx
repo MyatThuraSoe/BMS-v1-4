@@ -90,7 +90,7 @@ const ShopInfo = () => {
   });
 
   const updateError = updateMutation.error?.response?.status === 409
-    ? t('shop_info_conflict')
+    ? (updateMutation.error.friendlyMessage || t('shop_info_conflict'))
     : updateMutation.error?.response?.data?.message || null;
 
   const uploadLogoMutation = useMutation({

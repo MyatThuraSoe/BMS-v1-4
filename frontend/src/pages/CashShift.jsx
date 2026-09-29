@@ -71,9 +71,13 @@ const CashShift = () => {
     closeMutation.mutate({ id: currentShift.id, closingAmount: amount, notes: closeNotes });
   };
 
-  const variance = currentShift
-    ? Number(currentShift.expectedAmount || 0) - Number(currentShift.openingAmount || 0) + Number(currentShift.closingAmount || 0)
-    : 0;
+  // Expected drawer = opening + cash sales − refunds. The backend computes it
+  // for the open shift; fall back to the same formula here so the close dialog
+  // never shows an overstated total that ignores refunds.
+  const openingAmount = Number(currentShift?.openingAmount) || 0;
+  const cashSales = Number(currentShift?.cashSalesTotal) || 0;
+  const returnsTotal = Number(currentShift?.returnsTotal) || 0;
+  const expectedAmount = Number(currentShift?.expectedAmount ?? (openingAmount + cashSales - returnsTotal)) || 0;
 
   if (currentLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
@@ -146,14 +150,14 @@ const CashShift = () => {
               <Paper sx={{ p: 2, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary">{t('expected_drawer')}</Typography>
                 <Typography variant="h5" fontWeight="bold">
-                  {formatCurrency((Number(currentShift.openingAmount) || 0) + (Number(currentShift.cashSalesTotal) || 0))}
+                  {formatCurrency(expectedAmount)}
                 </Typography>
               </Paper>
             </Grid>
             <Grid item xs={12} sm={6} md={3}>
               <Paper sx={{ p: 2, textAlign: 'center' }}>
                 <Typography variant="body2" color="text.secondary">{t('variance')}</Typography>
-                <Typography variant="h5" fontWeight="bold" color="success.main">$0.00</Typography>
+                <Typography variant="h5" fontWeight="bold" color="success.main">—</Typography>
               </Paper>
             </Grid>
           </Grid>
@@ -196,12 +200,18 @@ const CashShift = () => {
                     </TableRow>
                     <TableRow>
                       <TableCell>{t('cash_sales_plus')}</TableCell>
-                      <TableCell align="right">{formatCurrency(currentShift.cashSalesTotal)}</TableCell>
+                      <TableCell align="right">{formatCurrency(cashSales)}</TableCell>
                     </TableRow>
+                    {returnsTotal !== 0 && (
+                      <TableRow>
+                        <TableCell>{t('returns_minus')}</TableCell>
+                        <TableCell align="right">{formatCurrency(-returnsTotal)}</TableCell>
+                      </TableRow>
+                    )}
                     <TableRow>
                       <TableCell sx={{ fontWeight: 'bold' }}>{t('expected_drawer_equals')}</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                        {formatCurrency(Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal))}
+                        {formatCurrency(expectedAmount)}
                       </TableCell>
                     </TableRow>
                     <TableRow>
@@ -212,21 +222,21 @@ const CashShift = () => {
                       <TableCell sx={{ fontWeight: 'bold' }}>{t('variance')}</TableCell>
                       <TableCell align="right" sx={{
                         fontWeight: 'bold',
-                        color: (parseFloat(closeAmount) - (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal))) === 0
+                        color: (parseFloat(closeAmount) - expectedAmount) === 0
                           ? 'success.main'
-                          : Math.abs(parseFloat(closeAmount) - (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal))) > 10
+                          : Math.abs(parseFloat(closeAmount) - expectedAmount) > 10
                             ? 'error.main'
                             : 'warning.main',
                       }}>
-                        {formatCurrency(parseFloat(closeAmount) - (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal)))}
+                        {formatCurrency(parseFloat(closeAmount) - expectedAmount)}
                       </TableCell>
                     </TableRow>
                   </TableBody>
                 </Table>
-                {parseFloat(closeAmount) !== (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal)) && (
+                {parseFloat(closeAmount) !== expectedAmount && (
                   <Alert severity="info" sx={{ mt: 2 }}>
-                    {t('variance_is', { amount: formatCurrency(parseFloat(closeAmount) - (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal))) })}
-                    {Math.abs(parseFloat(closeAmount) - (Number(currentShift.openingAmount) + Number(currentShift.cashSalesTotal))) > 10
+                    {t('variance_is', { amount: formatCurrency(parseFloat(closeAmount) - expectedAmount) })}
+                    {Math.abs(parseFloat(closeAmount) - expectedAmount) > 10
                       ? t('double_check_count')
                       : t('small_variances_normal')}
                   </Alert>

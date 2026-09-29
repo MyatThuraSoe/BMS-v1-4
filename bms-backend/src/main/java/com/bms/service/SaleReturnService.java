@@ -182,10 +182,41 @@ public class SaleReturnService {
 
         updateSaleReturnStatus(sale);
 
-        // Returns on credit invoices that are still UNPAID/PARTIAL should NOT
+        // Was every cent of this invoice already paid in cash before this return?
+        // If so the customer balance was already reduced by those payments and a
+        // return only entitles the customer to a cash refund — never a second
+        // balance reduction.
+        boolean cashSettled = sale.getSaleType() == Sale.SaleType.CREDIT
+                && sale.getPaymentStatus() == Sale.PaymentStatus.PAID;
+
+        // Credit-invoice returns must touch the invoice itself, not just the
+        // customer's balance: accumulate the returned amount so the invoice's
+        // outstanding balance stays (total - paid - returned). Otherwise the
+        // customer balance drops while the AR invoice still shows the full
+        // debt forever — a permanent phantom balance that can never be cleared.
+        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
+            BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+            BigDecimal returnedSoFar = sale.getAmountReturned();
+            sale.setAmountReturned(returnedSoFar.add(totalReturnAmount).setScale(2, java.math.RoundingMode.HALF_UP));
+
+            // Recompute settlement: once payments + returns fully cover the invoice
+            // it reaches PAID, so a paid-down invoice never stays stuck on UNPAID.
+            if (sale.getAmountReturned().compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal settled = sale.getAmountReturned().add(paid);
+                if (settled.compareTo(sale.getTotalAmount()) >= 0) {
+                    sale.setPaymentStatus(Sale.PaymentStatus.PAID);
+                } else if (paid.compareTo(BigDecimal.ZERO) > 0) {
+                    sale.setPaymentStatus(Sale.PaymentStatus.PARTIAL);
+                } else {
+                    sale.setPaymentStatus(Sale.PaymentStatus.UNPAID);
+                }
+            }
+        }
+        saleRepository.save(sale);
+
+        // Returns on credit invoices that were UNPAID/PARTIAL should NOT
         // dispense cash — they reduce what the customer owes instead.
-        if (sale.getSaleType() == Sale.SaleType.CREDIT
-                && sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
+        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled) {
             reverseCreditBalance(sale, totalReturnAmount);
         }
 

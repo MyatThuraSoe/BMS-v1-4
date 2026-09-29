@@ -21,6 +21,7 @@
   "notes_optional": "Notes (optional)",
   "expected_vs_actual": "Expected vs Actual",
   "cash_sales_plus": "+ Cash Sales",
+  "returns_minus": "− Refunds",
   "expected_drawer_equals": "= Expected Drawer",
   "actual_counted": "Actual Counted",
   "variance_is": "The variance is {{amount}}.",

@@ -580,21 +580,20 @@ public class ReportService {
                     expense.getAmount(), BigDecimal::add);
         }
 
-        BigDecimal totalIncome = BigDecimal.ZERO;
-        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent()) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) {
-                continue;
-            }
-            totalIncome = totalIncome.add(sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO);
-        }
+        // ONE revenue definition across every report: tax-EXCLUSIVE and already
+        // net of returns, identical to the Daily Sales report and Profit summary.
+        // The old tax-inclusive gross disagreed with the daily "Total Revenue" and,
+        // when combined with tax-exclusive COGS, counted collected sales tax as profit.
+        BigDecimal totalIncome = (BigDecimal) profitSummary.get("revenue");
+        BigDecimal totalCogs = (BigDecimal) profitSummary.get("cogs");
+        BigDecimal grossProfit = totalIncome.subtract(totalCogs);
 
+        // Informational only — revenue above is already net of returns, so refunds
+        // are NOT subtracted a second time from gross profit.
         BigDecimal totalRefunds = BigDecimal.ZERO;
         for (SaleReturn saleReturn : saleReturnRepository.findByReturnDateBetween(startDateTime, endDateTime)) {
             totalRefunds = totalRefunds.add(saleReturn.getTotalReturnAmount() != null ? saleReturn.getTotalReturnAmount() : BigDecimal.ZERO);
         }
-
-        BigDecimal totalCogs = (BigDecimal) profitSummary.get("cogs");
-        BigDecimal grossProfit = totalIncome.subtract(totalRefunds).subtract(totalCogs);
 
         AccountingSummaryResponse response = new AccountingSummaryResponse();
         response.setTotalIncome(totalIncome);
@@ -652,19 +651,16 @@ public class ReportService {
         LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        BigDecimal totalIncome = BigDecimal.ZERO;
-        for (Sale sale : saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent()) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            totalIncome = totalIncome.add(sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO);
-        }
+        // Same tax-exclusive, net-of-returns definition as the current period so
+        // income / profit change percentages compare like-for-like.
+        Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
+        BigDecimal totalIncome = (BigDecimal) profitSummary.get("revenue");
+        BigDecimal totalCogs = (BigDecimal) profitSummary.get("cogs");
 
         BigDecimal totalRefunds = BigDecimal.ZERO;
         for (SaleReturn saleReturn : saleReturnRepository.findByReturnDateBetween(startDateTime, endDateTime)) {
             totalRefunds = totalRefunds.add(saleReturn.getTotalReturnAmount() != null ? saleReturn.getTotalReturnAmount() : BigDecimal.ZERO);
         }
-
-        Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
-        BigDecimal totalCogs = (BigDecimal) profitSummary.get("cogs");
 
         BigDecimal totalExpenses = BigDecimal.ZERO;
         for (Expense expense : expenseRepository.findFiltered(null, startDate, endDate)) {
@@ -672,7 +668,7 @@ public class ReportService {
             totalExpenses = totalExpenses.add(expense.getAmount());
         }
 
-        BigDecimal grossProfit = totalIncome.subtract(totalRefunds).subtract(totalCogs);
+        BigDecimal grossProfit = totalIncome.subtract(totalCogs);
         BigDecimal netProfit = grossProfit.subtract(totalExpenses);
 
         AccountingSummaryResponse r = new AccountingSummaryResponse();
