@@ -57,7 +57,15 @@ public class Sale {
     @Column(name = "amount_paid", nullable = false, precision = 10, scale = 2)
     private BigDecimal amountPaid;
 
-    @Column(name = "amount_returned", nullable = false, precision = 10, scale = 2)
+    // The explicit columnDefinition is required for SQLite. ddl-auto=update
+    // adds missing columns with ALTER TABLE ... ADD COLUMN, and SQLite refuses
+    // to add a NOT NULL column that has no DEFAULT. Without the "default 0" the
+    // ALTER fails, Hibernate logs it and moves on, and the column is then
+    // missing forever - which breaks every read of the sales table on any shop
+    // that upgrades from a pre-1.4 database. Any future NOT NULL column added
+    // to an entity must carry a DEFAULT here for the same reason.
+    @Column(name = "amount_returned", nullable = false, precision = 10, scale = 2,
+            columnDefinition = "numeric(10,2) not null default 0")
     private BigDecimal amountReturned = BigDecimal.ZERO;
 
     @Column(name = "change_given", nullable = false, precision = 10, scale = 2)

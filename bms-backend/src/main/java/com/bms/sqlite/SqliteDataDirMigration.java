@@ -9,6 +9,7 @@ import org.springframework.core.env.Profiles;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
@@ -18,6 +19,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Moves the SQLite database out of {@code C:\LumiPOS} into the per-user data
@@ -63,14 +65,21 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
         if (!environment.acceptsProfiles(Profiles.of("sqlite"))) {
             return;
         }
+        postProcess(environment, Paths.get(LEGACY_DIR));
+    }
 
+    /**
+     * The legacy directory is a parameter so the test suite can exercise a real
+     * migration without reading or copying the machine's actual C:\LumiPOS.
+     */
+    void postProcess(ConfigurableEnvironment environment, Path legacyDir) {
         try {
             Path targetDir = resolveDataDir(environment);
             Files.createDirectories(targetDir);
 
             Path target = targetDir.resolve(DB_FILE_NAME);
             Path marker = targetDir.resolve(MARKER_FILE_NAME);
-            Path legacy = Paths.get(LEGACY_DIR).resolve(DB_FILE_NAME);
+            Path legacy = legacyDir.resolve(DB_FILE_NAME);
 
             // A raw database restored from Google Drive is staged next to the
             // live file by BackupRestoreService and swapped in here, because the
@@ -78,14 +87,18 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
             // replacing it underneath a running JVM corrupts it.
             applyPendingRestore(targetDir, target);
 
-            if (Files.exists(target) || Files.exists(marker)) {
-                return;
-            }
-            if (!Files.exists(legacy)) {
-                return;
+            if (shouldMigrate(legacy, target, marker)) {
+                migrate(legacy, target, targetDir);
             }
 
-            migrate(legacy, target, targetDir);
+            // Unconditional, and it must stay that way. Publishing the URL only
+            // when a migration happened made the very first launch move the
+            // database and every later launch fall back to the legacy path in
+            // application-sqlite.yml, so the app quietly kept using
+            // C:\LumiPOS forever. That also made staged restores look like they
+            // did nothing, because they were applied to a file the app never
+            // opened. The URL is now the single source of truth for which file
+            // this installation uses.
             publishDatasourceUrl(environment, target);
         } catch (Exception ex) {
             throw new IllegalStateException(
@@ -94,6 +107,82 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
                             + "Move the old database manually to %LOCALAPPDATA%\\LumiPOS\\data and try again. "
                             + "Cause: " + ex.getMessage(), ex);
         }
+    }
+
+    /**
+     * Decides whether the legacy database still has to be copied.
+     *
+     * <p>The "target already exists" case is not a simple skip. Earlier builds
+     * published the new URL only on the launch that performed the copy, so shops
+     * that started one of those builds went on writing to the legacy file while
+     * the copy in the data directory sat frozen. Honouring the marker alone
+     * would switch those shops onto a stale database and lose every sale taken
+     * in the meantime.
+     *
+     * <p>Whether the legacy file has moved on is judged by comparing it against
+     * the size and modification time recorded in the marker at migration time,
+     * not by comparing it to the data directory copy. The copy's own timestamp
+     * is worthless as a signal: antivirus scans, backup tools, or merely opening
+     * the file all touch it without the database changing.
+     *
+     * <p>The marker names the file that was copied, so an unrelated
+     * {@code C:\LumiPOS} can never overwrite a database a shop deliberately keeps
+     * somewhere else.
+     */
+    private boolean shouldMigrate(Path legacy, Path target, Path marker) throws IOException {
+        if (!Files.exists(marker)) {
+            return Files.exists(legacy) && !Files.exists(target);
+        }
+
+        Optional<Path> migratedFrom = markerMigratedFrom(marker);
+        if (migratedFrom.isEmpty() || !migratedFrom.get().equals(legacy.toAbsolutePath())) {
+            // The marker refers to a different source, so it says nothing about
+            // the legacy file in front of us. Leave the data directory alone.
+            return false;
+        }
+        if (!Files.exists(legacy)) {
+            return false;
+        }
+        if (!Files.exists(target)) {
+            // Marker says we moved before but the file is gone. Whatever is at
+            // the legacy path is all we have, so take it rather than start empty.
+            return true;
+        }
+        if (markerLegacyFingerprint(marker).isEmpty()) {
+            // Marker predates the recorded fingerprint. Fall back to comparing
+            // the two files, which is weaker but still beats ignoring the change.
+            return Files.getLastModifiedTime(legacy).toMillis()
+                    > Files.getLastModifiedTime(target).toMillis();
+        }
+        return !markerLegacyFingerprint(marker).get().equals(fingerprint(legacy));
+    }
+
+    /** Size and last-modified time, as recorded when the copy was taken. */
+    private static String fingerprint(Path file) throws IOException {
+        return Files.size(file) + "@" + Files.getLastModifiedTime(file).toMillis();
+    }
+
+    private Optional<Path> markerMigratedFrom(Path marker) throws IOException {
+        return markerValue(marker, "migrated-from=").map(value -> {
+            try {
+                return Paths.get(value).toAbsolutePath();
+            } catch (InvalidPathException ex) {
+                return null;
+            }
+        });
+    }
+
+    private Optional<String> markerLegacyFingerprint(Path marker) throws IOException {
+        return markerValue(marker, "legacy-fingerprint=");
+    }
+
+    private Optional<String> markerValue(Path marker, String prefix) throws IOException {
+        for (String line : Files.readAllLines(marker)) {
+            if (line.startsWith(prefix)) {
+                return Optional.of(line.substring(prefix.length()).trim());
+            }
+        }
+        return Optional.empty();
     }
 
     /**
@@ -168,8 +257,12 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
         }
 
         verify(legacy, target);
-        Files.write(targetDir.resolve(MARKER_FILE_NAME),
-                ("migrated-from=" + legacy.toAbsolutePath() + System.lineSeparator()).getBytes("UTF-8"));
+
+        // The legacy file's identity is recorded so a later start can tell
+        // whether it kept being written to after the copy was taken.
+        String marker = "migrated-from=" + legacy.toAbsolutePath() + System.lineSeparator()
+                + "legacy-fingerprint=" + fingerprint(legacy) + System.lineSeparator();
+        Files.write(targetDir.resolve(MARKER_FILE_NAME), marker.getBytes("UTF-8"));
 
         log.warn("LumiPOS database moved to " + targetDir
                 + ". The original file at " + legacy + " was kept as a safety copy "
