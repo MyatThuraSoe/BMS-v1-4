@@ -36,5 +36,11 @@
   "inventory": "Inventory",
   "fullscreen": "Full Screen",
   "exit_fullscreen": "Exit Full Screen",
-  "trial_banner_message": "⏳ Your trial ends in {{count}} days. Contact MegaCode to upgrade — your data stays safe."
+  "trial_banner_message": "⏳ Your trial ends in {{count}} days. Contact MegaCode to upgrade — your data stays safe.",
+  "server_offline_title": "Cannot reach the LumiPOS server",
+  "server_offline_message": "This device has lost its connection to the main server.",
+  "server_offline_elapsed": "offline for {{elapsed}}",
+  "server_offline_hint": "Do not close the app. Your current sale is kept — it will come back automatically when the connection returns. If this is the server PC, check that LumiPOS is still running.",
+  "server_offline_checking": "Checking...",
+  "server_offline_retry": "Check now"
 }

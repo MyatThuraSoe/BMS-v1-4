@@ -68,6 +68,7 @@ import { authService, licenseService, shopInfoService, shiftService } from '../a
 import { useQuery } from '@tanstack/react-query';
 import { setCurrencyCode } from '../utils/helpers';
 import LanguageSwitcher from './LanguageSwitcher';
+import ServerOfflineBanner from './ServerOfflineBanner';
 import useShopConfig from '../hooks/useShopConfig';
 import { preloadRouteChunks } from '../utils/preloadRouteChunks';
 import { useTranslation } from 'react-i18next';
@@ -514,6 +515,9 @@ const lic = licData?.data?.data;
         {/* Per-route Suspense boundary: lazy pages load INSIDE the content
             area only — the drawer and app bar stay mounted, so navigating
             never flashes the whole window. */}
+        {/* Server link status. Outside Suspense on purpose: the warning must
+            appear even while a page chunk is still loading. */}
+        <ServerOfflineBanner />
         <Suspense fallback={<ContentSkeleton />}>
           {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
             <Alert severity="info" sx={{ mb: 2 }}>
