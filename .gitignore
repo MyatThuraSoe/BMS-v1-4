@@ -80,6 +80,14 @@ uploads/
 *.iml
 
 # ===========================================
+# Local tooling scratch dirs
+# ===========================================
+# AI assistant memory/session dumps (not part of the product)
+.workbuddy-ai/
+# Gradle user home used by the Android module
+.gradle-home/
+
+# ===========================================
 # OS
 # ===========================================
 Thumbs.db
