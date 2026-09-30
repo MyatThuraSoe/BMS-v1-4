@@ -97,7 +97,17 @@ public class GoogleDriveService {
                     .build();
 
             // Automatically fetch a new access token if the current one is expired
-            credentials.refreshIfExpired();
+            try {
+                credentials.refreshIfExpired();
+            } catch (Exception refreshError) {
+                // Token was revoked / expired on Google's side — surface it as a
+                // clear, actionable error instead of a stack-trace soup.
+                String msg = nestedMessages(refreshError);
+                if (msg.contains("invalid_grant")) {
+                    throw new IllegalStateException("Google access was revoked or expired. Reconnect Google Drive in Settings — automatic backups are paused.");
+                }
+                throw refreshError;
+            }
 
             // Save the fresh access token back to the database
             setting.setGoogleAccessToken(credentials.getAccessToken().getTokenValue());
@@ -111,8 +121,25 @@ public class GoogleDriveService {
                     .build();
 
         } catch (Exception e) {
+            if (e instanceof IllegalStateException ise) {
+                throw ise;
+            }
             throw new RuntimeException("Failed to initialize Google Drive service", e);
         }
+    }
+
+    private String nestedMessages(Throwable t) {
+        StringBuilder sb = new StringBuilder();
+        for (Throwable cur = t; cur != null; cur = cur.getCause()) {
+            if (cur.getMessage() != null) {
+                sb.append(cur.getMessage()).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+    private String uploadName(java.io.File fileToUpload, String fileName) {
+        return fileName != null && !fileName.isBlank() ? fileName : fileToUpload.getName();
     }
 
     public String uploadFile(java.io.File fileToUpload, String mimeType) throws Exception {
@@ -161,7 +188,26 @@ public class GoogleDriveService {
         Drive service = getDriveService();
 
         File fileMetadata = new File();
-        fileMetadata.setName(fileToUpload.getName());
+        fileMetadata.setName(uploadName(fileToUpload, null));
+
+        // Save inside the specific folder
+        if (folderId != null && !folderId.isEmpty()) {
+            fileMetadata.setParents(Collections.singletonList(folderId));
+        }
+
+        FileContent mediaContent = new FileContent(mimeType, fileToUpload);
+        File uploadedFile = service.files().create(fileMetadata, mediaContent)
+                .setFields("id, name, webViewLink")
+                .execute();
+
+        return uploadedFile.getWebViewLink();
+    }
+
+    public String uploadFile(java.io.File fileToUpload, String mimeType, String folderId, String fileName) throws Exception {
+        Drive service = getDriveService();
+
+        File fileMetadata = new File();
+        fileMetadata.setName(uploadName(fileToUpload, fileName));
 
         // Save inside the specific folder
         if (folderId != null && !folderId.isEmpty()) {

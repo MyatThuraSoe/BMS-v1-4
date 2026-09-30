@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete, Chip, MenuItem, Select, FormControl, InputLabel, Divider, Stack,
@@ -89,6 +89,7 @@ const PurchaseForm = () => {
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { isManager } = useAuth();
   const { t } = useTranslation('purchases');
@@ -179,14 +180,14 @@ const PurchaseForm = () => {
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
-      setTimeout(() => navigate('/purchases'), 1500);
+      setTimeout(() => navigate(`/purchases${location.search}`), 1500);
     },
     onError: (err) => setError(err.response?.data?.message || t('save_failed')),
   });
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (isEdit) { navigate('/purchases'); return; } // existing purchases are view-only
+    if (isEdit) { navigate(`/purchases${location.search}`); return; } // existing purchases are view-only
     if (items.length === 0) { setError(t('at_least_one_item_required')); return; }
     if (!items.every((i) => i.productId && (Number(i.quantity) || 0) > 0 && (Number(i.unitCost) || 0) >= 0)) {
       setError(t('items_invalid'));
@@ -419,7 +420,7 @@ const PurchaseForm = () => {
                 {saveMutation.isPending && !isEdit ? <CircularProgress size={24} /> : (isEdit ? t('close') : t('create'))}
               </Button>
               {!isEdit && (
-                <Button onClick={() => navigate('/purchases')} sx={{ ml: 1 }}>{t('cancel')}</Button>
+                <Button onClick={() => navigate(`/purchases${location.search}`)} sx={{ ml: 1 }}>{t('cancel')}</Button>
               )}
             </Grid>
           </Grid>

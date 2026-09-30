@@ -86,7 +86,13 @@ const PrintJobWorker = () => {
           }
         }
       } catch (error) {
-        if (!stopped && error.response?.status !== 401) {
+        // 401 = session expired; apiClient is handling the redirect + draft
+        // save, this worker should just stop polling to avoid the 3s spam.
+        if (error.response?.status === 401) {
+          stopped = true;
+          return;
+        }
+        if (!stopped) {
           console.warn('[Print queue] Poll failed:', error.message);
         }
       } finally {

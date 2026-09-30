@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link as RouterLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -19,10 +19,21 @@ const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [loading, setLoading] = useState(false);
   const { t } = useTranslation();
   const { login, defaultRoute } = useAuth();
   const navigate = useNavigate();
+
+  // Show a "session expired" notice if the user was kicked to the login page.
+  useEffect(() => {
+    const msg = sessionStorage.getItem('app_session_expired_message');
+    if (msg) {
+      sessionStorage.removeItem('app_session_expired_message');
+      sessionStorage.removeItem('app_session_expired_ts');
+      setNotice(msg);
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -83,6 +94,12 @@ const Login = () => {
               {t('auth:enter_credentials')}
             </Typography>
           </Box>
+
+          {notice && (
+            <Alert severity="warning" sx={{ width: '100%', mb: 2, borderRadius: 2 }}>
+              {notice}
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ width: '100%', mb: 2, borderRadius: 2 }}>

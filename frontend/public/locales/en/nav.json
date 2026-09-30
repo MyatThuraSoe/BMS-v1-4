@@ -35,5 +35,6 @@
   "drafts": "Drafts",
   "inventory": "Inventory",
   "fullscreen": "Full Screen",
-  "exit_fullscreen": "Exit Full Screen"
+  "exit_fullscreen": "Exit Full Screen",
+  "trial_banner_message": "⏳ Your trial ends in {{count}} days. Contact MegaCode to upgrade — your data stays safe."
 }

@@ -105,6 +105,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
     }
 
+    // A DB unique constraint was hit (duplicate SKU / username / email / phone
+    // racing past the pre-check, or a legacy duplicate on re-add). This is a
+    // CONFLICT too, but the cause is a duplicate — NOT a concurrent edit — so it
+    // must not show the misleading "changed by someone else, refresh" message.
+    @ExceptionHandler(org.springframework.dao.DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(org.springframework.dao.DataIntegrityViolationException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.CONFLICT.value(),
+            resolve("error.duplicate.record"),
+            LocalDateTime.now()
+        );
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(error);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ValidationErrorResponse> handleValidationExceptions(MethodArgumentNotValidException ex) {
         Map<String, String> errors = new HashMap<>();

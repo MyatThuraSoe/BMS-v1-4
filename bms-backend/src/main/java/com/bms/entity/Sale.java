@@ -57,6 +57,9 @@ public class Sale {
     @Column(name = "amount_paid", nullable = false, precision = 10, scale = 2)
     private BigDecimal amountPaid;
 
+    @Column(name = "amount_returned", nullable = false, precision = 10, scale = 2)
+    private BigDecimal amountReturned = BigDecimal.ZERO;
+
     @Column(name = "change_given", nullable = false, precision = 10, scale = 2)
     private BigDecimal changeGiven = BigDecimal.ZERO;
 
@@ -183,6 +186,9 @@ public class Sale {
 
     public BigDecimal getAmountPaid() { return amountPaid; }
     public void setAmountPaid(BigDecimal amountPaid) { this.amountPaid = amountPaid; }
+
+    public BigDecimal getAmountReturned() { return amountReturned != null ? amountReturned : BigDecimal.ZERO; }
+    public void setAmountReturned(BigDecimal amountReturned) { this.amountReturned = amountReturned != null ? amountReturned : BigDecimal.ZERO; }
 
     public BigDecimal getChangeGiven() { return changeGiven; }
     public void setChangeGiven(BigDecimal changeGiven) { this.changeGiven = changeGiven; }

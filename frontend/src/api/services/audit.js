@@ -13,4 +13,9 @@ export const auditLogService = {
     const response = await apiClient.get(`/audit-logs?${params.toString()}`);
     return response.data;
   },
+
+  deleteOlderThan: async (olderThanYears = 1) => {
+    const response = await apiClient.delete(`/audit-logs/older-than?olderThanYears=${olderThanYears}`);
+    return response.data;
+  },
 };

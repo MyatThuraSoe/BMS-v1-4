@@ -72,8 +72,11 @@ export const productService = {
     return response.data;
   },
 
-  search: async (keyword, page = 0, size = 20) => {
-    const response = await apiClient.get(`/products/search?keyword=${encodeURIComponent(keyword)}&page=${page}&size=${size}`);
+  search: async (keyword, page = 0, size = 20, categoryId = null, view = null) => {
+    const params = new URLSearchParams({ keyword, page: String(page), size: String(size) });
+    if (categoryId) params.append('categoryId', categoryId);
+    if (view) params.append('view', view);
+    const response = await apiClient.get(`/products/search?${params.toString()}`);
     return response.data;
   },
 

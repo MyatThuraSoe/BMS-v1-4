@@ -28,10 +28,24 @@ apiClient.interceptors.request.use(
   }
 );
 
+// The 'errors' namespace loads on demand, so the first t() call for it would
+// return the raw key. Wait for it once and always translate after it is loaded.
+let errorsNamespaceLoading = null;
+const translateWithErrorsLoaded = async (key, backendMessage) => {
+  if (backendMessage) return backendMessage;
+  if (!errorsNamespaceLoading) {
+    errorsNamespaceLoading = i18n.loadNamespaces('errors').catch(() => {});
+  }
+  await errorsNamespaceLoading;
+  const value = i18n.t(key);
+  errorsNamespaceLoading = null;
+  return value;
+};
+
 // Response interceptor to handle errors
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
     const status = error.response?.status;
     const backendMessage = error.response?.data?.message;
     const code = error.response?.data?.code;
@@ -41,40 +55,53 @@ apiClient.interceptors.response.use(
       if (!window.location.pathname.startsWith('/activate')) {
         window.location.href = '/activate';
       }
-      error.friendlyMessage = backendMessage || i18n.t('errors:license_required');
+      error.friendlyMessage = await translateWithErrorsLoaded('errors:license_required', backendMessage);
       return Promise.reject(error);
     }
 
-    // 2. Handle JWT Expiration / Unauthorized Access
+    // 2. Handle JWT Expiration / Unauthorized Access. This is a full-session
+    //    expiry (24h token, no refresh), so: warn anyone listening (the POS
+    //    saves the open cart as a draft), leave a message for the Login page,
+    //    and only then redirect. Never a silent localStorage.clear + reload.
     if (status === 401) {
-      // Prevent infinite redirect loop if already on the login page
-      if (!window.location.pathname.includes('/login')) {
+      const alreadyOnLogin = window.location.pathname.includes('/login');
+      if (!alreadyOnLogin) {
+        window.dispatchEvent(new CustomEvent('app:session-expired', { detail: { message: backendMessage } }));
+        const msg = await translateWithErrorsLoaded('errors:session_expired', backendMessage);
+        sessionStorage.setItem('app_session_expired_message', msg);
+        sessionStorage.setItem('app_session_expired_ts', String(Date.now()));
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        // Small delay lets listeners (e.g. POS draft save) persist before unload
+        setTimeout(() => {
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login';
+          }
+        }, 150);
       }
+      error.friendlyMessage = await translateWithErrorsLoaded('errors:session_expired', backendMessage);
       return Promise.reject(error);
     }
 
     // 2b. Role/privilege denied — the session is still valid, the caller just
     // lacks the required role. Don't log the user out; surface the message.
     if (status === 403) {
-      error.friendlyMessage = backendMessage || i18n.t('errors:forbidden');
+      error.friendlyMessage = await translateWithErrorsLoaded('errors:forbidden', backendMessage);
       return Promise.reject(error);
     }
 
     // 3. Handle other known errors with friendly messages
     let friendlyMessage;
     if (!error.response) {
-      friendlyMessage = i18n.t('errors:cannot_reach_server');
+      friendlyMessage = await translateWithErrorsLoaded('errors:cannot_reach_server', backendMessage);
     } else if (status === 409) {
-      friendlyMessage = backendMessage || i18n.t('errors:conflict');
+      friendlyMessage = backendMessage || await translateWithErrorsLoaded('errors:conflict', backendMessage);
     } else if (status === 400) {
-      friendlyMessage = backendMessage || i18n.t('errors:check_form');
+      friendlyMessage = backendMessage || await translateWithErrorsLoaded('errors:check_form', backendMessage);
     } else if (status >= 500) {
-      friendlyMessage = i18n.t('errors:unexpected_error');
+      friendlyMessage = await translateWithErrorsLoaded('errors:unexpected_error', backendMessage);
     } else {
-      friendlyMessage = backendMessage || i18n.t('errors:generic');
+      friendlyMessage = backendMessage || await translateWithErrorsLoaded('errors:generic', backendMessage);
     }
 
     error.friendlyMessage = friendlyMessage;

@@ -28,4 +28,8 @@ i18n
     },
   });
 
+// Preload the errors namespace so error toasts (which use i18n.t directly via
+// apiClient) never render raw keys like "cannot_reach_server".
+i18n.loadNamespaces(['errors']).catch(() => {});
+
 export default i18n;

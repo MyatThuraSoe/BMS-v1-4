@@ -106,7 +106,13 @@ public class ArService {
         }
 
         BigDecimal paidSoFar = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
-        BigDecimal remaining = sale.getTotalAmount().subtract(paidSoFar);
+        // Returned merchandise also settles the invoice, so a payment can never
+        // exceed what is actually left to pay after returns.
+        BigDecimal returned = sale.getAmountReturned();
+        BigDecimal remaining = sale.getTotalAmount().subtract(paidSoFar).subtract(returned);
+        if (remaining.compareTo(BigDecimal.ZERO) < 0) {
+            remaining = BigDecimal.ZERO;
+        }
         if (amount.compareTo(remaining) > 0) {
             throw new BusinessException("error.ar.payment.exceeds", remaining);
         }
@@ -122,10 +128,10 @@ public class ArService {
         payment.setNotes(request.getNotes());
         arPaymentRepository.save(payment);
 
-        // Advance the invoice's own accounting
+        // Advance the invoice's own accounting (returns already count toward settlement)
         BigDecimal newPaid = paidSoFar.add(amount).setScale(2, RoundingMode.HALF_UP);
         sale.setAmountPaid(newPaid);
-        sale.setPaymentStatus(newPaid.compareTo(sale.getTotalAmount()) >= 0
+        sale.setPaymentStatus(newPaid.add(returned).compareTo(sale.getTotalAmount()) >= 0
                 ? Sale.PaymentStatus.PAID
                 : Sale.PaymentStatus.PARTIAL);
         saleRepository.save(sale);
@@ -163,8 +169,15 @@ public class ArService {
         response.setCustomerName(sale.getCustomerDisplayName());
         response.setTotalAmount(sale.getTotalAmount());
         BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+        BigDecimal returned = sale.getAmountReturned();
         response.setAmountPaid(paid);
-        response.setBalanceDue(sale.getTotalAmount().subtract(paid).setScale(2, RoundingMode.HALF_UP));
+        response.setAmountReturned(returned);
+        BigDecimal balanceDue = sale.getTotalAmount().subtract(paid).subtract(returned)
+                .setScale(2, RoundingMode.HALF_UP);
+        if (balanceDue.compareTo(BigDecimal.ZERO) < 0) {
+            balanceDue = BigDecimal.ZERO;
+        }
+        response.setBalanceDue(balanceDue);
         response.setDueDate(sale.getDueDate());
         response.setSaleDate(sale.getSaleDate());
         response.setPaymentStatus(sale.getPaymentStatus().name());

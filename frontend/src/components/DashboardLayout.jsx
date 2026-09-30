@@ -45,7 +45,6 @@ import {
   AccountBalance as AccountingIcon,
   Settings as SettingsIcon,
   Store as ShopInfoIcon,
-  History as HistoryIcon,
   Fingerprint as AuditIcon,
   Menu as MenuIcon,
   ChevronLeft as ChevronLeftIcon,
@@ -105,7 +104,6 @@ const menuGroups = [
       { textKey: 'drafts', icon: <DraftsIcon />, path: '/drafts', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'secondary.main' },
       { textKey: 'sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
       { textKey: 'cash_shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
-      { textKey: 'shift_history', icon: <HistoryIcon />, path: '/shift-history', roles: ['ADMIN', 'MANAGER'], color: 'text.secondary' },
       { textKey: 'accounts_receivable', icon: <PaymentsIcon />, path: '/accounts-receivable', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
     ],
   },
@@ -233,7 +231,7 @@ const DashboardLayout = ({ children }) => {
     queryKey: ['license-status'],
     queryFn: () => licenseService.getStatus(),
 });
-const lic = licData?.data;
+const lic = licData?.data?.data;
 
   // Warm all route chunks during idle so first menu clicks never flash
   useEffect(() => { preloadRouteChunks(); }, []);
@@ -517,16 +515,14 @@ const lic = licData?.data;
             area only — the drawer and app bar stay mounted, so navigating
             never flashes the whole window. */}
         <Suspense fallback={<ContentSkeleton />}>
+          {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
+            <Alert severity="info" sx={{ mb: 2 }}>
+              {t('trial_banner_message', { count: lic.daysLeft })}
+            </Alert>
+          )}
           {children || <Outlet />}
         </Suspense>
       </Box>
-
-      {lic?.licensed && lic.plan === 'trial' && lic.daysLeft <= 7 && (
-      <Alert severity="info" sx={{ mb: 2 }}>
-          ⏳ Your trial ends in <strong>{lic.daysLeft} days</strong>.
-          Contact MegaCode to upgrade — your data stays safe.
-      </Alert>
-  )}
 
       <Dialog open={changePasswordOpen} onClose={() => setChangePasswordOpen(false)} maxWidth="xs" fullWidth>
         <DialogTitle>{t('common:change_password')}</DialogTitle>

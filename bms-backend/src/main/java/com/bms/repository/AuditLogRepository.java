@@ -4,6 +4,7 @@ import com.bms.entity.AuditLog;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -39,4 +40,8 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, Long> {
                                 @Param("startDate") LocalDateTime startDate,
                                 @Param("endDate") LocalDateTime endDate,
                                 Pageable pageable);
+
+    @Modifying
+    @Query("DELETE FROM AuditLog al WHERE al.timestamp < :cutoff")
+    int deleteByTimestampBefore(@Param("cutoff") LocalDateTime cutoff);
 }

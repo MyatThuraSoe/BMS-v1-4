@@ -24,11 +24,13 @@ public class LicenseController {
     }
 
     @PostMapping("/activate")
-    public ResponseEntity<ApiResponse<Map<String, Boolean>>> activate(@RequestBody Map<String, String> body) {
-        boolean ok = licenseService.activate(body.get("licenseKey"));
-        return ResponseEntity.ok(new ApiResponse<>(ok,
-                ok ? "License activated" : "Invalid license for this machine",
-                Map.of("activated", ok)));
+    public ResponseEntity<ApiResponse<Map<String, Object>>> activate(@RequestBody Map<String, String> body) {
+        String reason = licenseService.activateWithReason(body.get("licenseKey"));
+        boolean ok = reason == null;
+        Map<String, Object> data = new HashMap<>();
+        data.put("activated", ok);
+        if (reason != null) data.put("reason", reason);
+        return ResponseEntity.ok(new ApiResponse<>(ok, ok ? "License activated" : reason, data));
     }
 
     @GetMapping("/status")
@@ -50,6 +52,10 @@ public class LicenseController {
             LocalDate exp = LocalDate.parse(expiresAt);
             data.put("expired", exp.isBefore(LocalDate.now()));
             data.put("daysLeft", java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), exp));
+        } else {
+            // ✅ NEW: Tell the UI WHY the install is unlicensed so it can direct
+            // the user (install key / wrong machine / expired) instead of a 403.
+            data.put("reason", licenseService.statusReason());
         }
         return ResponseEntity.ok(new ApiResponse<>(true, "License status", data));
     }

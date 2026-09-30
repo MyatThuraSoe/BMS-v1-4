@@ -42,6 +42,7 @@ public class BackupService {
 
     private final BackupSettingRepository backupSettingRepository;
     private final GoogleDriveService googleDriveService;
+    private final DataExportService dataExportService;
 
     public BackupService(
             ProductRepository productRepository,
@@ -57,7 +58,8 @@ public class BackupService {
             ReceiptCustomizationRepository receiptCustomizationRepository,
             OrderRepository orderRepository,
             BackupSettingRepository backupSettingRepository,
-            GoogleDriveService googleDriveService) {
+            GoogleDriveService googleDriveService,
+            DataExportService dataExportService) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.customerRepository = customerRepository;
@@ -72,6 +74,7 @@ public class BackupService {
         this.orderRepository = orderRepository;
         this.backupSettingRepository = backupSettingRepository;
         this.googleDriveService = googleDriveService;
+        this.dataExportService = dataExportService;
     }
 
     @Transactional(readOnly = true)
@@ -384,7 +387,61 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
         return "[binary, " + data.length + " bytes]";
     }
 
-    // --- SINGLE, CONSOLIDATED METHOD FOR BOTH FULL AND FILTERED BACKUPS ---
+    /**
+     * Runs a backup and ALWAYS records the outcome in the settings so the UI can
+     * show a green/red status instead of failing silently. Schedules a slow retry
+     * (1 hour) after a failure so a persistent problem doesn't hammer Google.
+     * Dissabling automation when the OAuth token has been revoked so the user is
+     * forced to reconnect instead of racking up errors nobody sees.
+     *
+     * NOT @Transactional deliberately: the FAILED status must survive the rethrow.
+     * Repository saves below commit on their own, so the exception is re-thrown
+     * for the caller without rolling back the recorded outcome.
+     */
+    public String runBackupNow(LocalDate startDate, LocalDate endDate) throws Exception {
+        try {
+            String link = executeGoogleDriveBackup(startDate, endDate);
+            return link;
+        } catch (Exception e) {
+            BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
+                    .orElseGet(() -> backupSettingRepository.save(new BackupSetting()));
+            setting.setBackupStatus("FAILED");
+            String message = friendlyError(e);
+            setting.setLastErrorMessage(message);
+            setting.setLastBackupAttempt(LocalDateTime.now());
+            if (isRevokedToken(e)) {
+                setting.setEnabled(false);
+                setting.setNextBackupDate(null);
+                setting.setLastErrorMessage("Google access was revoked or expired. Reconnect Google Drive in Settings — automatic backups are paused.");
+            } else {
+                setting.setNextBackupDate(LocalDateTime.now().plusHours(1));
+            }
+            backupSettingRepository.save(setting);
+            throw e;
+        }
+    }
+
+    private boolean isRevokedToken(Exception e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String msg = t.getMessage();
+            if (msg != null && msg.contains("invalid_grant")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String friendlyError(Exception e) {
+        for (Throwable t = e; t != null; t = t.getCause()) {
+            String msg = t.getMessage();
+            if (msg != null && !msg.isBlank()) {
+                return msg.length() > 2000 ? msg.substring(0, 2000) : msg;
+            }
+        }
+        return "Unknown backup error";
+    }
+
+    // --- SINGLE, CONSOLIDATED METHOD FOR BOTH FULL AND SCHEDULED BACKUPS ---
     @Transactional
     public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate) throws Exception {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
@@ -394,49 +451,60 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             throw new IllegalStateException("Google Drive is not connected. Please authorize first.");
         }
 
-        // 1. Readable filename with date range indicator
+        // 1. Restorable JSON backup (same format the Replace Everything restore
+        //    accepts), not the spreadsheet that couldn't be imported back.
         String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String rangeStr = (startDate != null && endDate != null) ? "_" + startDate + "_to_" + endDate : "_Full";
-        String fileName = "BMS_Backup" + rangeStr + "_" + dateStr + ".xlsx";
+        String fileName = "LumiPOS_Backup_" + dateStr + ".json";
 
-        Path tempFile = Files.createTempFile("bms_backup_", ".xlsx");
+        Path tempFile = Files.createTempFile("lumipos_backup_", ".json");
 
         try {
-            // 2. Write data (handles both full and filtered based on null checks)
-            try (FileOutputStream fos = new FileOutputStream(tempFile.toFile())) {
-                exportBackup(fos, startDate, endDate);
-            }
+            Files.write(tempFile, dataExportService.exportAllAsJson());
 
-            // 3. Get or Create the dedicated folder
+            // 2. Get or Create the dedicated folder
             String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
 
-            // 4. Upload to Google Drive inside that folder
-            String mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-            String driveLink = googleDriveService.uploadFile(tempFile.toFile(), mimeType, folderId);
+            // 3. Upload to Google Drive inside that folder
+            String mimeType = "application/json";
+            String driveLink = googleDriveService.uploadFile(tempFile.toFile(), mimeType, folderId, fileName);
 
-            // 5. Update Backup Settings (only if automation is enabled)
-            if (setting.isEnabled()) {
-                setting.setLastBackupDate(LocalDateTime.now());
-                calculateNextBackupDate(setting);
-                backupSettingRepository.save(setting);
-            }
+            // 4. Record the outcome so the UI can show a real status.
+            setting.setLastBackupDate(LocalDateTime.now());
+            setting.setLastBackupAttempt(LocalDateTime.now());
+            setting.setBackupStatus("SUCCESS");
+            setting.setLastErrorMessage(null);
+            setting.setNextBackupDate(calculateNextBackupDate(setting, LocalDateTime.now()));
+            backupSettingRepository.save(setting);
 
             return driveLink;
 
         } finally {
-            // 6. Always clean up the temp file, even if upload fails
+            // 5. Always clean up the temp file, even if upload fails
             Files.deleteIfExists(tempFile);
         }
     }
 
-    private void calculateNextBackupDate(BackupSetting setting) {
-        LocalDateTime now = LocalDateTime.now();
-        switch (setting.getFrequency().toUpperCase()) {
-            case "DAILY": setting.setNextBackupDate(now.plusDays(1)); break;
-            case "WEEKLY": setting.setNextBackupDate(now.plusWeeks(1)); break;
-            case "MONTHLY": setting.setNextBackupDate(now.plusMonths(1)); break;
-            case "YEARLY": setting.setNextBackupDate(now.plusYears(1)); break;
-            case "CUSTOM": setting.setNextBackupDate(now.plusDays(1)); break;
+    /**
+     * Computes the next scheduled backup time. CUSTOM uses the cron expression
+     * when it parses, otherwise it falls back to +1 day so automation always
+     * keeps running.
+     */
+    public LocalDateTime calculateNextBackupDate(BackupSetting setting, LocalDateTime from) {
+        String frequency = setting.getFrequency() == null ? "WEEKLY" : setting.getFrequency().toUpperCase();
+        switch (frequency) {
+            case "DAILY": return from.plusDays(1);
+            case "WEEKLY": return from.plusWeeks(1);
+            case "MONTHLY": return from.plusMonths(1);
+            case "YEARLY": return from.plusYears(1);
+            case "CUSTOM":
+                try {
+                    return org.springframework.scheduling.support.CronExpression
+                            .parse(setting.getCustomCronExpression())
+                            .next(from);
+                } catch (Exception e) {
+                    return from.plusDays(1);
+                }
+            default: return from.plusDays(1);
         }
     }
 

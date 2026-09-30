@@ -9,21 +9,29 @@ import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
 import { notifySuccess, notifyError } from '../utils/notify';
+import useListFilters from '../hooks/useListFilters';
 
 const STATUS_FILTERS = ['ALL', 'PENDING', 'CONVERTED', 'CANCELLED'];
+
+const getCustomerLabel = (option) => `${option.firstName} ${option.lastName} (${option.phone || option.email})`;
 
 const Orders = () => {
   const { t } = useTranslation('orders');
   const queryClient = useQueryClient();
 
-  const [status, setStatus] = useState('ALL');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(10);
-  const [orderSearch, setOrderSearch] = useState('');
+  const { filters, update, reset } = useListFilters({
+    page: { init: 0, parse: Number, serialize: (v) => String(v) },
+    size: { init: 10, parse: Number },
+    status: { init: 'ALL' },
+    startDate: { init: '' },
+    endDate: { init: '' },
+    search: { init: '' },
+    customer: { init: '' },
+    customerName: { init: '' },
+  });
+  const { page, size, status, startDate, endDate, search, customer } = filters;
+  const selectedCustomer = customer ? { id: Number(customer), label: customerName || '' } : null;
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [customerInput, setCustomerInput] = useState('');
 
   const [viewOrder, setViewOrder] = useState(null);
@@ -47,9 +55,9 @@ const Orders = () => {
   const [createError, setCreateError] = useState('');
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedSearch(orderSearch), 300);
+    const timer = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timer);
-  }, [orderSearch]);
+  }, [search]);
 
   const { data: customerResults } = useQuery({
     queryKey: ['customer-search', customerInput],
@@ -77,7 +85,7 @@ const Orders = () => {
   });
 
   const { data: ordersData, isLoading } = useQuery({
-    queryKey: ['orders', page, size, status, startDate, endDate, selectedCustomer?.id ?? null, debouncedSearch],
+    queryKey: ['orders', page, size, status, startDate, endDate, customer || null, debouncedSearch],
     queryFn: () =>
       orderService.getAll({
         page,
@@ -85,7 +93,7 @@ const Orders = () => {
         status: status === 'ALL' ? null : status,
         startDate: startDate || null,
         endDate: endDate || null,
-        customerId: selectedCustomer?.id ?? null,
+        customerId: customer || null,
         orderNumber: debouncedSearch || null,
       }),
     staleTime: 0,
@@ -152,16 +160,12 @@ const Orders = () => {
   };
 
   const clearFilters = () => {
-    setStatus('ALL');
-    setStartDate('');
-    setEndDate('');
-    setSelectedCustomer(null);
-    setOrderSearch('');
+    setCustomerInput('');
     setDebouncedSearch('');
-    setPage(0);
+    reset();
   };
 
-  const hasActiveFilters = status !== 'ALL' || startDate || endDate || selectedCustomer || debouncedSearch;
+  const hasActiveFilters = status !== 'ALL' || startDate || endDate || customer || search;
 
   function resetOrderForm() {
     setOrderCustomer(null);
@@ -263,7 +267,7 @@ const Orders = () => {
     <Chip
       key={s}
       label={s === 'ALL' ? t('all') : t(`status_${s.toLowerCase()}`)}
-      onClick={() => { setStatus(s); setPage(0); }}
+      onClick={() => { update({ status: s, page: 0 }); }}
       color={status === s ? getStatusColor(s) : 'default'}
       variant={status === s ? 'filled' : 'outlined'}
       size="small"
@@ -286,8 +290,8 @@ const Orders = () => {
           <TextField
             size="small"
             placeholder={t('search_by_order')}
-            value={orderSearch}
-            onChange={(e) => setOrderSearch(e.target.value)}
+            value={search}
+            onChange={(e) => update({ search: e.target.value, page: 0 }, { replace: true })}
             sx={{ minWidth: 220 }}
             InputProps={{
               startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment>,
@@ -297,16 +301,16 @@ const Orders = () => {
             size="small"
             sx={{ minWidth: 250 }}
             options={customerResults?.data?.content || []}
-            getOptionLabel={(option) => `${option.firstName} ${option.lastName} (${option.phone || option.email})`}
+            getOptionLabel={getCustomerLabel}
             value={selectedCustomer}
-            onChange={(e, newValue) => { setSelectedCustomer(newValue); setPage(0); }}
+            onChange={(e, newValue) => update({ customer: newValue ? newValue.id : null, customerName: newValue ? getCustomerLabel(newValue) : '', page: 0 })}
             inputValue={customerInput}
             onInputChange={(e, newValue) => setCustomerInput(newValue)}
             renderInput={(params) => <TextField {...params} label={t('filter_by_customer')} />}
             isOptionEqualToValue={(option, value) => option.id === value.id}
           />
-          <TextField size="small" type="date" label={t('start_date')} value={startDate} onChange={(e) => { setStartDate(e.target.value); setPage(0); }} InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
-          <TextField size="small" type="date" label={t('end_date')} value={endDate} onChange={(e) => { setEndDate(e.target.value); setPage(0); }} InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+          <TextField size="small" type="date" label={t('start_date')} value={startDate} onChange={(e) => { update({ startDate: e.target.value, page: 0 }); }} InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+          <TextField size="small" type="date" label={t('end_date')} value={endDate} onChange={(e) => { update({ endDate: e.target.value, page: 0 }); }} InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
           {hasActiveFilters && <Button size="small" onClick={clearFilters}>{t('clear_filters')}</Button>}
         </Box>
       </Paper>
@@ -352,7 +356,7 @@ const Orders = () => {
             )}
           </TableBody>
         </Table>
-        <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => setPage(newPage)} onRowsPerPageChange={(e) => { setSize(parseInt(e.target.value)); setPage(0); }} rowsPerPageOptions={[5, 10, 25]} />
+        <TablePagination component="div" count={totalElements} page={page} rowsPerPage={size} onPageChange={(e, newPage) => update({ page: newPage })} onRowsPerPageChange={(e) => { update({ size: parseInt(e.target.value), page: 0 }); }} rowsPerPageOptions={[5, 10, 25]} />
       </TableContainer>
 
       {/* View order detail dialog */}

@@ -42,7 +42,6 @@ const pageImporters = [
   () => import('../pages/ReceiptCustomization'),
   () => import('../pages/AuditLogs'),
   () => import('../pages/CashShift'),
-  () => import('../pages/ShiftHistory'),
   () => import('../pages/About'),
 ];
 

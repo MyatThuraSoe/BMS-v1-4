@@ -59,6 +59,8 @@
   "no_purchase_history": "No purchase history yet.",
   "no_purchases_found": "No purchases found",
   "no_suppliers_found": "No suppliers found",
+  "failed_to_load_suppliers": "Failed to load suppliers",
+  "failed_to_delete": "Failed to delete. The supplier may have purchase history.",
   "notes": "Notes",
   "phone": "Phone",
   "add_phone": "Add Phone",

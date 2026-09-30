@@ -13,6 +13,8 @@
   "active": "Active",
   "inactive": "Inactive",
   "loading": "Loading...",
+  "failed_to_load_users": "Failed to load users",
+  "failed_to_delete": "Failed to delete. You cannot remove the last administrator.",
   "showing_users": "Showing {{shown}} of {{total}} users",
   "previous": "Previous",
   "next": "Next",

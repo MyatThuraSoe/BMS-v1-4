@@ -46,7 +46,6 @@ const ReceiptCustomization = lazy(() => import('./pages/ReceiptCustomization'));
 const BackupSettings = lazy(() => import('./pages/BackupSettings'));
 const SupplierDetails = lazy(() => import('./pages/SupplierDetails'));
 const CashShift = lazy(() => import('./pages/CashShift'));
-const ShiftHistory = lazy(() => import('./pages/ShiftHistory'));
 const AccountsReceivable = lazy(() => import('./pages/AccountsReceivable'));
 const Orders = lazy(() => import('./pages/Orders'));
 const Drafts = lazy(() => import('./pages/Drafts'));
@@ -262,9 +261,8 @@ function AppRoutes() {
         {/* Audit Logs (Admin only) */}
         <Route path="audit-logs" element={<ProtectedRoute allowedRoles={['ADMIN']}><AuditLogs /></ProtectedRoute>} />
 
-        {/* Cash Shift (all roles) */}
+        {/* Cash Shift (all roles); shift history section inside is manager-only */}
         <Route path="cash-shift" element={<CashShift />} />
-        <Route path="shift-history" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><ShiftHistory /></ProtectedRoute>} />
 
         {/* About Page (all roles) */}
         <Route path="about" element={<About />} />

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Grid, Paper, Typography, Box, Button, Chip } from '@mui/material';
+import { Grid, Paper, Typography, Box, Button, Chip, Alert } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
 import { reportService, saleService, inventoryService } from '../api/services';
 import { ShoppingCart, Inventory, TrendingUp, Add as AddIcon, TrendingDown as TrendingDownIcon } from '@mui/icons-material';
-import { formatDateTime, formatCurrency } from '../utils/helpers';
+import { formatDateTime, formatCurrency, toLocalDateString } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -44,12 +44,13 @@ const Dashboard = () => {
   const theme = useTheme();
   const { t } = useTranslation('dashboard');
   const { isAdmin } = useAuth();
-  const today = new Date().toISOString().split('T')[0];
+  // Local calendar day, NOT UTC: the server stores sale dates in local time, so
+  // an ISO/UTC "today" puts pre-dawn Myanmar/Thailand sales on yesterday.
+  const today = toLocalDateString(new Date());
 
   const [period, setPeriod] = useState('today');
   const [dateRange, setDateRange] = useState(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return { startDate: today, endDate: today };
+    return { startDate: toLocalDateString(new Date()), endDate: toLocalDateString(new Date()) };
   });
 
   const handlePeriodChange = (newPeriod, startDate, endDate) => {
@@ -64,41 +65,44 @@ const Dashboard = () => {
   });
   const financialSummary = financialSummaryData?.data;
 
-  const { data: dailySalesData } = useQuery({
+  const { data: dailySalesData, isError: dailySalesError } = useQuery({
     queryKey: ['dailySales', today],
     queryFn: () => reportService.getDailySales(today),
   });
 
-  const { data: inventoryData } = useQuery({
+  const { data: inventoryData, isError: inventoryError } = useQuery({
     queryKey: ['inventoryReport'],
     queryFn: () => reportService.getInventoryReport(),
   });
 
-  const { data: recentSalesData } = useQuery({
+  const { data: recentSalesData, isError: recentSalesError } = useQuery({
     queryKey: ['recentSales'],
-    queryFn: () => saleService.getAll(0, 5, 'saleDate'),
+    queryFn: () => saleService.getAll(0, 5, 'saleDate', null, null, null, null, null, null, false),
   });
 
-  const { data: salesTrendData } = useQuery({
+  const { data: salesTrendData, isError: salesTrendError } = useQuery({
     queryKey: ['salesTrend', 7],
     queryFn: () => reportService.getSalesTrend(7),
   });
 
   // --- Advanced widgets ---
-  const { data: topProductsData } = useQuery({
+  const { data: topProductsData, isError: topProductsError } = useQuery({
     queryKey: ['dashboard-top-products', dateRange.startDate, dateRange.endDate],
     queryFn: () => reportService.getTopSellingProducts(5, dateRange.startDate, dateRange.endDate),
   });
 
-  const { data: movementStatsData } = useQuery({
+  const { data: movementStatsData, isError: movementStatsError } = useQuery({
     queryKey: ['dashboard-movement-stats', 14],
     queryFn: () => inventoryService.getMovementStats(14),
   });
 
-  const { data: invSummaryData } = useQuery({
+  const { data: invSummaryData, isError: invSummaryError } = useQuery({
     queryKey: ['inventory-summary'],
     queryFn: () => inventoryService.getSummary(),
   });
+
+  const hasFetchError = dailySalesError || inventoryError || recentSalesError ||
+    salesTrendError || topProductsError || movementStatsError || invSummaryError;
 
   const topProducts = topProductsData?.data || [];
   const movementStats = movementStatsData?.data || null;
@@ -121,6 +125,11 @@ const Dashboard = () => {
 
   return (
     <Box>
+      {hasFetchError && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          {t('load_failed')}
+        </Alert>
+      )}
       <SetupChecklist />
 
       <Grid container spacing={3}>
@@ -145,7 +154,7 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={3}>
           <StatCard
             title={t('sales_this_period')}
-            value={dailySales.totalTransactions || 0}
+            value={dailySalesError ? '—' : (dailySales.totalTransactions || 0)}
             icon={<ShoppingCart />}
             color="primary.main"
             onClick={() => navigate(`/sales?range=${period}`)}
@@ -154,7 +163,7 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={4}>
           <StatCard
             title={t('products_in_stock')}
-            value={inventory.totalProducts || 0}
+            value={inventoryError ? '—' : (inventory.totalProducts || 0)}
             icon={<Inventory />}
             color="info.main"
             onClick={() => navigate('/products')}
@@ -163,7 +172,7 @@ const Dashboard = () => {
         <Grid item xs={12} sm={6} md={5}>
           <StatCard
             title={t('low_stock_alerts')}
-            value={inventory.lowStockProductsCount || 0}
+            value={inventoryError ? '—' : (inventory.lowStockProductsCount || 0)}
             icon={<TrendingUp />}
             color="warning.main"
             onClick={() => navigate('/products?view=low-stock')}

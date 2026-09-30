@@ -81,6 +81,7 @@ const POS = () => {
 
   const [page, setPage] = useState(0);
   const pageSize = 12;
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
 
   const [cart, setCart] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,7 +143,7 @@ const POS = () => {
 
   // Fetch products
 
-  const { data: productsData, isLoading } = useQuery({
+  const { data: productsData, isLoading, isError: productsError } = useQuery({
     queryKey: ['products-pos', page],
     queryFn: () => productService.getAll(page, pageSize),
     keepPreviousData: true,
@@ -151,6 +152,17 @@ const POS = () => {
   });
   const products = productsData?.data?.content || [];
   const totalPages = productsData?.data?.page?.totalPages || 0;
+
+  // Search runs on the SERVER across the whole catalog (not just the current
+  // page of 12), so scanning items or typing a barcode finds any product.
+  const { data: searchData, isFetching: searchFetching } = useQuery({
+    queryKey: ['products-pos-search', debouncedSearchQuery],
+    queryFn: () => productService.search(debouncedSearchQuery.trim(), 0, 300),
+    enabled: debouncedSearchQuery.trim().length > 0,
+    keepPreviousData: true,
+    staleTime: 30_000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
     if (!draftId || loadedDraftId === draftId) return;
@@ -210,9 +222,13 @@ const POS = () => {
   const categories = useMemo(() => categoriesData?.data?.content || [], [categoriesData]);
 
   const normalizedSearch = searchQuery.trim().toLowerCase();
+  const searchActive = normalizedSearch.length > 0;
+  // While typing a search we show the server-side results (whole catalog);
+  // otherwise the current page, still filtered by category.
+  const baseProducts = searchActive ? (searchData?.data?.content || []) : products;
 
   const filteredProducts = useMemo(() => {
-    return products.filter((p) => {
+    return baseProducts.filter((p) => {
       const matchesSearch = !normalizedSearch ||
         p.name?.toLowerCase().includes(normalizedSearch) ||
         p.sku?.toLowerCase().includes(normalizedSearch);
@@ -220,7 +236,24 @@ const POS = () => {
       const matchesCategory = !selectedCategory || String(p.categoryId) === String(selectedCategory);
       return matchesSearch && matchesCategory;
     });
-  }, [products, normalizedSearch, selectedCategory]);
+  }, [baseProducts, normalizedSearch, selectedCategory]);
+
+  // Enter = barcode workflow: an exact SKU match (or a single search result) is
+  // added straight to the cart and the search clears.
+  // eslint-disable-next-line no-use-before-define
+  const handleSearchEnter = () => {
+    if (!searchActive) return;
+    const results = searchData?.data?.content || [];
+    const q = normalizedSearch;
+    const exactSku = results.find((p) => p.sku && p.sku.toLowerCase() === q && p.stockQuantity > 0);
+    const target = exactSku || (results.length === 1 && results[0].stockQuantity > 0 ? results[0] : null);
+    if (target) {
+      addToCart(target);
+      setSearchQuery('');
+      setDebouncedSearchQuery('');
+      setError('');
+    }
+  };
 
 
   const addToCart = (product) => {
@@ -491,10 +524,18 @@ const POS = () => {
   });
 
   const handleSaveDraft = () => {
-    if (cart.length === 0) {
+    const saved = persistDraft({ notify: true });
+    if (!saved) {
       setError(t('empty_cart'));
       return;
     }
+    clearCart();
+  };
+
+  // Writes the current cart to the drafts store. Shared by the manual button
+  // and the session-expiry listener so an expiring session never loses a sale.
+  const persistDraft = ({ notify = true } = {}) => {
+    if (cart.length === 0) return false;
 
     const allDrafts = readDrafts();
     const draftItems = cart.map((item) => ({
@@ -527,9 +568,20 @@ const POS = () => {
     }
 
     writeDrafts(allDrafts);
-    notifySuccess(t('draft_saved'));
-    clearCart();
+    if (notify) notifySuccess(t('draft_saved'));
+    return true;
   };
+
+  // When the session expires mid-sale, apiClient fires this event before the
+  // redirect; save the cart as a draft so nothing is lost.
+  useEffect(() => {
+    const onSessionExpired = () => {
+      persistDraft({ notify: false });
+    };
+    window.addEventListener('app:session-expired', onSessionExpired);
+    return () => window.removeEventListener('app:session-expired', onSessionExpired);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart, loadedDraftId, registeredMode, selectedCustomer]);
 
   const handleOrderClick = () => {
     if (cart.length === 0) {
@@ -564,10 +616,23 @@ const POS = () => {
     return () => clearTimeout(timer);
   }, [customerSearch]);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearchQuery(searchQuery), 250);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (searchQuery.trim() === '') setPage(0);
+  }, [searchQuery]);
+
 
   const handleCheckout = () => {
     if (cart.length === 0) {
       setError(t('empty_cart'));
+      return;
+    }
+    // Guard against double-clicks: never run a second verify while one is pending.
+    if (verifyCartMutation.isPending || createSaleMutation.isPending) {
       return;
     }
 
@@ -593,6 +658,11 @@ const POS = () => {
       }
     } else if (!cashAmount || parseFloat(cashAmount) <= 0) {
       setError(t('enter_cash_amount'));
+      return;
+    } else if (parseFloat(cashAmount) < displayTotal) {
+      // Matches the confirmation dialog guard — the "Checkout & Print" path
+      // skips the dialog, so enforce the same under-tender rule here.
+      setError(t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) }));
       return;
     }
     verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
@@ -637,6 +707,9 @@ const POS = () => {
   }
 
   const confirmCheckout = () => {
+    if (createSaleMutation.isPending || verifyCartMutation.isPending) {
+      return;
+    }
     createSaleMutation.mutate(buildSaleData());
   }
 
@@ -759,6 +832,10 @@ const POS = () => {
     handleCheckout();
   };
 
+  // Disable the checkout buttons while a sale is being verified or created so a
+  // double-click can never post two sales.
+  const checkoutPending = createSaleMutation.isPending || verifyCartMutation.isPending;
+
   async function handlePrintAfterCheckout(sale) {
     if (!sale?.invoiceNumber) return;
     await handleDirectPrint(sale);
@@ -793,17 +870,32 @@ const POS = () => {
         </Alert>
       )}
 
+      {productsError && !searchActive && (
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {t('failed_to_load_products')}
+        </Alert>
+      )}
+
       <Grid container spacing={2}>
         {/* Products Section */}
         <Grid item xs={12} md={8}>
           <Paper sx={{ p: 2, mb: 2 }}>
             <TextField
               fullWidth
-              placeholder={t('search_placeholder')}
+              placeholder={searchActive ? t('barcode_search_placeholder') : t('search_placeholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSearchEnter();
+                }
+              }}
               InputProps={{
                 startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+                endAdornment: searchActive && searchFetching ? (
+                  <CircularProgress size={16} sx={{ color: 'text.secondary' }} />
+                ) : undefined,
                 sx: { borderRadius: 2, bgcolor: 'background.default' },
               }}
               sx={{ mb: 2, '& fieldset': { border: 'none' } }}
@@ -897,20 +989,28 @@ const POS = () => {
               })}
             </Grid>
           </Paper>
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              mt: 2,
-            }}
-          >
-            <Pagination
-                page={page + 1}
-                count={totalPages}
-                color="primary"
-                onChange={(e, value) => setPage(value - 1)}
-            />
-          </Box>
+          {searchActive ? (
+            filteredProducts.length === 0 && (
+              <Typography align="center" color="text.secondary" sx={{ py: 4 }}>
+                {t('no_products_found')}
+              </Typography>
+            )
+          ) : (
+            <Box
+              sx={{
+                display: 'flex',
+                justifyContent: 'center',
+                mt: 2,
+              }}
+            >
+              <Pagination
+                  page={page + 1}
+                  count={totalPages}
+                  color="primary"
+                  onChange={(e, value) => setPage(value - 1)}
+              />
+            </Box>
+          )}
         </Grid>
 
         {/* Cart Section */}
@@ -1221,18 +1321,18 @@ const POS = () => {
                 variant="contained"
                 size="large"
                 onClick={handleCheckoutAndPrint}
-                disabled={cart.length === 0}
-                startIcon={<DirectPrintIcon />}
+                disabled={cart.length === 0 || checkoutPending}
+                startIcon={checkoutPending ? <CircularProgress size={20} color="inherit" /> : <DirectPrintIcon />}
                 sx={{ py: 1.75, fontSize: '1.05rem', mt: 1, bgcolor: 'primary.main' }}
               >
-                {saleType === 'CREDIT' ? t('complete_credit_sale_print') : t('checkout_and_print')}
+                {checkoutPending ? t('processing') : (saleType === 'CREDIT' ? t('complete_credit_sale_print') : t('checkout_and_print'))}
               </Button>
               <Button
                 fullWidth
                 variant="contained"
                 size="large"
                 onClick={() => { setPrintAfterCheckout(false); handleCheckout(); }}
-                disabled={cart.length === 0}
+                disabled={cart.length === 0 || checkoutPending}
                 sx={{
                   py: 1.75,
                   fontSize: '1.05rem',
@@ -1242,7 +1342,7 @@ const POS = () => {
                   '&:hover': { bgcolor: 'rgba(43,110,79,0.2)' },
                 }}
               >
-                {saleType === 'CREDIT' ? t('complete_credit_sale') : t('checkout')}
+                {checkoutPending ? t('processing') : (saleType === 'CREDIT' ? t('complete_credit_sale') : t('checkout'))}
               </Button>
               <Button
                 fullWidth
@@ -1316,9 +1416,9 @@ const POS = () => {
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
-            disabled={saleType === 'CREDIT' ? false : parseFloat(cashAmount) < displayTotal}
+            disabled={checkoutPending || (saleType === 'CREDIT' ? false : parseFloat(cashAmount) < displayTotal)}
           >
-            {printAfterCheckout ? t('confirm_and_print') : t('confirm')}
+            {checkoutPending ? t('processing') : (printAfterCheckout ? t('confirm_and_print') : t('confirm'))}
           </Button>
         </DialogActions>
       </Dialog>

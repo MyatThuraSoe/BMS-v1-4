@@ -99,9 +99,18 @@ public class ProductController {
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> searchProducts(
             @RequestParam String keyword,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        Pageable pageable = PageRequest.of(page, size, Sort.by("name"));
-        Page<ProductResponse> products = productService.searchProducts(keyword, pageable);
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Long categoryId,
+            @RequestParam(required = false) String view) {
+        Pageable pageable;
+        if ("most-sold".equals(view) || "least-sold".equals(view)) {
+            pageable = PageRequest.of(page, size);
+        } else if ("low-stock".equals(view)) {
+            pageable = PageRequest.of(page, size, Sort.by("stockQuantity"));
+        } else {
+            pageable = PageRequest.of(page, size, Sort.by("name"));
+        }
+        Page<ProductResponse> products = productService.searchProducts(keyword, categoryId, view, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Products searched successfully", products));
     }
 

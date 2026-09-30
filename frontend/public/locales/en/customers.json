@@ -15,6 +15,8 @@
   "actions": "Actions",
   "loading": "Loading...",
   "no_customers_found": "No customers found",
+  "failed_to_load_customers": "Failed to load customers",
+  "failed_to_delete": "Failed to delete. The customer may have sales or payments history.",
   "quick_add": "Quick Add",
   "complete_profile": "Complete Profile",
   "confirm_delete": "Confirm Delete",

@@ -17,6 +17,7 @@ public class CashShiftResponse {
     private String status;
     private String notes;
     private BigDecimal cashSalesTotal;
+    private BigDecimal returnsTotal;
     private List<SaleReference> sales;
 
     public Long getId() { return id; }
@@ -54,6 +55,9 @@ public class CashShiftResponse {
 
     public BigDecimal getCashSalesTotal() { return cashSalesTotal; }
     public void setCashSalesTotal(BigDecimal cashSalesTotal) { this.cashSalesTotal = cashSalesTotal; }
+
+    public BigDecimal getReturnsTotal() { return returnsTotal; }
+    public void setReturnsTotal(BigDecimal returnsTotal) { this.returnsTotal = returnsTotal; }
 
     public List<SaleReference> getSales() { return sales; }
     public void setSales(List<SaleReference> sales) { this.sales = sales; }

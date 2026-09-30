@@ -33,8 +33,12 @@
   "made_in": "Proudly made in Myanmar 🇲🇲",
   "license_updated": "✅ License updated!",
   "invalid_key": "Invalid key for this machine",
-  "days_left_warning": "{{count}} days left ⚠️"
-,
+  "days_left_warning": "{{count}} days left ⚠️",
+  "reason_no_license": "No license key is installed on this computer. Paste the key you received from MegaCode to unlock.",
+  "reason_wrong_machine": "This license key is bound to a different computer. Contact MegaCode to transfer it.",
+  "reason_expired": "The installed license has expired. Paste a renewed key to unlock again.",
+  "reason_corrupt": "The installed license file could not be verified. Contact MegaCode and re-install your key.",
+  "reason_invalid": "The key entered did not verify. Check that you pasted the full key (including both parts) from MegaCode.",
   "phone_access_title": "Open LumiPOS on your phone / tablet",
   "phone_access_desc": "Make sure both devices are on the same Wi-Fi, then scan this code with your phone camera.",
   "phone_access_qr_alt": "QR"

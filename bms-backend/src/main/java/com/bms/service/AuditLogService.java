@@ -4,6 +4,7 @@ import com.bms.entity.AuditLog;
 import com.bms.repository.AuditLogRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -25,5 +26,10 @@ public class AuditLogService {
         auditLog.setTimestamp(LocalDateTime.now());
 
         auditLogRepository.save(auditLog);
+    }
+
+    @Transactional
+    public int deleteLogsOlderThan(LocalDateTime cutoff) {
+        return auditLogRepository.deleteByTimestampBefore(cutoff);
     }
 }

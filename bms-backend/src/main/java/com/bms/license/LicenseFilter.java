@@ -23,10 +23,20 @@ public class LicenseFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         String path = request.getRequestURI();
 
-        // Allow static files, license endpoints, and first-admin setup
+        // Allow static files, license endpoints, the first-admin registration (which
+        // is the ONLY self-service path on a brand-new, unlicensed install — the
+        // comment below documents that /api/setup/** was exempted here but has no
+        // controller, and registerFirstAdmin() guards itself with count()>0).
+        //
+        // /api/data/export is the "escape hatch" for a lost/expired license: an
+        // installed ADMIN can still pull their JSON backup. It is safe to exempt
+        // from the license gate because the endpoint itself still requires a valid
+        // ADMIN JWT via @PreAuthorize("hasRole('ADMIN')").
         boolean open = !path.startsWith("/api/")
                 || path.startsWith("/api/license")
-                || path.startsWith("/api/setup");
+                || path.startsWith("/api/setup")
+                || path.startsWith("/api/auth/register-first-admin")
+                || path.equals("/api/data/export");
 
         if (open || licenseService.isLicensed()) {
             chain.doFilter(request, response);

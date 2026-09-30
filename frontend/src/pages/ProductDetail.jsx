@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box,
   Typography,
@@ -35,6 +35,7 @@ const ProductDetail = () => {
   const { t } = useTranslation('inventory');
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [priceHistoryPage, setPriceHistoryPage] = useState(0);
   const [priceHistoryRowsPerPage, setPriceHistoryRowsPerPage] = useState(10);
 
@@ -162,14 +163,14 @@ const ProductDetail = () => {
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', mb: 3, gap: 2 }}>
-        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/products')}>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(`/products${location.search}`)}>
           {t('back_to_products')}
         </Button>
         <Box sx={{ flexGrow: 1 }} />
         <Button
           variant="contained"
           startIcon={<EditIcon />}
-          onClick={() => navigate(`/products/${id}/edit`)}
+          onClick={() => navigate(`/products/${id}/edit${location.search}`)}
         >
           {t('edit_product')}
         </Button>

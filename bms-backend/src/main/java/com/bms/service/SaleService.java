@@ -75,7 +75,7 @@ public class SaleService {
         return saleRepository.findNonVoidedSales(pageable);
     }
 
-    public Page<Sale> getFilteredSales(String range, LocalDate startDate, LocalDate endDate, Long customerId, String invoice, Long cashierId, Pageable pageable) {
+    public Page<Sale> getFilteredSales(String range, LocalDate startDate, LocalDate endDate, Long customerId, String invoice, Long cashierId, Boolean includeVoided, Pageable pageable) {
         LocalDate now = LocalDate.now();
         if (range != null) {
             switch (range) {
@@ -116,6 +116,7 @@ public class SaleService {
         LocalDateTime endDateTime = endDate != null ? endDate.plusDays(1).atStartOfDay() : null;
 
         return saleRepository.findFilteredSales(
+            includeVoided == null ? true : includeVoided,
             startDateTime, endDateTime, customerId,
             (invoice != null && !invoice.isBlank()) ? invoice : null,
             cashierId,

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   Box, Typography, Grid, Card, CardContent, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Chip, CircularProgress, Divider
 } from '@mui/material';
@@ -14,6 +14,7 @@ import CustomerSpendingHeatmap from '../components/CustomerSpendingHeatmap';
 const CustomerDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation('customers');
 
   const { data: customerData, isLoading: customerLoading } = useQuery({
@@ -68,7 +69,7 @@ const CustomerDetails = () => {
     <Box sx={{ p: 3 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap', minWidth: 0 }}>
-          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate('/customers')}>
+          <Button startIcon={<ArrowBackIcon />} onClick={() => navigate(`/customers${location.search}`)}>
             {t('back')}
           </Button>
           <Typography variant="h4" sx={{ minWidth: 0 }}>
@@ -76,7 +77,7 @@ const CustomerDetails = () => {
             {customer.isQuickAdd && <Chip label={t('quick_add')} size="small" color="warning" sx={{ ml: 1 }} />}
           </Typography>
         </Box>
-        <Button variant="contained" startIcon={<EditIcon />} onClick={() => navigate(`/customers/${id}/edit`)}>
+        <Button variant="contained" startIcon={<EditIcon />} onClick={() => navigate(`/customers/${id}/edit${location.search}`)}>
           {t('edit_customer')}
         </Button>
       </Box>

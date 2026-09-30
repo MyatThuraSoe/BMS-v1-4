@@ -105,6 +105,14 @@ public class UserService implements UserDetailsService {
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
 
+        // Guard: the LAST active admin must never be demoted — that would lock
+        // the store out permanently with no one left to promote someone back.
+        boolean targetIsAdmin = isAdmin(user);
+        boolean newRoleIsAdmin = Role.RoleName.ROLE_ADMIN.equals(role.getName());
+        if (targetIsAdmin && !newRoleIsAdmin && isLastActiveAdmin()) {
+            throw new com.bms.exception.BusinessException("auth.lastadmin.demote");
+        }
+
         String oldValues = user.toString();
 
         user.setUsername(request.getUsername());
@@ -123,6 +131,11 @@ public class UserService implements UserDetailsService {
                     && user.getUsername().equals(currentUsername())) {
                 throw new com.bms.exception.BusinessException("auth.user.self.deactivate");
             }
+            // Guard: the LAST active admin cannot be deactivated either — even by
+            // an admin colleague, since the result would be a permanent lockout.
+            if (Boolean.FALSE.equals(request.getIsActive()) && targetIsAdmin && isLastActiveAdmin()) {
+                throw new com.bms.exception.BusinessException("auth.lastadmin.deactivate");
+            }
             user.setIsActive(request.getIsActive());
         }
 
@@ -139,6 +152,14 @@ public class UserService implements UserDetailsService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
+        // Guard: the LAST active admin must never be deleted.
+        if (isAdmin(user) && isLastActiveAdmin()) {
+            throw new com.bms.exception.BusinessException("auth.lastadmin.delete");
+        }
+
+        // Free the unique username/email values so a new account can reuse them after this soft delete.
+        user.setUsername(com.bms.util.SoftDeleteKeys.release(user.getUsername(), user.getId(), 255));
+        user.setEmail(com.bms.util.SoftDeleteKeys.release(user.getEmail(), user.getId(), 255));
         user.setDeletedAt(java.time.LocalDateTime.now());
         user.setIsActive(false);
         userRepository.save(user);
@@ -156,6 +177,15 @@ public class UserService implements UserDetailsService {
     private String currentUsername() {
         var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
         return auth != null ? auth.getName() : null;
+    }
+
+    private boolean isAdmin(User user) {
+        return user.getRole() != null && Role.RoleName.ROLE_ADMIN.equals(user.getRole().getName());
+    }
+
+    /** True when the given admin is the only active administrator left. */
+    private boolean isLastActiveAdmin() {
+        return userRepository.countActiveByRole(Role.RoleName.ROLE_ADMIN) <= 1;
     }
 
     public User findByUsername(String username) {

@@ -2,6 +2,7 @@ package com.bms.controller;
 
 import com.bms.dto.response.ApiResponse;
 import com.bms.entity.AuditLog;
+import com.bms.service.AuditLogService;
 import com.bms.service.AuditLogViewService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -14,6 +15,8 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/audit-logs")
@@ -21,6 +24,9 @@ public class AuditLogController {
 
     @Autowired
     private AuditLogViewService auditLogViewService;
+
+    @Autowired
+    private AuditLogService auditLogService;
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
@@ -93,5 +99,18 @@ public class AuditLogController {
         Pageable pageable = PageRequest.of(page, size, Sort.by("timestamp").descending());
         Page<AuditLog> logs = auditLogViewService.searchAuditLogs(keyword, startDate, endDate, pageable);
         return ResponseEntity.ok(new ApiResponse<>(true, "Audit logs searched successfully", logs));
+    }
+
+    @DeleteMapping("/older-than")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> deleteAuditLogsOlderThan(
+            @RequestParam(defaultValue = "1") int olderThanYears) {
+        LocalDateTime cutoff = LocalDateTime.now().minusYears(olderThanYears);
+        int deleted = auditLogService.deleteLogsOlderThan(cutoff);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("deletedCount", deleted);
+        result.put("cutoffDate", cutoff.toLocalDate().toString());
+        return ResponseEntity.ok(new ApiResponse<>(true, "Old audit logs deleted successfully", result));
     }
 }

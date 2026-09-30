@@ -104,10 +104,7 @@ const Categories = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Typography variant="h5" sx={{ color: 'primary.main' }}>
-          {t('categories')}
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         {isManager() && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={() => navigate('/categories/new')}>
             {t('add_category')}
