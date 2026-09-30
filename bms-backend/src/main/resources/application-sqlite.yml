@@ -15,6 +15,12 @@ spring:
     #   journal_mode=WAL  -> read/write concurrency without full DB lock
     #   busy_timeout=10000 -> wait up to 10s instead of failing "database is locked"
     #   synchronous=NORMAL -> fast fsync policy (durable enough for POS data)
+    #
+    # Path: %LOCALAPPDATA%\LumiPOS\data\lumipos.db (per-user, hidden, writable
+    # without admin). SqliteDataDirMigration (META-INF/spring.factories) creates
+    # that directory and copies an existing C:\LumiPOS\lumipos.db into it on the
+    # first start after upgrading, then overrides this value. The literal below
+    # is the pre-migration location and only survives if no legacy file exists.
     url: "jdbc:sqlite:C:/LumiPOS/lumipos.db?journal_mode=WAL&busy_timeout=10000&synchronous=NORMAL"
     driver-class-name: org.sqlite.JDBC
     username:
@@ -70,10 +76,16 @@ google:
     frontend-redirect-base: http://127.0.0.1:17234
 
 app:
+  # Receipt/product images stay in C:\LumiPOS\uploads: they already exist there
+  # on every current install, and moving them would break every saved image.
+  # Only the database moves to the per-user data directory.
   upload-dir: C:/LumiPOS/uploads
   open-browser: false
 
 lumipos:
+  # Overrides the per-user data directory for the SQLite database.
+  # Default: %LOCALAPPDATA%\LumiPOS\data (see SqliteDataDirMigration).
+  data-dir: ${LUMIPOS_DATA_DIR:}
   migration:
     # One-time MySQL -> SQLite data copy. Set LUMIPOS_MIGRATE_MYSQL_TO_SQLITE=1
     # (Electron passes -Dlumipos.migration.mysql-to-sqlite=true) to trigger it.

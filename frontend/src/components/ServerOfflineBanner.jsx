@@ -17,7 +17,11 @@ function formatDownFor(downSince) {
 // Shown whenever the browser cannot reach the LumiPOS server. There is no close
 // button on purpose: a cashier must not be able to dismiss the one warning
 // that explains why the sale screen is not working.
-export default function ServerOfflineBanner() {
+//
+// variant="floating" renders a fixed overlay at the app root (used on
+// Login / Setup / Activation, which sit outside DashboardLayout and have no
+// content area to push down). Default renders inline above page content.
+export default function ServerOfflineBanner({ variant = 'inline' }) {
   const { t } = useTranslation();
   const { isOnline, checking, downSince } = useServerHeartbeat();
   const [elapsed, setElapsed] = useState(null);
@@ -34,17 +38,28 @@ export default function ServerOfflineBanner() {
 
   if (isOnline) return null;
 
+  const floating = variant === 'floating';
+
   return (
     <Alert
       severity="error"
       icon={<WifiOffIcon />}
-      sx={{
-        mb: 2,
-        alignItems: 'center',
-        border: 2,
-        borderColor: 'error.main',
-        '& .MuiAlert-message': { width: '100%' }
-      }}
+      sx={
+        floating
+          ? {
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              zIndex: (theme) => theme.zIndex.snackbar + 1,
+              borderRadius: 0,
+              borderBottom: 2,
+              borderColor: 'error.main',
+              justifyContent: 'center',
+              '& .MuiAlert-message': { width: '100%', maxWidth: 900 }
+            }
+          : { mb: 2, alignItems: 'center', border: 2, borderColor: 'error.main', '& .MuiAlert-message': { width: '100%' } }
+      }
     >
       <Box sx={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 1.5 }}>
         <Box sx={{ flexGrow: 1, minWidth: 220 }}>
