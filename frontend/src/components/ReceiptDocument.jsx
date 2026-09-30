@@ -253,7 +253,7 @@ const ReceiptDocument = ({
                   {item.productName}
                 </span>
                 <span style={{ flexShrink: 0, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                  {formatCurrency(itemTotal)}
+                  {formatAmountPlain(itemTotal)}
                 </span>
               </Box>
               <Box sx={{ pl: '8px', color: '#555' }}>
@@ -462,7 +462,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
       <div style="margin-bottom:4px;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;">
           <span style="flex:1;min-width:0;margin-right:8px;overflow-wrap:anywhere;white-space:normal;">${escHtml(item.productName)}</span>
-          <span style="flex-shrink:0;font-weight:600;white-space:nowrap;">${escHtml(formatCurrency(itemTotal))}</span>
+          <span style="flex-shrink:0;font-weight:600;white-space:nowrap;">${escHtml(formatAmountPlain(itemTotal))}</span>
         </div>
         <div style="padding-left:8px;color:#555;">${item.quantity} ${escHtml(item.unit || '')} x ${escHtml(formatAmountPlain(item.unitPrice || 0))}</div>
         ${refundedHtml}

@@ -88,7 +88,7 @@ public class ReceiptLayoutBuilder {
         // Items use a flexible two-line layout: name and total, then quantity x unit price.
         for (var item : receipt.getItems()) {
             String name = item.getProductName() != null ? item.getProductName() : "";
-            String total = formatCurrency(item.getSubtotal());
+            String total = formatPlain(item.getSubtotal());
             int nameW = Math.max(1, lineWidth - total.length() - 1);
             List<String> nameLines = wrapText(name, nameW);
             addLine(padRight(nameLines.get(0), nameW) + " " + total);
@@ -114,12 +114,19 @@ public class ReceiptLayoutBuilder {
             addTotalLine("Subtotal", subtotal);
         }
 
-        if (showTaxLine && receipt.getTaxAmount().compareTo(BigDecimal.ZERO) > 0) {
-            addTotalLine("Tax", receipt.getTaxAmount());
+        // taxAmount and discountAmount are null on receipts that never recorded
+        // them (a tax-exempt shop, or a sale created before those fields
+        // existed). They are guarded like subtotal and changeGiven because a null
+        // here aborts printing with an NPE and the shop gets no receipt at all.
+        BigDecimal taxAmount = receipt.getTaxAmount() == null ? BigDecimal.ZERO : receipt.getTaxAmount();
+        if (showTaxLine && taxAmount.compareTo(BigDecimal.ZERO) > 0) {
+            addTotalLine("Tax", taxAmount);
         }
 
-        if (showDiscountLine && receipt.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
-            addTotalLine("Discount", receipt.getDiscountAmount().negate());
+        BigDecimal discountAmount = receipt.getDiscountAmount() == null
+                ? BigDecimal.ZERO : receipt.getDiscountAmount();
+        if (showDiscountLine && discountAmount.compareTo(BigDecimal.ZERO) > 0) {
+            addTotalLine("Discount", discountAmount.negate());
         }
 
         // Main total (bold for visual emphasis in other formats)

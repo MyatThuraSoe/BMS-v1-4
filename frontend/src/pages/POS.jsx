@@ -47,7 +47,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
-import { formatCurrency, formatReceiptDateTime } from '../utils/helpers';
+import { formatAmountPlain, formatCurrency, formatReceiptDateTime } from '../utils/helpers';
 
 import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
@@ -1098,11 +1098,11 @@ const POS = () => {
                           </TableCell>
 
                           <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem' }}>
-                              {formatCurrency(item.price)}
+                              {formatAmountPlain(item.price)}
                           </TableCell>
 
                           <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem', fontWeight: 600 }}>
-                              {formatCurrency(item.price * (parseInt(item.quantity) || 0))}
+                              {formatAmountPlain(item.price * (parseInt(item.quantity) || 0))}
                           </TableCell>
 
                           <TableCell align="center">
