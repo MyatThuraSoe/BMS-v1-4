@@ -4,7 +4,6 @@ import com.bms.service.GoogleDriveService.DriveBackupFile;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import javax.sql.DataSource;
@@ -20,6 +19,7 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
@@ -54,6 +54,7 @@ public class BackupRestoreService {
 
     private static final Logger log = LoggerFactory.getLogger(BackupRestoreService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MAX_RETAINED_JOBS = 20;
 
     /** Staged raw database, applied by SqliteDataDirMigration on the next start. */
     public static final String PENDING_RESTORE_FILE = "lumipos-restored.db";
@@ -63,9 +64,6 @@ public class BackupRestoreService {
     private final DataImportService dataImportService;
     private final DataSource dataSource;
     private final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Value("${app.upload-dir:C:/LumiPOS/uploads}")
-    private String uploadDir;
 
     private final Map<String, RestoreJob> jobs = new ConcurrentHashMap<>();
     private final ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
@@ -106,6 +104,7 @@ public class BackupRestoreService {
         RestoreJob job = new RestoreJob(jobId, "json-restore", "RUNNING", 0,
                 "Starting restore...", null, Instant.now().toString(), null);
         jobs.put(jobId, job);
+        evictOldJobs();
 
         executor.submit(() -> runJsonRestore(jobId, fileId, sizeBytes, mode));
         return jobId;
@@ -116,6 +115,7 @@ public class BackupRestoreService {
         RestoreJob job = new RestoreJob(jobId, "db-snapshot", "RUNNING", 0,
                 "Preparing database snapshot...", null, Instant.now().toString(), null);
         jobs.put(jobId, job);
+        evictOldJobs();
 
         executor.submit(() -> runDatabaseSnapshot(jobId));
         return jobId;
@@ -233,6 +233,7 @@ public class BackupRestoreService {
         String jobId = newJobId();
         jobs.put(jobId, new RestoreJob(jobId, "db-restore", "RUNNING", 0,
                 "Starting database restore...", null, Instant.now().toString(), null));
+        evictOldJobs();
 
         executor.submit(() -> {
             Path staged = null;
@@ -302,6 +303,22 @@ public class BackupRestoreService {
         byte[] bytes = new byte[8];
         RANDOM.nextBytes(bytes);
         return HexFormat.of().formatHex(bytes);
+    }
+
+    /**
+     * Caps the in-memory job history. Without this a shop that snapshots daily
+     * accumulates a RestoreJob per run for the lifetime of the process; the
+     * results are only ever needed while the settings page is open.
+     */
+    private void evictOldJobs() {
+        if (jobs.size() <= MAX_RETAINED_JOBS) {
+            return;
+        }
+        jobs.entrySet().stream()
+                .sorted(Comparator.comparing(e -> e.getValue().startedAt()))
+                .limit(jobs.size() - MAX_RETAINED_JOBS)
+                .map(Map.Entry::getKey)
+                .forEach(jobs::remove);
     }
 
     private void update(String jobId, int percent, String step) {

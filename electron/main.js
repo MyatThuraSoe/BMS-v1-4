@@ -17,10 +17,14 @@ let serverRestartAttempts = 0;
 let powerBlockerIds = [];
 let healthWatchdogTimer = null;
 let healthWatchdogFailures = 0;
-let serverConfirmedUp = false;
+let serverStartedAt = 0;
 const HEALTH_WATCHDOG_INTERVAL_MS = 10000;
 const HEALTH_WATCHDOG_TIMEOUT_MS = 4000;
 const HEALTH_WATCHDOG_MAX_FAILURES = 6;
+// A Spring Boot start on a slow shop PC can take 30s+. Recycling a server that
+// is merely still booting would turn one crash into a kill loop, so failures
+// are not counted until the process has had time to come up.
+const HEALTH_STARTUP_GRACE_MS = 90000;
 
 // Load secrets from a gitignored .env file (real credentials live here, not in
 // source or the JAR). Values are exported into process.env so the spawned Java
@@ -196,6 +200,7 @@ function startServer() {
     });
     // ✅ Store the PID for later
     serverPid = serverProcess.pid;
+    serverStartedAt = Date.now();
     console.log(`[Server] Started Java process with PID: ${serverPid}`);
 
     // Log server output (useful for debugging)
@@ -278,20 +283,32 @@ function markServerHealthy() {
         console.log('[Server] Healthy again - restart backoff reset');
     }
     serverRestartAttempts = 0;
-    serverConfirmedUp = true;
     healthWatchdogFailures = 0;
 }
 
 function startHealthWatchdog() {
     stopHealthWatchdog();
     healthWatchdogTimer = setInterval(() => {
-        if (isQuitting || !serverConfirmedUp || !serverProcess) {
+        if (isQuitting || !serverProcess) {
+            return;
+        }
+        // The startup grace window is what protects a booting server, not a
+        // "confirmed up" flag: the restart path never runs waitForServer, so a
+        // flag set only at startup would leave the watchdog disarmed forever
+        // after the first crash - exactly when it is needed most.
+        if (Date.now() - serverStartedAt < HEALTH_STARTUP_GRACE_MS) {
+            healthWatchdogFailures = 0;
             return;
         }
 
         const req = http.get(`${APP_URL}/api/health`, (res) => {
             res.resume();
-            healthWatchdogFailures = 0;
+            // A successful probe is proof the server came back, so this is also
+            // where the restart backoff is cleared. Without it the counter would
+            // only ever be reset at startup, and a shop that had 5 unrelated
+            // crashes over a month would be told the server "could not be
+            // restarted" while it was running perfectly well.
+            markServerHealthy();
         });
 
         const onFailure = () => {
