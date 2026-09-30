@@ -41,6 +41,44 @@ export const backupService = {
   }
 };
 
+export const backupRestoreService = {
+  /** Backups sitting in the connected Google Drive folder, newest first. */
+  listDriveFiles: async () => {
+    const response = await apiClient.get('/backups/drive/files');
+    return response.data.data;
+  },
+
+  /** Restores a JSON backup. Returns a job id to poll. */
+  restoreFromDrive: async (fileId, sizeBytes, mode) => {
+    const response = await apiClient.post('/backups/drive/restore', { fileId, sizeBytes, mode });
+    return response.data.data.jobId;
+  },
+
+  /**
+   * Downloads a raw database snapshot and stages it for the next start.
+   * The app must be restarted afterwards.
+   */
+  restoreDatabaseFromDrive: async (fileId, sizeBytes) => {
+    const response = await apiClient.post('/backups/drive/restore-database', { fileId, sizeBytes });
+    return response.data.data.jobId;
+  },
+
+  createDatabaseSnapshot: async () => {
+    const response = await apiClient.post('/backups/drive/snapshot');
+    return response.data.data.jobId;
+  },
+
+  getJob: async (jobId) => {
+    const response = await apiClient.get(`/backups/jobs/${jobId}`);
+    return response.data.data;
+  },
+
+  isRestorePending: async () => {
+    const response = await apiClient.get('/backups/restore-pending');
+    return response.data.data.pending;
+  }
+};
+
 export const googleDriveService = {
   getAuthUrl: () => apiClient.get('/backups/google/auth-url'),
   getStatus: () => apiClient.get('/backups/google/status'),

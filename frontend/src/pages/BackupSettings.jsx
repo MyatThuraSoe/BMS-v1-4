@@ -16,6 +16,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { backupService, googleDriveService } from '../api/services';
 import DataManagement from './DataManagement';
+import DriveRestoreCard from '../components/DriveRestoreCard';
 
 
 
@@ -380,6 +381,9 @@ const BackupSettings = () => {
           <DataManagement />
         </CardContent>
       </Card>
+
+      {/* Recover from Google Drive after data loss / new PC */}
+      <DriveRestoreCard isConnected={isConnected} />
 
       {/* Remote-admin guidance: Google returns to the server PC, not this device */}
       <Dialog open={Boolean(remoteAuth)} onClose={() => setRemoteAuth(null)} maxWidth="sm" fullWidth>

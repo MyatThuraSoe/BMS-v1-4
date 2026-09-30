@@ -15,6 +15,7 @@ import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -114,6 +115,73 @@ class SqliteDataDirMigrationTest {
                 assertTrue(rs.next());
                 assertEquals(2, rs.getInt(1), "both sales should survive, including the one only in the WAL");
             }
+        }
+    }
+
+    @Test
+    void pendingRestoreReplacesTheDatabaseAndKeepsASafetyCopy(@TempDir Path dataDir) throws Exception {
+        // Live database the shop is currently using.
+        Path target = dataDir.resolve(DB);
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + target);
+             Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE sale (id INTEGER PRIMARY KEY, invoice TEXT)");
+            s.execute("INSERT INTO sale (invoice) VALUES ('OLD-SALE')");
+        }
+
+        // Restore downloaded from Google Drive and staged by BackupRestoreService.
+        Path staged = dataDir.resolve("lumipos-restored.db");
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + staged);
+             Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE sale (id INTEGER PRIMARY KEY, invoice TEXT)");
+            s.execute("INSERT INTO sale (invoice) VALUES ('RESTORED-SALE')");
+        }
+        Files.writeString(dataDir.resolve(".lumipos-pending-restore"), "restored-from-drive\n");
+        // A stale sidecar must not be able to replay onto the new file.
+        Files.writeString(dataDir.resolve(DB + "-wal"), "stale");
+
+        new SqliteDataDirMigration()
+                .applyPendingRestore(dataDir, target);
+
+        assertTrue(Files.exists(dataDir.resolve(DB + ".pre-restore")),
+                "the database in use must be kept as a safety copy");
+        assertFalse(Files.exists(staged), "the staged file should be consumed");
+        assertFalse(Files.exists(dataDir.resolve(".lumipos-pending-restore")), "marker should be cleared");
+        assertFalse(Files.exists(dataDir.resolve(DB + "-wal")), "stale -wal must be removed");
+
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + target);
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT invoice FROM sale")) {
+            assertTrue(rs.next());
+            assertEquals("RESTORED-SALE", rs.getString(1), "the restored database should now be live");
+        }
+
+        // And the previous data is still recoverable.
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + dataDir.resolve(DB + ".pre-restore"));
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT invoice FROM sale")) {
+            assertTrue(rs.next());
+            assertEquals("OLD-SALE", rs.getString(1), "pre-restore copy must still hold the old data");
+        }
+    }
+
+    @Test
+    void noStagedRestoreLeavesTheDatabaseAlone(@TempDir Path dataDir) throws Exception {
+        Path target = dataDir.resolve(DB);
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + target);
+             Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE sale (id INTEGER PRIMARY KEY, invoice TEXT)");
+            s.execute("INSERT INTO sale (invoice) VALUES ('KEEP-ME')");
+        }
+
+        new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+
+        assertFalse(Files.exists(dataDir.resolve(DB + ".pre-restore")),
+                "nothing should be rewritten when no restore is staged");
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + target);
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT invoice FROM sale")) {
+            assertTrue(rs.next());
+            assertEquals("KEEP-ME", rs.getString(1));
         }
     }
 

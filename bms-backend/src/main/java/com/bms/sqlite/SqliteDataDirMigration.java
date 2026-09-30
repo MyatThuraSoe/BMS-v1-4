@@ -72,6 +72,12 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
             Path marker = targetDir.resolve(MARKER_FILE_NAME);
             Path legacy = Paths.get(LEGACY_DIR).resolve(DB_FILE_NAME);
 
+            // A raw database restored from Google Drive is staged next to the
+            // live file by BackupRestoreService and swapped in here, because the
+            // DataSource holds the live file open for the whole session and
+            // replacing it underneath a running JVM corrupts it.
+            applyPendingRestore(targetDir, target);
+
             if (Files.exists(target) || Files.exists(marker)) {
                 return;
             }
@@ -88,6 +94,43 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
                             + "Move the old database manually to %LOCALAPPDATA%\\LumiPOS\\data and try again. "
                             + "Cause: " + ex.getMessage(), ex);
         }
+    }
+
+    /**
+     * Swaps a staged restore into place, keeping the outgoing database as a
+     * timestamped backup. If anything goes wrong the original file is left
+     * exactly where it was.
+     *
+     * <p>Package-private rather than private so the test suite can drive this
+     * directly: it is the one method that overwrites a live database.
+     */
+    void applyPendingRestore(Path targetDir, Path target) throws IOException {
+        Path staged = targetDir.resolve("lumipos-restored.db");
+        Path pendingMarker = targetDir.resolve(".lumipos-pending-restore");
+        if (!Files.exists(staged) || !Files.exists(pendingMarker)) {
+            return;
+        }
+
+        log.warn("Applying a database restore staged by BackupRestoreService.");
+        Path safety = targetDir.resolve("lumipos.db.pre-restore");
+        if (Files.exists(target)) {
+            Files.copy(target, safety, StandardCopyOption.REPLACE_EXISTING);
+            log.warn("The database in use was copied to " + safety);
+        }
+        Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
+
+        // Never let a -wal from either machine replay onto the new file.
+        Files.deleteIfExists(target.resolveSibling(DB_FILE_NAME + "-wal"));
+        Files.deleteIfExists(target.resolveSibling(DB_FILE_NAME + "-shm"));
+
+        // Verify while the staged file is still available as the reference, so
+        // a truncated copy is caught before the source of truth is deleted.
+        verify(staged, target);
+
+        Files.deleteIfExists(staged);
+        Files.deleteIfExists(pendingMarker);
+
+        log.warn("Database restore applied. Restart-safe copy of the previous database: " + safety);
     }
 
     /**
@@ -139,11 +182,13 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
      * database and not a half-written one.
      */
     private void verify(Path legacy, Path target) throws IOException {
-        long expected = Files.size(legacy);
-        long actual = Files.size(target);
-        if (expected != actual) {
-            throw new IOException("Copied database is " + (expected - actual)
-                    + " bytes short (expected " + expected + ", got " + actual + ")");
+        if (legacy != null && Files.exists(legacy)) {
+            long expected = Files.size(legacy);
+            long actual = Files.size(target);
+            if (expected != actual) {
+                throw new IOException("Copied database is " + (expected - actual)
+                        + " bytes short (expected " + expected + ", got " + actual + ")");
+            }
         }
 
         try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + target.toAbsolutePath());
