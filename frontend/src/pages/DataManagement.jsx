@@ -10,6 +10,7 @@ import {
 import { dataService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useTranslation } from 'react-i18next';
+import HelpTip from '../components/HelpTip';
 
 const DataManagement = () => {
     const { t } = useTranslation(['settings', 'common']);
@@ -91,7 +92,10 @@ const DataManagement = () => {
         <Box sx={{ mt: 3 }}>
             {/* ================= EXPORT CARD ================= */}
             <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-                <Typography variant="h6" gutterBottom>{t('export_backup')}</Typography>
+                <Typography variant="h6" gutterBottom>
+                    {t('export_backup')}
+                    <HelpTip helpKey="help_local_export" t={t} />
+                </Typography>
                 <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
                     {t('export_backup_description')}
                 </Typography>
@@ -108,7 +112,10 @@ const DataManagement = () => {
 
             {/* ================= IMPORT CARD ================= */}
             <Paper elevation={0} sx={{ p: 3, border: '1px solid', borderColor: 'divider', borderRadius: 3 }}>
-                <Typography variant="h6" gutterBottom>{t('import_restore_backup')}</Typography>
+                <Typography variant="h6" gutterBottom>
+                    {t('import_restore_backup')}
+                    <HelpTip helpKey="help_local_import" t={t} />
+                </Typography>
 
                 <input
                     type="file"

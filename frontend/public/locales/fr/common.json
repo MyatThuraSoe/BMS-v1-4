@@ -37,5 +37,14 @@
   "no_printers": "Aucune imprimante trouvée",
   "default_chip": "par défaut",
   "sent_printer": "Reçu envoyé à l'imprimante",
-  "print_failed": "Échec de l'impression"
+  "print_failed": "Échec de l'impression",
+  "help_drive_connection": "Connect your Google account to store full backups in your personal Google Drive. A green 'Connected' chip means the link is working. If you set this up on a different PC than the server, copy the shown sign-in link to the server browser.",
+  "help_automation_settings": "Automated backups run only when Drive is connected. Frequency is based on time since the last backup (not a fixed clock time). Custom cron allows advanced scheduling (falls back to +1 day if the expression is invalid).",
+  "help_backup_status": "Shows the last attempt/result, the last successful backup time, and the next scheduled time (up to 10 minutes early/late). If the PC was off, the due backup runs on the next startup.",
+  "help_local_export_import": "Create a local JSON backup or restore from one. Export includes categories, products, customers, suppliers, sales, purchases, sale returns, expenses, cash shifts and users (password hashes). Merge adds/updates data; Replace Everything deletes all current data and cannot be undone.",
+  "help_restore_from_drive": "Recover from Drive backups on a new PC or after data loss. JSON backups restore immediately (Merge or Replace). Database (.db) backups require an app restart and the old database is saved as lumipos.db.pre-restore; license keys are machine-specific and not restored.",
+  "help_local_export": "Export everything to a single JSON file you can store offline (USB/external drive). This is safe and works without internet.",
+  "help_local_import": "Restore from a previously exported JSON file. Choose Merge to keep existing data, or Replace Everything to fully overwrite it (irreversible).",
+  "help_system_data_backup": "One-click snapshot of all business data, saved to this PC as a JSON file. No internet or Google Drive needed. Keep the file on a USB stick or a second cloud folder. To put the data back later, use Backup and Restore > Local Export and Import.",
+  "help_old_sales_cleanup": "Permanently erases sales older than one year, together with their returns, payments and stock-movement records, so the database stays small. It cannot be undone, and reports for those dates will no longer include those sales. Take a backup first. Note: deleting old sales does not return stock to inventory."
 }

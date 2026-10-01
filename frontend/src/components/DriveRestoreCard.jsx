@@ -34,6 +34,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { backupRestoreService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
+import HelpTip from './HelpTip';
 
 const POLL_INTERVAL_MS = 1000;
 
@@ -182,7 +183,10 @@ export default function DriveRestoreCard({ isConnected }) {
   return (
     <Card sx={{ mt: 3 }}>
       <CardContent>
-        <Typography variant="h6" gutterBottom>{t('restore_from_drive')}</Typography>
+        <Typography variant="h6" gutterBottom>
+          {t('restore_from_drive')}
+          <HelpTip helpKey="help_restore_from_drive" t={t} />
+        </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t('restore_from_drive_hint')}
         </Typography>

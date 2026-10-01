@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { backupService, googleDriveService } from '../api/services';
 import DataManagement from './DataManagement';
 import DriveRestoreCard from '../components/DriveRestoreCard';
+import HelpTip from '../components/HelpTip';
 
 
 
@@ -27,7 +28,7 @@ const formatDateTime = (dateString, fallback = 'Never') => {
 };
 
 const BackupSettings = () => {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation(['settings', 'common']);
   const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   
@@ -236,7 +237,10 @@ const BackupSettings = () => {
       <Card sx={{ mb: 3, border: isConnected ? '2px solid #4caf50' : '1px solid #e0e0e0' }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">{t('google_drive_connection')}</Typography>
+            <Typography variant="h6">
+              {t('google_drive_connection')}
+              <HelpTip helpKey="help_drive_connection" t={t} />
+            </Typography>
             {isConnected && <Chip label={t('connected')} color="success" size="small" />}
           </Box>
           
@@ -267,7 +271,10 @@ const BackupSettings = () => {
       {/* Backup Settings Card */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>{t('automation_settings')}</Typography>
+          <Typography variant="h6" gutterBottom>
+            {t('automation_settings')}
+            <HelpTip helpKey="help_automation_settings" t={t} />
+          </Typography>
           <Divider sx={{ mb: 3 }} />
 
           <FormControlLabel
@@ -337,7 +344,10 @@ const BackupSettings = () => {
       {/* Status Card */}
       <Card>
         <CardContent>
-          <Typography variant="h6" gutterBottom>{t('backup_status')}</Typography>
+          <Typography variant="h6" gutterBottom>
+            {t('backup_status')}
+            <HelpTip helpKey="help_backup_status" t={t} />
+          </Typography>
           <Divider sx={{ mb: 2 }} />
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="body2" color="text.secondary">{t('last_attempt_status')}</Typography>
@@ -376,7 +386,10 @@ const BackupSettings = () => {
       {/* Local Export & Import (former Data Management) */}
       <Card sx={{ mt: 3 }}>
         <CardContent>
-          <Typography variant="h6" gutterBottom>{t('local_export_import')}</Typography>
+          <Typography variant="h6" gutterBottom>
+            {t('local_export_import')}
+            <HelpTip helpKey="help_local_export_import" t={t} />
+          </Typography>
           <Divider sx={{ mb: 2 }} />
           <DataManagement />
         </CardContent>
