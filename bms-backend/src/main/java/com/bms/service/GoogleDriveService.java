@@ -16,7 +16,11 @@ import com.google.auth.oauth2.UserCredentials;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
+import java.util.function.LongConsumer;
 
 @Service
 public class GoogleDriveService {
@@ -220,5 +224,116 @@ public class GoogleDriveService {
                 .execute();
 
         return uploadedFile.getWebViewLink();
+    }
+
+    /**
+     * Lists the backup files sitting in the shop's backup folder, newest first.
+     *
+     * <p>Restore used to be impossible because Drive could only be written to.
+     * Listing is what lets the settings page show a shop owner their history and
+     * pick a point in time to come back to.
+     *
+     * <p>Trashed files are excluded so a deleted backup cannot be restored by
+     * accident, and only files are returned (no sub-folders).
+     */
+    public List<DriveBackupFile> listBackupFiles(String folderId) throws Exception {
+        Drive service = getDriveService();
+
+        String query = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
+        if (folderId != null && !folderId.isBlank()) {
+            query = "'" + folderId + "' in parents and " + query;
+        }
+
+        FileList result = service.files().list()
+                .setQ(query)
+                .setSpaces("drive")
+                .setOrderBy("modifiedTime desc")
+                .setPageSize(50)
+                .setFields("files(id, name, size, modifiedTime, mimeType)")
+                .execute();
+
+        List<DriveBackupFile> files = new ArrayList<>();
+        if (result.getFiles() == null) {
+            return files;
+        }
+        for (File f : result.getFiles()) {
+            files.add(new DriveBackupFile(
+                    f.getId(),
+                    f.getName(),
+                    f.getSize() == null ? 0L : f.getSize(),
+                    f.getModifiedTime() == null ? null : f.getModifiedTime().toString(),
+                    f.getMimeType()));
+        }
+        return files;
+    }
+
+    /**
+     * Downloads a Drive file to a local file, reporting progress as it goes.
+     *
+     * <p>Progress is measured by counting bytes read against the size Drive
+     * reported, which avoids depending on the transport's internal progress
+     * listener. The stream is read in chunks and only the destination is
+     * renamed into place at the end, so a download that dies halfway cannot be
+     * mistaken for a complete backup.
+     *
+     * @param progress receives bytes written so far, may be null
+     */
+    public void downloadFile(String fileId, java.io.File destination, LongConsumer progress) throws Exception {
+        Drive service = getDriveService();
+
+        File meta = service.files().get(fileId).setFields("id, name, size").execute();
+        long total = meta.getSize() == null ? -1L : meta.getSize();
+
+        java.io.File partial = new java.io.File(destination.getAbsolutePath() + ".part");
+
+        try (java.io.InputStream in = service.files().get(fileId).executeMediaAsInputStream();
+             java.io.OutputStream out = new java.io.BufferedOutputStream(
+                     new java.io.FileOutputStream(partial), 64 * 1024)) {
+
+            byte[] buffer = new byte[64 * 1024];
+            long written = 0L;
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                out.write(buffer, 0, read);
+                written += read;
+                if (progress != null) {
+                    progress.accept(written);
+                }
+            }
+        }
+
+        if (total > 0) {
+            long actual = partial.length();
+            if (actual != total) {
+                // Delete the truncated file: a partial download restored over a
+                // live database would be far worse than a failed restore.
+                partial.delete();
+                throw new IOException("Incomplete download from Google Drive: expected "
+                        + total + " bytes, received " + actual);
+            }
+        }
+
+        if (destination.exists() && !destination.delete()) {
+            partial.delete();
+            throw new IOException("Could not replace existing file " + destination.getAbsolutePath());
+        }
+        if (!partial.renameTo(destination)) {
+            partial.delete();
+            throw new IOException("Could not move the downloaded file into place");
+        }
+    }
+
+    /**
+     * A backup file as shown in the restore list.
+     */
+    public record DriveBackupFile(String id, String name, long sizeBytes,
+                                  String modifiedTime, String mimeType) {
+        public boolean isJsonBackup() {
+            return name != null && name.toLowerCase().endsWith(".json");
+        }
+
+        public boolean isDatabaseSnapshot() {
+            return name != null && name.toLowerCase().endsWith(".db");
+        }
     }
 }

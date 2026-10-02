@@ -13,9 +13,10 @@ import { backupService, saleService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
 import ShutdownButton from '../components/ShutdownButton';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import HelpTip from '../components/HelpTip';
 
 const Settings = () => {
-  const { t } = useTranslation('settings');
+  const { t } = useTranslation(['settings', 'common']);
   const [backupLoading, setBackupLoading] = useState(false);
   const [deleteOldSalesLoading, setDeleteOldSalesLoading] = useState(false);
   const queryClient = useQueryClient();
@@ -66,6 +67,7 @@ const Settings = () => {
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom>
           {t('data_backup')}
+          <HelpTip helpKey="help_system_data_backup" t={t} />
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t('data_backup_description')}
@@ -83,6 +85,7 @@ const Settings = () => {
       <Paper sx={{ p: 3, mb: 3 }}>
         <Typography variant="h6" gutterBottom color="error.main">
           {t('old_sales_cleanup')}
+          <HelpTip helpKey="help_old_sales_cleanup" t={t} />
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t('old_sales_cleanup_description')}

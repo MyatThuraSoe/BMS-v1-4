@@ -53,6 +53,7 @@ const Drafts = lazy(() => import('./pages/Drafts'));
 // Layout
 import DashboardLayout from './components/DashboardLayout';
 import ProtectedRoute from './components/ProtectedRoute';
+import ServerOfflineBanner from './components/ServerOfflineBanner';
 import PrintJobWorker from './components/PrintJobWorker';
 
 // Skeleton fallback for lazy route chunks: mimics a generic page (title +
@@ -174,6 +175,10 @@ function AppRoutes() {
     // DashboardLayout (around <Outlet />) so the menu bar / app bar never
     // unmount while a lazy page chunk loads.
     <Suspense fallback={<RouteSkeleton />}>
+      {/* Server link status lives at the app root, not inside DashboardLayout,
+          so Login / Setup / Activation explain themselves on a dead server too
+          instead of showing a bare network error. */}
+      <ServerOfflineBanner variant="floating" />
       <Routes>
       <Route path="/login" element={!user ? <Login /> : <Navigate to={defaultRoute} />} />
       <Route path="/setup" element={!user ? <SetupFirstAdmin /> : <Navigate to={defaultRoute} />} />

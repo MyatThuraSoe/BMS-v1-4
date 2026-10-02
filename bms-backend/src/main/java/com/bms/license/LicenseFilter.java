@@ -32,10 +32,17 @@ public class LicenseFilter extends OncePerRequestFilter {
         // installed ADMIN can still pull their JSON backup. It is safe to exempt
         // from the license gate because the endpoint itself still requires a valid
         // ADMIN JWT via @PreAuthorize("hasRole('ADMIN')").
+        //
+        // /api/health is the frontend heartbeat used to detect a dead server.
+        // It must answer even on an unlicensed install, otherwise the offline
+        // banner would appear on a healthy server during a license lapse. The
+        // endpoint returns only status/timestamp and is already permitAll in
+        // SecurityConfig, so no business data is exposed.
         boolean open = !path.startsWith("/api/")
                 || path.startsWith("/api/license")
                 || path.startsWith("/api/setup")
                 || path.startsWith("/api/auth/register-first-admin")
+                || path.equals("/api/health")
                 || path.equals("/api/data/export");
 
         if (open || licenseService.isLicensed()) {

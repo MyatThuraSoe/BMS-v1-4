@@ -196,6 +196,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
+                    <release></release>
                     <annotationProcessorPaths>
                         <path>
                             <groupId>org.projectlombok</groupId>
@@ -209,6 +210,18 @@
                 </configuration>
             </plugin>
 
+            <!--
+              This plugin enhances bytecode through Byte Buddy 1.14.16, which
+              officially supports up to Java 22. Building on a newer default JDK
+              (for example Java 23) fails with a Byte Buddy error asking you to
+              update Byte Buddy or set net.bytebuddy.experimental as a VM
+              property.
+              The escape hatch is set in .mvn/jvm.config so the build works on any
+              JDK without relying on a machine-level JAVA_HOME. It is safe here
+              because the enhancer only rewrites bytecode, the compiler release
+              above still targets Java 17, and the app runs on the bundled
+              Temurin 21 JRE.
+            -->
             <plugin>
                 <groupId>org.hibernate.orm.tooling</groupId>
                 <artifactId>hibernate-enhance-maven-plugin</artifactId>

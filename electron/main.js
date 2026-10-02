@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell, session } = require('electron');
+const { app, BrowserWindow, Tray, Menu, dialog, nativeImage, ipcMain, shell, session, powerSaveBlocker } = require('electron');
 const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
@@ -12,6 +12,19 @@ let serverProcess = null;
 let isQuitting = false;
 let serverPid = null;
 let activePrintWindow = null;
+let serverRestartTimer = null;
+let serverRestartAttempts = 0;
+let powerBlockerIds = [];
+let healthWatchdogTimer = null;
+let healthWatchdogFailures = 0;
+let serverStartedAt = 0;
+const HEALTH_WATCHDOG_INTERVAL_MS = 10000;
+const HEALTH_WATCHDOG_TIMEOUT_MS = 4000;
+const HEALTH_WATCHDOG_MAX_FAILURES = 6;
+// A Spring Boot start on a slow shop PC can take 30s+. Recycling a server that
+// is merely still booting would turn one crash into a kill loop, so failures
+// are not counted until the process has had time to come up.
+const HEALTH_STARTUP_GRACE_MS = 90000;
 
 // Load secrets from a gitignored .env file (real credentials live here, not in
 // source or the JAR). Values are exported into process.env so the spawned Java
@@ -45,6 +58,19 @@ loadDotEnv();
 
 const APP_PORT = 17234;
 const APP_URL = `http://127.0.0.1:${APP_PORT}`;
+
+// Backend heap ceiling. 1024m is enough for a long POS session with a large
+// product/report query; shops on 2 GB machines can pin it with LUMIPOS_JAVA_XMX.
+const JAVA_XMX = /^\d{2,5}m$/i.test(process.env.LUMIPOS_JAVA_XMX || '')
+    ? process.env.LUMIPOS_JAVA_XMX
+    : '1024m';
+
+// Auto-restart guard rails: an unexpected exit is retried with backoff, but a
+// server that dies instantly every time is a real fault, not a blip. Give up
+// after MAX_ATTEMPTS so the shop sees a clear error instead of a fork bomb.
+const RESTART_MAX_ATTEMPTS = 5;
+const RESTART_BASE_DELAY_MS = 2000;
+const RESTART_MAX_DELAY_MS = 30000;
 
 // DB engine per launch:
 //   default            -> SQLite (zero-config embedded file, application-sqlite.yml)
@@ -149,7 +175,7 @@ function startServer() {
         '-Dserver.port=' + APP_PORT,
         // JVM memory + GC tuning: keep heap bounded, use low-pause G1 as default collector.
         '-Xms256m',
-        '-Xmx512m',
+        '-Xmx' + JAVA_XMX,
         '-XX:+UseG1GC',
         '-XX:MaxGCPauseMillis=200'
     ];
@@ -174,6 +200,7 @@ function startServer() {
     });
     // ✅ Store the PID for later
     serverPid = serverProcess.pid;
+    serverStartedAt = Date.now();
     console.log(`[Server] Started Java process with PID: ${serverPid}`);
 
     // Log server output (useful for debugging)
@@ -193,11 +220,173 @@ function startServer() {
         app.quit();
     });
 
-    serverProcess.on('exit', (code) => {
-        if (!isQuitting) {
-            console.log(`Server exited with code ${code}`);
+    // Reaching "exit" with a live backend means the Java process died on its
+    // own (crash, OOM, external kill). A kiosk must not stay dark: restart it
+    // in place. code 0 with the app still running means someone stopped it
+    // deliberately, which we also treat as recoverable.
+    serverProcess.on('exit', (code, signal) => {
+        if (isQuitting) {
+            return;
         }
+        console.log(`[Server] Exited unexpectedly (code=${code}, signal=${signal})`);
+        scheduleServerRestart(code);
     });
+}
+
+// Exponential backoff so a hard crash cannot spin the CPU, capped so a shop
+// that was only briefly disconnected is back within a few seconds.
+function getRestartDelay(attempt) {
+    return Math.min(RESTART_BASE_DELAY_MS * Math.pow(2, attempt - 1), RESTART_MAX_DELAY_MS);
+}
+
+function scheduleServerRestart(exitCode) {
+    if (serverRestartTimer) {
+        return;
+    }
+
+    serverRestartAttempts += 1;
+    if (serverRestartAttempts > RESTART_MAX_ATTEMPTS) {
+        const detail = exitCode === null ? 'unknown reason' : `exit code ${exitCode}`;
+        console.error(`[Server] Gave up after ${RESTART_MAX_ATTEMPTS} restart attempts (${detail})`);
+        dialog.showErrorBox(
+            'LumiPOS - Server Unavailable',
+            `The LumiPOS server stopped ${RESTART_MAX_ATTEMPTS} times in a row and could not be restarted (${detail}).\n\n` +
+            'Close LumiPOS and open it again. If this keeps happening, check the free space on drive C: and contact support with the log file.'
+        );
+        return;
+    }
+
+    const delay = getRestartDelay(serverRestartAttempts);
+    console.log(`[Server] Restarting in ${delay}ms (attempt ${serverRestartAttempts}/${RESTART_MAX_ATTEMPTS})`);
+
+    serverRestartTimer = setTimeout(() => {
+        serverRestartTimer = null;
+        if (isQuitting) {
+            return;
+        }
+        serverProcess = null;
+        serverPid = null;
+        startServer();
+    }, delay);
+
+    if (typeof serverRestartTimer.unref === 'function') {
+        serverRestartTimer.unref();
+    }
+}
+
+// A live process is not proof of a working server: a deadlocked SQLite handle
+// or an exhausted pool leaves the JVM running while every request hangs, and
+// the cashier only sees a spinner. Probe the cheap /api/health endpoint and
+// recycle the process when it stops answering.
+function markServerHealthy() {
+    if (serverRestartAttempts > 0) {
+        console.log('[Server] Healthy again - restart backoff reset');
+    }
+    serverRestartAttempts = 0;
+    healthWatchdogFailures = 0;
+}
+
+function startHealthWatchdog() {
+    stopHealthWatchdog();
+    healthWatchdogTimer = setInterval(() => {
+        if (isQuitting || !serverProcess) {
+            return;
+        }
+        // The startup grace window is what protects a booting server, not a
+        // "confirmed up" flag: the restart path never runs waitForServer, so a
+        // flag set only at startup would leave the watchdog disarmed forever
+        // after the first crash - exactly when it is needed most.
+        if (Date.now() - serverStartedAt < HEALTH_STARTUP_GRACE_MS) {
+            healthWatchdogFailures = 0;
+            return;
+        }
+
+        const req = http.get(`${APP_URL}/api/health`, (res) => {
+            res.resume();
+            // A successful probe is proof the server came back, so this is also
+            // where the restart backoff is cleared. Without it the counter would
+            // only ever be reset at startup, and a shop that had 5 unrelated
+            // crashes over a month would be told the server "could not be
+            // restarted" while it was running perfectly well.
+            markServerHealthy();
+        });
+
+        const onFailure = () => {
+            healthWatchdogFailures += 1;
+            console.warn(`[Watchdog] Health probe failed (${healthWatchdogFailures}/${HEALTH_WATCHDOG_MAX_FAILURES})`);
+            if (healthWatchdogFailures >= HEALTH_WATCHDOG_MAX_FAILURES) {
+                console.error('[Watchdog] Server is unresponsive - recycling the backend process');
+                healthWatchdogFailures = 0;
+                recycleUnresponsiveServer();
+            }
+        };
+
+        req.on('error', onFailure);
+        req.setTimeout(HEALTH_WATCHDOG_TIMEOUT_MS, () => {
+            req.destroy();
+            onFailure();
+        });
+    }, HEALTH_WATCHDOG_INTERVAL_MS);
+
+    if (typeof healthWatchdogTimer.unref === 'function') {
+        healthWatchdogTimer.unref();
+    }
+}
+
+function stopHealthWatchdog() {
+    if (healthWatchdogTimer) {
+        clearInterval(healthWatchdogTimer);
+        healthWatchdogTimer = null;
+    }
+}
+
+// Killing the process makes the 'exit' handler do the restart, so there is
+// exactly one restart path in the app.
+function recycleUnresponsiveServer() {
+    const pid = serverPid || (serverProcess && serverProcess.pid);
+    if (!pid) {
+        return;
+    }
+    console.log(`[Watchdog] Terminating unresponsive server (PID: ${pid})`);
+    if (process.platform === 'win32') {
+        require('child_process').spawnSync('taskkill', ['/F', '/T', '/PID', String(pid)], {
+            stdio: 'ignore',
+            windowsHide: true
+        });
+    } else if (serverProcess) {
+        try { serverProcess.kill('SIGKILL'); } catch (e) { /* ignore */ }
+    }
+}
+
+// LumiPOS runs as a kiosk: if the server PC sleeps, every tablet on the LAN
+// loses the app. Hold an execution-state request for the whole session and
+// release it on quit. LUMIPOS_ALLOW_SLEEP=1 opts out for shops that manage
+// power themselves.
+function startPowerBlocker() {
+    if (String(process.env.LUMIPOS_ALLOW_SLEEP || '') === '1') {
+        console.log('[Power] Sleep blocking disabled (LUMIPOS_ALLOW_SLEEP=1)');
+        return;
+    }
+    try {
+        powerBlockerIds = [
+            powerSaveBlocker.start('prevent-app-suspension'),
+            powerSaveBlocker.start('prevent-display-sleep')
+        ];
+        console.log('[Power] Sleep blocked: this PC must stay awake to serve the POS network');
+    } catch (err) {
+        console.error('[Power] Could not block sleep:', err.message);
+    }
+}
+
+function stopPowerBlocker() {
+    powerBlockerIds.forEach((id) => {
+        try {
+            if (powerSaveBlocker.isStarted(id)) {
+                powerSaveBlocker.stop(id);
+            }
+        } catch (e) { /* ignore */ }
+    });
+    powerBlockerIds = [];
 }
 
 // Hard requirement for the MySQL profile: verify the database accepts TCP
@@ -227,6 +416,8 @@ function waitForServer(retries = 30, interval = 1000) {
             attempts++;
             
             const req = http.get(APP_URL, (res) => {
+                res.resume();
+                markServerHealthy();
                 resolve();
             });
             
@@ -486,6 +677,15 @@ function quitApp() {
     isQuitting = true;
 
     console.log('[Shutdown] Quitting LumiPOS...');
+
+    // Cancel any pending restart, then release the sleep lock. A restart timer
+    // surviving the quit would respawn Java into a closing app.
+    if (serverRestartTimer) {
+        clearTimeout(serverRestartTimer);
+        serverRestartTimer = null;
+    }
+    stopHealthWatchdog();
+    stopPowerBlocker();
 
     // ✅ Kill Java server FIRST (most important)
     killServerProcess();
@@ -755,6 +955,11 @@ if (!gotTheLock) {
         // Create the main window and tray
         createWindow();
         createTray();
+
+        // Server answered the startup probe: arm the crash/hang watchdog and
+        // keep this machine awake so tablets keep their connection.
+        startHealthWatchdog();
+        startPowerBlocker();
 
         // Tell the user how to reach LumiPOS from other devices on the Wi-Fi
         if (LAN_URL) {
