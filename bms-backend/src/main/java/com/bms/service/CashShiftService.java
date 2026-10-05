@@ -11,6 +11,7 @@ import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
+import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -56,6 +57,14 @@ public class CashShiftService {
         shift.setOpeningTime(LocalDateTime.now());
         shift.setStatus("OPEN");
         CashShift saved = cashShiftRepository.save(shift);
+
+        // The declared float is the baseline every later variance is measured
+        // against, so record it at open time. Closing logs the delta but would
+        // not capture where the delta started.
+        auditLogService.logAction(cashierId, "SHIFT_OPEN",
+                "Shift opened with " + request.getOpeningAmount() + " in the drawer",
+                "CashShift", saved.getId(), null, null);
+
         return convertToResponse(saved);
     }
 
@@ -65,14 +74,16 @@ public class CashShiftService {
         CashShiftResponse response = convertToResponse(shift);
         BigDecimal cashSalesTotal = saleRepository.sumNetCashSalesByShiftId(shift.getId());
         response.setCashSalesTotal(cashSalesTotal != null ? cashSalesTotal : BigDecimal.ZERO);
-        // Expected drawer = opening + cash sales − refunds. Refunds leave the
-        // drawer (or legally must be reconciled), so ignoring them overstates
-        // the expected amount and produces a bogus variance at close time.
-        BigDecimal returnsTotal = saleRepository.sumReturnsDuringShift(shift.getId(), shift.getOpeningTime());
+        // Refunds that physically happened while this shift was open. Keyed on
+        // the refund date, not the originating sale's shift, so refunding an
+        // older sale still shows up as cash leaving this drawer.
+        BigDecimal returnsTotal = saleRepository.sumRefundsBetween(
+                shift.getOpeningTime(), LocalDateTime.now());
         response.setReturnsTotal(returnsTotal != null ? returnsTotal : BigDecimal.ZERO);
-        response.setExpectedAmount(shift.getOpeningAmount()
-                .add(response.getCashSalesTotal())
-                .subtract(response.getReturnsTotal()));
+        response.setExpectedAmount(CashVarianceUtil.expectedDrawer(
+                shift.getOpeningAmount(),
+                response.getCashSalesTotal(),
+                response.getReturnsTotal()));
         return response;
     }
 
@@ -87,14 +98,25 @@ public class CashShiftService {
 
         BigDecimal cashSalesTotal = saleRepository.sumNetCashSalesByShiftId(shiftId);
         if (cashSalesTotal == null) cashSalesTotal = BigDecimal.ZERO;
-        BigDecimal returnsTotal = saleRepository.sumReturnsDuringShift(shiftId, shift.getOpeningTime());
+
+        // Stamp the close time first and use it as the window bound, so the
+        // recorded closing time is the exact edge of what was counted. Taking
+        // the bound from a later now() would silently drop a refund that landed
+        // in between.
+        LocalDateTime closingTime = LocalDateTime.now();
+
+        // Same window rule as the live view: cash handed back before the close
+        // timestamp counts against this shift even if the sale was from earlier.
+        BigDecimal returnsTotal = saleRepository.sumRefundsBetween(
+                shift.getOpeningTime(), closingTime);
         if (returnsTotal == null) returnsTotal = BigDecimal.ZERO;
 
-        BigDecimal expectedAmount = shift.getOpeningAmount().add(cashSalesTotal).subtract(returnsTotal);
-        BigDecimal variance = request.getClosingAmount().subtract(expectedAmount);
+        BigDecimal expectedAmount = CashVarianceUtil.expectedDrawer(
+                shift.getOpeningAmount(), cashSalesTotal, returnsTotal);
+        BigDecimal variance = CashVarianceUtil.variance(request.getClosingAmount(), expectedAmount);
 
         shift.setClosingAmount(request.getClosingAmount());
-        shift.setClosingTime(LocalDateTime.now());
+        shift.setClosingTime(closingTime);
         shift.setExpectedAmount(expectedAmount);
         shift.setVariance(variance);
         shift.setStatus("CLOSED");
@@ -103,7 +125,8 @@ public class CashShiftService {
         CashShift saved = cashShiftRepository.save(shift);
 
         auditLogService.logAction(userId, "SHIFT_CLOSE",
-                "Shift closed. Expected: " + expectedAmount + ", Actual: " + request.getClosingAmount() + ", Variance: " + variance,
+                "Shift closed. Expected: " + expectedAmount + ", Actual: " + request.getClosingAmount() + ", Variance: " + variance
+                        + CashVarianceUtil.describeVariance(variance, expectedAmount),
                 "CashShift", shiftId, null, null);
 
         return convertToResponse(saved);
@@ -166,6 +189,11 @@ public class CashShiftService {
         response.setVariance(shift.getVariance());
         response.setStatus(shift.getStatus());
         response.setNotes(shift.getNotes());
+        // Surfaced so the close screen and history read the same threshold the
+        // backend applies instead of each hardcoding their own.
+        response.setVarianceTolerance(CashVarianceUtil.DEFAULT_TOLERANCE);
+        response.setVarianceExceedsTolerance(shift.getVariance() != null
+                && CashVarianceUtil.exceedsTolerance(shift.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE));
         return response;
     }
 

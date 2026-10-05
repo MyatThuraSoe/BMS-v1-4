@@ -18,6 +18,10 @@ public class CashShiftResponse {
     private String notes;
     private BigDecimal cashSalesTotal;
     private BigDecimal returnsTotal;
+    /** Largest absolute variance still treated as ordinary counting noise. */
+    private BigDecimal varianceTolerance;
+    /** True when the variance is outside that tolerance. */
+    private boolean varianceExceedsTolerance;
     private List<SaleReference> sales;
 
     public Long getId() { return id; }
@@ -58,6 +62,12 @@ public class CashShiftResponse {
 
     public BigDecimal getReturnsTotal() { return returnsTotal; }
     public void setReturnsTotal(BigDecimal returnsTotal) { this.returnsTotal = returnsTotal; }
+
+    public BigDecimal getVarianceTolerance() { return varianceTolerance; }
+    public void setVarianceTolerance(BigDecimal varianceTolerance) { this.varianceTolerance = varianceTolerance; }
+
+    public boolean isVarianceExceedsTolerance() { return varianceExceedsTolerance; }
+    public void setVarianceExceedsTolerance(boolean varianceExceedsTolerance) { this.varianceExceedsTolerance = varianceExceedsTolerance; }
 
     public List<SaleReference> getSales() { return sales; }
     public void setSales(List<SaleReference> sales) { this.sales = sales; }

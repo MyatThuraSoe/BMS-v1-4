@@ -3,7 +3,7 @@
   "shift_history": "Shift History",
   "shift_history_subtitle": "Past cash drawer shifts across all cashiers.",
   "start_shift": "Start Shift",
-  "opening_amount_help": "Enter the opening cash amount in the drawer to start your shift.",
+  "opening_amount_help": "Enter the opening cash amount in the drawer to start your shift. Enter 0 if the drawer starts empty.",
   "opening_amount_label": "Opening Amount ($)",
   "opening": "Opening...",
   "status_open": "OPEN",
@@ -25,7 +25,7 @@
   "expected_drawer_equals": "= Expected Drawer",
   "actual_counted": "Actual Counted",
   "variance_is": "The variance is {{amount}}.",
-  "double_check_count": " Please double-check your count.",
+  "variance_over_tolerance": " That is over the {{tolerance}} tolerance and will be recorded in the audit log.",
   "small_variances_normal": " Small variances are normal.",
   "cancel": "Cancel",
   "closing": "Closing...",
@@ -43,5 +43,6 @@
   "failed_to_open_shift": "Failed to open shift",
   "shift_closed": "Shift closed",
   "shift_closed_variance": "Shift closed. Variance: {{variance}}",
+  "shift_closed_large_variance": "Shift closed with a large variance of {{variance}}. This has been recorded in the audit log.",
   "failed_to_close_shift": "Failed to close shift"
 }

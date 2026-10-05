@@ -1,10 +1,12 @@
 package com.bms.dto.request;
 
-import jakarta.validation.constraints.Positive;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 
 public class OpenShiftRequest {
-    @Positive(message = "Opening amount must be positive")
+    @NotNull(message = "Opening amount is required")
+    @PositiveOrZero(message = "Opening amount must be zero or positive")
     private BigDecimal openingAmount;
 
     public BigDecimal getOpeningAmount() { return openingAmount; }
