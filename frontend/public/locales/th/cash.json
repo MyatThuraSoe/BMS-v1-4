@@ -3,7 +3,7 @@
   "shift_history": "ประวัติกะ",
   "shift_history_subtitle": "กะเงินสดในอดีตของพนักงานแคชเชียร์ทุกคน",
   "start_shift": "เริ่มกะ",
-  "opening_amount_help": "กรอกจำนวนเงินเปิดกะในลิ้นชักเงินเพื่อเริ่มกะของคุณ",
+  "opening_amount_help": "กรอกจำนวนเงินเปิดกะในลิ้นชักเงินเพื่อเริ่มกะของคุณ หากลิ้นชักเงินว่างเปล่า ให้กรอก 0",
   "opening_amount_label": "จำนวนเงินเปิดกะ ($)",
   "opening": "กำลังเปิด...",
   "status_open": "เปิดอยู่",
@@ -21,10 +21,11 @@
   "notes_optional": "หมายเหตุ (ไม่บังคับ)",
   "expected_vs_actual": "คาดหวัง vs จริง",
   "cash_sales_plus": "+ ยอดขายเงินสด",
+  "returns_minus": "− การคืนเงิน",
   "expected_drawer_equals": "= ยอดลิ้นชักที่คาดหวัง",
   "actual_counted": "ยอดที่นับได้จริง",
   "variance_is": "ผลต่างคือ {{amount}}",
-  "double_check_count": " กรุณาตรวจสอบการนับของคุณอีกครั้ง",
+  "variance_over_tolerance": " เกินเกณฑ์ความคลาดเคลื่อน {{tolerance}} และจะถูกบันทึกในบันทึกการตรวจสอบ",
   "small_variances_normal": " ผลต่างเล็กน้อยเป็นเรื่องปกติ",
   "cancel": "ยกเลิก",
   "closing": "กำลังปิด...",
@@ -42,5 +43,6 @@
   "failed_to_open_shift": "ไม่สามารถเปิดกะได้",
   "shift_closed": "ปิดกะแล้ว",
   "shift_closed_variance": "ปิดกะแล้ว ผลต่าง: {{variance}}",
+  "shift_closed_large_variance": "ปิดกะแล้ว โดยมีผลต่าง {{variance}} ซึ่งมากผิดปกติ รายการนี้ถูกบันทึกในบันทึกการตรวจสอบแล้ว",
   "failed_to_close_shift": "ไม่สามารถปิดกะได้"
 }

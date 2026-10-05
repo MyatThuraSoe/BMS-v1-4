@@ -3,7 +3,7 @@
   "shift_history": "Historique des sessions",
   "shift_history_subtitle": "Sessions de caisse passées de tous les caissiers.",
   "start_shift": "Démarrer la session",
-  "opening_amount_help": "Saisissez le montant d'ouverture dans le tiroir-caisse pour démarrer votre session.",
+  "opening_amount_help": "Saisissez le montant d'ouverture dans le tiroir-caisse pour démarrer votre session. Saisissez 0 si le tiroir est vide.",
   "opening_amount_label": "Montant d'ouverture ($)",
   "opening": "Ouverture...",
   "status_open": "Ouverte",
@@ -21,10 +21,11 @@
   "notes_optional": "Notes (facultatif)",
   "expected_vs_actual": "Prévu vs réel",
   "cash_sales_plus": "+ Ventes en espèces",
+  "returns_minus": "− Remboursements",
   "expected_drawer_equals": "= Fond attendu",
   "actual_counted": "Total compté",
   "variance_is": "L'écart est de {{amount}}.",
-  "double_check_count": " Veuillez revérifier votre comptage.",
+  "variance_over_tolerance": " Cela dépasse la tolérance de {{tolerance}} et sera enregistré dans le journal d'audit.",
   "small_variances_normal": " Les petits écarts sont normaux.",
   "cancel": "Annuler",
   "closing": "Clôture...",
@@ -42,5 +43,6 @@
   "failed_to_open_shift": "Échec de l'ouverture de la session",
   "shift_closed": "Session clôturée",
   "shift_closed_variance": "Session clôturée. Écart : {{variance}}",
+  "shift_closed_large_variance": "Session clôturée avec un écart important de {{variance}}. Cela a été enregistré dans le journal d'audit.",
   "failed_to_close_shift": "Échec de la clôture de la session"
 }

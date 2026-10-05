@@ -3,7 +3,7 @@
   "shift_history": "シフト履歴",
   "shift_history_subtitle": "全レジ担当者の過去の現金シフトです。",
   "start_shift": "シフト開始",
-  "opening_amount_help": "シフトを開始するには、レジの引き出しにある開始金額を入力してください。",
+  "opening_amount_help": "シフトを開始するには、レジの引き出しにある開始金額を入力してください。引き出しが空の場合は 0 を入力してください。",
   "opening_amount_label": "開始金額（$）",
   "opening": "開手中...",
   "status_open": "開手中",
@@ -21,10 +21,11 @@
   "notes_optional": "メモ（任意）",
   "expected_vs_actual": "予想と実際",
   "cash_sales_plus": "+ 現金売上",
+  "returns_minus": "− 返金",
   "expected_drawer_equals": "= 予想残高",
   "actual_counted": "実際の数え上げ",
   "variance_is": "差額は {{amount}} です。",
-  "double_check_count": " 数を数え直してください。",
+  "variance_over_tolerance": "これは許容範囲 {{tolerance}} を超えているため、監査ログに記録されます。",
   "small_variances_normal": " わずかな差額は正常です。",
   "cancel": "キャンセル",
   "closing": "終了中...",
@@ -42,5 +43,6 @@
   "failed_to_open_shift": "シフトを開始できませんでした",
   "shift_closed": "シフトを終了しました",
   "shift_closed_variance": "シフトを終了しました。差額：{{variance}}",
+  "shift_closed_large_variance": "シフトを終了しましたが、差額 {{variance}} が大きすぎます。監査ログに記録されました。",
   "failed_to_close_shift": "シフトを終了できませんでした"
 }

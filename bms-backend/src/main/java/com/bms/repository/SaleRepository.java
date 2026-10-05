@@ -133,15 +133,34 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         """)
     BigDecimal sumNetCashSalesByShiftId(@Param("shiftId") Long shiftId);
 
+    /**
+     * Cash that physically left the drawer during a shift window.
+     *
+     * <p>Deliberately NOT filtered on {@code r.sale.cashShiftId}. That filter only
+     * matched refunds of sales made in the same shift, so refunding an older
+     * cash sale during this shift moved money out of the drawer without
+     * reducing the expected amount, and the shift then closed reporting a
+     * phantom shortage equal to the refund.
+     *
+     * <p>Keyed on the refund date instead, so whatever the cashier handed back
+     * while this shift was open is subtracted here. The report side still
+     * attributes a refund to the original sale's period; only the drawer
+     * arithmetic follows the cash.
+     *
+     * <p>A refund of an unpaid credit sale just cancels the debt and moves no
+     * cash, so those are excluded. The same goes for refunds that happen after
+     * the shift closed, hence the upper bound.
+     */
     @Query("""
         SELECT COALESCE(SUM(r.totalReturnAmount), 0)
         FROM SaleReturn r
-        WHERE r.sale.cashShiftId = :shiftId AND r.returnDate >= :shiftStart
+        WHERE r.returnDate >= :shiftStart AND r.returnDate <= :shiftEnd
           AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
           AND (r.sale.saleType <> com.bms.entity.Sale.SaleType.CREDIT
                OR r.sale.paymentStatus = com.bms.entity.Sale.PaymentStatus.PAID)
         """)
-    BigDecimal sumReturnsDuringShift(@Param("shiftId") Long shiftId, @Param("shiftStart") LocalDateTime shiftStart);
+    BigDecimal sumRefundsBetween(@Param("shiftStart") LocalDateTime shiftStart,
+                                 @Param("shiftEnd") LocalDateTime shiftEnd);
 
     // Customer LTV — aggregate per customer across all non-voided sales
     @Query("""

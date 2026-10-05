@@ -9,9 +9,14 @@ import { useTranslation } from 'react-i18next';
 import { shiftService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
-import { notifySuccess, notifyError } from '../utils/notify';
+import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
 import { useAuth } from '../context/AuthContext';
 import ShiftHistory from './ShiftHistory';
+
+// Mirrors CashVarianceUtil.DEFAULT_TOLERANCE. The backend sends the real value
+// on every shift response; this only covers the brief window before a response
+// arrives, so the two never drift apart in what the user is shown.
+const FALLBACK_VARIANCE_TOLERANCE = 10;
 
 const CashShift = () => {
   const { user, isManager } = useAuth();
@@ -50,7 +55,13 @@ const CashShift = () => {
       setCloseAmount('');
       setCloseNotes('');
       const shift = response?.data;
-      if (shift && Math.abs(Number(shift.variance)) > 0) {
+      if (!shift) {
+        notifySuccess(t('shift_closed'));
+      } else if (shift.varianceExceedsTolerance) {
+        // A discrepancy this size is a warning, not a routine confirmation, so
+        // it must not be dressed up as a plain success toast.
+        notifyWarning(t('shift_closed_large_variance', { variance: formatCurrency(shift.variance) }));
+      } else if (Math.abs(Number(shift.variance)) > 0) {
         notifySuccess(t('shift_closed_variance', { variance: formatCurrency(shift.variance) }));
       } else {
         notifySuccess(t('shift_closed'));
@@ -78,6 +89,13 @@ const CashShift = () => {
   const cashSales = Number(currentShift?.cashSalesTotal) || 0;
   const returnsTotal = Number(currentShift?.returnsTotal) || 0;
   const expectedAmount = Number(currentShift?.expectedAmount ?? (openingAmount + cashSales - returnsTotal)) || 0;
+
+  // Single source of truth for the threshold: whatever the backend reports,
+  // so a change to the server rule shows up here without touching the UI.
+  const varianceTolerance = Number(currentShift?.varianceTolerance) > 0
+    ? Number(currentShift.varianceTolerance)
+    : FALLBACK_VARIANCE_TOLERANCE;
+  const exceedsTolerance = (amount) => Math.abs(amount) > varianceTolerance;
 
   if (currentLoading) {
     return <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress /></Box>;
@@ -224,7 +242,7 @@ const CashShift = () => {
                         fontWeight: 'bold',
                         color: (parseFloat(closeAmount) - expectedAmount) === 0
                           ? 'success.main'
-                          : Math.abs(parseFloat(closeAmount) - expectedAmount) > 10
+                          : exceedsTolerance(parseFloat(closeAmount) - expectedAmount)
                             ? 'error.main'
                             : 'warning.main',
                       }}>
@@ -234,10 +252,10 @@ const CashShift = () => {
                   </TableBody>
                 </Table>
                 {parseFloat(closeAmount) !== expectedAmount && (
-                  <Alert severity="info" sx={{ mt: 2 }}>
+                  <Alert severity={exceedsTolerance(parseFloat(closeAmount) - expectedAmount) ? 'warning' : 'info'} sx={{ mt: 2 }}>
                     {t('variance_is', { amount: formatCurrency(parseFloat(closeAmount) - expectedAmount) })}
-                    {Math.abs(parseFloat(closeAmount) - expectedAmount) > 10
-                      ? t('double_check_count')
+                    {exceedsTolerance(parseFloat(closeAmount) - expectedAmount)
+                      ? t('variance_over_tolerance', { tolerance: formatCurrency(varianceTolerance) })
                       : t('small_variances_normal')}
                   </Alert>
                 )}
