@@ -1,5 +1,5 @@
 {
-  "tagline": "Système POS + Commerce de détail",
+  "tagline": "POS + Système d’inventaire",
   "version_chip": "Version {{version}}",
   "built_chip": "Créé {{date}}",
   "trial_plan": "Essai d'un mois",
@@ -33,9 +33,8 @@
   "made_in": "Fièrement fabriqué au Myanmar 🇲🇲",
   "license_updated": "✅ Licence mise à jour !",
   "invalid_key": "Clé invalide pour cette machine",
-  "days_left_warning": "{{count}} jours restants ⚠️"
-,
+  "days_left_warning": "{{count}} jours restants ⚠️",
   "phone_access_title": "Ouvrez LumiPOS sur votre téléphone / tablette",
   "phone_access_desc": "Assurez-vous que les deux appareils sont sur le même Wi-Fi, puis scannez ce code avec l'appareil photo de votre téléphone.",
   "phone_access_qr_alt": "QR"
-}
+}\n

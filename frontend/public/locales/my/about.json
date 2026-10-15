@@ -1,35 +1,25 @@
 {
-  "tagline": "POS + လက်လီလုပ်ငန်းစနစ်",
-
+  "tagline": "POS + ကုန်ပစ္စည်း စီမံခန့်ခွဲမှု စနစ်",
   "version_chip": "ဗားရှင်း {{version}}",
   "built_chip": "{{date}}",
-
   "trial_plan": "၁ လ အစမ်းသုံး",
   "year_plan": "၁ နှစ် လိုင်စင်",
   "lifetime_plan": "တစ်သက်တာ လိုင်စင်",
-
   "licensed_to": "လိုင်စင်ပိုင်ရှင်: {{name}}",
   "lifetime_badge": "∞ တစ်သက်တာ",
   "expired_badge": "သက်တမ်းကုန်ဆုံးပြီ",
   "days_left": "{{count}} ရက် ကျန်",
-
   "enter_new_key": "လိုင်စင်ကီးအသစ် ထည့်ရန်",
   "upgrade_renew": "လိုင်စင် အဆင့်မြှင့်ရန် / သက်တမ်းတိုးရန်",
   "paste_key_placeholder": "လိုင်စင်ကီးအသစ်ကို ဒီနေရာတွင် ကူးထည့်ပါ...",
   "cancel": "မလုပ်တော့ပါ",
   "activate": "အသက်သွင်းရန်",
-
   "developed_by": "MegaCode မှ ဖန်တီးထားသည်",
   "dev_company": "Software Development Company",
-
   "intro_1": "MegaCode Software Development သည် မြန်မာနိုင်ငံတစ်ဝှမ်းရှိ လုပ်ငန်းများ၏ ထူးခြားသောလိုအပ်ချက်များနှင့် ကိုက်ညီအောင် စိတ်ကြိုက်ဖန်တီးပေးသော အရည်အသွေးမြင့် Local Software Solutions များကို အထူးပြု ဖန်တီးပေးပါသည်။ POS စနစ်များ၊ Inventory Management စနစ်များမှစ၍ Custom ERP Solutions၊ Mobile Applications နှင့် Web Platforms များအထိ — ဒေသတွင်းလုပ်ငန်းများ ဒီဂျစ်တယ်ခေတ်တွင် ပိုမိုထိရောက်စွာ လုပ်ကိုင်နိုင်ရန် ယုံကြည်စိတ်ချရပြီး Offline-first အသုံးပြုနိုင်သော Software များကို တည်ဆောက်ပေးပါသည်။",
-
   "intro_2": "ကျွန်ုပ်တို့၏ ရည်မှန်းချက်မှာ အင်တာနက်ချိတ်ဆက်မှု မရှိသည့်အချိန်တွင်ပင် ချောမွေ့စွာ အသုံးပြုနိုင်သော ခေတ်မီပြီး အသုံးပြုရလွယ်ကူသည့် Software များကို ဖန်တီးပေးရန် ဖြစ်ပါသည်။ ထိုမှတစ်ဆင့် သင့်လုပ်ငန်း၏ နေ့စဉ်လုပ်ငန်းဆောင်တာများ အင်တာနက်ပြတ်တောက်မှုကြောင့် မရပ်တန့်စေရန် ကူညီပေးပါသည်။ ကျွန်ုပ်တို့ တည်ဆောက်သည့် Product တိုင်းကို ဂရုတစိုက်၊ အသေးစိတ်အချက်အလက်များကို အလေးထားပြီး ဒေသတွင်းလုပ်ငန်းများ၏ လိုအပ်ချက်များကို နားလည်မှုအပြည့်ဖြင့် ဖန်တီးထားပါသည်။",
-
   "connect": "ကျွန်ုပ်တို့နှင့် ဆက်သွယ်ရန်",
-
   "what_we_build": "ကျွန်ုပ်တို့ ဖန်တီးပေးသော Software များ",
-
   "feat_pos": "Point-of-Sale (POS) စနစ်များ",
   "feat_inventory": "Inventory & Stock Management စနစ်များ",
   "feat_erp": "Custom ERP နှင့် Business Software များ",
@@ -38,17 +28,13 @@
   "feat_web": "Web Applications နှင့် Dashboards",
   "feat_db": "Database Design & Migration",
   "feat_network": "Local Network အတွင်း အသုံးပြုသူအများအပြား အသုံးပြုနိုင်သော စနစ်များ",
-
   "cta": "သင့်လုပ်ငန်းအတွက် စိတ်ကြိုက် Software Solution လိုအပ်ပါသလား။ ကျွန်ုပ်တို့နှင့် ဆွေးနွေးလိုက်ပါ။",
-
   "copyright": "© {{year}} MegaCode Software Development. မူပိုင်ခွင့်အားလုံး လက်ဝယ်ရှိသည်။",
   "made_in": "မြန်မာနိုင်ငံတွင် ဂုဏ်ယူစွာ ဖန်တီးထားသည် 🇲🇲",
-
   "license_updated": "✅ လိုင်စင် အပ်ဒိတ်လုပ်ပြီးပါပြီ။",
   "invalid_key": "ဤစက်အတွက် လိုင်စင်ကီး မမှန်ကန်ပါ။",
   "days_left_warning": "{{count}} ရက် ကျန် ⚠️",
-
   "phone_access_title": "ဖုန်း / Tablet ဖြင့် LumiPOS ကို အသုံးပြုရန်",
   "phone_access_desc": "စက်နှစ်ခုလုံးကို Wi-Fi ကွန်ရက်တစ်ခုတည်းသို့ ချိတ်ဆက်ထားပြီး ဖုန်းကင်မရာဖြင့် ဤ QR Code ကို Scan ဖတ်ပါ။",
   "phone_access_qr_alt": "QR Code"
-}
+}\n

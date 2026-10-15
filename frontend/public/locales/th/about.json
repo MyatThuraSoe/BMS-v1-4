@@ -1,5 +1,5 @@
 {
-  "tagline": "ระบบ POS + ค้าปลีก",
+  "tagline": "ระบบ POS + คลังสินค้า",
   "version_chip": "เวอร์ชัน {{version}}",
   "built_chip": "สร้าง {{date}}",
   "trial_plan": "ทดลองใช้ 1 เดือน",
@@ -33,9 +33,8 @@
   "made_in": "สร้างด้วยความภาคภูมิใจในเมียนมา 🇲🇲",
   "license_updated": "✅ อัปเดตใบอนุญาตแล้ว!",
   "invalid_key": "คีย์ไม่ถูกต้องสำหรับเครื่องนี้",
-  "days_left_warning": "เหลือ {{count}} วัน ⚠️"
-,
+  "days_left_warning": "เหลือ {{count}} วัน ⚠️",
   "phone_access_title": "เปิด LumiPOS บนมือถือ / แท็บเล็ต",
   "phone_access_desc": "ตรวจสอบว่าทั้งสองเครื่องอยู่ใน Wi-Fi เดียวกัน แล้วสแกนโค้ดนี้ด้วยกล้องมือถือ",
   "phone_access_qr_alt": "QR"
-}
+}\n
