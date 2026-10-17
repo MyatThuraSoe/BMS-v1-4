@@ -1,5 +1,5 @@
 {
-  "tagline": "POS + Retail System",
+  "tagline": "POS + Inventory System",
   "version_chip": "Version {{version}}",
   "built_chip": "Built {{date}}",
   "trial_plan": "1-Month Trial",
@@ -42,4 +42,4 @@
   "phone_access_title": "Open LumiPOS on your phone / tablet",
   "phone_access_desc": "Make sure both devices are on the same Wi-Fi, then scan this code with your phone camera.",
   "phone_access_qr_alt": "QR"
-}
+}\n

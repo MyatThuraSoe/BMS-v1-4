@@ -1,5 +1,5 @@
 {
-  "tagline": "POS + 小売システム",
+  "tagline": "POS + 在庫管理システム",
   "version_chip": "バージョン {{version}}",
   "built_chip": "作成日 {{date}}",
   "trial_plan": "1か月トライアル",
@@ -33,9 +33,8 @@
   "made_in": "ミャンマーで作られました 🇲🇲",
   "license_updated": "✅ ライセンスが更新されました！",
   "invalid_key": "このマシンのキーが無効です",
-  "days_left_warning": "残り{{count}}日 ⚠️"
-,
+  "days_left_warning": "残り{{count}}日 ⚠️",
   "phone_access_title": "スマホ・タブレットでLumiPOSを開く",
   "phone_access_desc": "両方の端末を同じWi-Fiに接続し、スマホのカメラでこのコードを読み取ってください。",
   "phone_access_qr_alt": "QR"
-}
+}\n
