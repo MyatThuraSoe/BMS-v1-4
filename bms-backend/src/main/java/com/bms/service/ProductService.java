@@ -134,12 +134,40 @@ public class ProductService {
         return convertToResponse(product);
     }
 
+    public ProductResponse getProductByBarcode(String barcode) {
+        Product product = productRepository.findByBarcodeIgnoreCase(barcode)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found with barcode: " + barcode));
+        if (!product.getIsActive() || product.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Product not found with barcode: " + barcode);
+        }
+        return convertToResponse(product);
+    }
+
+    /**
+     * Blank barcodes become null so "empty" and "unset" are the same state, and
+     * surrounding whitespace from scanners/paste is dropped before the
+     * uniqueness check.
+     */
+    private String normalizeBarcode(String barcode) {
+        if (barcode == null) {
+            return null;
+        }
+        String normalized = barcode.trim();
+        return normalized.isEmpty() ? null : normalized;
+    }
+
     public Product createProduct(ProductCreateRequest request) {
         if (productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
 
+        String barcode = normalizeBarcode(request.getBarcode());
+        if (barcode != null && productRepository.existsByBarcodeIgnoreCase(barcode)) {
+            throw new BusinessException("Product with barcode '" + barcode + "' already exists");
+        }
+
         validateNonNegativeValues(request);
+        validateExpiry(request.getHasExpiry(), request.getExpiryDate());
 
         Product product = new Product();
         product.setSku(request.getSku());
@@ -151,6 +179,9 @@ public class ProductService {
         product.setStockQuantity(request.getStockQuantity() != null ? request.getStockQuantity() : 0);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
         product.setUnit(request.getUnit());
+        product.setBarcode(barcode);
+        product.setHasExpiry(request.getHasExpiry() != null ? request.getHasExpiry() : Boolean.FALSE);
+        product.setExpiryDate(request.getHasExpiry() != null && request.getHasExpiry() ? request.getExpiryDate() : null);
 
         if (request.getCategoryId() != null) {
             Category category = categoryRepository.findById(request.getCategoryId())
@@ -176,9 +207,16 @@ public class ProductService {
         String oldValues = product.toString() + ", costPrice:" + product.getCostPrice();
 
         validateNonNegativeValues(request);
+        validateExpiry(request.getHasExpiry(), request.getExpiryDate());
 
-if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.existsBySkuIgnoreCase(request.getSku())) {
+        if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
+        }
+
+        String barcode = normalizeBarcode(request.getBarcode());
+        if (barcode != null && (!barcode.equalsIgnoreCase(product.getBarcode() == null ? "" : product.getBarcode()))
+                && productRepository.existsByBarcodeIgnoreCase(barcode)) {
+            throw new BusinessException("Product with barcode '" + barcode + "' already exists");
         }
 
         BigDecimal oldPrice = product.getUnitPrice();
@@ -213,9 +251,12 @@ if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.ex
         product.setDescription(request.getDescription());
         product.setUnitPrice(newPrice);
         product.setCostPrice(request.getCostPrice());
-product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
+        product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
         product.setUnit(request.getUnit());
+        product.setBarcode(barcode);
+        product.setHasExpiry(request.getHasExpiry() != null ? request.getHasExpiry() : Boolean.FALSE);
+        product.setExpiryDate(request.getHasExpiry() != null && request.getHasExpiry() ? request.getExpiryDate() : null);
 
         if (request.getCategoryId() != null) {
             Category category = categoryRepository.findById(request.getCategoryId())
@@ -240,6 +281,7 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
 
         // Free the unique SKU so a new product can reuse it after this soft delete.
         product.setSku(com.bms.util.SoftDeleteKeys.release(product.getSku(), product.getId(), 255));
+        product.setBarcode(com.bms.util.SoftDeleteKeys.release(product.getBarcode(), product.getId(), 255));
         product.setDeletedAt(LocalDateTime.now());
         product.setIsActive(false);
         productRepository.save(product);
@@ -445,6 +487,88 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         return new ProductSalesSummaryDto(totalQty, totalRevenue, totalProfit, marginPercent);
     }
 
+    /**
+     * Day-of-week x hour-of-day sales heat map for one product.
+     *
+     * <p>Only the requested window is scanned - callers must not prefetch the
+     * longer windows (the POS database can be busy), so each period is loaded
+     * on demand from the product page. Rows arrive one-per-sale and are
+     * bucketed here in Java rather than in SQL, because day-of-week / hour
+     * extraction is not portable across H2, MySQL and SQLite.
+     */
+    public ProductSaleHeatmapDto getProductSaleHeatmap(Long productId, String period) {
+        productRepository.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+
+        java.time.LocalDate today = java.time.LocalDate.now();
+        java.time.LocalDateTime fromDateTime;
+        java.time.LocalDate fromDate;
+        switch (period) {
+            case "7d":
+                fromDate = today.minusDays(6);
+                fromDateTime = fromDate.atStartOfDay();
+                break;
+            case "1m":
+                fromDate = today.minusMonths(1).plusDays(1);
+                fromDateTime = fromDate.atStartOfDay();
+                break;
+            case "1y":
+                fromDate = today.minusYears(1).plusDays(1);
+                fromDateTime = fromDate.atStartOfDay();
+                break;
+            case "all":
+                fromDate = null;
+                fromDateTime = null;
+                break;
+            default:
+                throw new BusinessException("Unknown heatmap period: " + period);
+        }
+
+        List<Object[]> rows = saleItemRepository.findSalesTimelineForProduct(productId, fromDateTime);
+
+        java.util.Map<String, ProductSaleHeatmapDto.Cell> cells = new java.util.LinkedHashMap<>();
+        long totalQuantity = 0L;
+        long transactionCount = 0L;
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+
+        for (Object[] row : rows) {
+            LocalDateTime saleDate = (LocalDateTime) row[0];
+            if (saleDate == null) {
+                continue;
+            }
+            long quantity = row[1] == null ? 0L : ((Number) row[1]).longValue();
+            BigDecimal revenue = row[2] == null ? BigDecimal.ZERO : (BigDecimal) row[2];
+
+            int dayOfWeek = saleDate.getDayOfWeek().getValue(); // 1=Mon..7=Sun
+            int hourOfDay = saleDate.getHour();
+            String key = dayOfWeek + "_" + hourOfDay;
+
+            ProductSaleHeatmapDto.Cell cell = cells.computeIfAbsent(key, k -> {
+                ProductSaleHeatmapDto.Cell c = new ProductSaleHeatmapDto.Cell();
+                c.setDayOfWeek(dayOfWeek);
+                c.setHourOfDay(hourOfDay);
+                return c;
+            });
+            cell.setQuantity(cell.getQuantity() + quantity);
+            cell.setRevenue(cell.getRevenue().add(revenue));
+            cell.setTransactionCount(cell.getTransactionCount() + 1);
+
+            totalQuantity += quantity;
+            transactionCount += 1;
+            totalRevenue = totalRevenue.add(revenue);
+        }
+
+        ProductSaleHeatmapDto dto = new ProductSaleHeatmapDto();
+        dto.setPeriod(period);
+        dto.setFromDate(fromDate);
+        dto.setToDate(today);
+        dto.setTotalQuantity(totalQuantity);
+        dto.setTransactionCount(transactionCount);
+        dto.setTotalRevenue(totalRevenue);
+        dto.setCells(new ArrayList<>(cells.values()));
+        return dto;
+    }
+
     public List<CostHistoryDto> getCostHistory(Long productId) {
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
@@ -512,12 +636,15 @@ product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDeci
         response.setDescription(product.getDescription());
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
-response.setTaxRate(product.getTaxRate());
+        response.setTaxRate(product.getTaxRate());
         response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
         response.setAvailableQuantity(product.getAvailableQuantity());
         response.setMinStockLevel(product.getMinStockLevel());
         response.setUnit(product.getUnit());
+        response.setBarcode(product.getBarcode());
+        response.setHasExpiry(product.getHasExpiry());
+        response.setExpiryDate(product.getExpiryDate());
         response.setIsActive(product.getIsActive());
         response.setCreatedAt(product.getCreatedAt());
         response.setUpdatedAt(product.getUpdatedAt());
@@ -557,6 +684,16 @@ response.setTaxRate(product.getTaxRate());
         }
         if (request.getMinStockLevel() != null && request.getMinStockLevel() < 0) {
             throw new BusinessException("Min stock level cannot be negative");
+        }
+    }
+
+    /**
+     * Expiry is optional, but a product that tracks expiry must carry a date so
+     * the expiring-soon report and the POS warning have something to show.
+     */
+    private void validateExpiry(Boolean hasExpiry, java.time.LocalDate expiryDate) {
+        if (Boolean.TRUE.equals(hasExpiry) && expiryDate == null) {
+            throw new BusinessException("Expiry date is required when 'has expiry' is enabled");
         }
     }
 }

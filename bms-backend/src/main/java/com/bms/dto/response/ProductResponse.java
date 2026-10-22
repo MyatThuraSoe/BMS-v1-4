@@ -1,6 +1,7 @@
 package com.bms.dto.response;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 public class ProductResponse {
@@ -18,6 +19,9 @@ public class ProductResponse {
     private Integer availableQuantity;
     private Integer minStockLevel;
     private String unit;
+    private String barcode;
+    private Boolean hasExpiry;
+    private LocalDate expiryDate;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -51,6 +55,12 @@ public class ProductResponse {
     public void setMinStockLevel(Integer minStockLevel) { this.minStockLevel = minStockLevel; }
     public String getUnit() { return unit; }
     public void setUnit(String unit) { this.unit = unit; }
+    public String getBarcode() { return barcode; }
+    public void setBarcode(String barcode) { this.barcode = barcode; }
+    public Boolean getHasExpiry() { return hasExpiry; }
+    public void setHasExpiry(Boolean hasExpiry) { this.hasExpiry = hasExpiry; }
+    public LocalDate getExpiryDate() { return expiryDate; }
+    public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate; }
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public LocalDateTime getCreatedAt() { return createdAt; }

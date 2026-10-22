@@ -10,6 +10,7 @@ import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Search as Searc
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, categoryService, inventoryService, reportService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
+import { getExpiryStatus, formatExpiryDate } from '../utils/expiry';
 import { useAuth } from '../context/AuthContext';
 import ProductImage from '../components/ProductImage';
 import { notifyError } from '../utils/notify';
@@ -185,6 +186,7 @@ const ProductsTab = () => {
             ) : (
               products.map((product, index) => {
                 const status = stockStatus(product);
+                const expiry = getExpiryStatus(product);
                 return (
                   <TableRow
                     key={product.id}
@@ -195,7 +197,14 @@ const ProductsTab = () => {
                     <TableCell>{page * size + index + 1}</TableCell>
                     <TableCell><ProductImage productId={product.id} hasImage={product.hasImage} size={48} /></TableCell>
                     <TableCell>{product.name}</TableCell>
-                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{product.sku}</TableCell>
+                    <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>
+                      {product.sku}
+                      {product.barcode && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontFamily: 'monospace' }}>
+                          {product.barcode}
+                        </Typography>
+                      )}
+                    </TableCell>
                     <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{product.categoryName || '-'}</TableCell>
                     <TableCell align="right">{formatCurrency(product.unitPrice)}</TableCell>
                     <TableCell align="right">
@@ -204,7 +213,23 @@ const ProductsTab = () => {
                       </Typography>
                     </TableCell>
                     <TableCell align="right" sx={{ display: { xs: 'none', sm: 'table-cell' } }}>{product.minStockLevel || 10}</TableCell>
-                    <TableCell><Chip size="small" label={t(status.key)} color={status.color} /></TableCell>
+                    <TableCell>
+                      <Stack spacing={0.5} alignItems="flex-start">
+                        <Chip size="small" label={t(status.key)} color={status.color} />
+                        {expiry && (
+                          <Chip
+                            size="small"
+                            variant={expiry.status === 'ok' ? 'outlined' : 'filled'}
+                            color={expiry.status === 'expired' ? 'error' : expiry.status === 'expiring' ? 'warning' : 'default'}
+                            label={expiry.status === 'expired'
+                              ? t('expired')
+                              : expiry.status === 'expiring'
+                                ? t('expiring_soon')
+                                : t('expires_on', { date: formatExpiryDate(expiry.date) })}
+                          />
+                        )}
+                      </Stack>
+                    </TableCell>
                     {isManager() && (
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                         <IconButton size="small" onClick={(e) => { e.stopPropagation(); navigate(detailUrl(`/products/${product.id}/edit`)); }} title={t('edit')}><EditIcon /></IconButton>

@@ -231,22 +231,25 @@ const POS = () => {
     return baseProducts.filter((p) => {
       const matchesSearch = !normalizedSearch ||
         p.name?.toLowerCase().includes(normalizedSearch) ||
-        p.sku?.toLowerCase().includes(normalizedSearch);
+        p.sku?.toLowerCase().includes(normalizedSearch) ||
+        p.barcode?.toLowerCase().includes(normalizedSearch);
 
       const matchesCategory = !selectedCategory || String(p.categoryId) === String(selectedCategory);
       return matchesSearch && matchesCategory;
     });
   }, [baseProducts, normalizedSearch, selectedCategory]);
 
-  // Enter = barcode workflow: an exact SKU match (or a single search result) is
-  // added straight to the cart and the search clears.
+  // Enter = barcode workflow: an exact barcode or SKU match (or a single search
+  // result) is added straight to the cart and the search clears. USB/Bluetooth
+  // scanners type the code then press Enter, so this is the scan path.
   // eslint-disable-next-line no-use-before-define
   const handleSearchEnter = () => {
     if (!searchActive) return;
     const results = searchData?.data?.content || [];
     const q = normalizedSearch;
+    const exactBarcode = results.find((p) => p.barcode && p.barcode.toLowerCase() === q && p.stockQuantity > 0);
     const exactSku = results.find((p) => p.sku && p.sku.toLowerCase() === q && p.stockQuantity > 0);
-    const target = exactSku || (results.length === 1 && results[0].stockQuantity > 0 ? results[0] : null);
+    const target = exactBarcode || exactSku || (results.length === 1 && results[0].stockQuantity > 0 ? results[0] : null);
     if (target) {
       addToCart(target);
       setSearchQuery('');

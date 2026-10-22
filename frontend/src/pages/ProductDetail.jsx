@@ -28,7 +28,10 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { productService, reportService } from '../api/services';
 import { formatCurrency, formatDateTime } from '../utils/helpers';
+import { getExpiryStatus, formatExpiryDate } from '../utils/expiry';
+import { useAuth } from '../context/AuthContext';
 import ProductImage from '../components/ProductImage';
+import ProductSaleHeatmap from '../components/ProductSaleHeatmap';
 import { useTranslation } from 'react-i18next';
 
 const ProductDetail = () => {
@@ -36,6 +39,7 @@ const ProductDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isManager } = useAuth();
   const [priceHistoryPage, setPriceHistoryPage] = useState(0);
   const [priceHistoryRowsPerPage, setPriceHistoryRowsPerPage] = useState(10);
 
@@ -81,6 +85,7 @@ const ProductDetail = () => {
   const topCustomers = topCustomersData?.data || [];
   const salesSummary = salesSummaryData?.data;
   const basketAffinity = basketData?.data || [];
+  const expiryStatus = getExpiryStatus(product);
 
   const handlePriceHistoryChangePage = (event, newPage) => {
     setPriceHistoryPage(newPage);
@@ -297,6 +302,36 @@ const ProductDetail = () => {
               {formatDateTime(product.updatedAt)}
             </Typography>
           </Grid>
+
+          <Grid item xs={6} md={3}>
+            <Typography variant="caption" color="text.secondary">
+              {t('barcode')}
+            </Typography>
+            <Typography variant="body1" sx={{ fontFamily: 'monospace' }}>
+              {product.barcode || '-'}
+            </Typography>
+          </Grid>
+
+          <Grid item xs={6} md={3}>
+            <Typography variant="caption" color="text.secondary">
+              {t('expiry')}
+            </Typography>
+            {!product.hasExpiry || !product.expiryDate ? (
+              <Typography variant="body1" color="text.secondary">
+                {t('no_expiry')}
+              </Typography>
+            ) : (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                <Typography variant="body1">{formatExpiryDate(product.expiryDate)}</Typography>
+                {expiryStatus?.status === 'expired' && (
+                  <Chip size="small" color="error" label={t('expired')} />
+                )}
+                {expiryStatus?.status === 'expiring' && (
+                  <Chip size="small" color="warning" label={t('expiring_soon')} />
+                )}
+              </Box>
+            )}
+          </Grid>
         </Grid>
       </Paper>
 
@@ -329,6 +364,10 @@ const ProductDetail = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      {/* Manager-only: when this product sells (weekday x hour). Each period
+          tab is fetched on demand inside the component. */}
+      {isManager() && <ProductSaleHeatmap productId={product.id} />}
 
       {/* Purchased From */}
       <Paper sx={{ p: 3, mb: 3 }}>

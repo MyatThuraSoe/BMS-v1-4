@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 
 public class ProductCreateRequest {
     @NotBlank(message = "SKU is required")
@@ -35,6 +36,12 @@ public class ProductCreateRequest {
     
     private String unit;
     
+    private String barcode;
+    
+    private Boolean hasExpiry;
+    
+    private LocalDate expiryDate;
+    
     // Getters and setters
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
@@ -56,4 +63,13 @@ public class ProductCreateRequest {
     public void setMinStockLevel(Integer minStockLevel) { this.minStockLevel = minStockLevel; }
     public String getUnit() { return unit; }
     public void setUnit(String unit) { this.unit = unit; }
+    
+    public String getBarcode() { return barcode; }
+    public void setBarcode(String barcode) { this.barcode = barcode; }
+    
+    public Boolean getHasExpiry() { return hasExpiry; }
+    public void setHasExpiry(Boolean hasExpiry) { this.hasExpiry = hasExpiry; }
+    
+    public LocalDate getExpiryDate() { return expiryDate; }
+    public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate; }
 }

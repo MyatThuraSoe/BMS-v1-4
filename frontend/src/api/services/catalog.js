@@ -104,6 +104,18 @@ export const productService = {
     const response = await apiClient.get(`/products/${productId}/sales-summary`);
     return response.data;
   },
+
+  // period is one of 7d | 1m | 1y | all. Long windows are only requested when
+  // the user selects their tab (see ProductSaleHeatmap), never up front.
+  getSaleHeatmap: async (productId, period = '7d') => {
+    const response = await apiClient.get(`/products/${productId}/sale-heatmap?period=${period}`);
+    return response.data;
+  },
+
+  getByBarcode: async (barcode) => {
+    const response = await apiClient.get(`/products/barcode/${encodeURIComponent(barcode)}`);
+    return response.data;
+  },
 };
 
 export const categoryService = {

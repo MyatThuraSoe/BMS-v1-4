@@ -94,6 +94,13 @@ public class ProductController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Product retrieved successfully", product));
     }
 
+    @GetMapping("/barcode/{barcode}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<ProductResponse>> getProductByBarcode(@PathVariable String barcode) {
+        ProductResponse product = productService.getProductByBarcode(barcode);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Product retrieved successfully", product));
+    }
+
 @GetMapping("/search")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> searchProducts(
@@ -236,6 +243,23 @@ public class ProductController {
         return ResponseEntity.ok(new ApiResponse<>(true, "Sales summary retrieved successfully", summary));
     }
 
+    /**
+     * Day-of-week x hour-of-day sales heat map for one product. Cashiers are
+     * excluded: it is an analysis view, and the long windows are deliberately
+     * loaded one period at a time from the product page so the database is
+     * never asked for a year (or all time) of sales up front.
+     *
+     * @param period one of 7d, 1m, 1y, all
+     */
+    @GetMapping("/{id}/sale-heatmap")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<com.bms.dto.response.ProductSaleHeatmapDto>> getSaleHeatmap(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "7d") String period) {
+        com.bms.dto.response.ProductSaleHeatmapDto heatmap = productService.getProductSaleHeatmap(id, period);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Sales heatmap retrieved successfully", heatmap));
+    }
+
     private ProductResponse convertToResponse(Product product) {
         ProductResponse response = new ProductResponse();
         response.setId(product.getId());
@@ -245,10 +269,14 @@ public class ProductController {
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
         response.setTaxRate(product.getTaxRate());
-response.setStockQuantity(product.getStockQuantity());
+        response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
         response.setAvailableQuantity(product.getAvailableQuantity());
         response.setMinStockLevel(product.getMinStockLevel());
+        response.setUnit(product.getUnit());
+        response.setBarcode(product.getBarcode());
+        response.setHasExpiry(product.getHasExpiry());
+        response.setExpiryDate(product.getExpiryDate());
         response.setIsActive(product.getIsActive());
         response.setCreatedAt(product.getCreatedAt());
         response.setUpdatedAt(product.getUpdatedAt());

@@ -53,4 +53,29 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
         ORDER BY COUNT(DISTINCT si1.sale.id) DESC
         """)
     List<Object[]> findFrequentlyBoughtWith(@Param("productId") Long productId, Pageable pageable);
+
+    /**
+     * One row per sale containing the product (saleDate, net quantity, net
+     * revenue). The caller buckets rows into a day-of-week x hour-of-day grid
+     * in Java: extracting day-of-week/hour in SQL is not portable across
+     * H2 / MySQL / SQLite, and one row per sale is a small transfer even for
+     * long ranges. Voided, inactive and soft-deleted sales are excluded, and
+     * refunds are netted out of quantity and revenue.
+     *
+     * @param fromDate nullable; null means "all time"
+     */
+    @Query("""
+        SELECT si.sale.saleDate,
+               SUM(si.quantity - si.quantityRefunded),
+               SUM(si.unitPrice * (si.quantity - si.quantityRefunded))
+        FROM SaleItem si
+        WHERE si.product.id = :productId
+          AND si.sale.isVoided = false
+          AND si.sale.isActive = true
+          AND si.sale.deletedAt IS NULL
+          AND (:fromDate IS NULL OR si.sale.saleDate >= :fromDate)
+        GROUP BY si.sale.id, si.sale.saleDate
+        """)
+    List<Object[]> findSalesTimelineForProduct(@Param("productId") Long productId,
+                                               @Param("fromDate") java.time.LocalDateTime fromDate);
 }
