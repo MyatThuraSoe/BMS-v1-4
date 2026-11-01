@@ -464,18 +464,32 @@ public class ProductService {
 
         List<Object[]> results = saleItemRepository.getSalesSummaryForProduct(productId);
 
-        if (results.isEmpty() || results.get(0)[0] == null) {
-            return new ProductSalesSummaryDto(0L, BigDecimal.ZERO, BigDecimal.ZERO, null);
+        long totalQty = 0L;
+        BigDecimal totalRevenue = BigDecimal.ZERO;
+        BigDecimal totalCost = BigDecimal.ZERO;
+
+        for (Object[] row : results) {
+            BigDecimal saleSubtotal = toBigDecimal(row[0]);
+            BigDecimal saleDiscount = toBigDecimal(row[1]);
+            BigDecimal lineTotal = toBigDecimal(row[2]);
+            int quantity = row[3] != null ? ((Number) row[3]).intValue() : 0;
+            int refunded = row[4] != null ? ((Number) row[4]).intValue() : 0;
+            BigDecimal costAtSale = toBigDecimal(row[5]);
+
+            int quantitySold = Math.max(0, quantity - refunded);
+            if (quantitySold <= 0) {
+                continue;
+            }
+
+            totalQty += quantitySold;
+            totalRevenue = totalRevenue.add(SaleDiscountUtils.netLineRevenue(
+                    lineTotal, saleSubtotal, saleDiscount, quantity, quantitySold));
+            totalCost = totalCost.add(costAtSale.multiply(BigDecimal.valueOf(quantitySold)));
         }
 
-        Object[] row = results.get(0);
-
-        Long totalQty = ((Number) row[0]).longValue();
-        BigDecimal totalRevenue = (BigDecimal) row[1];
-        BigDecimal totalProfit = (BigDecimal) row[2];
-
-        if (totalRevenue == null) totalRevenue = BigDecimal.ZERO;
-        if (totalProfit == null) totalProfit = BigDecimal.ZERO;
+        totalRevenue = totalRevenue.setScale(2, RoundingMode.HALF_UP);
+        totalCost = totalCost.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal totalProfit = totalRevenue.subtract(totalCost);
 
         BigDecimal marginPercent = null;
         if (totalRevenue.compareTo(BigDecimal.ZERO) > 0) {
@@ -485,6 +499,20 @@ public class ProductService {
         }
 
         return new ProductSalesSummaryDto(totalQty, totalRevenue, totalProfit, marginPercent);
+    }
+
+    /**
+     * SQLite/JDBC may hand numeric columns back as Integer/Long/BigDecimal
+     * depending on stored affinity, so normalise before arithmetic.
+     */
+    private BigDecimal toBigDecimal(Object value) {
+        if (value == null) {
+            return BigDecimal.ZERO;
+        }
+        if (value instanceof BigDecimal bd) {
+            return bd;
+        }
+        return new BigDecimal(value.toString());
     }
 
     /**
@@ -532,12 +560,18 @@ public class ProductService {
         BigDecimal totalRevenue = BigDecimal.ZERO;
 
         for (Object[] row : rows) {
-            LocalDateTime saleDate = (LocalDateTime) row[0];
+            LocalDateTime saleDate = row[1] != null ? (LocalDateTime) row[1] : null;
             if (saleDate == null) {
                 continue;
             }
-            long quantity = row[1] == null ? 0L : ((Number) row[1]).longValue();
-            BigDecimal revenue = row[2] == null ? BigDecimal.ZERO : (BigDecimal) row[2];
+            int quantity = row[2] != null ? ((Number) row[2]).intValue() : 0;
+            int refunded = row[3] != null ? ((Number) row[3]).intValue() : 0;
+            int quantitySold = Math.max(0, quantity - refunded);
+            BigDecimal lineTotal = toBigDecimal(row[4]);
+            BigDecimal saleSubtotal = toBigDecimal(row[5]);
+            BigDecimal saleDiscount = toBigDecimal(row[6]);
+            BigDecimal revenue = SaleDiscountUtils.netLineRevenue(
+                    lineTotal, saleSubtotal, saleDiscount, quantity, quantitySold);
 
             int dayOfWeek = saleDate.getDayOfWeek().getValue(); // 1=Mon..7=Sun
             int hourOfDay = saleDate.getHour();
@@ -549,11 +583,11 @@ public class ProductService {
                 c.setHourOfDay(hourOfDay);
                 return c;
             });
-            cell.setQuantity(cell.getQuantity() + quantity);
+            cell.setQuantity(cell.getQuantity() + quantitySold);
             cell.setRevenue(cell.getRevenue().add(revenue));
             cell.setTransactionCount(cell.getTransactionCount() + 1);
 
-            totalQuantity += quantity;
+            totalQuantity += quantitySold;
             transactionCount += 1;
             totalRevenue = totalRevenue.add(revenue);
         }

@@ -75,12 +75,12 @@ public class SaleReturnService {
         response.setSaleDate(sale.getSaleDate());
         response.setVoided(sale.getIsVoided());
         response.setItems(sale.getItems().stream()
-                .map(this::convertToReturnableItem)
+                .map(item -> convertToReturnableItem(sale, item))
                 .collect(Collectors.toList()));
         return response;
     }
 
-    private ReturnableItemsResponse.ReturnableItem convertToReturnableItem(SaleItem item) {
+    private ReturnableItemsResponse.ReturnableItem convertToReturnableItem(Sale sale, SaleItem item) {
         ReturnableItemsResponse.ReturnableItem dto = new ReturnableItemsResponse.ReturnableItem();
         dto.setSaleItemId(item.getId());
         dto.setProductId(item.getProduct().getId());
@@ -90,7 +90,7 @@ public class SaleReturnService {
         dto.setQuantityAlreadyReturned(alreadyReturned);
         dto.setQuantityReturnable(Math.max(0, item.getQuantity() - alreadyReturned));
         dto.setUnitPrice(item.getUnitPrice());
-        dto.setUnitRefundAmount(calculateUnitRefundAmount(item));
+        dto.setUnitRefundAmount(calculateUnitRefundAmount(sale, item));
         return dto;
     }
 
@@ -143,8 +143,10 @@ public class SaleReturnService {
             }
 
             // Return the tax-inclusive original sale price (tax was charged at sale time,
-            // so it must be given back too — otherwise returns silently leak tax).
-            BigDecimal unitRefundAmount = calculateUnitRefundAmount(saleItem);
+            // so it must be given back too — otherwise returns silently leak tax). The
+            // customer's share of any sale-level discount is deducted first, otherwise a
+            // return on a discounted sale refunds more than was actually paid.
+            BigDecimal unitRefundAmount = calculateUnitRefundAmount(sale, saleItem);
             BigDecimal returnAmount = unitRefundAmount
                     .multiply(BigDecimal.valueOf(requestedQuantity))
                     .setScale(2, java.math.RoundingMode.HALF_UP);
@@ -265,14 +267,15 @@ public class SaleReturnService {
     }
 
     /**
-     * Tax-inclusive per-unit refund derived ONLY from the stored sale prices.
+     * Tax-inclusive per-unit refund derived ONLY from the stored sale prices,
+     * less this line's allocated share of the sale-level discount.
      */
-    private BigDecimal calculateUnitRefundAmount(SaleItem saleItem) {
+    private BigDecimal calculateUnitRefundAmount(Sale sale, SaleItem saleItem) {
         BigDecimal itemTotal = saleItem.getTotalPrice() != null ? saleItem.getTotalPrice() : BigDecimal.ZERO;
         BigDecimal itemTax = saleItem.getTaxAmount() != null ? saleItem.getTaxAmount() : BigDecimal.ZERO;
         int itemQty = saleItem.getQuantity() != null && saleItem.getQuantity() > 0 ? saleItem.getQuantity() : 1;
-        return itemTotal.add(itemTax)
-                .divide(BigDecimal.valueOf(itemQty), 4, java.math.RoundingMode.HALF_UP);
+        BigDecimal allocatedDiscount = SaleDiscountUtils.discountForItem(sale, saleItem);
+        return SaleDiscountUtils.unitRefundAmount(itemTotal, itemTax, allocatedDiscount, itemQty);
     }
 
     private Sale loadActiveSale(Long saleId) {

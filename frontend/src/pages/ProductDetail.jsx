@@ -134,9 +134,10 @@ const ProductDetail = () => {
 
     if (record.quantity != null) {
       const purchaseUnit = product?.unit || 'units';
+      const isReversal = record.quantity < 0;
       return (
         <Typography variant="caption">
-          Purchases ({record.quantity} {purchaseUnit}) with the price {formatCurrency(record.purchaseUnitPrice ?? record.newValue)}
+          {isReversal ? 'Purchase reversal' : 'Purchases'} ({Math.abs(record.quantity)} {purchaseUnit}) with the price {formatCurrency(record.purchaseUnitPrice ?? record.newValue)}
         </Typography>
       );
     }

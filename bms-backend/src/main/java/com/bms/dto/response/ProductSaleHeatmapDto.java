@@ -24,7 +24,7 @@ public class ProductSaleHeatmapDto {
         private int dayOfWeek;   // 1=Mon .. 7=Sun
         private int hourOfDay;   // 0..23
         private long quantity;
-        private BigDecimal revenue;
+        private BigDecimal revenue = BigDecimal.ZERO;
         private long transactionCount;
 
         public int getDayOfWeek() { return dayOfWeek; }

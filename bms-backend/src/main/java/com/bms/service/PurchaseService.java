@@ -250,6 +250,66 @@ public class PurchaseService {
         }
     }
 
+    /**
+     * Reverses the stock and weighted-average cost contribution of one purchase
+     * line. The removed units are valued at their own unitCost (not the current
+     * average), and the remaining stock keeps the weighted average of what is
+     * left. Refuses to reverse stock that has already been sold.
+     */
+    private void reversePurchaseItem(Purchase purchase, PurchaseItem item, Long userId, String operation) {
+        Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
+
+        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+        if (quantity <= 0) {
+            return;
+        }
+
+        int currentStock = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+        if (currentStock < quantity) {
+            throw new BusinessException(
+                    "Cannot " + operation + " purchase because " + product.getName()
+                            + " has only " + currentStock + " unit(s) in stock but "
+                            + quantity + " unit(s) must be reversed (already sold)");
+        }
+
+        BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+        BigDecimal newCostPrice = CostCalculationUtils.calculateWeightedAverageCostAfterRemoval(
+                oldCostPrice, currentStock, item.getUnitCost(), quantity);
+
+        product.setStockQuantity(currentStock - quantity);
+        product.setCostPrice(newCostPrice);
+        productRepository.save(product);
+
+        User user = userRepository.findById(userId).orElse(null);
+
+        if (oldCostPrice.compareTo(newCostPrice) != 0) {
+            ProductPriceHistory costHistory = new ProductPriceHistory();
+            costHistory.setProduct(product);
+            costHistory.setOldPrice(oldCostPrice);
+            costHistory.setNewPrice(newCostPrice);
+            costHistory.setPriceType(ProductPriceHistory.PriceType.COST);
+            costHistory.setChangedBy(user);
+            costHistory.setPurchaseSupplierName(purchase.getSupplier() != null
+                    ? purchase.getSupplier().getName() : null);
+            // A negative quantity marks this record as a purchase reversal.
+            costHistory.setPurchaseQuantity(-quantity);
+            costHistory.setPurchaseUnitPrice(item.getUnitCost());
+            priceHistoryRepository.save(costHistory);
+        }
+
+        StockMovement movement = new StockMovement();
+        movement.setProduct(product);
+        movement.setMovementType(StockMovement.MovementType.OUT);
+        movement.setQuantity(quantity);
+        movement.setReferenceType(StockMovement.ReferenceType.PURCHASE);
+        movement.setReferenceId(purchase.getId());
+        movement.setDescription("Stock reversed from purchase " + operation + ": " + purchase.getPurchaseNumber());
+        movement.setCreatedBy(user);
+        movement.setMovementDate(LocalDateTime.now());
+        stockMovementRepository.save(movement);
+    }
+
     private String generatePurchaseNumber() {
         return sequenceService.nextPurchaseNumber();
     }
@@ -319,7 +379,19 @@ public class PurchaseService {
     public void deletePurchase(Long id, Long userId) {
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + id));
-        
+
+        if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Purchase not found: " + id);
+        }
+
+        // Deleting a purchase must undo what it did to inventory, otherwise the
+        // stock and weighted-average cost stay inflated forever. Refuse when the
+        // purchased units have already been sold, because there is nothing left
+        // to reverse safely.
+        for (PurchaseItem item : purchase.getItems()) {
+            reversePurchaseItem(purchase, item, userId, "delete");
+        }
+
         purchase.setDeletedAt(LocalDateTime.now());
         purchase.setIsActive(false);
         purchaseRepository.save(purchase);
@@ -355,36 +427,7 @@ public class PurchaseService {
         // Reverse previous stock AND its weighted-average cost contribution
         // (locked product rows so concurrent sales can't race the reversal).
         for (PurchaseItem oldItem : purchase.getItems()) {
-
-            Product product = productRepository.findByIdForUpdate(oldItem.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + oldItem.getProduct().getId()));
-
-            int newStock = product.getStockQuantity() - oldItem.getQuantity();
-
-            if (newStock < 0) {
-                throw new BusinessException(
-                        "Cannot update purchase because it would make stock negative for product: "
-                                + product.getName()
-                );
-            }
-
-            // Remove the cost of the quantities being reversed, keeping the
-            // weighted average of whatever stock remains.
-            BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
-            BigDecimal totalValueBefore = oldCostPrice.multiply(BigDecimal.valueOf(oldItem.getQuantity()));
-            int remainingStock = product.getStockQuantity();
-            BigDecimal newCostPrice = remainingStock > 0
-                    ? (oldCostPrice.multiply(BigDecimal.valueOf(remainingStock + oldItem.getQuantity()))
-                            .subtract(totalValueBefore))
-                            .divide(BigDecimal.valueOf(remainingStock), 2, java.math.RoundingMode.HALF_UP)
-                    : BigDecimal.ZERO;
-
-            product.setStockQuantity(newStock);
-            if (newCostPrice.compareTo(BigDecimal.ZERO) >= 0) {
-                product.setCostPrice(newCostPrice);
-            }
-
-            productRepository.save(product);
+            reversePurchaseItem(purchase, oldItem, userId, "update");
         }
 
         // Update purchase header
