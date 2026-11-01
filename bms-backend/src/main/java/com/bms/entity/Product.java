@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
         @Index(name = "idx_product_sku", columnList = "sku"),
         @Index(name = "idx_product_active_deleted", columnList = "is_active, deleted_at"),
         @Index(name = "idx_product_category_active", columnList = "category_id, is_active, deleted_at"),
-        @Index(name = "idx_product_low_stock", columnList = "is_active, deleted_at, stock_quantity, min_stock_level")
+        @Index(name = "idx_product_low_stock", columnList = "is_active, deleted_at, stock_quantity, min_stock_level"),
+        @Index(name = "idx_product_barcode", columnList = "barcode")
 })
 public class Product {
     @Id
@@ -52,6 +53,18 @@ public class Product {
 
     @Column(name = "unit", length = 50)
     private String unit;
+
+    // Not DB-unique: SQLite rejects ALTER TABLE ADD COLUMN ... UNIQUE, and
+    // ddl-auto=update must be able to add this column to existing shop
+    // databases. Uniqueness is enforced in ProductService (same as SKU).
+    @Column(name = "barcode")
+    private String barcode;
+    
+    @Column(name = "has_expiry")
+    private Boolean hasExpiry = false;
+    
+    @Column(name = "expiry_date")
+    private java.time.LocalDate expiryDate;
 
     @Version
     private Long version;
@@ -139,9 +152,18 @@ public class Product {
     
     public Integer getMinStockLevel() { return minStockLevel; }
     public void setMinStockLevel(Integer minStockLevel) { this.minStockLevel = minStockLevel; }
-    
+
     public String getUnit() { return unit; }
     public void setUnit(String unit) { this.unit = unit; }
+
+    public String getBarcode() { return barcode; }
+    public void setBarcode(String barcode) { this.barcode = barcode; }
+    
+    public Boolean getHasExpiry() { return hasExpiry; }
+    public void setHasExpiry(Boolean hasExpiry) { this.hasExpiry = hasExpiry; }
+    
+    public java.time.LocalDate getExpiryDate() { return expiryDate; }
+    public void setExpiryDate(java.time.LocalDate expiryDate) { this.expiryDate = expiryDate; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }

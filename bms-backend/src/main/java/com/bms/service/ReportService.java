@@ -11,6 +11,7 @@ import com.bms.dto.response.SupplierProfitDto;
 import com.bms.entity.Expense;
 import com.bms.entity.Product;
 import com.bms.entity.Sale;
+import com.bms.entity.SaleItem;
 import com.bms.entity.SaleReturn;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ProductRepository;
@@ -87,11 +88,11 @@ public class ReportService {
         Map<Long, Product> productCache = new HashMap<>();
 
         for (Sale sale : sales) {
-            if (sale.getIsVoided()) {
+            if (Boolean.TRUE.equals(sale.getIsVoided())) {
                 continue;
             }
-            totalRevenue = totalRevenue.add(calculateNetSaleRevenue(sale));
             totalTransactions++;
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
 
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
@@ -101,11 +102,11 @@ public class ReportService {
                 Product product = item.getProduct();
                 productCache.putIfAbsent(product.getId(), product);
                 productQuantities.merge(product.getId(), quantitySold, Integer::sum);
-                BigDecimal revenue = item.getUnitPrice() != null
-                        ? item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold))
-                        : BigDecimal.ZERO;
+                BigDecimal revenue = SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
+                totalRevenue = totalRevenue.add(revenue);
                 productRevenue.merge(product.getId(), revenue, BigDecimal::add);
-                BigDecimal tax = item.getTaxAmount() != null ? item.getTaxAmount() : BigDecimal.ZERO;
+                BigDecimal tax = prorateTax(item, quantitySold);
                 productTax.merge(product.getId(), tax, BigDecimal::add);
                 if (item.getCostPriceAtSale() != null) {
                     BigDecimal cost = item.getCostPriceAtSale().multiply(BigDecimal.valueOf(quantitySold));
@@ -170,7 +171,7 @@ public class ReportService {
         int totalTransactions = 0;
 
         for (Sale sale : sales) {
-            if (!sale.getIsVoided()) {
+            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
                 totalRevenue = totalRevenue.add(calculateNetSaleRevenue(sale));
                 totalTransactions++;
             }
@@ -198,7 +199,8 @@ public class ReportService {
         Map<Long, Map<String, Object>> productStats = new HashMap<>();
 
         for (Sale sale : sales) {
-            if (!sale.getIsVoided()) {
+            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
+                var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
                 for (var item : sale.getItems()) {
                     int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                     if (quantitySold <= 0) {
@@ -217,7 +219,10 @@ public class ReportService {
                     
                     Map<String, Object> stats = productStats.get(productId);
                     stats.put("totalQuantitySold", (Integer) stats.get("totalQuantitySold") + quantitySold);
-                    stats.put("totalRevenue", ((BigDecimal) stats.get("totalRevenue")).add(item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold))));
+                    stats.put("totalRevenue", ((BigDecimal) stats.get("totalRevenue")).add(
+                            SaleDiscountUtils.netItemRevenue(item,
+                                    discountAllocations.getOrDefault(item, BigDecimal.ZERO),
+                                    quantitySold)));
                 }
             }
         }
@@ -252,7 +257,7 @@ public class ReportService {
         Map<Long, Map<String, Object>> cashierStats = new HashMap<>();
 
         for (Sale sale : sales) {
-            if (!sale.getIsVoided()) {
+            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
                 Long cashierId = sale.getCashierId();
 
                 cashierStats.computeIfAbsent(cashierId, k -> {
@@ -380,6 +385,7 @@ public class ReportService {
         List<Sale> currentSales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
         for (Sale sale : currentSales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                 if (quantitySold <= 0) continue;
@@ -387,7 +393,8 @@ public class ReportService {
                 String categoryName = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getName() : "Uncategorized";
                 
                 categoryNames.put(categoryId, categoryName);
-                BigDecimal itemRevenue = item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold));
+                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
                 currentRevenueMap.merge(categoryId, itemRevenue, BigDecimal::add);
             }
         }
@@ -443,12 +450,14 @@ public class ReportService {
         for (Sale sale : sales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
             LocalDate day = sale.getSaleDate().toLocalDate();
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                 if (quantitySold <= 0) continue;
                 Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
                 if (!wanted.contains(categoryId)) continue;
-                BigDecimal itemRevenue = item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold));
+                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
                 daily.computeIfAbsent(day, k -> new HashMap<>())
                         .merge(categoryId, itemRevenue, BigDecimal::add);
             }
@@ -466,7 +475,8 @@ public class ReportService {
         return result;
     }
 
-    public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {        LocalDateTime startDateTime = startDate.atStartOfDay();
+    public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {
+        LocalDateTime startDateTime = startDate.atStartOfDay();
         LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
         List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
 
@@ -476,12 +486,14 @@ public class ReportService {
             if (sale.getIsVoided() != null && sale.getIsVoided()) {
                 continue;
             }
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                 if (quantitySold <= 0) {
                     continue;
                 }
-                revenue = revenue.add(item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold)));
+                revenue = revenue.add(SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold));
                 cogs = cogs.add(CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(), quantitySold));
             }
         }
@@ -536,12 +548,14 @@ public class ReportService {
                 if (sale.getIsVoided() != null && sale.getIsVoided()) {
                     continue;
                 }
+                var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
                 for (var item : sale.getItems()) {
                     int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                     if (quantitySold <= 0) {
                         continue;
                     }
-                    revenue = revenue.add(item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold)));
+                    revenue = revenue.add(SaleDiscountUtils.netItemRevenue(
+                            item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold));
                     cogs = cogs.add(CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(), quantitySold));
                 }
             }
@@ -947,14 +961,21 @@ public class ReportService {
     }
 
     private BigDecimal calculateNetSaleRevenue(Sale sale) {
-        BigDecimal revenue = BigDecimal.ZERO;
-        for (var item : sale.getItems()) {
-            int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-            if (quantitySold > 0 && item.getUnitPrice() != null) {
-                revenue = revenue.add(item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold)));
-            }
+        return SaleDiscountUtils.netSaleRevenue(sale);
+    }
+
+    /**
+     * Tax for the non-refunded units of a line. The stored tax covers the full
+     * quantity, so partially refunded lines must not keep reporting all of it.
+     */
+    private BigDecimal prorateTax(SaleItem item, int quantitySold) {
+        BigDecimal tax = item.getTaxAmount() != null ? item.getTaxAmount() : BigDecimal.ZERO;
+        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+        if (quantity <= 0 || quantitySold >= quantity) {
+            return tax;
         }
-        return revenue;
+        return tax.multiply(BigDecimal.valueOf(quantitySold))
+                .divide(BigDecimal.valueOf(quantity), 2, RoundingMode.HALF_UP);
     }
 
     /**
@@ -997,11 +1018,13 @@ public class ReportService {
         Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
         for (Sale sale : sales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                 if (quantitySold <= 0) continue;
                 Long productId = item.getProduct().getId();
-                BigDecimal itemRevenue = item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold));
+                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
                 revenueByProduct.merge(productId, itemRevenue, BigDecimal::add);
             }
         }
@@ -1013,11 +1036,13 @@ public class ReportService {
         Map<Long, BigDecimal> revenueByCategory = new HashMap<>();
         for (Sale sale : sales) {
             if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
+            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
             for (var item : sale.getItems()) {
                 int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
                 if (quantitySold <= 0) continue;
                 Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
-                BigDecimal itemRevenue = item.getUnitPrice().multiply(BigDecimal.valueOf(quantitySold));
+                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
+                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
                 revenueByCategory.merge(categoryId, itemRevenue, BigDecimal::add);
             }
         }

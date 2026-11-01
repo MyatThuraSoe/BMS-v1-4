@@ -5,8 +5,8 @@ LumiPOS is a desktop + web-capable Business Management System (BMS) for retail s
 ---
 
 ## 1. Point of Sale (POS)
-- **Product Search**: Search by product name or SKU.
-- **Keyboard-Friendly Search Workflow**: Press Enter to quickly add an exact SKU match (or a single matching product) to the cart.
+- **Product Search**: Search by product name, SKU, or barcode.
+- **Keyboard-Friendly Search Workflow**: Press Enter to quickly add an exact barcode match (or an exact SKU match, or a single matching product) to the cart.
 - **Quick Cart Management**: Add/update/remove line items, adjust quantities, and view running totals in real time.
 - **Discounts**: Apply percentage or amount-based discounts at the sale level (where permitted).
 - **Tax Handling**: Supports configurable tax rates per product/sale context as configured in the system.
@@ -22,13 +22,13 @@ LumiPOS is a desktop + web-capable Business Management System (BMS) for retail s
 ---
 
 ## 2. Inventory Management
-- **Product Master**: SKU, name, description, category, brand, supplier, cost price, selling price, tax rate, unit of measure, reorder level, active/inactive.
+- **Product Master**: SKU, barcode, name, description, category, brand, supplier, cost price, selling price, tax rate, unit of measure, reorder level, active/inactive.
 - **Stock Tracking**: Real-time on-hand quantities with low-stock alerts/minimum reorder levels.
 - **Stock Adjustments**: Manual stock adjustments (add/deduct) with audit trail.
 - **Purchase Integration**: Purchases increase stock; goods received flow into inventory.
-- **Expiry Tracking**: Expiry date support for perishable items (where enabled).
+- **Expiry Tracking**: Optional expiry date per product. Expired and expiring-soon (within 30 days) items are flagged on the product list and product detail pages.
 - **Batch/Lot Tracking**: Support for batches/lots as applicable to products.
-- **Barcode/Label Support**: Product SKU field is used as the lookup key; barcode scanning hardware that inputs the SKU/identifier into the search field is supported via standard keyboard input. The application does not have a dedicated barcode camera scanning implementation in the core product model.
+- **Barcode Support**: Each product can store a unique barcode (validated for uniqueness, cleared automatically when a product is deleted). Barcode is searchable in inventory and POS, and USB/keyboard-wedge barcode scanners work out of the box: the scanner types the barcode into the POS search box and Enter adds the exact match to the cart. No camera-based scanning.
 - **SKU-based Lookup**: Products use SKU as the unique identifier for quick lookup.
 
 ---
@@ -95,6 +95,7 @@ LumiPOS is a desktop + web-capable Business Management System (BMS) for retail s
 - **Expense Reports**: Expense breakdown by category/date.
 - **Cash Shift Reports**: Shift summaries and variance history.
 - **Audit Logs**: System audit trail of key actions (who, when, what, entity, details).
+- **Product Sales Heatmap**: Per-product sales intensity by day-of-week × hour on the product detail page (ADMIN/MANAGER), with 7-day, 1-month, 1-year and all-time ranges. Longer ranges load only when selected.
 - **Exportable Reports**: Export reports in common formats (e.g. CSV/Excel as supported by UI).
 - **Date Range Filters**: All major reports support flexible date ranges.
 

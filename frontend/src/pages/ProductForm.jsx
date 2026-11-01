@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import {
   Box, Typography, TextField, Button, Grid, Paper, Alert, MenuItem, CircularProgress,
+  FormControlLabel, Checkbox,
 } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, categoryService } from '../api/services';
@@ -27,7 +28,8 @@ const ProductForm = () => {
   const isEdit = !!id;
 
   const [formData, setFormData] = useState({
-    name: '', sku: '', unit: '', description: '', price: '', cost: '', stockQuantity: '', lowStockThreshold: '10', categoryId: '',
+    name: '', sku: '', barcode: '', unit: '', description: '', price: '', cost: '',
+    stockQuantity: '', lowStockThreshold: '10', categoryId: '', hasExpiry: false, expiryDate: '',
   });
   const [image, setImage] = useState(null);       // newly selected file, not yet uploaded
   const [imagePreview, setImagePreview] = useState(null); // local preview URL for the newly selected file
@@ -52,9 +54,9 @@ const ProductForm = () => {
       const p = existingProduct.data;
       setCustomUnitMode(!isStandardUnit(p.unit));
       setFormData({
-        name: p.name || '', sku: p.sku || '', unit: p.unit || '', description: p.description || '',
+        name: p.name || '', sku: p.sku || '', barcode: p.barcode || '', unit: p.unit || '', description: p.description || '',
         price: p.unitPrice ?? '', cost: p.costPrice ?? '', stockQuantity: p.stockQuantity ?? '', lowStockThreshold: p.minStockLevel ?? '10',
-        categoryId: p.categoryId || '',
+        categoryId: p.categoryId || '', hasExpiry: Boolean(p.hasExpiry), expiryDate: p.expiryDate || '',
       });
     }
   }, [existingProduct]);
@@ -70,6 +72,9 @@ const ProductForm = () => {
         costPrice: Number(data.cost) || 0,
         stockQuantity: Number(data.stockQuantity) || 0,
         minStockLevel: Number(data.lowStockThreshold) || 0,
+        barcode: data.barcode?.trim() ? data.barcode.trim() : null,
+        hasExpiry: Boolean(data.hasExpiry),
+        expiryDate: data.hasExpiry && data.expiryDate ? data.expiryDate : null,
       };
       delete jsonData.price;
       delete jsonData.cost;
@@ -115,11 +120,24 @@ const ProductForm = () => {
     e.preventDefault();
     setError('');
     setSuccess('');
+    if (formData.hasExpiry && !formData.expiryDate) {
+      setError(t('expiry_required'));
+      return;
+    }
     saveMutation.mutate(formData);
   };
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const handleCheckboxChange = (e) => {
+    const { name, checked } = e.target;
+    setFormData((prev) => ({
+      ...prev,
+      [name]: checked,
+      ...(name === 'hasExpiry' && !checked ? { expiryDate: '' } : {}),
+    }));
   };
 
   const handleUnitChange = (e) => {
@@ -173,6 +191,18 @@ const ProductForm = () => {
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
+                label={t('barcode')}
+                name="barcode"
+                value={formData.barcode}
+                onChange={handleChange}
+                placeholder={t('barcode_placeholder')}
+                helperText={t('barcode_help')}
+                InputProps={{ sx: { fontFamily: 'monospace' } }}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
                 select
                 label={t('unit')}
                 name="unit"
@@ -222,6 +252,31 @@ const ProductForm = () => {
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} onWheel={preventNumberScroll} />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    name="hasExpiry"
+                    checked={formData.hasExpiry}
+                    onChange={handleCheckboxChange}
+                  />
+                }
+                label={t('has_expiry')}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField
+                fullWidth
+                label={t('expiry_date')}
+                name="expiryDate"
+                type="date"
+                value={formData.expiryDate}
+                onChange={handleChange}
+                disabled={!formData.hasExpiry}
+                required={formData.hasExpiry}
+                InputLabelProps={{ shrink: true }}
+              />
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label={t('description')} name="description" multiline rows={3} value={formData.description} onChange={handleChange} />

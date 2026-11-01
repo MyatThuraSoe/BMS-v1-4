@@ -20,6 +20,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findBySkuIgnoreCase(String sku);
     boolean existsBySkuIgnoreCase(String sku);
 
+    Optional<Product> findByBarcodeIgnoreCase(String barcode);
+    boolean existsByBarcodeIgnoreCase(String barcode);
+
     Page<Product> findByNameContainingIgnoreCase(String name, Pageable pageable);
 
     // OPTIMIZED: Fetches category in a single JOIN query to prevent N+1 problem
@@ -32,7 +35,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @EntityGraph(attributePaths = {"category"})
     @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL " +
         "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
-        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))")
+        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))" +
+        " OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     Page<Product> searchActiveProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
 
     // Same search, but restricted to low-stock items (view = "low-stock").
@@ -40,7 +44,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p WHERE p.isActive = true AND p.deletedAt IS NULL " +
         "AND (:categoryId IS NULL OR p.category.id = :categoryId) " +
         "AND p.stockQuantity <= p.minStockLevel " +
-        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
+        "AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%'))" +
+        " OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%'))) " +
         "ORDER BY p.stockQuantity")
     Page<Product> searchLowStockProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
 
@@ -54,7 +59,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         WHERE p.isActive = true
         AND p.deletedAt IS NULL
         AND (:categoryId IS NULL OR p.category.id = :categoryId)
-        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))
+        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%')))
         AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
         GROUP BY p.id
         ORDER BY COALESCE(SUM(si.quantity), 0) DESC
@@ -70,7 +75,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         WHERE p.isActive = true
         AND p.deletedAt IS NULL
         AND (:categoryId IS NULL OR p.category.id = :categoryId)
-        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')))
+        AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%')))
         AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
         GROUP BY p.id
         ORDER BY COALESCE(SUM(si.quantity), 0) ASC
