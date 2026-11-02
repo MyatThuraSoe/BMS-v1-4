@@ -66,6 +66,21 @@ public class Product {
     @Column(name = "expiry_date")
     private java.time.LocalDate expiryDate;
 
+    /** Physical bin / shelf where the product is stored (e.g. A-01-03). */
+    @Column(name = "bin_location", length = 100)
+    private String binLocation;
+
+    /** ABC inventory classification: A (fast movers), B, or C. */
+    @Column(name = "abc_class", length = 1)
+    private String abcClass = "C";
+
+    @Column(name = "last_count_date")
+    private java.time.LocalDate lastCountDate;
+
+    /** Unit weight/volume used to allocate landed costs by weight. */
+    @Column(name = "weight", precision = 12, scale = 3)
+    private BigDecimal weight = BigDecimal.ZERO;
+
     @Version
     private Long version;
 
@@ -109,6 +124,12 @@ public class Product {
         }
         if (taxRate == null) {
             taxRate = BigDecimal.ZERO;
+        }
+        if (abcClass == null) {
+            abcClass = "C";
+        }
+        if (weight == null) {
+            weight = BigDecimal.ZERO;
         }
     }
     
@@ -164,6 +185,18 @@ public class Product {
     
     public java.time.LocalDate getExpiryDate() { return expiryDate; }
     public void setExpiryDate(java.time.LocalDate expiryDate) { this.expiryDate = expiryDate; }
+
+    public String getBinLocation() { return binLocation; }
+    public void setBinLocation(String binLocation) { this.binLocation = binLocation; }
+
+    public String getAbcClass() { return abcClass != null ? abcClass : "C"; }
+    public void setAbcClass(String abcClass) { this.abcClass = abcClass; }
+
+    public java.time.LocalDate getLastCountDate() { return lastCountDate; }
+    public void setLastCountDate(java.time.LocalDate lastCountDate) { this.lastCountDate = lastCountDate; }
+
+    public BigDecimal getWeight() { return weight != null ? weight : BigDecimal.ZERO; }
+    public void setWeight(BigDecimal weight) { this.weight = weight; }
 
     public Long getVersion() { return version; }
     public void setVersion(Long version) { this.version = version; }

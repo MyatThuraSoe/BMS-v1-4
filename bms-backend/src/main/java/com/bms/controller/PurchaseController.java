@@ -1,6 +1,8 @@
 package com.bms.controller;
 
 import com.bms.dto.request.PurchaseCreateRequest;
+import com.bms.dto.request.ReceivePurchaseRequest;
+import com.bms.dto.request.ReturnToVendorRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.PurchaseResponse;
 import com.bms.dto.response.SupplierStatsResponse;
@@ -130,6 +132,35 @@ public class PurchaseController {
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
         purchaseService.deletePurchase(id, userId);
         return ResponseEntity.ok(new ApiResponse<>(true, "Purchase deleted successfully", null));
+    }
+
+    @PostMapping("/{id}/receive")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<PurchaseResponse>> receivePurchase(
+            @PathVariable Long id,
+            @Valid @RequestBody ReceivePurchaseRequest request,
+            Authentication authentication) {
+        Long userId = userService.findByUsername(authentication.getName()).getId();
+        PurchaseResponse purchase = purchaseService.receivePurchase(id, request, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Purchase received successfully", purchase));
+    }
+
+    @PostMapping("/{id}/return-to-vendor")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<PurchaseResponse>> returnToVendor(
+            @PathVariable Long id,
+            @Valid @RequestBody ReturnToVendorRequest request,
+            Authentication authentication) {
+        Long userId = userService.findByUsername(authentication.getName()).getId();
+        PurchaseResponse purchase = purchaseService.returnToVendor(id, request, userId);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Goods returned to vendor successfully", purchase));
+    }
+
+    @GetMapping("/open")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<PurchaseResponse>>> getOpenPurchases() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Open purchase orders retrieved successfully",
+                purchaseService.getOpenPurchases()));
     }
 
     @GetMapping("/supplier/{supplierId}/stats")

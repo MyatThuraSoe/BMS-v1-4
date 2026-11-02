@@ -30,6 +30,7 @@ const ProductForm = () => {
   const [formData, setFormData] = useState({
     name: '', sku: '', barcode: '', unit: '', description: '', price: '', cost: '',
     stockQuantity: '', lowStockThreshold: '10', categoryId: '', hasExpiry: false, expiryDate: '',
+    binLocation: '', abcClass: 'C', weight: '',
   });
   const [image, setImage] = useState(null);       // newly selected file, not yet uploaded
   const [imagePreview, setImagePreview] = useState(null); // local preview URL for the newly selected file
@@ -57,6 +58,7 @@ const ProductForm = () => {
         name: p.name || '', sku: p.sku || '', barcode: p.barcode || '', unit: p.unit || '', description: p.description || '',
         price: p.unitPrice ?? '', cost: p.costPrice ?? '', stockQuantity: p.stockQuantity ?? '', lowStockThreshold: p.minStockLevel ?? '10',
         categoryId: p.categoryId || '', hasExpiry: Boolean(p.hasExpiry), expiryDate: p.expiryDate || '',
+        binLocation: p.binLocation || '', abcClass: p.abcClass || 'C', weight: p.weight ?? '',
       });
     }
   }, [existingProduct]);
@@ -73,6 +75,9 @@ const ProductForm = () => {
         stockQuantity: Number(data.stockQuantity) || 0,
         minStockLevel: Number(data.lowStockThreshold) || 0,
         barcode: data.barcode?.trim() ? data.barcode.trim() : null,
+        binLocation: data.binLocation?.trim() ? data.binLocation.trim() : null,
+        abcClass: data.abcClass || 'C',
+        weight: Number(data.weight) || 0,
         hasExpiry: Boolean(data.hasExpiry),
         expiryDate: data.hasExpiry && data.expiryDate ? data.expiryDate : null,
       };
@@ -252,6 +257,19 @@ const ProductForm = () => {
             </Grid>
             <Grid item xs={12} md={6}>
               <TextField fullWidth label={t('low_stock_threshold')} name="lowStockThreshold" type="number" value={formData.lowStockThreshold} onChange={handleChange} onWheel={preventNumberScroll} />
+            </Grid>
+            <Grid item xs={12} md={4}>
+              <TextField fullWidth label="Bin location" name="binLocation" value={formData.binLocation} onChange={handleChange} placeholder="e.g. A1-03" />
+            </Grid>
+            <Grid item xs={6} md={4}>
+              <TextField fullWidth select label="ABC class" name="abcClass" value={formData.abcClass} onChange={handleChange}>
+                <MenuItem value="A">A — fast mover</MenuItem>
+                <MenuItem value="B">B — medium mover</MenuItem>
+                <MenuItem value="C">C — slow mover</MenuItem>
+              </TextField>
+            </Grid>
+            <Grid item xs={6} md={4}>
+              <TextField fullWidth label="Weight per unit" name="weight" type="number" value={formData.weight} onChange={handleChange} onWheel={preventNumberScroll} InputProps={{ inputProps: { step: '0.001', min: 0 } }} helperText="Used for weight-based landed costs" />
             </Grid>
             <Grid item xs={12} md={6}>
               <FormControlLabel

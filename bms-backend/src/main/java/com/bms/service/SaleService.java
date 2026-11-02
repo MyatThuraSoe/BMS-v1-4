@@ -64,6 +64,9 @@ public class SaleService {
     @Autowired
     private SequenceService sequenceService;
 
+    @Autowired
+    private PromotionService promotionService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -183,6 +186,7 @@ public class SaleService {
         // PESSIMISTIC_WRITE from the start so concurrent credit sales
         // serialize on this customer and never race currentBalance.
         Customer creditCustomer = null;
+        Customer pricingCustomer = null;
         if (saleType == Sale.SaleType.CREDIT) {
             creditCustomer = customerRepository.findByIdForUpdate(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
@@ -191,11 +195,13 @@ public class SaleService {
             }
             sale.setCustomer(creditCustomer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
+            pricingCustomer = creditCustomer;
         } else if (request.getCustomerId() != null) {
             Customer customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
             sale.setCustomer(customer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
+            pricingCustomer = customer;
         } else if (request.getCustomerName() != null && !request.getCustomerName().isBlank()) {
             sale.setCustomerDisplayName(request.getCustomerName().trim());
         } else {
@@ -212,6 +218,8 @@ public class SaleService {
 
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal taxAmount = BigDecimal.ZERO;
+        BigDecimal promotionDiscount = BigDecimal.ZERO;
+        BigDecimal priceListDiscount = BigDecimal.ZERO;
 
         // First pass: validate all stock availability (lock product rows)
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
@@ -233,10 +241,19 @@ public class SaleService {
             item.setSale(sale);
             item.setProduct(product);
             item.setQuantity(itemRequest.getQuantity());
-            item.setUnitPrice(product.getUnitPrice());
             item.setCostPriceAtSale(product.getCostPrice());
 
-            BigDecimal[] pricing = calculateItemPricing(product, itemRequest.getQuantity(), getShopTaxRate());
+            PricingQuote quote = promotionService.calculateBestPrice(
+                    product, itemRequest.getQuantity(), pricingCustomer, sale.getSaleDate());
+            BigDecimal effectiveUnitPrice = quote.getUnitPrice();
+            item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
+            item.setUnitPrice(effectiveUnitPrice);
+            item.setLineDiscount(quote.getLineDiscount());
+            item.setPromotionId(quote.getPromotionId());
+            item.setPromotionName(quote.getPromotionName());
+
+            BigDecimal[] pricing = calculateItemPricing(
+                    effectiveUnitPrice, itemRequest.getQuantity(), getShopTaxRate());
             BigDecimal itemTotal = pricing[0];
             BigDecimal itemTax = pricing[1];
             item.setTotalPrice(itemTotal);
@@ -246,10 +263,17 @@ public class SaleService {
 
             subtotal = subtotal.add(itemTotal);
             taxAmount = taxAmount.add(itemTax);
+            if ("PROMOTION".equals(quote.getSource())) {
+                promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
+            } else if ("PRICE_LIST".equals(quote.getSource())) {
+                priceListDiscount = priceListDiscount.add(quote.getLineDiscount());
+            }
         }
 
         sale.setSubtotal(subtotal);
         sale.setTaxAmount(taxAmount);
+        sale.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
+        sale.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         sale.setDiscountAmount(discountAmount);
 
@@ -711,6 +735,8 @@ public class SaleService {
         response.setSubtotal(sale.getSubtotal());
         response.setTaxAmount(sale.getTaxAmount());
         response.setDiscountAmount(sale.getDiscountAmount());
+        response.setPromotionDiscount(sale.getPromotionDiscount());
+        response.setPriceListDiscount(sale.getPriceListDiscount());
         response.setTotalAmount(sale.getTotalAmount());
         response.setAmountPaid(sale.getAmountPaid());
         response.setChangeGiven(sale.getChangeGiven());
@@ -773,6 +799,10 @@ public class SaleService {
         response.setUnit(item.getProduct().getUnit());
         response.setQuantity(item.getQuantity());
         response.setUnitPrice(item.getUnitPrice());
+        response.setOriginalUnitPrice(item.getOriginalUnitPrice());
+        response.setLineDiscount(item.getLineDiscount());
+        response.setPromotionId(item.getPromotionId());
+        response.setPromotionName(item.getPromotionName());
         response.setTotalPrice(item.getTotalPrice());
         response.setTaxAmount(item.getTaxAmount());
         response.setCostPriceAtSale(item.getCostPriceAtSale());
@@ -786,18 +816,35 @@ public class SaleService {
         List<String> messages = new java.util.ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal taxAmount = BigDecimal.ZERO;
+        BigDecimal promotionDiscount = BigDecimal.ZERO;
+        BigDecimal priceListDiscount = BigDecimal.ZERO;
         boolean anyChanged = false;
+
+        Customer pricingCustomer = request.getCustomerId() != null
+                ? customerRepository.findById(request.getCustomerId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Customer not found: " + request.getCustomerId()))
+                : null;
+        BigDecimal taxRate = getShopTaxRate();
 
         for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
 
+            PricingQuote quote = promotionService.calculateBestPrice(
+                    product, itemRequest.getQuantity(), pricingCustomer, LocalDateTime.now());
+
             CartVerifyResponse.CartVerifyItemResult result = new CartVerifyResponse.CartVerifyItemResult();
             result.setProductId(product.getId());
             result.setProductName(product.getName());
             result.setQuantity(itemRequest.getQuantity());
-            result.setUnitPrice(product.getUnitPrice());
-            result.setTaxRate(getShopTaxRate());
+            result.setUnitPrice(quote.getUnitPrice());
+            result.setOriginalUnitPrice(quote.getOriginalUnitPrice());
+            result.setLineDiscount(quote.getLineDiscount());
+            result.setPromotionId(quote.getPromotionId());
+            result.setPromotionName(quote.getPromotionName());
+            result.setPricingSource(quote.getSource());
+            result.setTaxRate(taxRate);
             result.setAvailableStock(product.getAvailableQuantity());
 
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
@@ -816,11 +863,20 @@ public class SaleService {
                 messages.add(String.format("%s: only %d in stock, %d requested",
                         product.getName(), product.getAvailableQuantity(), itemRequest.getQuantity()));
             }
+            if (quote.getPromotionName() != null) {
+                messages.add(String.format("%s: %s applied", product.getName(), quote.getPromotionName()));
+            }
 
-            BigDecimal[] linePricing = calculateItemPricing(product, itemRequest.getQuantity(), getShopTaxRate());
+            BigDecimal[] linePricing = calculateItemPricing(
+                    quote.getUnitPrice(), itemRequest.getQuantity(), taxRate);
             result.setLineTotal(linePricing[0]); // itemTotal (pre-tax)
             subtotal = subtotal.add(linePricing[0]);
             taxAmount = taxAmount.add(linePricing[1]);
+            if ("PROMOTION".equals(quote.getSource())) {
+                promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
+            } else if ("PRICE_LIST".equals(quote.getSource())) {
+                priceListDiscount = priceListDiscount.add(quote.getLineDiscount());
+            }
 
             results.add(result);
         }
@@ -828,6 +884,8 @@ public class SaleService {
         response.setItems(results);
         response.setSubtotal(subtotal);
         response.setTaxAmount(taxAmount);
+        response.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
+        response.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         response.setDiscountAmount(discountAmount);
         response.setTotalAmount(subtotal.add(taxAmount).subtract(discountAmount));
@@ -840,7 +898,12 @@ public class SaleService {
     // Returns [itemTotal, itemTax], both rounded to 2dp BEFORE persisting so the
     // ledger never stores uncompressed decimals.
     private BigDecimal[] calculateItemPricing(Product product, Integer quantity, BigDecimal taxRate) {
-        BigDecimal itemTotal = product.getUnitPrice().multiply(new BigDecimal(quantity))
+        BigDecimal unitPrice = product.getUnitPrice() != null ? product.getUnitPrice() : BigDecimal.ZERO;
+        return calculateItemPricing(unitPrice, quantity, taxRate);
+    }
+
+    private BigDecimal[] calculateItemPricing(BigDecimal unitPrice, Integer quantity, BigDecimal taxRate) {
+        BigDecimal itemTotal = unitPrice.multiply(new BigDecimal(quantity))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         BigDecimal itemTax = itemTotal.multiply(taxRate.divide(BigDecimal.valueOf(100)))
                 .setScale(2, java.math.RoundingMode.HALF_UP);

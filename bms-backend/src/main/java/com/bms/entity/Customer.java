@@ -63,6 +63,11 @@ public class Customer {
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
+    /** Optional customer-specific contract price list. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "price_list_id")
+    private PriceList priceList;
+
     @OneToMany(mappedBy = "customer", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<CustomerPhone> phones = new ArrayList<>();
 
@@ -137,6 +142,9 @@ public class Customer {
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
+
+    public PriceList getPriceList() { return priceList; }
+    public void setPriceList(PriceList priceList) { this.priceList = priceList; }
 
     public List<CustomerPhone> getPhones() { return phones; }
     public void setPhones(List<CustomerPhone> phones) { this.phones = phones; }

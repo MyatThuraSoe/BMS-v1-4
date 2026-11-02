@@ -51,6 +51,14 @@ public class Sale {
     @Column(name = "discount_amount", precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "promotion_discount", precision = 10, scale = 2,
+            columnDefinition = "numeric(10,2) default 0")
+    private BigDecimal promotionDiscount = BigDecimal.ZERO;
+
+    @Column(name = "price_list_discount", precision = 10, scale = 2,
+            columnDefinition = "numeric(10,2) default 0")
+    private BigDecimal priceListDiscount = BigDecimal.ZERO;
+
     @Column(name = "total_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalAmount;
 
@@ -120,6 +128,11 @@ public class Sale {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
+    /** Optimistic lock so concurrent edits (void/return/payment) surface a 409. */
+    @Version
+    @Column(columnDefinition = "bigint default 0")
+    private Long version;
+
     @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<SaleItem> items = new ArrayList<>();
 
@@ -188,6 +201,15 @@ public class Sale {
 
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
+    public BigDecimal getPromotionDiscount() { return promotionDiscount != null ? promotionDiscount : BigDecimal.ZERO; }
+    public void setPromotionDiscount(BigDecimal promotionDiscount) { this.promotionDiscount = promotionDiscount; }
+
+    public BigDecimal getPriceListDiscount() { return priceListDiscount != null ? priceListDiscount : BigDecimal.ZERO; }
+    public void setPriceListDiscount(BigDecimal priceListDiscount) { this.priceListDiscount = priceListDiscount; }
+
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
 
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }

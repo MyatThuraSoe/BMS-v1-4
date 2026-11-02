@@ -13,10 +13,15 @@ public class CartVerifyRequest {
     // Cashier-entered discount (AMOUNT mode); ignored in PERCENTAGE mode
     private BigDecimal discountAmount;
 
+    /** Optional customer whose price list should be applied. */
+    private Long customerId;
+
     public List<CartVerifyItem> getItems() { return items; }
     public void setItems(List<CartVerifyItem> items) { this.items = items; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public Long getCustomerId() { return customerId; }
+    public void setCustomerId(Long customerId) { this.customerId = customerId; }
 
     public static class CartVerifyItem {
         @NotNull

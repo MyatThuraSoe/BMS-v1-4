@@ -24,6 +24,24 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL ORDER BY p.purchaseDate DESC")
     Page<Purchase> findActivePurchases(Pageable pageable);
+
+    @Query("""
+        SELECT p FROM Purchase p
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+          AND p.receivingStatus IN :statuses
+        ORDER BY p.purchaseDate ASC
+        """)
+    List<Purchase> findOpenForReceiving(@Param("statuses") java.util.Collection<Purchase.ReceivingStatus> statuses);
+
+    @Query("""
+        SELECT p FROM Purchase p
+        LEFT JOIN FETCH p.supplier
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+          AND p.purchaseDate BETWEEN :startDate AND :endDate
+        ORDER BY p.purchaseDate ASC
+        """)
+    List<Purchase> findForJournal(@Param("startDate") LocalDate startDate,
+                                  @Param("endDate") LocalDate endDate);
     
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL AND " +
            "(LOWER(p.purchaseNumber) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +

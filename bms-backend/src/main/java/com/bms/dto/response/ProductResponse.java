@@ -22,6 +22,9 @@ public class ProductResponse {
     private String barcode;
     private Boolean hasExpiry;
     private LocalDate expiryDate;
+    private String binLocation;
+    private String abcClass;
+    private BigDecimal weight;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
@@ -61,6 +64,12 @@ public class ProductResponse {
     public void setHasExpiry(Boolean hasExpiry) { this.hasExpiry = hasExpiry; }
     public LocalDate getExpiryDate() { return expiryDate; }
     public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate; }
+    public String getBinLocation() { return binLocation; }
+    public void setBinLocation(String binLocation) { this.binLocation = binLocation; }
+    public String getAbcClass() { return abcClass; }
+    public void setAbcClass(String abcClass) { this.abcClass = abcClass; }
+    public BigDecimal getWeight() { return weight; }
+    public void setWeight(BigDecimal weight) { this.weight = weight; }
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }
     public LocalDateTime getCreatedAt() { return createdAt; }

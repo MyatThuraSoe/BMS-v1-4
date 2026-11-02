@@ -3,6 +3,7 @@ package com.bms.dto.response;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public class PurchaseResponse {
@@ -16,12 +17,19 @@ public class PurchaseResponse {
     private BigDecimal totalAmount;
     private BigDecimal discountAmount;
     private String paymentStatus;
+    private String receivingStatus;
+    private String currencyCode;
+    private BigDecimal exchangeRate;
+    private BigDecimal landedCostTotal;
+    private LocalDateTime receivedAt;
+    private Long receivedBy;
     private String notes;
     private Long createdBy;
     private Boolean isActive;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private List<PurchaseItemResponse> items;
+    private List<Expense> expenses = new ArrayList<>();
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -43,6 +51,18 @@ public class PurchaseResponse {
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
+    public String getReceivingStatus() { return receivingStatus; }
+    public void setReceivingStatus(String receivingStatus) { this.receivingStatus = receivingStatus; }
+    public String getCurrencyCode() { return currencyCode; }
+    public void setCurrencyCode(String currencyCode) { this.currencyCode = currencyCode; }
+    public BigDecimal getExchangeRate() { return exchangeRate; }
+    public void setExchangeRate(BigDecimal exchangeRate) { this.exchangeRate = exchangeRate; }
+    public BigDecimal getLandedCostTotal() { return landedCostTotal; }
+    public void setLandedCostTotal(BigDecimal landedCostTotal) { this.landedCostTotal = landedCostTotal; }
+    public LocalDateTime getReceivedAt() { return receivedAt; }
+    public void setReceivedAt(LocalDateTime receivedAt) { this.receivedAt = receivedAt; }
+    public Long getReceivedBy() { return receivedBy; }
+    public void setReceivedBy(Long receivedBy) { this.receivedBy = receivedBy; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
     public Long getCreatedBy() { return createdBy; }
@@ -55,4 +75,25 @@ public class PurchaseResponse {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public List<PurchaseItemResponse> getItems() { return items; }
     public void setItems(List<PurchaseItemResponse> items) { this.items = items; }
+    public List<Expense> getExpenses() { return expenses; }
+    public void setExpenses(List<Expense> expenses) { this.expenses = expenses; }
+
+    public static class Expense {
+        private Long id;
+        private String description;
+        private String type;
+        private BigDecimal amount;
+        private String allocationMethod;
+
+        public Long getId() { return id; }
+        public void setId(Long id) { this.id = id; }
+        public String getDescription() { return description; }
+        public void setDescription(String description) { this.description = description; }
+        public String getType() { return type; }
+        public void setType(String type) { this.type = type; }
+        public BigDecimal getAmount() { return amount; }
+        public void setAmount(BigDecimal amount) { this.amount = amount; }
+        public String getAllocationMethod() { return allocationMethod; }
+        public void setAllocationMethod(String allocationMethod) { this.allocationMethod = allocationMethod; }
+    }
 }

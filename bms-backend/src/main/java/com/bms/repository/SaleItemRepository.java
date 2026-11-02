@@ -56,6 +56,18 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
     Optional<SaleItem> findByIdForUpdate(@Param("id") Long id);
 
     @Query("""
+        SELECT si.product.id,
+               COALESCE(SUM(COALESCE(si.totalPrice, si.unitPrice * si.quantity)), 0)
+        FROM SaleItem si
+        WHERE si.sale.isVoided = false
+          AND si.sale.isActive = true
+          AND si.sale.deletedAt IS NULL
+          AND si.sale.saleDate >= :fromDate
+        GROUP BY si.product.id
+        """)
+    List<Object[]> findRevenueByProductSince(@Param("fromDate") java.time.LocalDateTime fromDate);
+
+    @Query("""
         SELECT si2.product.id, si2.product.name, COUNT(DISTINCT si1.sale.id)
         FROM SaleItem si1
         JOIN SaleItem si2 ON si1.sale.id = si2.sale.id AND si1.product.id != si2.product.id

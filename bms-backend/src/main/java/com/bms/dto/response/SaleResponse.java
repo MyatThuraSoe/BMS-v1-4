@@ -16,6 +16,8 @@ public class SaleResponse {
     private BigDecimal subtotal;
     private BigDecimal taxAmount;
     private BigDecimal discountAmount;
+    private BigDecimal promotionDiscount;
+    private BigDecimal priceListDiscount;
     private BigDecimal totalAmount;
     private BigDecimal amountPaid;
     private BigDecimal changeGiven;
@@ -85,6 +87,10 @@ public class SaleResponse {
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public BigDecimal getPromotionDiscount() { return promotionDiscount; }
+    public void setPromotionDiscount(BigDecimal promotionDiscount) { this.promotionDiscount = promotionDiscount; }
+    public BigDecimal getPriceListDiscount() { return priceListDiscount; }
+    public void setPriceListDiscount(BigDecimal priceListDiscount) { this.priceListDiscount = priceListDiscount; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public BigDecimal getAmountPaid() { return amountPaid; }

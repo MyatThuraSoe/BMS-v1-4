@@ -49,6 +49,25 @@ public class Purchase {
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus = PaymentStatus.PENDING;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "receiving_status")
+    private ReceivingStatus receivingStatus = ReceivingStatus.RECEIVED;
+
+    @Column(name = "currency_code", length = 10)
+    private String currencyCode = "USD";
+
+    @Column(name = "exchange_rate", precision = 19, scale = 6)
+    private BigDecimal exchangeRate = BigDecimal.ONE;
+
+    @Column(name = "landed_cost_total", precision = 19, scale = 2)
+    private BigDecimal landedCostTotal = BigDecimal.ZERO;
+
+    @Column(name = "received_at")
+    private LocalDateTime receivedAt;
+
+    @Column(name = "received_by")
+    private Long receivedBy;
+
     @Column(length = 1000)
     private String notes;
 
@@ -70,8 +89,15 @@ public class Purchase {
     @OneToMany(mappedBy = "purchase", cascade = CascadeType.ALL, orphanRemoval = true,fetch = FetchType.LAZY)
     private List<PurchaseItem> items = new ArrayList<>();
 
+    @OneToMany(mappedBy = "purchase", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<PurchaseExpense> expenses = new ArrayList<>();
+
     public enum PaymentStatus {
         PENDING, PARTIAL, PAID
+    }
+
+    public enum ReceivingStatus {
+        ORDERED, PARTIAL, RECEIVED
     }
 
     @PrePersist
@@ -116,6 +142,31 @@ public class Purchase {
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus; }
 
+    public ReceivingStatus getReceivingStatus() {
+        return receivingStatus != null ? receivingStatus : ReceivingStatus.RECEIVED;
+    }
+    public void setReceivingStatus(ReceivingStatus receivingStatus) { this.receivingStatus = receivingStatus; }
+
+    public String getCurrencyCode() { return currencyCode != null ? currencyCode : "USD"; }
+    public void setCurrencyCode(String currencyCode) { this.currencyCode = currencyCode; }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate != null && exchangeRate.compareTo(BigDecimal.ZERO) > 0
+                ? exchangeRate : BigDecimal.ONE;
+    }
+    public void setExchangeRate(BigDecimal exchangeRate) { this.exchangeRate = exchangeRate; }
+
+    public BigDecimal getLandedCostTotal() {
+        return landedCostTotal != null ? landedCostTotal : BigDecimal.ZERO;
+    }
+    public void setLandedCostTotal(BigDecimal landedCostTotal) { this.landedCostTotal = landedCostTotal; }
+
+    public LocalDateTime getReceivedAt() { return receivedAt; }
+    public void setReceivedAt(LocalDateTime receivedAt) { this.receivedAt = receivedAt; }
+
+    public Long getReceivedBy() { return receivedBy; }
+    public void setReceivedBy(Long receivedBy) { this.receivedBy = receivedBy; }
+
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
 
@@ -136,4 +187,7 @@ public class Purchase {
 
     public List<PurchaseItem> getItems() { return items; }
     public void setItems(List<PurchaseItem> items) { this.items = items; }
+
+    public List<PurchaseExpense> getExpenses() { return expenses; }
+    public void setExpenses(List<PurchaseExpense> expenses) { this.expenses = expenses; }
 }

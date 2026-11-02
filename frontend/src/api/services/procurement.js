@@ -74,4 +74,19 @@ export const purchaseService = {
     const response = await apiClient.get(`/purchases/supplier/${supplierId}/top-products`);
     return response.data;
   },
+
+  getOpenPurchases: async () => {
+    const response = await apiClient.get('/purchases/open');
+    return response.data;
+  },
+
+  receive: async (id, data) => {
+    const response = await apiClient.post(`/purchases/${id}/receive`, data);
+    return response.data;
+  },
+
+  returnToVendor: async (id, data) => {
+    const response = await apiClient.post(`/purchases/${id}/return-to-vendor`, data);
+    return response.data;
+  },
 };

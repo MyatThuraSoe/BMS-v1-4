@@ -23,6 +23,20 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findByBarcodeIgnoreCase(String barcode);
     boolean existsByBarcodeIgnoreCase(String barcode);
 
+    Optional<Product> findFirstByBinLocationIgnoreCase(String binLocation);
+
+    List<Product> findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc();
+
+    @Query("""
+        SELECT p FROM Product p
+        WHERE p.isActive = true AND p.deletedAt IS NULL
+          AND p.abcClass = :abcClass
+          AND (p.lastCountDate IS NULL OR p.lastCountDate < :cutoff)
+        ORDER BY p.name
+        """)
+    List<Product> findDueForCount(@Param("abcClass") String abcClass,
+                                  @Param("cutoff") java.time.LocalDate cutoff);
+
     Page<Product> findByNameContainingIgnoreCase(String name, Pageable pageable);
 
     // OPTIMIZED: Fetches category in a single JOIN query to prevent N+1 problem

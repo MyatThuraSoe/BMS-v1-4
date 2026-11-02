@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete, Chip, MenuItem, Select, FormControl, InputLabel, Divider, Stack,
+  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete, Chip, MenuItem, Select, FormControl, InputLabel, Divider, Stack, FormControlLabel, Switch,
 } from '@mui/material';
 import { Add as AddIcon, Remove as RemoveIcon, Payments as PaymentsIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -109,6 +109,10 @@ const PurchaseForm = () => {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
   const [paymentStatus, setPaymentStatus] = useState('PENDING');
+  const [currencyCode, setCurrencyCode] = useState('USD');
+  const [exchangeRate, setExchangeRate] = useState(1);
+  const [expenses, setExpenses] = useState([]);
+  const [receiveNow, setReceiveNow] = useState(true);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -134,6 +138,10 @@ const PurchaseForm = () => {
       setDiscountAmount(p.discountAmount || 0);
       setTaxRate(p.taxAmount || 0);
       setPaymentStatus(p.paymentStatus || 'PENDING');
+      setCurrencyCode(p.currencyCode || 'USD');
+      setExchangeRate(p.exchangeRate ?? 1);
+      setExpenses(p.expenses || []);
+      setReceiveNow(p.receivingStatus !== 'ORDERED');
     }
   }, [existingPurchase]);
 
@@ -153,6 +161,25 @@ const PurchaseForm = () => {
   }, [taxRate, discount, subtotal]);
 
   const total = useMemo(() => Math.max(0, subtotal - discount + tax), [subtotal, discount, tax]);
+
+  const landedCostTotal = useMemo(
+    () => expenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0),
+    [expenses]
+  );
+
+  const addExpense = () => {
+    setExpenses([...expenses, { description: '', type: 'FREIGHT', amount: 0, allocationMethod: 'VALUE' }]);
+  };
+
+  const updateExpense = (index, field, value) => {
+    const next = [...expenses];
+    next[index] = { ...next[index], [field]: value };
+    setExpenses(next);
+  };
+
+  const removeExpense = (index) => {
+    setExpenses(expenses.filter((_, i) => i !== index));
+  };
 
   const addItem = () => {
     setItems([...items, { productId: '', quantity: 1, unitCost: 0, selectedProduct: null }]);
@@ -177,6 +204,7 @@ const PurchaseForm = () => {
     onSuccess: () => {
       setSuccess(t('purchase_created'));
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
+      queryClient.invalidateQueries({ queryKey: ['open-purchases'] });
       queryClient.invalidateQueries({ queryKey: ['products'] });
       queryClient.invalidateQueries({ queryKey: ['low-stock'] });
       queryClient.invalidateQueries({ queryKey: ['inventoryReport'] });
@@ -198,6 +226,14 @@ const PurchaseForm = () => {
 
     // Strip the frontend-only 'selectedProduct' object before sending to the API
     const cleanItems = items.map(({ selectedProduct, ...rest }) => rest);
+    const cleanExpenses = expenses
+      .filter((expense) => expense.description.trim() && (Number(expense.amount) || 0) > 0)
+      .map((expense) => ({
+        description: expense.description.trim(),
+        type: expense.type,
+        amount: Number(expense.amount),
+        allocationMethod: expense.allocationMethod,
+      }));
     saveMutation.mutate({
       ...formData,
       supplierId: selectedSupplier?.id ?? null,
@@ -205,6 +241,10 @@ const PurchaseForm = () => {
       discountAmount: Math.round(discount * 100) / 100,
       taxAmount: Math.round(tax * 100) / 100,
       paymentStatus,
+      currencyCode: (currencyCode || 'USD').trim().toUpperCase(),
+      exchangeRate: Number(exchangeRate) || 1,
+      expenses: cleanExpenses,
+      receiveNow,
     });
   };
 
@@ -324,6 +364,107 @@ const PurchaseForm = () => {
                   )}
                 </Box>
 
+                <Box>
+                  <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                    <Typography variant="h6">Landed costs</Typography>
+                    {!isEdit && (
+                      <Button size="small" startIcon={<AddIcon />} onClick={addExpense}>Add expense</Button>
+                    )}
+                  </Stack>
+                  <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                    Freight, customs, insurance and handling are allocated across the purchase lines and included in the weighted average cost.
+                  </Typography>
+                  {expenses.length === 0 ? (
+                    <Typography variant="body2" color="text.secondary">No landed costs.</Typography>
+                  ) : (
+                    <TableContainer>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell>Description</TableCell>
+                            <TableCell>Type</TableCell>
+                            <TableCell>Allocate by</TableCell>
+                            <TableCell align="right">Amount</TableCell>
+                            {!isEdit && <TableCell align="right">Action</TableCell>}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {expenses.map((expense, idx) => (
+                            <TableRow key={idx}>
+                              <TableCell>
+                                {isEdit ? (
+                                  <Typography variant="body2">{expense.description}</Typography>
+                                ) : (
+                                  <TextField
+                                    size="small"
+                                    fullWidth
+                                    value={expense.description}
+                                    onChange={(e) => updateExpense(idx, 'description', e.target.value)}
+                                    placeholder="e.g. Freight invoice"
+                                  />
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isEdit ? (
+                                  <Typography variant="body2">{expense.type}</Typography>
+                                ) : (
+                                  <TextField
+                                    select
+                                    size="small"
+                                    value={expense.type}
+                                    onChange={(e) => updateExpense(idx, 'type', e.target.value)}
+                                  >
+                                    {['FREIGHT', 'CUSTOMS', 'INSURANCE', 'HANDLING', 'OTHER'].map((type) => (
+                                      <MenuItem key={type} value={type}>{type}</MenuItem>
+                                    ))}
+                                  </TextField>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {isEdit ? (
+                                  <Typography variant="body2">{expense.allocationMethod}</Typography>
+                                ) : (
+                                  <TextField
+                                    select
+                                    size="small"
+                                    value={expense.allocationMethod}
+                                    onChange={(e) => updateExpense(idx, 'allocationMethod', e.target.value)}
+                                  >
+                                    {['VALUE', 'QUANTITY', 'WEIGHT'].map((method) => (
+                                      <MenuItem key={method} value={method}>{method}</MenuItem>
+                                    ))}
+                                  </TextField>
+                                )}
+                              </TableCell>
+                              <TableCell align="right">
+                                {isEdit ? (
+                                  <Typography>{formatCurrency(expense.amount)}</Typography>
+                                ) : (
+                                  <TextField
+                                    type="number"
+                                    size="small"
+                                    value={expense.amount}
+                                    onChange={(e) => updateExpense(idx, 'amount', e.target.value)}
+                                    inputProps={{ step: '0.01', min: 0 }}
+                                    onWheel={preventNumberScroll}
+                                  />
+                                )}
+                              </TableCell>
+                              {!isEdit && (
+                                <TableCell align="right">
+                                  <IconButton size="small" color="error" onClick={() => removeExpense(idx)}>
+                                    <RemoveIcon />
+                                  </IconButton>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+
                 <TextField
                   fullWidth
                   label={t('notes')}
@@ -343,6 +484,44 @@ const PurchaseForm = () => {
                 <Divider sx={{ mb: 2 }} />
 
                 <Stack spacing={2} mb={2}>
+                  <Grid container spacing={2}>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        label="Currency"
+                        value={currencyCode}
+                        onChange={(e) => setCurrencyCode(e.target.value.toUpperCase().slice(0, 3))}
+                        inputProps={{ maxLength: 3 }}
+                        disabled={isEdit}
+                      />
+                    </Grid>
+                    <Grid item xs={6}>
+                      <TextField
+                        fullWidth
+                        label="Exchange rate"
+                        type="number"
+                        value={exchangeRate}
+                        onChange={(e) => setExchangeRate(e.target.value)}
+                        inputProps={{ step: '0.0001', min: 0 }}
+                        onWheel={preventNumberScroll}
+                        disabled={isEdit}
+                        helperText="Base currency per 1 unit"
+                      />
+                    </Grid>
+                  </Grid>
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={receiveNow}
+                        onChange={(e) => setReceiveNow(e.target.checked)}
+                        disabled={isEdit}
+                      />
+                    )}
+                    label="Receive stock now"
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+                    Turn off to create an ordered PO without touching stock. Receive it later from Receiving &amp; Returns.
+                  </Typography>
                   <Grid container spacing={2}>
                     <Grid item xs={6}>
                       <TextField
@@ -401,6 +580,10 @@ const PurchaseForm = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">{t('tax')}</Typography>
                     <Typography variant="body1" color="text.secondary">{formatCurrency(tax)}</Typography>
+                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <Typography variant="body2" color="text.secondary">Landed costs</Typography>
+                    <Typography variant="body1" color="text.secondary">{formatCurrency(landedCostTotal)}</Typography>
                   </Box>
                   <Divider />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>

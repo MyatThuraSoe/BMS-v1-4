@@ -56,7 +56,7 @@ export const saleService = {
     return response.data;
   },
 
-  verifyCart: async (cart, discountAmount = null) => {
+  verifyCart: async (cart, discountAmount = null, customerId = null) => {
     const response = await apiClient.post('/sales/verify-cart', {
       items: cart.map((item) => ({
         productId: item.productId,
@@ -64,6 +64,7 @@ export const saleService = {
         expectedUnitPrice: item.price,
       })),
       discountAmount: discountAmount != null && discountAmount !== '' ? Number(discountAmount) : null,
+      customerId: customerId || null,
     });
     return response.data;
   },

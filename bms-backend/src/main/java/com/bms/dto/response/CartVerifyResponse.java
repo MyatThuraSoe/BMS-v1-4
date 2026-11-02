@@ -9,6 +9,8 @@ public class CartVerifyResponse {
     private BigDecimal subtotal;
     private BigDecimal taxAmount;
     private BigDecimal discountAmount;
+    private BigDecimal promotionDiscount;
+    private BigDecimal priceListDiscount;
     private BigDecimal totalAmount;
     private List<String> messages; // human-readable, e.g. "Coca-Cola 500ml price changed from $2.00 to $2.50"
 
@@ -24,6 +26,10 @@ public class CartVerifyResponse {
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public BigDecimal getPromotionDiscount() { return promotionDiscount; }
+    public void setPromotionDiscount(BigDecimal promotionDiscount) { this.promotionDiscount = promotionDiscount; }
+    public BigDecimal getPriceListDiscount() { return priceListDiscount; }
+    public void setPriceListDiscount(BigDecimal priceListDiscount) { this.priceListDiscount = priceListDiscount; }
     public BigDecimal getTotalAmount() { return totalAmount; }
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public List<String> getMessages() { return messages; }
@@ -34,6 +40,11 @@ public class CartVerifyResponse {
         private String productName;
         private Integer quantity;
         private BigDecimal unitPrice;       // current authoritative price
+        private BigDecimal originalUnitPrice;
+        private BigDecimal lineDiscount;
+        private Long promotionId;
+        private String promotionName;
+        private String pricingSource;
         private BigDecimal taxRate;
         private Integer availableStock;
         private BigDecimal lineTotal;
@@ -49,6 +60,16 @@ public class CartVerifyResponse {
         public void setQuantity(Integer quantity) { this.quantity = quantity; }
         public BigDecimal getUnitPrice() { return unitPrice; }
         public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
+        public BigDecimal getOriginalUnitPrice() { return originalUnitPrice; }
+        public void setOriginalUnitPrice(BigDecimal originalUnitPrice) { this.originalUnitPrice = originalUnitPrice; }
+        public BigDecimal getLineDiscount() { return lineDiscount; }
+        public void setLineDiscount(BigDecimal lineDiscount) { this.lineDiscount = lineDiscount; }
+        public Long getPromotionId() { return promotionId; }
+        public void setPromotionId(Long promotionId) { this.promotionId = promotionId; }
+        public String getPromotionName() { return promotionName; }
+        public void setPromotionName(String promotionName) { this.promotionName = promotionName; }
+        public String getPricingSource() { return pricingSource; }
+        public void setPricingSource(String pricingSource) { this.pricingSource = pricingSource; }
         public BigDecimal getTaxRate() { return taxRate; }
         public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
         public Integer getAvailableStock() { return availableStock; }
