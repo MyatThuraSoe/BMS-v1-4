@@ -39,7 +39,7 @@ spring:
     type: caffeine
     caffeine:
       spec: maximumSize=500,expireAfterWrite=10m
-    cache-names: categoriesActive,shopInfo,systemSettings
+    cache-names: categoriesActive,shopInfo,systemSettings,priceLists,promotions
 
   servlet:
     multipart:

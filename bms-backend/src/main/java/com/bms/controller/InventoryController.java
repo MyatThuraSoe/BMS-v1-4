@@ -73,7 +73,8 @@ public class InventoryController {
         // Extract authenticated user from SecurityContext
         User currentUser = (User) authentication.getPrincipal();
         Long userId = currentUser.getId();
-        productService.adjustStock(userId, id, request.getQuantityChange(), request.getReason());
+        productService.adjustStock(userId, id, request.getQuantityChange(),
+                request.getReason(), request.getReasonCode());
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock adjusted successfully", null));
     }
 

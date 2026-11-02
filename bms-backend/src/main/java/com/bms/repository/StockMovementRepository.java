@@ -71,4 +71,18 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
         WHERE sm.movementDate >= :from
         """)
     List<Object[]> findMovementsSince(@Param("from") LocalDateTime from);
+
+    @Query("""
+        SELECT sm FROM StockMovement sm
+        JOIN FETCH sm.product p
+        LEFT JOIN FETCH sm.createdBy u
+        WHERE sm.movementDate BETWEEN :startDate AND :endDate
+          AND sm.valuationAmount IS NOT NULL
+          AND sm.referenceType IN (com.bms.entity.StockMovement.ReferenceType.STOCK_ADJUSTMENT,
+                                   com.bms.entity.StockMovement.ReferenceType.STOCK_COUNT,
+                                   com.bms.entity.StockMovement.ReferenceType.RTV)
+        ORDER BY sm.movementDate ASC
+        """)
+    List<StockMovement> findForJournal(@Param("startDate") LocalDateTime startDate,
+                                       @Param("endDate") LocalDateTime endDate);
 }

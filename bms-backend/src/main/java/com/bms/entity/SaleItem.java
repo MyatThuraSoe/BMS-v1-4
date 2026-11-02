@@ -45,6 +45,20 @@ public class SaleItem {
     @Column(name = "quantity_refunded", nullable = false)
     private Integer quantityRefunded = 0;
 
+    /** List price before promotions / price-list pricing. */
+    @Column(name = "original_unit_price", precision = 10, scale = 2)
+    private BigDecimal originalUnitPrice;
+
+    @Column(name = "promotion_id")
+    private Long promotionId;
+
+    @Column(name = "promotion_name", length = 255)
+    private String promotionName;
+
+    @Column(name = "line_discount", precision = 10, scale = 2,
+            columnDefinition = "numeric(10,2) default 0")
+    private BigDecimal lineDiscount = BigDecimal.ZERO;
+
     @PrePersist
     protected void onCreate() {
         if (totalPrice == null && unitPrice != null && quantity != null) {
@@ -79,4 +93,18 @@ public class SaleItem {
 
     public Integer getQuantityRefunded() { return quantityRefunded; }
     public void setQuantityRefunded(Integer quantityRefunded) { this.quantityRefunded = quantityRefunded; }
+
+    public BigDecimal getOriginalUnitPrice() {
+        return originalUnitPrice != null ? originalUnitPrice : unitPrice;
+    }
+    public void setOriginalUnitPrice(BigDecimal originalUnitPrice) { this.originalUnitPrice = originalUnitPrice; }
+
+    public Long getPromotionId() { return promotionId; }
+    public void setPromotionId(Long promotionId) { this.promotionId = promotionId; }
+
+    public String getPromotionName() { return promotionName; }
+    public void setPromotionName(String promotionName) { this.promotionName = promotionName; }
+
+    public BigDecimal getLineDiscount() { return lineDiscount != null ? lineDiscount : BigDecimal.ZERO; }
+    public void setLineDiscount(BigDecimal lineDiscount) { this.lineDiscount = lineDiscount; }
 }

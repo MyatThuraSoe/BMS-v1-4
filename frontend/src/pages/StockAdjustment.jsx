@@ -48,7 +48,7 @@ const StockAdjustment = () => {
   const { t } = useTranslation('inventory');
 
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reason: '' });
+  const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reasonCode: 'COUNT_CORRECTION', reason: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -57,6 +57,7 @@ const StockAdjustment = () => {
       inventoryService.adjustStock(data.productId, {
         productId: Number(data.productId),
         quantityChange: Number(data.quantityChange),
+        reasonCode: data.reasonCode,
         reason: data.reason,
       }),
     onSuccess: () => {
@@ -89,6 +90,7 @@ const StockAdjustment = () => {
       }
     }
 
+    if (!formData.reasonCode) { setError('Reason code is required'); return; }
     if (!formData.reason) { setError(t('reason_required')); return; }
     setError('');
     setSuccess('');
@@ -147,6 +149,15 @@ const StockAdjustment = () => {
                 onWheel={preventNumberScroll} 
                 required 
               />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <TextField fullWidth select label="Reason code" value={formData.reasonCode} onChange={(e) => setFormData({ ...formData, reasonCode: e.target.value })} required>
+                <MenuItem value="SPOILAGE_EXPIRY">Spoilage / expiry</MenuItem>
+                <MenuItem value="THEFT_SHRINKAGE">Theft / shrinkage</MenuItem>
+                <MenuItem value="DAMAGED_IN_STORE">Damaged in store</MenuItem>
+                <MenuItem value="INTERNAL_CONSUMPTION">Internal consumption</MenuItem>
+                <MenuItem value="COUNT_CORRECTION">Count correction</MenuItem>
+              </TextField>
             </Grid>
             <Grid item xs={12}>
               <TextField fullWidth label={t('reason')} multiline rows={3} value={formData.reason} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} required />

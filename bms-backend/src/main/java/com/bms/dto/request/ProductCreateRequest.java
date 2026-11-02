@@ -42,6 +42,12 @@ public class ProductCreateRequest {
     
     private LocalDate expiryDate;
     
+    private String binLocation;
+    
+    private String abcClass;
+    
+    private BigDecimal weight;
+    
     // Getters and setters
     public String getSku() { return sku; }
     public void setSku(String sku) { this.sku = sku; }
@@ -72,4 +78,13 @@ public class ProductCreateRequest {
     
     public LocalDate getExpiryDate() { return expiryDate; }
     public void setExpiryDate(LocalDate expiryDate) { this.expiryDate = expiryDate; }
+    
+    public String getBinLocation() { return binLocation; }
+    public void setBinLocation(String binLocation) { this.binLocation = binLocation; }
+    
+    public String getAbcClass() { return abcClass; }
+    public void setAbcClass(String abcClass) { this.abcClass = abcClass; }
+    
+    public BigDecimal getWeight() { return weight; }
+    public void setWeight(BigDecimal weight) { this.weight = weight; }
 }

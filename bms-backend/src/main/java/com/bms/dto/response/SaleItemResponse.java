@@ -13,6 +13,10 @@ public class SaleItemResponse {
     private BigDecimal taxAmount;
     private BigDecimal costPriceAtSale;
     private Integer quantityRefunded;
+    private BigDecimal originalUnitPrice;
+    private BigDecimal lineDiscount;
+    private Long promotionId;
+    private String promotionName;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -34,4 +38,12 @@ public class SaleItemResponse {
     public void setCostPriceAtSale(BigDecimal costPriceAtSale) { this.costPriceAtSale = costPriceAtSale; }
     public Integer getQuantityRefunded() { return quantityRefunded; }
     public void setQuantityRefunded(Integer quantityRefunded) { this.quantityRefunded = quantityRefunded; }
+    public BigDecimal getOriginalUnitPrice() { return originalUnitPrice; }
+    public void setOriginalUnitPrice(BigDecimal originalUnitPrice) { this.originalUnitPrice = originalUnitPrice; }
+    public BigDecimal getLineDiscount() { return lineDiscount; }
+    public void setLineDiscount(BigDecimal lineDiscount) { this.lineDiscount = lineDiscount; }
+    public Long getPromotionId() { return promotionId; }
+    public void setPromotionId(Long promotionId) { this.promotionId = promotionId; }
+    public String getPromotionName() { return promotionName; }
+    public void setPromotionName(String promotionName) { this.promotionName = promotionName; }
 }

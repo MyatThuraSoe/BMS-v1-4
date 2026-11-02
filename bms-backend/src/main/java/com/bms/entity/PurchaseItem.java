@@ -36,6 +36,26 @@ public class PurchaseItem {
     @Column(name = "total_cost", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalCost;
 
+    /** Units already received (supports partial receiving). */
+    @Column(name = "received_quantity")
+    private Integer receivedQuantity = 0;
+
+    /** Units already returned to the supplier via RTV. */
+    @Column(name = "returned_quantity")
+    private Integer returnedQuantity = 0;
+
+    /** Purchase-time FX rate snapshot (base units per invoice-currency unit). */
+    @Column(name = "exchange_rate", precision = 19, scale = 6)
+    private BigDecimal exchangeRate = BigDecimal.ONE;
+
+    /** Unit cost including allocated freight/duty/insurance. */
+    @Column(name = "landed_unit_cost", precision = 19, scale = 4)
+    private BigDecimal landedUnitCost;
+
+    /** Landed unit cost converted to the shop's base currency. */
+    @Column(name = "base_unit_cost", precision = 19, scale = 4)
+    private BigDecimal baseUnitCost;
+
     @PrePersist
     protected void onCreate() {
         if (totalCost == null && unitCost != null && quantity != null) {
@@ -63,4 +83,26 @@ public class PurchaseItem {
 
     public BigDecimal getTotalCost() { return totalCost; }
     public void setTotalCost(BigDecimal totalCost) { this.totalCost = totalCost; }
+
+    public Integer getReceivedQuantity() { return receivedQuantity != null ? receivedQuantity : 0; }
+    public void setReceivedQuantity(Integer receivedQuantity) { this.receivedQuantity = receivedQuantity; }
+
+    public Integer getReturnedQuantity() { return returnedQuantity != null ? returnedQuantity : 0; }
+    public void setReturnedQuantity(Integer returnedQuantity) { this.returnedQuantity = returnedQuantity; }
+
+    public BigDecimal getExchangeRate() {
+        return exchangeRate != null && exchangeRate.compareTo(BigDecimal.ZERO) > 0
+                ? exchangeRate : BigDecimal.ONE;
+    }
+    public void setExchangeRate(BigDecimal exchangeRate) { this.exchangeRate = exchangeRate; }
+
+    public BigDecimal getLandedUnitCost() {
+        return landedUnitCost != null ? landedUnitCost : unitCost;
+    }
+    public void setLandedUnitCost(BigDecimal landedUnitCost) { this.landedUnitCost = landedUnitCost; }
+
+    public BigDecimal getBaseUnitCost() {
+        return baseUnitCost != null ? baseUnitCost : getLandedUnitCost();
+    }
+    public void setBaseUnitCost(BigDecimal baseUnitCost) { this.baseUnitCost = baseUnitCost; }
 }

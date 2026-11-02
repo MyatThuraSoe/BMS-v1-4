@@ -8,6 +8,8 @@
   "discount_pct_label": "Discount ({{pct}}%)",
   "discount_amount": "Discount",
   "discount_amount_helper": "Optional discount amount (max = subtotal)",
+  "promotion_savings": "Promotion savings",
+  "price_list_savings": "Price list savings",
   "total": "Total",
   "checkout": "Checkout",
   "checkout_and_print": "Checkout & Print",

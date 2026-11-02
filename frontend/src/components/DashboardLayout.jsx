@@ -57,6 +57,12 @@ import {
   Inventory as InventoryIcon,
   Warehouse as WarehouseIcon,
   Category as CategoryIcon,
+  FactCheck as CountIcon,
+  Place as LocationIcon,
+  Sell as PromotionIcon,
+  PriceChange as PriceListIcon,
+  MoveToInbox as ReceivingIcon,
+  MenuBook as GlIcon,
   Info as InfoIcon,
   Fullscreen as FullscreenIcon,
   FullscreenExit as FullscreenExitIcon,
@@ -105,12 +111,16 @@ const menuGroups = [
       { textKey: 'sales', icon: <ReceiptIcon />, path: '/sales', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'info.main' },
       { textKey: 'cash_shift', icon: <CashIcon />, path: '/cash-shift', roles: ['ADMIN', 'MANAGER', 'CASHIER'], color: 'warning.main' },
       { textKey: 'accounts_receivable', icon: <PaymentsIcon />, path: '/accounts-receivable', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
+      { textKey: 'promotions', icon: <PromotionIcon />, path: '/promotions', roles: ['ADMIN', 'MANAGER'], color: 'secondary.main' },
+      { textKey: 'price_lists', icon: <PriceListIcon />, path: '/price-lists', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
     ],
   },
   {
     labelKey: 'group_catalog',
     items: [
       { textKey: 'inventory', icon: <WarehouseIcon />, path: '/inventory', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
+      { textKey: 'stock_counts', icon: <CountIcon />, path: '/stock-counts', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
+      { textKey: 'locations', icon: <LocationIcon />, path: '/locations', roles: ['ADMIN', 'MANAGER'], color: 'success.main' },
       { textKey: 'products', icon: <InventoryIcon />, path: '/products', roles: ['ADMIN', 'MANAGER'], color: 'primary.main' },
       { textKey: 'categories', icon: <CategoryIcon />, path: '/categories', roles: ['ADMIN', 'MANAGER'], color: 'secondary.main' },
     ],
@@ -119,6 +129,7 @@ const menuGroups = [
     labelKey: 'group_procurement',
     items: [
       { textKey: 'purchases', icon: <CartIcon />, path: '/purchases', roles: ['ADMIN', 'MANAGER'], color: 'warning.main' },
+      { textKey: 'receiving', icon: <ReceivingIcon />, path: '/receiving', roles: ['ADMIN', 'MANAGER'], color: 'success.main' },
     ],
   },
   {
@@ -134,6 +145,7 @@ const menuGroups = [
       { textKey: 'reports', icon: <ReportIcon />, path: '/reports', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
       { textKey: 'analytics', icon: <AnalyticsIcon />, path: '/analytics', roles: ['ADMIN'], color: 'secondary.main' },
       { textKey: 'accounting', icon: <AccountingIcon />, path: '/accounting', roles: ['ADMIN'], color: 'success.main' },
+      { textKey: 'gl_export', icon: <GlIcon />, path: '/gl-export', roles: ['ADMIN', 'MANAGER'], color: 'info.main' },
     ],
   },
   {

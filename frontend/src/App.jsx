@@ -49,6 +49,13 @@ const CashShift = lazy(() => import('./pages/CashShift'));
 const AccountsReceivable = lazy(() => import('./pages/AccountsReceivable'));
 const Orders = lazy(() => import('./pages/Orders'));
 const Drafts = lazy(() => import('./pages/Drafts'));
+const StockCounts = lazy(() => import('./pages/StockCounts'));
+const StockCountDetail = lazy(() => import('./pages/StockCountDetail'));
+const Locations = lazy(() => import('./pages/Locations'));
+const Promotions = lazy(() => import('./pages/Promotions'));
+const PriceLists = lazy(() => import('./pages/PriceLists'));
+const Receiving = lazy(() => import('./pages/Receiving'));
+const GlExport = lazy(() => import('./pages/GlExport'));
 
 // Layout
 import DashboardLayout from './components/DashboardLayout';
@@ -235,6 +242,19 @@ function AppRoutes() {
         <Route path="inventory" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Inventory /></ProtectedRoute>} />
         {/* Inventory Adjustments (Admin & Manager only) */}
         <Route path="inventory/adjust" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><StockAdjustment /></ProtectedRoute>} />
+
+        {/* Phase 2: stock counts, locations/transfers */}
+        <Route path="stock-counts" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><StockCounts /></ProtectedRoute>} />
+        <Route path="stock-counts/:id" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER', 'CASHIER']}><StockCountDetail /></ProtectedRoute>} />
+        <Route path="locations" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Locations /></ProtectedRoute>} />
+
+        {/* Phase 2: promotions and price lists */}
+        <Route path="promotions" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Promotions /></ProtectedRoute>} />
+        <Route path="price-lists" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><PriceLists /></ProtectedRoute>} />
+
+        {/* Phase 2: receiving / RTV and GL export */}
+        <Route path="receiving" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><Receiving /></ProtectedRoute>} />
+        <Route path="gl-export" element={<ProtectedRoute allowedRoles={['ADMIN', 'MANAGER']}><GlExport /></ProtectedRoute>} />
 
         
         {/* Reports (Admin & Manager only) */}

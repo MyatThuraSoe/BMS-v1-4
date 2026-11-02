@@ -182,6 +182,9 @@ public class ProductService {
         product.setBarcode(barcode);
         product.setHasExpiry(request.getHasExpiry() != null ? request.getHasExpiry() : Boolean.FALSE);
         product.setExpiryDate(request.getHasExpiry() != null && request.getHasExpiry() ? request.getExpiryDate() : null);
+        product.setBinLocation(normalizeBinLocation(request.getBinLocation()));
+        product.setAbcClass(normalizeAbcClass(request.getAbcClass(), "C"));
+        product.setWeight(request.getWeight() != null ? request.getWeight() : BigDecimal.ZERO);
 
         if (request.getCategoryId() != null) {
             Category category = categoryRepository.findById(request.getCategoryId())
@@ -257,6 +260,9 @@ public class ProductService {
         product.setBarcode(barcode);
         product.setHasExpiry(request.getHasExpiry() != null ? request.getHasExpiry() : Boolean.FALSE);
         product.setExpiryDate(request.getHasExpiry() != null && request.getHasExpiry() ? request.getExpiryDate() : null);
+        product.setBinLocation(normalizeBinLocation(request.getBinLocation()));
+        product.setAbcClass(normalizeAbcClass(request.getAbcClass(), product.getAbcClass()));
+        product.setWeight(request.getWeight() != null ? request.getWeight() : BigDecimal.ZERO);
 
         if (request.getCategoryId() != null) {
             Category category = categoryRepository.findById(request.getCategoryId())
@@ -358,18 +364,37 @@ public class ProductService {
 
     @Transactional
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason) {
+        adjustStock(userId, productId, quantityChange, reason, "COUNT_CORRECTION");
+    }
+
+    public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason, String reasonCode) {
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
+        if (quantityChange == null || quantityChange == 0) {
+            throw new BusinessException("Quantity adjustment must be a non-zero value");
+        }
         int newQuantity = product.getStockQuantity() + quantityChange;
         if (newQuantity < 0) {
             throw new BusinessException("Cannot reduce stock below zero. Current stock: " +
                     product.getStockQuantity() + ", requested change: " + quantityChange);
         }
 
+        List<String> allowedReasons = List.of(
+                "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE",
+                "INTERNAL_CONSUMPTION", "COUNT_CORRECTION");
+        String normalizedReason = reasonCode != null ? reasonCode.trim().toUpperCase() : null;
+        if (normalizedReason == null || !allowedReasons.contains(normalizedReason)) {
+            throw new BusinessException("A valid reason code is required: " + String.join(", ", allowedReasons));
+        }
+
         String oldStock = String.valueOf(product.getStockQuantity());
         product.setStockQuantity(newQuantity);
         productRepository.save(product);
+
+        BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+        BigDecimal valuation = unitCost.multiply(BigDecimal.valueOf(quantityChange))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
 
         StockMovement movement = new StockMovement();
         movement.setProduct(product);
@@ -378,14 +403,19 @@ public class ProductService {
         movement.setQuantity(Math.abs(quantityChange));
         movement.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
         movement.setReferenceId(productId);
-        movement.setDescription(reason);
+        movement.setReasonCode(normalizedReason);
+        movement.setLocation("SHOP");
+        movement.setValuationAmount(valuation);
+        movement.setDescription((reason != null && !reason.isBlank() ? reason : normalizedReason.replace('_', ' '))
+                + " (" + normalizedReason + ")");
         User user = userRepository.findById(userId).orElse(null);
         movement.setCreatedBy(user);
         movement.setMovementDate(LocalDateTime.now());
         stockMovementRepository.save(movement);
 
         auditLogService.logAction(userId, "STOCK_ADJUSTMENT",
-                "Stock adjusted for product: " + product.getName() + " by " + quantityChange,
+                "Stock adjusted for product: " + product.getName() + " by " + quantityChange
+                        + " (" + normalizedReason + ")",
                 "Product", productId, oldStock, String.valueOf(newQuantity));
     }
 
@@ -679,6 +709,9 @@ public class ProductService {
         response.setBarcode(product.getBarcode());
         response.setHasExpiry(product.getHasExpiry());
         response.setExpiryDate(product.getExpiryDate());
+        response.setBinLocation(product.getBinLocation());
+        response.setAbcClass(product.getAbcClass());
+        response.setWeight(product.getWeight());
         response.setIsActive(product.getIsActive());
         response.setCreatedAt(product.getCreatedAt());
         response.setUpdatedAt(product.getUpdatedAt());
@@ -701,6 +734,21 @@ public class ProductService {
             return userRepository.findByUsername(username).map(User::getId).orElse(null);
         }
         return null;
+    }
+
+    private String normalizeBinLocation(String binLocation) {
+        return binLocation != null && !binLocation.isBlank() ? binLocation.trim() : null;
+    }
+
+    private String normalizeAbcClass(String abcClass, String fallback) {
+        if (abcClass == null || abcClass.isBlank()) {
+            return fallback != null ? fallback : "C";
+        }
+        String normalized = abcClass.trim().toUpperCase();
+        if (!normalized.matches("[ABC]")) {
+            throw new BusinessException("ABC class must be A, B or C");
+        }
+        return normalized;
     }
 
     private void validateNonNegativeValues(ProductCreateRequest request) {

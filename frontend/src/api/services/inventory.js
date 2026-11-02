@@ -9,6 +9,7 @@ export const inventoryService = {
       {
         productId: adjustment.productId,
         quantityChange: adjustment.quantityChange,
+        reasonCode: adjustment.reasonCode || 'COUNT_CORRECTION',
         reason: adjustment.reason,
       }
     );

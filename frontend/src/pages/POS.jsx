@@ -419,16 +419,41 @@ const POS = () => {
   const verifyCartMutation = useMutation({
     mutationFn: (cartItems) => saleService.verifyCart(
       cartItems,
-      discountEnabled && discountMode === 'AMOUNT' ? (parseFloat(cashierDiscount) || 0) : null
+      discountEnabled && discountMode === 'AMOUNT' ? (parseFloat(cashierDiscount) || 0) : null,
+      registeredMode ? (selectedCustomer?.id ?? null) : null
     ),
     onSuccess: (response) => {
       const result = response.data;
+
+      // Always adopt the server's effective unit price, promotion name and
+      // price-list source so the cart total matches what will be charged.
+      setCart((prevCart) =>
+        prevCart.map((cartItem) => {
+          const fresh = (result.items || []).find((i) => i.productId === cartItem.productId);
+          if (!fresh) return cartItem;
+          const currentQty = parseInt(cartItem.quantity, 10) || 0;
+          return {
+            ...cartItem,
+            price: fresh.unitPrice,
+            originalPrice: fresh.originalUnitPrice,
+            lineDiscount: fresh.lineDiscount,
+            promotionName: fresh.promotionName,
+            pricingSource: fresh.pricingSource,
+            stockQuantity: fresh.availableStock,
+            quantity: fresh.insufficientStock
+              ? Math.min(currentQty, fresh.availableStock)
+              : currentQty || 1,
+          };
+        })
+      );
 
       if (result.valid) {
         setVerifiedTotals({
           subtotal: result.subtotal,
           taxAmount: result.taxAmount,
           discountAmount: result.discountAmount,
+          promotionDiscount: result.promotionDiscount,
+          priceListDiscount: result.priceListDiscount,
           totalAmount: result.totalAmount,
         });
         // Checkout & Print: skip the confirmation dialog, create + print right away.
@@ -443,26 +468,9 @@ const POS = () => {
         return;
       }
 
-      // Something changed — update the SAME cart array in place, don't touch item selection
-      setCart((prevCart) =>
-        prevCart.map((cartItem) => {
-          const fresh = result.items.find((i) => i.productId === cartItem.productId);
-          if (!fresh) return cartItem;
-          const currentQty = parseInt(cartItem.quantity, 10) || 0;
-          return {
-            ...cartItem,
-            price: fresh.unitPrice,
-            stockQuantity: fresh.availableStock,
-            // clamp quantity down if stock dropped below what's in the cart
-            quantity: fresh.insufficientStock
-              ? Math.min(currentQty, fresh.availableStock)
-              : currentQty || 1,
-          };
-        })
-      );
-
+      // Something changed — the cart was already refreshed above. Do NOT open
+      // the confirm dialog yet — let the cashier see the corrected cart first.
       notifyWarning(t('items_changed_warning', { messages: result.messages.join(' | ') }));
-      // Do NOT open the confirm dialog yet — let them see the corrected cart first.
     },
     onError: (err) => {
       setPrintAfterCheckout(false); // don't surprise-print on a later manual checkout
@@ -1062,7 +1070,14 @@ const POS = () => {
                     <TableBody>
                       {cart.map((item) => (
                         <TableRow key={item.productId}>
-                          <TableCell>{item.name}</TableCell>
+                          <TableCell>
+                            {item.name}
+                            {item.promotionName && (
+                              <Typography variant="caption" display="block" color="secondary">
+                                {item.promotionName}
+                              </Typography>
+                            )}
+                          </TableCell>
 
                           <TableCell align="center">
                               <IconButton
@@ -1101,7 +1116,21 @@ const POS = () => {
                           </TableCell>
 
                           <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem' }}>
-                              {formatAmountPlain(item.price)}
+                              {Number(item.lineDiscount) > 0 && Number(item.originalPrice) > Number(item.price) ? (
+                                <>
+                                  <Typography
+                                    component="span"
+                                    variant="caption"
+                                    color="text.secondary"
+                                    sx={{ textDecoration: 'line-through', display: 'block' }}
+                                  >
+                                    {formatAmountPlain(item.originalPrice)}
+                                  </Typography>
+                                  <Typography component="span" variant="body2" color="secondary">
+                                    {formatAmountPlain(item.price)}
+                                  </Typography>
+                                </>
+                              ) : formatAmountPlain(item.price)}
                           </TableCell>
 
                           <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', fontSize: '0.85rem', fontWeight: 600 }}>
@@ -1197,8 +1226,20 @@ const POS = () => {
 
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>{t('subtotal')}</Typography>
-                <Typography>{formatCurrency(subtotal)}</Typography>
+                <Typography>{formatCurrency(displaySubtotal)}</Typography>
               </Box>
+              {Number(verifiedTotals?.promotionDiscount) > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="secondary">{t('promotion_savings')}</Typography>
+                  <Typography color="secondary">-{formatCurrency(verifiedTotals.promotionDiscount)}</Typography>
+                </Box>
+              )}
+              {Number(verifiedTotals?.priceListDiscount) > 0 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
+                  <Typography color="info.main">{t('price_list_savings')}</Typography>
+                  <Typography color="info.main">-{formatCurrency(verifiedTotals.priceListDiscount)}</Typography>
+                </Box>
+              )}
               <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                 <Typography>{t('tax')}</Typography>
                 <Typography>{formatCurrency(displayTax)}</Typography>
@@ -1391,6 +1432,16 @@ const POS = () => {
           {Number(verifiedTotals?.discountAmount) > 0 && (
             <Typography color="secondary">
               {t('discount_amount')}: -{formatCurrency(verifiedTotals.discountAmount)}
+            </Typography>
+          )}
+          {Number(verifiedTotals?.promotionDiscount) > 0 && (
+            <Typography color="secondary">
+              {t('promotion_savings')}: -{formatCurrency(verifiedTotals.promotionDiscount)}
+            </Typography>
+          )}
+          {Number(verifiedTotals?.priceListDiscount) > 0 && (
+            <Typography color="info.main">
+              {t('price_list_savings')}: -{formatCurrency(verifiedTotals.priceListDiscount)}
             </Typography>
           )}
           {saleType === 'CREDIT' ? (

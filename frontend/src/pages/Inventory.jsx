@@ -821,6 +821,7 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [adjustmentType, setAdjustmentType] = useState('ADD');
   const [quantityChange, setQuantityChange] = useState('');
+  const [reasonCode, setReasonCode] = useState('COUNT_CORRECTION');
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
 
@@ -829,6 +830,7 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
       setSelectedProduct(initialProduct || null);
       setAdjustmentType('ADD');
       setQuantityChange('');
+      setReasonCode('COUNT_CORRECTION');
       setReason('');
       setError('');
     }
@@ -839,6 +841,7 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
       inventoryService.adjustStock(selectedProduct.id, {
         productId: selectedProduct.id,
         quantityChange: Number(quantityChange),
+        reasonCode,
         reason: reason.trim(),
       }),
     onSuccess: () => {
@@ -863,6 +866,7 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
     if (!selectedProduct) { setError(t('product_required')); return; }
     const qty = parseInt(quantityChange, 10);
     if (!qty || qty === 0) { setError(t('quantity_must_be_positive')); return; }
+    if (!reasonCode) { setError('Reason code is required'); return; }
     if (!reason.trim()) { setError(t('reason_required')); return; }
     setError('');
     mutation.mutate();
@@ -913,6 +917,18 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
               />
             </Grid>
           </Grid>
+          <TextField
+            fullWidth select required
+            label="Reason code"
+            value={reasonCode}
+            onChange={(e) => setReasonCode(e.target.value)}
+          >
+            <MenuItem value="SPOILAGE_EXPIRY">Spoilage / expiry</MenuItem>
+            <MenuItem value="THEFT_SHRINKAGE">Theft / shrinkage</MenuItem>
+            <MenuItem value="DAMAGED_IN_STORE">Damaged in store</MenuItem>
+            <MenuItem value="INTERNAL_CONSUMPTION">Internal consumption</MenuItem>
+            <MenuItem value="COUNT_CORRECTION">Count correction</MenuItem>
+          </TextField>
           <TextField
             fullWidth required multiline rows={3}
             label={t('reason')}

@@ -56,6 +56,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
            "s.isVoided = false ORDER BY s.saleDate DESC")
     Page<Sale> findNonVoidedSales(Pageable pageable);
 
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
+    @Query("""
+    SELECT s FROM Sale s
+    WHERE s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false
+      AND s.saleDate BETWEEN :startDate AND :endDate
+    ORDER BY s.saleDate ASC
+    """)
+    List<Sale> findForJournal(@Param("startDate") LocalDateTime startDate,
+                              @Param("endDate") LocalDateTime endDate);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
     SELECT s

@@ -36,7 +36,19 @@ public class StockMovement {
     
     @Column(length = 1000)
     private String description;
-    
+
+    /** Reason code for adjustments/counts: DAMAGED, THEFT, EXPIRED, MISCOUNT, ... */
+    @Column(name = "reason_code", length = 50)
+    private String reasonCode;
+
+    /** Location code/name where the movement happened (SHOP, BACKROOM, QUARANTINE...). */
+    @Column(name = "location", length = 100)
+    private String location;
+
+    /** Monetary value of the movement (variance x unit cost, landed cost, ...). */
+    @Column(name = "valuation_amount", precision = 19, scale = 2)
+    private java.math.BigDecimal valuationAmount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
@@ -48,11 +60,11 @@ public class StockMovement {
     private LocalDateTime createdAt;
     
     public enum MovementType {
-        IN, OUT, ADJUSTMENT, ADJUSTMENT_IN, ADJUSTMENT_OUT
+        IN, OUT, ADJUSTMENT, ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_IN, TRANSFER_OUT
     }
     
     public enum ReferenceType {
-        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN
+        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN, STOCK_COUNT, TRANSFER, RECEIVING, RTV
     }
     
     @PrePersist
@@ -84,6 +96,15 @@ public class StockMovement {
     
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+
+    public String getReasonCode() { return reasonCode; }
+    public void setReasonCode(String reasonCode) { this.reasonCode = reasonCode; }
+
+    public String getLocation() { return location; }
+    public void setLocation(String location) { this.location = location; }
+
+    public java.math.BigDecimal getValuationAmount() { return valuationAmount; }
+    public void setValuationAmount(java.math.BigDecimal valuationAmount) { this.valuationAmount = valuationAmount; }
     
     public User getCreatedBy() { return createdBy; }
     public void setCreatedBy(User createdBy) { this.createdBy = createdBy; }
