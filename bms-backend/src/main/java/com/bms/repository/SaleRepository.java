@@ -135,6 +135,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("SELECT s FROM Sale s WHERE s.cashShiftId = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
     List<Sale> findByCashShiftId(@Param("shiftId") Long shiftId);
 
+    @Query("SELECT s FROM Sale s WHERE s.employeeShift.id = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
+    List<Sale> findByEmployeeShiftId(@Param("shiftId") Long shiftId);
+
     @Query("""
         SELECT COALESCE(SUM(s.totalAmount), 0)
         FROM Sale s

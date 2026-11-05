@@ -12,9 +12,20 @@ public class ArPaymentRequest {
 
     private String notes;
 
+    /** CASH (legacy default), MOBILE_WALLET, CARD, BANK_TRANSFER, etc. */
+    private String paymentMethod;
+
+    private String externalReference;
+
     public BigDecimal getAmount() { return amount; }
     public void setAmount(BigDecimal amount) { this.amount = amount; }
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public String getExternalReference() { return externalReference; }
+    public void setExternalReference(String externalReference) { this.externalReference = externalReference; }
 }

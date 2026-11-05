@@ -95,11 +95,20 @@ class OpenShiftRequestTest {
     }
 
     @Test
-    void missingOpeningAmountIsRejected() {
-        Set<ConstraintViolation<OpenShiftRequest>> violations = validate(null);
+    void missingOpeningAmountIsAllowedForNonCashShift() {
+        OpenShiftRequest request = new OpenShiftRequest();
+        request.setShiftType("NON_CASH");
 
-        assertEquals(1, violations.size());
-        assertEquals("Opening amount is required",
-                violations.iterator().next().getMessage());
+        assertTrue(validator.validate(request).isEmpty(),
+                "a non-cash shift takes no float, so the amount must stay optional");
+    }
+
+    @Test
+    void missingOpeningAmountIsAllowedForCashShiftToo() {
+        OpenShiftRequest request = new OpenShiftRequest();
+        request.setShiftType("CASH_DRAWER");
+
+        assertTrue(validator.validate(request).isEmpty(),
+                "the drawer service defaults the float to zero when it is omitted");
     }
 }

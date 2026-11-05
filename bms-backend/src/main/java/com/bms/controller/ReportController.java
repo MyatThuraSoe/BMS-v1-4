@@ -215,4 +215,38 @@ public class ReportController {
                 "Frequently bought with retrieved successfully",
                 reportService.getFrequentlyBoughtWith(id, limit)));
     }
+
+    // -----------------------------------------------------------------------
+    // Cash shift reports (cash vs non-cash separation)
+    // -----------------------------------------------------------------------
+    @GetMapping("/employee-shifts")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getEmployeeShiftReport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) Long cashierId,
+            @RequestParam(required = false) String shiftType) {
+        return ResponseEntity.ok(new ApiResponse<>(true,
+                "Employee shift report retrieved successfully",
+                reportService.getEmployeeShiftReport(startDate, endDate, cashierId, shiftType)));
+    }
+
+    @GetMapping("/drawer-sessions")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getDrawerSessionReport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(new ApiResponse<>(true,
+                "Cash drawer session report retrieved successfully",
+                reportService.getDrawerSessionReport(startDate, endDate)));
+    }
+
+    @GetMapping("/end-of-day")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getEndOfDayReport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        return ResponseEntity.ok(new ApiResponse<>(true,
+                "End-of-day report retrieved successfully",
+                reportService.getEndOfDayReport(date)));
+    }
 }

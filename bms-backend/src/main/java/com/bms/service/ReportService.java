@@ -2,23 +2,31 @@ package com.bms.service;
 
 import com.bms.dto.response.AccountingSummaryResponse;
 import com.bms.dto.response.BasketAffinityDto;
+import com.bms.dto.response.CashShiftResponse;
 import com.bms.dto.response.CustomerLtvDto;
 import com.bms.dto.response.CustomerRetentionDto;
 import com.bms.dto.response.DailySalesTrendDto;
 import com.bms.dto.response.DeadStockDto;
+import com.bms.dto.response.DrawerSessionResponse;
 import com.bms.dto.response.SalesTimingDto;
 import com.bms.dto.response.SupplierProfitDto;
+import com.bms.entity.CashDrawerSession;
 import com.bms.entity.Expense;
+import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
+import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -32,9 +40,11 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional(readOnly = true)
@@ -67,6 +77,18 @@ public class ReportService {
 
     @Autowired
     private SaleItemRepository saleItemRepository;
+
+    @Autowired
+    private SalePaymentRepository salePaymentRepository;
+
+    @Autowired
+    private CashDrawerSessionRepository cashDrawerSessionRepository;
+
+    @Autowired
+    private CashShiftService cashShiftService;
+
+    @Autowired
+    private CashDrawerSessionService cashDrawerSessionService;
 
     // Daily sales report
     public Map<String, Object> getDailySalesReport(LocalDate date) {
@@ -962,6 +984,373 @@ public class ReportService {
 
     private BigDecimal calculateNetSaleRevenue(Sale sale) {
         return SaleDiscountUtils.netSaleRevenue(sale);
+    }
+
+    // -----------------------------------------------------------------------
+    // Employee shift / cash drawer / end-of-day reports
+    // -----------------------------------------------------------------------
+
+    /**
+     * Per-employee-shift report. Cash and non-cash shifts are returned side by
+     * side; only cash shifts carry a drawer reference. The drawer's expected
+     * cash and variance are intentionally not copied onto every employee.
+     */
+    public Map<String, Object> getEmployeeShiftReport(LocalDate startDate, LocalDate endDate,
+                                                      Long cashierId, String shiftType) {
+        LocalDate from = startDate != null ? startDate : LocalDate.now();
+        LocalDate to = endDate != null ? endDate : from;
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("endDate must not be before startDate");
+        }
+
+        List<CashShiftResponse> shifts = cashShiftService.getShiftReport(
+                from.atStartOfDay(), to.atTime(LocalTime.MAX), cashierId, shiftType);
+
+        BigDecimal grossSales = BigDecimal.ZERO;
+        BigDecimal discounts = BigDecimal.ZERO;
+        BigDecimal refunds = BigDecimal.ZERO;
+        BigDecimal netSales = BigDecimal.ZERO;
+        BigDecimal cashSales = BigDecimal.ZERO;
+        BigDecimal nonCashSales = BigDecimal.ZERO;
+        long totalTransactions = 0;
+        long totalVoided = 0;
+        long openShifts = 0;
+        Map<String, BigDecimal> paymentBreakdown = new LinkedHashMap<>();
+
+        for (CashShiftResponse shift : shifts) {
+            grossSales = grossSales.add(toBigDecimal(shift.getGrossSales()));
+            discounts = discounts.add(toBigDecimal(shift.getDiscountTotal()));
+            refunds = refunds.add(toBigDecimal(shift.getReturnsTotal()));
+            netSales = netSales.add(toBigDecimal(shift.getNetSales()));
+            cashSales = cashSales.add(toBigDecimal(shift.getCashSalesTotal()));
+            nonCashSales = nonCashSales.add(toBigDecimal(shift.getNonCashSalesTotal()));
+            totalTransactions += shift.getTransactionCount();
+            totalVoided += shift.getVoidedCount();
+            if ("OPEN".equals(shift.getStatus())) {
+                openShifts++;
+            }
+            if (shift.getPaymentBreakdown() != null) {
+                shift.getPaymentBreakdown().forEach((method, amount) ->
+                        paymentBreakdown.merge(method, toBigDecimal(amount), BigDecimal::add));
+            }
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("startDate", from);
+        report.put("endDate", to);
+        report.put("totalShifts", shifts.size());
+        report.put("openShifts", openShifts);
+        report.put("transactionCount", totalTransactions);
+        report.put("voidedCount", totalVoided);
+        report.put("grossSales", grossSales);
+        report.put("discounts", discounts);
+        report.put("refunds", refunds);
+        report.put("netSales", netSales);
+        report.put("cashSales", cashSales);
+        report.put("nonCashSales", nonCashSales);
+        report.put("paymentBreakdown", paymentBreakdown);
+        report.put("shifts", shifts);
+        return report;
+    }
+
+    /**
+     * Physical drawer report. Expected cash comes from the signed movement
+     * ledger, so it always includes every employee who sold through the drawer
+     * and excludes wallet, card and bank revenue.
+     */
+    public Map<String, Object> getDrawerSessionReport(LocalDate startDate, LocalDate endDate) {
+        LocalDate from = startDate != null ? startDate : LocalDate.now();
+        LocalDate to = endDate != null ? endDate : from;
+        if (to.isBefore(from)) {
+            throw new IllegalArgumentException("endDate must not be before startDate");
+        }
+
+        List<CashDrawerSession> sessions = cashDrawerSessionRepository.findForReport(
+                from.atStartOfDay(), to.atTime(LocalTime.MAX));
+        List<DrawerSessionResponse> rows = sessions.stream()
+                .map(session -> cashDrawerSessionService.toResponse(session, false, true))
+                .toList();
+
+        BigDecimal openingFloat = BigDecimal.ZERO;
+        BigDecimal cashSales = BigDecimal.ZERO;
+        BigDecimal cashRefunds = BigDecimal.ZERO;
+        BigDecimal safeDrops = BigDecimal.ZERO;
+        BigDecimal payIns = BigDecimal.ZERO;
+        BigDecimal payOuts = BigDecimal.ZERO;
+        BigDecimal adjustments = BigDecimal.ZERO;
+        BigDecimal expectedCash = BigDecimal.ZERO;
+        BigDecimal countedCash = BigDecimal.ZERO;
+        BigDecimal variance = BigDecimal.ZERO;
+        long openSessions = 0;
+
+        for (DrawerSessionResponse row : rows) {
+            openingFloat = openingFloat.add(toBigDecimal(row.getOpeningFloat()));
+            cashSales = cashSales.add(toBigDecimal(row.getCashSales()));
+            cashRefunds = cashRefunds.add(toBigDecimal(row.getCashRefunds()));
+            safeDrops = safeDrops.add(toBigDecimal(row.getSafeDrops()));
+            payIns = payIns.add(toBigDecimal(row.getPayIns()));
+            payOuts = payOuts.add(toBigDecimal(row.getPayOuts()));
+            adjustments = adjustments.add(toBigDecimal(row.getAdjustments()));
+            expectedCash = expectedCash.add(toBigDecimal(row.getExpectedCash()));
+            countedCash = countedCash.add(toBigDecimal(row.getCountedCash()));
+            variance = variance.add(toBigDecimal(row.getVariance()));
+            if ("OPEN".equals(row.getStatus())) {
+                openSessions++;
+            }
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("startDate", from);
+        report.put("endDate", to);
+        report.put("totalSessions", rows.size());
+        report.put("openSessions", openSessions);
+        report.put("openingFloat", openingFloat);
+        report.put("cashSales", cashSales);
+        report.put("cashRefunds", cashRefunds);
+        report.put("safeDrops", safeDrops);
+        report.put("payIns", payIns);
+        report.put("payOuts", payOuts);
+        report.put("adjustments", adjustments);
+        report.put("expectedCash", expectedCash);
+        report.put("countedCash", countedCash);
+        report.put("variance", variance);
+        report.put("sessions", rows);
+        return report;
+    }
+
+    /**
+     * End-of-day report. The five sections are deliberately separate so digital
+     * revenue can never be mistaken for cash that should be in the drawer.
+     */
+    public Map<String, Object> getEndOfDayReport(LocalDate date) {
+        LocalDate day = date != null ? date : LocalDate.now();
+        LocalDateTime start = day.atStartOfDay();
+        LocalDateTime end = day.atTime(LocalTime.MAX);
+
+        List<Sale> sales = saleRepository.findByDateRange(start, end,
+                PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        List<Long> saleIds = sales.stream()
+                .map(Sale::getId)
+                .filter(Objects::nonNull)
+                .toList();
+        Map<Long, List<SalePayment>> paymentsBySale = saleIds.isEmpty()
+                ? Collections.emptyMap()
+                : salePaymentRepository.findBySaleIdInOrderByPaidAtAsc(saleIds).stream()
+                        .collect(Collectors.groupingBy(payment -> payment.getSale().getId()));
+
+        BigDecimal grossSales = BigDecimal.ZERO;
+        BigDecimal discounts = BigDecimal.ZERO;
+        BigDecimal netSales = BigDecimal.ZERO;
+        BigDecimal cashSales = BigDecimal.ZERO;
+        BigDecimal nonCashSales = BigDecimal.ZERO;
+        BigDecimal creditSales = BigDecimal.ZERO;
+        long transactionCount = 0;
+        long voidedCount = 0;
+        Map<String, BigDecimal> methodTotals = new LinkedHashMap<>();
+        Map<String, Long> methodCounts = new LinkedHashMap<>();
+
+        for (Sale sale : sales) {
+            if (Boolean.TRUE.equals(sale.getIsVoided())) {
+                voidedCount++;
+                continue;
+            }
+            transactionCount++;
+            grossSales = grossSales.add(toBigDecimal(sale.getSubtotal()));
+            discounts = discounts
+                    .add(toBigDecimal(sale.getDiscountAmount()))
+                    .add(toBigDecimal(sale.getPromotionDiscount()))
+                    .add(toBigDecimal(sale.getPriceListDiscount()));
+            BigDecimal total = toBigDecimal(sale.getTotalAmount());
+            netSales = netSales.add(total);
+
+            List<SalePayment> lines = paymentsBySale.get(sale.getId());
+            if (lines == null || lines.isEmpty()) {
+                // Historical sale created before split payments existed.
+                String method = sale.getPaymentMethod() != null
+                        ? sale.getPaymentMethod().name() : "UNKNOWN";
+                methodTotals.merge(method, total, BigDecimal::add);
+                methodCounts.merge(method, 1L, Long::sum);
+                if ("CASH".equals(method)) {
+                    cashSales = cashSales.add(total);
+                } else {
+                    nonCashSales = nonCashSales.add(total);
+                    if ("CREDIT".equals(method)) {
+                        creditSales = creditSales.add(total);
+                    }
+                }
+            } else {
+                Set<String> countedMethods = new HashSet<>();
+                for (SalePayment line : lines) {
+                    String method = line.getPaymentMethod() != null
+                            ? line.getPaymentMethod().name() : "UNKNOWN";
+                    BigDecimal amount = toBigDecimal(line.getAmount());
+                    methodTotals.merge(method, amount, BigDecimal::add);
+                    if (countedMethods.add(method)) {
+                        methodCounts.merge(method, 1L, Long::sum);
+                    }
+                    if ("CASH".equals(method)) {
+                        cashSales = cashSales.add(amount);
+                    } else {
+                        nonCashSales = nonCashSales.add(amount);
+                        if ("CREDIT".equals(method)) {
+                            creditSales = creditSales.add(amount);
+                        }
+                    }
+                }
+            }
+        }
+
+        List<SaleReturn> returns = saleReturnRepository.findByReturnDateBetween(start, end);
+        BigDecimal refundTotal = BigDecimal.ZERO;
+        Map<String, BigDecimal> refundsByMethod = new LinkedHashMap<>();
+        for (SaleReturn saleReturn : returns) {
+            BigDecimal amount = toBigDecimal(saleReturn.getTotalReturnAmount());
+            refundTotal = refundTotal.add(amount);
+            refundsByMethod.merge(saleReturn.getRefundMethod().name(), amount, BigDecimal::add);
+        }
+
+        Map<String, Object> business = new LinkedHashMap<>();
+        business.put("transactionCount", transactionCount);
+        business.put("voidedCount", voidedCount);
+        business.put("grossSales", grossSales);
+        business.put("discounts", discounts);
+        business.put("refunds", refundTotal);
+        business.put("netSales", netSales);
+        business.put("averageSale", transactionCount == 0 ? BigDecimal.ZERO
+                : netSales.divide(BigDecimal.valueOf(transactionCount), 2, RoundingMode.HALF_UP));
+        business.put("cashSales", cashSales);
+        business.put("digitalSales", nonCashSales.subtract(creditSales));
+        business.put("creditSales", creditSales);
+        business.put("nonCashSales", nonCashSales);
+        business.put("refundsByMethod", refundsByMethod);
+
+        List<Map<String, Object>> paymentMethods = new ArrayList<>();
+        methodTotals.forEach((method, amount) -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("method", method);
+            row.put("amount", amount);
+            row.put("transactionCount", methodCounts.getOrDefault(method, 0L));
+            paymentMethods.add(row);
+        });
+
+        Map<String, Object> drawerReport = getDrawerSessionReport(day, day);
+        Map<String, Object> shiftReport = getEmployeeShiftReport(day, day, null, null);
+
+        @SuppressWarnings("unchecked")
+        List<DrawerSessionResponse> drawerRows =
+                (List<DrawerSessionResponse>) drawerReport.get("sessions");
+        @SuppressWarnings("unchecked")
+        List<CashShiftResponse> shiftRows =
+                (List<CashShiftResponse>) shiftReport.get("shifts");
+
+        List<Map<String, Object>> exceptions = new ArrayList<>();
+        for (CashShiftResponse shift : shiftRows) {
+            if ("OPEN".equals(shift.getStatus())) {
+                exceptions.add(exception("OPEN_SHIFT", "WARNING",
+                        "Employee shift #" + shift.getId() + " (" + shift.getCashierName()
+                                + ") is still open.",
+                        "CashShift", shift.getId()));
+            }
+            if (Boolean.TRUE.equals(shift.getForceClosed())) {
+                exceptions.add(exception("FORCE_CLOSED_SHIFT", "WARNING",
+                        "Employee shift #" + shift.getId() + " was force-closed: "
+                                + shift.getForceCloseReason(),
+                        "CashShift", shift.getId()));
+            }
+            if (shift.getVariance() != null
+                    && CashVarianceUtil.exceedsTolerance(shift.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE)) {
+                exceptions.add(exception("CASH_VARIANCE", "WARNING",
+                        "Employee shift #" + shift.getId() + " has a cash variance of "
+                                + shift.getVariance() + ".",
+                        "CashShift", shift.getId()));
+            }
+            if (!"CASH_DRAWER".equals(shift.getShiftType())
+                    && toBigDecimal(shift.getCashSalesTotal()).compareTo(BigDecimal.ZERO) > 0) {
+                exceptions.add(exception("CASH_ON_NON_CASH_SHIFT", "CRITICAL",
+                        "Non-cash shift #" + shift.getId() + " contains cash sales.",
+                        "CashShift", shift.getId()));
+            }
+            if ("CASH_DRAWER".equals(shift.getShiftType()) && shift.getDrawerSessionId() == null) {
+                exceptions.add(exception("SHIFT_WITHOUT_DRAWER", "WARNING",
+                        "Cash shift #" + shift.getId() + " has no drawer session.",
+                        "CashShift", shift.getId()));
+            }
+        }
+
+        for (DrawerSessionResponse drawer : drawerRows) {
+            if ("OPEN".equals(drawer.getStatus())) {
+                exceptions.add(exception("OPEN_DRAWER", "WARNING",
+                        "Drawer " + drawer.getDrawerName() + " (session #" + drawer.getId()
+                                + ") is still open.",
+                        "CashDrawerSession", drawer.getId()));
+            }
+            if (drawer.getVariance() != null
+                    && CashVarianceUtil.exceedsTolerance(drawer.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE)) {
+                exceptions.add(exception("DRAWER_VARIANCE", "WARNING",
+                        "Drawer session #" + drawer.getId() + " variance is "
+                                + drawer.getVariance() + ".",
+                        "CashDrawerSession", drawer.getId()));
+            }
+            if (Boolean.TRUE.equals(drawer.getForceClosed())) {
+                exceptions.add(exception("FORCE_CLOSED_DRAWER", "WARNING",
+                        "Drawer session #" + drawer.getId() + " was force-closed: "
+                                + drawer.getForceCloseReason(),
+                        "CashDrawerSession", drawer.getId()));
+            }
+            if (drawer.getExpectedCash() != null
+                    && drawer.getExpectedCash().compareTo(BigDecimal.ZERO) < 0) {
+                exceptions.add(exception("NEGATIVE_EXPECTED_CASH", "CRITICAL",
+                        "Drawer session #" + drawer.getId() + " has negative expected cash ("
+                                + drawer.getExpectedCash() + ").",
+                        "CashDrawerSession", drawer.getId()));
+            }
+        }
+
+        for (Sale sale : sales) {
+            if (Boolean.TRUE.equals(sale.getIsVoided())) {
+                continue;
+            }
+            List<SalePayment> lines = paymentsBySale.get(sale.getId());
+            boolean cashSale = lines != null && !lines.isEmpty()
+                    ? lines.stream().anyMatch(line -> line.getPaymentMethod() == PaymentMethod.CASH)
+                    : sale.getPaymentMethod() == Sale.PaymentMethod.CASH;
+            if (sale.getEmployeeShift() == null) {
+                exceptions.add(exception("SALE_WITHOUT_SHIFT", "WARNING",
+                        "Sale " + sale.getInvoiceNumber() + " has no employee shift.",
+                        "Sale", sale.getId()));
+            } else if (cashSale && sale.getEmployeeShift().getDrawerSession() == null) {
+                exceptions.add(exception("CASH_SALE_WITHOUT_DRAWER", "CRITICAL",
+                        "Cash sale " + sale.getInvoiceNumber() + " is not linked to a drawer session.",
+                        "Sale", sale.getId()));
+            }
+        }
+        if (voidedCount > 0) {
+            exceptions.add(exception("VOIDED_SALES", "INFO",
+                    voidedCount + " sale(s) were voided on " + day + ".",
+                    "Sale", null));
+        }
+
+        Map<String, Object> report = new LinkedHashMap<>();
+        report.put("date", day);
+        report.put("generatedAt", LocalDateTime.now());
+        report.put("businessSummary", business);
+        report.put("paymentMethods", paymentMethods);
+        report.put("cashDrawer", drawerReport);
+        report.put("employeeShifts", shiftRows);
+        report.put("employeeShiftSummary", shiftReport);
+        report.put("exceptions", exceptions);
+        return report;
+    }
+
+    private Map<String, Object> exception(String type, String severity, String message,
+                                          String entityType, Long entityId) {
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("type", type);
+        row.put("severity", severity);
+        row.put("message", message);
+        row.put("entityType", entityType);
+        row.put("entityId", entityId);
+        return row;
     }
 
     /**

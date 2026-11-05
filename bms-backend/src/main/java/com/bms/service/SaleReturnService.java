@@ -1,11 +1,19 @@
 package com.bms.service;
 
 import com.bms.dto.request.SaleReturnRequest;
+import com.bms.dto.request.SalePaymentRequest;
+import com.bms.dto.response.PaymentValidationResponse;
 import com.bms.dto.response.ReturnableItemsResponse;
 import com.bms.dto.response.SaleReturnResponse;
+import com.bms.entity.CashDrawerMovement;
+import com.bms.entity.CashDrawerSession;
+import com.bms.entity.CashShift;
+import com.bms.entity.DrawerMovementType;
+import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
 import com.bms.entity.SaleReturnItem;
 import com.bms.entity.StockMovement;
@@ -15,6 +23,7 @@ import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
+import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
@@ -60,6 +69,15 @@ public class SaleReturnService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private PaymentValidationService paymentValidationService;
+
+    @Autowired
+    private CashDrawerSessionService cashDrawerSessionService;
+
+    @Autowired
+    private SalePaymentRepository salePaymentRepository;
 
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
@@ -110,11 +128,40 @@ public class SaleReturnService {
         User returnedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        // Was every cent of this invoice already paid before this return?
+        // Unpaid credit returns only reduce the debt and never move cash.
+        boolean cashSettled = sale.getSaleType() == Sale.SaleType.CREDIT
+                && sale.getPaymentStatus() == Sale.PaymentStatus.PAID;
+
+        CashShift employeeShift = paymentValidationService.findOpenShift(userId);
+        PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale);
+        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled) {
+            refundMethod = PaymentMethod.CREDIT;
+        }
+        if (refundMethod == PaymentMethod.CASH) {
+            if (employeeShift == null) {
+                throw new BusinessException(
+                        "CASH_REFUND_REQUIRES_DRAWER: Cash refunds require an active cash drawer shift.");
+            }
+            SalePaymentRequest probe = new SalePaymentRequest();
+            probe.setMethod(PaymentMethod.CASH.name());
+            probe.setAmount(BigDecimal.ONE);
+            PaymentValidationResponse validation = paymentValidationService.validate(
+                    employeeShift, List.of(probe));
+            if (!validation.isValid()) {
+                throw new BusinessException(validation.getCode() + ": "
+                        + "Cash refund requires the cash drawer cashier or manager.");
+            }
+        }
+
         SaleReturn saleReturn = new SaleReturn();
         saleReturn.setSale(sale);
         saleReturn.setReturnedBy(returnedBy);
         saleReturn.setReturnDate(LocalDateTime.now());
         saleReturn.setReason(request.getReason());
+        saleReturn.setRefundMethod(refundMethod);
+        saleReturn.setEmployeeShift(employeeShift);
+        saleReturn.setExternalReference(request.getExternalReference());
 
         BigDecimal totalReturnAmount = BigDecimal.ZERO;
         Set<Long> requestedSaleItemIds = new HashSet<>();
@@ -182,14 +229,32 @@ public class SaleReturnService {
         saleReturn.setTotalReturnAmount(totalReturnAmount);
         SaleReturn savedReturn = saleReturnRepository.save(saleReturn);
 
+        // Cash physically leaves the drawer only for a real cash refund. An
+        // unpaid credit return is a balance reduction, not cash.
+        if (refundMethod == PaymentMethod.CASH && totalReturnAmount.compareTo(BigDecimal.ZERO) > 0) {
+            CashDrawerSession session = employeeShift != null ? employeeShift.getDrawerSession() : null;
+            CashDrawerMovement movement = cashDrawerSessionService.recordFinancialMovement(
+                    session,
+                    DrawerMovementType.CASH_REFUND,
+                    totalReturnAmount.negate(),
+                    "SALE_RETURN",
+                    savedReturn.getId(),
+                    returnedBy,
+                    employeeShift,
+                    "Cash refund for " + sale.getInvoiceNumber()
+                            + (request.getExternalReference() != null
+                            ? " | Ref: " + request.getExternalReference() : ""));
+            savedReturn.setDrawerMovement(movement);
+            savedReturn = saleReturnRepository.save(savedReturn);
+        }
+
         updateSaleReturnStatus(sale);
 
         // Was every cent of this invoice already paid in cash before this return?
         // If so the customer balance was already reduced by those payments and a
         // return only entitles the customer to a cash refund — never a second
         // balance reduction.
-        boolean cashSettled = sale.getSaleType() == Sale.SaleType.CREDIT
-                && sale.getPaymentStatus() == Sale.PaymentStatus.PAID;
+        // (cashSettled is resolved above, before the refund tender is chosen.)
 
         // Credit-invoice returns must touch the invoice itself, not just the
         // customer's balance: accumulate the returned amount so the invoice's
@@ -227,6 +292,30 @@ public class SaleReturnService {
                 "SaleReturn", savedReturn.getId(), null, savedReturn.toString());
 
         return convertToResponse(savedReturn);
+    }
+
+    /**
+     * Prefers the caller's explicit refund method; otherwise mirrors the
+     * original sale when it had a single method. Older sales have no payment
+     * rows and stay on the historical cash-refund default.
+     */
+    private PaymentMethod resolveRefundMethod(String raw, Sale sale) {
+        if (raw != null && !raw.isBlank()) {
+            return paymentValidationService.parseMethod(raw);
+        }
+        List<SalePayment> payments = salePaymentRepository
+                .findBySaleIdOrderByPaidAtAsc(sale.getId());
+        if (payments.isEmpty()) {
+            return PaymentMethod.CASH;
+        }
+        Set<PaymentMethod> methods = payments.stream()
+                .map(SalePayment::getPaymentMethod)
+                .collect(Collectors.toSet());
+        if (methods.size() == 1) {
+            return methods.iterator().next();
+        }
+        return methods.contains(PaymentMethod.CASH)
+                ? PaymentMethod.CASH : methods.iterator().next();
     }
 
     /**
@@ -320,6 +409,13 @@ public class SaleReturnService {
         response.setReturnDate(saleReturn.getReturnDate());
         response.setReason(saleReturn.getReason());
         response.setTotalReturnAmount(saleReturn.getTotalReturnAmount());
+        response.setRefundMethod(saleReturn.getRefundMethod().name());
+        if (saleReturn.getEmployeeShift() != null) {
+            response.setEmployeeShiftId(saleReturn.getEmployeeShift().getId());
+        }
+        if (saleReturn.getDrawerMovement() != null) {
+            response.setDrawerMovementId(saleReturn.getDrawerMovement().getId());
+        }
         response.setItems(saleReturn.getItems().stream().map(item -> {
             SaleReturnResponse.SaleReturnItemResponse itemResponse = new SaleReturnResponse.SaleReturnItemResponse();
             itemResponse.setId(item.getId());

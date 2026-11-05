@@ -35,6 +35,22 @@ public class SaleReturn {
     @Column(name = "total_return_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalReturnAmount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "refund_method", nullable = false, length = 30,
+            columnDefinition = "varchar(30) not null default 'CASH'")
+    private PaymentMethod refundMethod = PaymentMethod.CASH;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_shift_id")
+    private CashShift employeeShift;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "drawer_movement_id")
+    private CashDrawerMovement drawerMovement;
+
+    @Column(name = "external_reference", length = 255)
+    private String externalReference;
+
     @OneToMany(mappedBy = "saleReturn", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<SaleReturnItem> items = new ArrayList<>();
 
@@ -62,6 +78,20 @@ public class SaleReturn {
 
     public BigDecimal getTotalReturnAmount() { return totalReturnAmount; }
     public void setTotalReturnAmount(BigDecimal totalReturnAmount) { this.totalReturnAmount = totalReturnAmount; }
+
+    public PaymentMethod getRefundMethod() {
+        return refundMethod != null ? refundMethod : PaymentMethod.CASH;
+    }
+    public void setRefundMethod(PaymentMethod refundMethod) { this.refundMethod = refundMethod; }
+
+    public CashShift getEmployeeShift() { return employeeShift; }
+    public void setEmployeeShift(CashShift employeeShift) { this.employeeShift = employeeShift; }
+
+    public CashDrawerMovement getDrawerMovement() { return drawerMovement; }
+    public void setDrawerMovement(CashDrawerMovement drawerMovement) { this.drawerMovement = drawerMovement; }
+
+    public String getExternalReference() { return externalReference; }
+    public void setExternalReference(String externalReference) { this.externalReference = externalReference; }
 
     public List<SaleReturnItem> getItems() { return items; }
     public void setItems(List<SaleReturnItem> items) { this.items = items; }

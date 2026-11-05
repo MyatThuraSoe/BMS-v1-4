@@ -5,21 +5,66 @@ import {
   Button,
   Paper,
   CircularProgress,
+  Switch,
+  FormControlLabel,
+  Stack,
 } from '@mui/material';
 import { Backup as BackupIcon, DeleteSweep as DeleteSweepIcon } from '@mui/icons-material';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { backupService, saleService } from '../api/services';
+import { backupService, saleService, systemSettingService } from '../api/services';
 import { notifySuccess, notifyError } from '../utils/notify';
+import { useAuth } from '../context/AuthContext';
 import ShutdownButton from '../components/ShutdownButton';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import HelpTip from '../components/HelpTip';
 
+const CASH_DRAWER_SETTINGS = [
+  {
+    key: 'allow_shared_cash_drawer',
+    labelKey: 'allow_shared_cash_drawer',
+    helpKey: 'allow_shared_cash_drawer_help',
+  },
+  {
+    key: 'require_manager_approval_shared_drawer',
+    labelKey: 'require_manager_approval_shared_drawer',
+    helpKey: 'require_manager_approval_shared_drawer_help',
+  },
+  {
+    key: 'blind_drawer_close',
+    labelKey: 'blind_drawer_close',
+    helpKey: 'blind_drawer_close_help',
+  },
+];
+
 const Settings = () => {
   const { t } = useTranslation(['settings', 'common']);
+  const { isAdmin } = useAuth();
   const [backupLoading, setBackupLoading] = useState(false);
   const [deleteOldSalesLoading, setDeleteOldSalesLoading] = useState(false);
   const queryClient = useQueryClient();
+
+  const { data: settingsData } = useQuery({
+    queryKey: ['system-settings'],
+    queryFn: () => systemSettingService.getAll(),
+    enabled: isAdmin(),
+  });
+
+  const settingValue = (key) => {
+    const setting = (settingsData?.data || []).find((row) => row.settingKey === key);
+    return String(setting?.settingValue ?? '').toLowerCase() === 'true';
+  };
+
+  const updateSettingMutation = useMutation({
+    mutationFn: ({ key, value }) => systemSettingService.update(key, {
+      settingValue: value ? 'true' : 'false',
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system-settings'] });
+      notifySuccess(t('setting_updated'));
+    },
+    onError: (err) => notifyError(err.friendlyMessage || t('setting_update_failed')),
+  });
 
   const handleDownloadBackup = async () => {
     setBackupLoading(true);
@@ -110,6 +155,39 @@ const Settings = () => {
         </Typography>
         <LanguageSwitcher />
       </Paper>
+
+      {isAdmin() && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            {t('cash_drawer_security')}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            {t('cash_drawer_security_description')}
+          </Typography>
+          <Stack spacing={1.5}>
+            {CASH_DRAWER_SETTINGS.map((setting) => (
+              <Box key={setting.key}>
+                <FormControlLabel
+                  control={(
+                    <Switch
+                      checked={settingValue(setting.key)}
+                      onChange={(e) => updateSettingMutation.mutate({
+                        key: setting.key,
+                        value: e.target.checked,
+                      })}
+                      disabled={updateSettingMutation.isPending}
+                    />
+                  )}
+                  label={t(setting.labelKey)}
+                />
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', ml: 6 }}>
+                  {t(setting.helpKey)}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </Paper>
+      )}
 
       <Paper sx={{ p: 3, mt: 3 }}>
           <Typography variant="h6" gutterBottom>

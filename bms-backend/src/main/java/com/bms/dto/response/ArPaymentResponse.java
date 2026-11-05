@@ -12,6 +12,9 @@ public class ArPaymentResponse {
     private Long recordedById;
     private String recordedByName;
     private String notes;
+    private String paymentMethod;
+    private Long employeeShiftId;
+    private Long drawerMovementId;
 
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
@@ -29,4 +32,10 @@ public class ArPaymentResponse {
     public void setRecordedByName(String recordedByName) { this.recordedByName = recordedByName; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getPaymentMethod() { return paymentMethod; }
+    public void setPaymentMethod(String paymentMethod) { this.paymentMethod = paymentMethod; }
+    public Long getEmployeeShiftId() { return employeeShiftId; }
+    public void setEmployeeShiftId(Long employeeShiftId) { this.employeeShiftId = employeeShiftId; }
+    public Long getDrawerMovementId() { return drawerMovementId; }
+    public void setDrawerMovementId(Long drawerMovementId) { this.drawerMovementId = drawerMovementId; }
 }

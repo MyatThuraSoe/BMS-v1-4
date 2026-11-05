@@ -113,4 +113,29 @@ export const reportService = {
     const response = await apiClient.get(`/reports/products/${productId}/frequently-bought-with?limit=${limit}`);
     return response.data;
   },
+
+  // Cash shift reporting — cash drawer money is kept separate from digital revenue
+  getEmployeeShiftReport: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.cashierId) query.append('cashierId', params.cashierId);
+    if (params.shiftType) query.append('shiftType', params.shiftType);
+    const response = await apiClient.get(`/reports/employee-shifts?${query.toString()}`);
+    return response.data;
+  },
+
+  getDrawerSessionReport: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    const response = await apiClient.get(`/reports/drawer-sessions?${query.toString()}`);
+    return response.data;
+  },
+
+  getEndOfDayReport: async (date) => {
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+    const response = await apiClient.get(`/reports/end-of-day${query}`);
+    return response.data;
+  },
 };

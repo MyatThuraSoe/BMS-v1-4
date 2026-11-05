@@ -6,7 +6,6 @@ import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
-
 public class SaleCreateRequest {
     @NotEmpty(message = "Cart items are required")
     private List<SaleItemRequest> items;
@@ -28,6 +27,12 @@ public class SaleCreateRequest {
 
     /** Cashier-entered discount, honored only in AMOUNT discount mode; capped server-side. */
     private BigDecimal discountAmount;
+
+    /** Optional split-payment lines. Legacy clients may omit this. */
+    private List<SalePaymentRequest> payments;
+
+    public List<SalePaymentRequest> getPayments() { return payments; }
+    public void setPayments(List<SalePaymentRequest> payments) { this.payments = payments; }
 
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }

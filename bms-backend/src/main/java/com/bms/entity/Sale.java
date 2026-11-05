@@ -19,6 +19,7 @@ import java.util.List;
     @Index(name = "idx_sale_is_voided", columnList = "isVoided"),
     @Index(name = "idx_sale_type", columnList = "saleType"),
     @Index(name = "idx_sale_payment_status", columnList = "paymentStatus"),
+    @Index(name = "idx_sale_employee_shift", columnList = "employee_shift_id"),
     @Index(name = "idx_sale_due_date", columnList = "dueDate")
 })
 public class Sale {
@@ -116,6 +117,14 @@ public class Sale {
     @Column(name = "cash_shift_id")
     private Long cashShiftId;
 
+    /** New employee-shift link. Null is allowed for historical sales only. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_shift_id")
+    private CashShift employeeShift;
+
+    @OneToMany(mappedBy = "sale", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<SalePayment> payments = new ArrayList<>();
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -137,7 +146,14 @@ public class Sale {
     private List<SaleItem> items = new ArrayList<>();
 
     public enum PaymentMethod {
-        CASH
+        CASH,
+        MOBILE_WALLET,
+        CARD,
+        BANK_TRANSFER,
+        CREDIT,
+        STORE_CREDIT,
+        OTHER,
+        MIXED
     }
 
     public enum SaleType {
@@ -255,6 +271,12 @@ public class Sale {
 
     public Long getCashShiftId() { return cashShiftId; }
     public void setCashShiftId(Long cashShiftId) { this.cashShiftId = cashShiftId; }
+
+    public CashShift getEmployeeShift() { return employeeShift; }
+    public void setEmployeeShift(CashShift employeeShift) { this.employeeShift = employeeShift; }
+
+    public List<SalePayment> getPayments() { return payments; }
+    public void setPayments(List<SalePayment> payments) { this.payments = payments; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

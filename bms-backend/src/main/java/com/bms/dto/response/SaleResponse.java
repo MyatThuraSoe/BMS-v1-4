@@ -31,6 +31,10 @@ public class SaleResponse {
     private LocalDateTime createdAt;
     private java.util.List<SaleItemResponse> items;
 
+    private Long employeeShiftId;
+    private String shiftType;
+    private List<SalePaymentResponse> payments;
+
     private List<SaleReturnResponse> returns;
     private BigDecimal totalReturned;
     private String returnStatus;
@@ -115,4 +119,11 @@ public class SaleResponse {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public java.util.List<SaleItemResponse> getItems() { return items; }
     public void setItems(java.util.List<SaleItemResponse> items) { this.items = items; }
+
+    public Long getEmployeeShiftId() { return employeeShiftId; }
+    public void setEmployeeShiftId(Long employeeShiftId) { this.employeeShiftId = employeeShiftId; }
+    public String getShiftType() { return shiftType; }
+    public void setShiftType(String shiftType) { this.shiftType = shiftType; }
+    public List<SalePaymentResponse> getPayments() { return payments; }
+    public void setPayments(List<SalePaymentResponse> payments) { this.payments = payments; }
 }

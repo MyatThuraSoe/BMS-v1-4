@@ -44,5 +44,12 @@
   "stock_in": "Stock In",
   "stock_out": "Stock Out",
   "net_change": "Net Change",
+  "active_shifts": "Active Shifts",
+  "manage_shifts": "Manage Shifts",
+  "no_active_shifts": "No employees are currently clocked in.",
+  "shift_type_cash_drawer": "Cash Drawer",
+  "shift_type_non_cash": "Non-Cash",
+  "cash_drawer": "Cash Drawer",
+  "no_drawer": "No Drawer",
   "load_failed": "Some dashboard data failed to load. Values shown as — may be out of date; check the server connection and refresh."
 }

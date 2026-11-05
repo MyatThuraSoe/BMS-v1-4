@@ -69,6 +69,21 @@ export const saleService = {
     return response.data;
   },
 
+  /**
+   * Pre-flight check for cash-vs-shift rules. Returns
+   * { valid, code, message, cashAllowed, shiftType, ... } inside the API envelope.
+   */
+  validatePayment: async (payments) => {
+    const response = await apiClient.post('/sales/validate-payment', {
+      payments: (payments || []).map((payment) => ({
+        method: payment.method,
+        amount: Number(payment.amount),
+        externalReference: payment.externalReference || null,
+      })),
+    });
+    return response.data;
+  },
+
   getCustomerStats: async (customerId) => {
     const response = await apiClient.get(`/sales/customer/${customerId}/stats`);
     return response.data;

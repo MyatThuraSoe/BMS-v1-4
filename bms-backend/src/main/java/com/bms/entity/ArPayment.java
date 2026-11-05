@@ -31,6 +31,19 @@ public class ArPayment {
     @Column(nullable = false, precision = 19, scale = 2)
     private BigDecimal amount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false, length = 30,
+            columnDefinition = "varchar(30) not null default 'CASH'")
+    private PaymentMethod paymentMethod = PaymentMethod.CASH;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_shift_id")
+    private CashShift employeeShift;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "drawer_movement_id")
+    private CashDrawerMovement drawerMovement;
+
     @Column(name = "payment_date", nullable = false)
     private LocalDateTime paymentDate;
 
@@ -65,4 +78,15 @@ public class ArPayment {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public PaymentMethod getPaymentMethod() {
+        return paymentMethod != null ? paymentMethod : PaymentMethod.CASH;
+    }
+    public void setPaymentMethod(PaymentMethod paymentMethod) { this.paymentMethod = paymentMethod; }
+
+    public CashShift getEmployeeShift() { return employeeShift; }
+    public void setEmployeeShift(CashShift employeeShift) { this.employeeShift = employeeShift; }
+
+    public CashDrawerMovement getDrawerMovement() { return drawerMovement; }
+    public void setDrawerMovement(CashDrawerMovement drawerMovement) { this.drawerMovement = drawerMovement; }
 }

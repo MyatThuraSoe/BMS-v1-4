@@ -1,9 +1,15 @@
 package com.bms.service;
 
 import com.bms.dto.request.ArPaymentRequest;
+import com.bms.dto.request.SalePaymentRequest;
 import com.bms.dto.response.ArOutstandingItemResponse;
 import com.bms.dto.response.ArPaymentResponse;
+import com.bms.dto.response.PaymentValidationResponse;
 import com.bms.entity.ArPayment;
+import com.bms.entity.CashDrawerMovement;
+import com.bms.entity.CashShift;
+import com.bms.entity.DrawerMovementType;
+import com.bms.entity.PaymentMethod;
 import com.bms.entity.Sale;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
@@ -41,6 +47,12 @@ public class ArService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private PaymentValidationService paymentValidationService;
+
+    @Autowired
+    private CashDrawerSessionService cashDrawerSessionService;
 
     // ---- Reads ------------------------------------------------------------
 
@@ -120,13 +132,53 @@ public class ArService {
         User recordedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        PaymentMethod paymentMethod = (request.getPaymentMethod() == null
+                || request.getPaymentMethod().isBlank())
+                ? PaymentMethod.CASH
+                : paymentValidationService.parseMethod(request.getPaymentMethod());
+
+        CashShift employeeShift = paymentValidationService.findOpenShift(userId);
+        if (paymentMethod == PaymentMethod.CASH) {
+            if (employeeShift == null) {
+                throw new BusinessException(
+                        "CASH_PAYMENT_REQUIRES_DRAWER: Cash payments require an active cash drawer shift.");
+            }
+            SalePaymentRequest probe = new SalePaymentRequest();
+            probe.setMethod(PaymentMethod.CASH.name());
+            probe.setAmount(BigDecimal.ONE);
+            PaymentValidationResponse validation = paymentValidationService.validate(
+                    employeeShift, List.of(probe));
+            if (!validation.isValid()) {
+                throw new BusinessException(validation.getCode() + ": "
+                        + "Cash payments require the cash drawer cashier or manager.");
+            }
+        }
+
         ArPayment payment = new ArPayment();
         payment.setInvoice(sale);
         payment.setAmount(amount);
         payment.setPaymentDate(LocalDateTime.now());
         payment.setRecordedBy(recordedBy);
         payment.setNotes(request.getNotes());
-        arPaymentRepository.save(payment);
+        payment.setPaymentMethod(paymentMethod);
+        payment.setEmployeeShift(employeeShift);
+        ArPayment savedPayment = arPaymentRepository.save(payment);
+
+        if (paymentMethod == PaymentMethod.CASH && employeeShift != null) {
+            CashDrawerMovement movement = cashDrawerSessionService.recordFinancialMovement(
+                    employeeShift.getDrawerSession(),
+                    DrawerMovementType.PAY_IN,
+                    amount,
+                    "AR_PAYMENT",
+                    savedPayment.getId(),
+                    recordedBy,
+                    employeeShift,
+                    "Credit invoice payment " + sale.getInvoiceNumber()
+                            + (request.getExternalReference() != null
+                            ? " | Ref: " + request.getExternalReference() : ""));
+            savedPayment.setDrawerMovement(movement);
+            arPaymentRepository.save(savedPayment);
+        }
 
         // Advance the invoice's own accounting (returns already count toward settlement)
         BigDecimal newPaid = paidSoFar.add(amount).setScale(2, RoundingMode.HALF_UP);
@@ -196,6 +248,13 @@ public class ArService {
             response.setRecordedByName(payment.getRecordedBy().getFirstName() + " " + payment.getRecordedBy().getLastName());
         }
         response.setNotes(payment.getNotes());
+        response.setPaymentMethod(payment.getPaymentMethod().name());
+        if (payment.getEmployeeShift() != null) {
+            response.setEmployeeShiftId(payment.getEmployeeShift().getId());
+        }
+        if (payment.getDrawerMovement() != null) {
+            response.setDrawerMovementId(payment.getDrawerMovement().getId());
+        }
         return response;
     }
 }
