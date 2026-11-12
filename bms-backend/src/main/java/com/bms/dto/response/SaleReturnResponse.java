@@ -13,6 +13,9 @@ public class SaleReturnResponse {
     private LocalDateTime returnDate;
     private String reason;
     private BigDecimal totalReturnAmount;
+    private String refundMethod;
+    private Long employeeShiftId;
+    private Long drawerMovementId;
     private List<SaleReturnItemResponse> items;
 
     public Long getId() { return id; }
@@ -31,6 +34,12 @@ public class SaleReturnResponse {
     public void setReason(String reason) { this.reason = reason; }
     public BigDecimal getTotalReturnAmount() { return totalReturnAmount; }
     public void setTotalReturnAmount(BigDecimal totalReturnAmount) { this.totalReturnAmount = totalReturnAmount; }
+    public String getRefundMethod() { return refundMethod; }
+    public void setRefundMethod(String refundMethod) { this.refundMethod = refundMethod; }
+    public Long getEmployeeShiftId() { return employeeShiftId; }
+    public void setEmployeeShiftId(Long employeeShiftId) { this.employeeShiftId = employeeShiftId; }
+    public Long getDrawerMovementId() { return drawerMovementId; }
+    public void setDrawerMovementId(Long drawerMovementId) { this.drawerMovementId = drawerMovementId; }
     public List<SaleReturnItemResponse> getItems() { return items; }
     public void setItems(List<SaleReturnItemResponse> items) { this.items = items; }
 

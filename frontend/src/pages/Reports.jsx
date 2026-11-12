@@ -8,14 +8,14 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip as ChartTooltip, ResponsiveContainer } from 'recharts';
 import { reportService } from '../api/services';
-import { formatCurrency, formatDate, toLocalDateString, downloadCsv, preventNumberScroll } from '../utils/helpers';
+import { formatCurrency, formatDate, formatDateTime, toLocalDateString, downloadCsv, preventNumberScroll } from '../utils/helpers';
 
 import { useNavigate } from 'react-router-dom';
 import SalesHeatmap from '../components/SalesHeatmap';
 
 const toDateStr = (date) => toLocalDateString(date);
 
-const ReportTypes = ['daily', 'inventory', 'cashier', 'trend', 'products', 'deadstock', 'ltv', 'salesTiming', 'retention'];
+const ReportTypes = ['daily', 'inventory', 'cashier', 'trend', 'products', 'deadstock', 'ltv', 'salesTiming', 'retention', 'employeeShifts', 'drawerSessions', 'endOfDay'];
 
 const Reports = () => {
   const { t } = useTranslation('reports');
@@ -88,6 +88,24 @@ const Reports = () => {
     enabled: reportType === 'retention',
   });
 
+  const { data: employeeShiftData, isLoading: employeeShiftLoading } = useQuery({
+    queryKey: ['employee-shift-report', dateRange.start, dateRange.end],
+    queryFn: () => reportService.getEmployeeShiftReport({ startDate: dateRange.start, endDate: dateRange.end }),
+    enabled: reportType === 'employeeShifts',
+  });
+
+  const { data: drawerSessionData, isLoading: drawerSessionLoading } = useQuery({
+    queryKey: ['drawer-session-report', dateRange.start, dateRange.end],
+    queryFn: () => reportService.getDrawerSessionReport({ startDate: dateRange.start, endDate: dateRange.end }),
+    enabled: reportType === 'drawerSessions',
+  });
+
+  const { data: endOfDayData, isLoading: endOfDayLoading } = useQuery({
+    queryKey: ['end-of-day-report', dateRange.start],
+    queryFn: () => reportService.getEndOfDayReport(dateRange.start),
+    enabled: reportType === 'endOfDay',
+  });
+
   const dailySales = dailyData?.data || {};
   const inventory = inventoryData?.data || {};
   const cashierRaw = cashierData?.data || [];
@@ -97,6 +115,14 @@ const Reports = () => {
   const salesTiming = salesTimingData?.data || [];
   const ltvRaw = ltvData?.data || [];
   const retention = retentionData?.data;
+  const employeeShiftReport = employeeShiftData?.data || {};
+  const employeeShiftRows = employeeShiftReport.shifts || [];
+  const drawerSessionReport = drawerSessionData?.data || {};
+  const drawerSessionRows = drawerSessionReport.sessions || [];
+  const endOfDay = endOfDayData?.data || {};
+  const endOfDayBusiness = endOfDay.businessSummary || {};
+  const endOfDayDrawer = endOfDay.cashDrawer || {};
+  const endOfDayExceptions = endOfDay.exceptions || [];
 
   // Sort cashier table
   const cashierRows = useMemo(() => {
@@ -135,8 +161,8 @@ const Reports = () => {
 
   const spinner = <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>;
 
-  const showRange = reportType === 'cashier' || reportType === 'products' || reportType === 'salesTiming';
-  const showSingleDate = reportType === 'daily';
+  const showRange = ['cashier', 'products', 'salesTiming', 'employeeShifts', 'drawerSessions'].includes(reportType);
+  const showSingleDate = ['daily', 'endOfDay'].includes(reportType);
   const showTrendDays = reportType === 'trend';
   const showThreshold = reportType === 'deadstock';
 
@@ -764,6 +790,409 @@ const Reports = () => {
                 </Table>
               </TableContainer>
             </Paper>
+          )}
+        </Box>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Employee Shifts                                                    */}
+      {/* ------------------------------------------------------------------ */}
+      {reportType === 'employeeShifts' && (
+        <Paper sx={{ p: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 2 }}>
+            <Box>
+              <Typography variant="h6">{t('employee_shifts_title')}</Typography>
+              <Typography variant="caption" color="text.secondary">{t('employee_shifts_description')}</Typography>
+            </Box>
+            {employeeShiftRows.length > 0 && (
+              <Button size="small" startIcon={<Download />} onClick={() => exportCsv(
+                `employee-shifts-${dateRange.start}-${dateRange.end}`,
+                employeeShiftRows.map((s) => ({
+                  cashier: s.cashierName,
+                  type: s.shiftType,
+                  drawer: s.drawerName || '',
+                  opened: s.openingTime || '',
+                  closed: s.closingTime || '',
+                  status: s.status,
+                  transactions: s.transactionCount,
+                  gross: s.grossSales,
+                  cash: s.cashSalesTotal,
+                  nonCash: s.nonCashSalesTotal,
+                  net: s.netSales,
+                  expected: s.expectedAmount,
+                  variance: s.variance,
+                })),
+                [t('cashier'), t('shift_type'), t('drawer'), t('opened'), t('closed'), t('status'), t('transactions'), t('gross_sales'), t('cash_sales'), t('non_cash_sales'), t('net_sales'), t('expected_cash'), t('variance')],
+              )}>{t('export_csv')}</Button>
+            )}
+          </Stack>
+          {employeeShiftLoading ? spinner : (
+            <>
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{employeeShiftReport.totalShifts || 0}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('total_shifts')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5" color="warning.main">{employeeShiftReport.openShifts || 0}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('open_shifts')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{formatCurrency(employeeShiftReport.netSales || 0)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('net_sales')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{formatCurrency(employeeShiftReport.cashSales || 0)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('cash_sales')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{formatCurrency(employeeShiftReport.nonCashSales || 0)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('non_cash_sales')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={2}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5" color="error.main">{formatCurrency(employeeShiftReport.refunds || 0)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('refunds')}</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+              {employeeShiftRows.length === 0 ? (
+                <Alert severity="info">{t('no_shifts_in_range')}</Alert>
+              ) : (
+                <TableContainer sx={{ maxHeight: 480 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{t('cashier')}</TableCell>
+                        <TableCell>{t('shift_type')}</TableCell>
+                        <TableCell>{t('drawer')}</TableCell>
+                        <TableCell>{t('opened')}</TableCell>
+                        <TableCell>{t('closed')}</TableCell>
+                        <TableCell>{t('status')}</TableCell>
+                        <TableCell align="right">{t('transactions')}</TableCell>
+                        <TableCell align="right">{t('net_sales')}</TableCell>
+                        <TableCell align="right">{t('cash_sales')}</TableCell>
+                        <TableCell align="right">{t('non_cash_sales')}</TableCell>
+                        <TableCell align="right">{t('expected_cash')}</TableCell>
+                        <TableCell align="right">{t('variance')}</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {employeeShiftRows.map((s) => (
+                        <TableRow key={s.id} hover>
+                          <TableCell>{s.cashierName || s.cashierId}</TableCell>
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              color={s.shiftType === 'CASH_DRAWER' ? 'primary' : 'default'}
+                              label={s.shiftType === 'CASH_DRAWER' ? t('shift_cash_drawer') : t('shift_non_cash')}
+                            />
+                          </TableCell>
+                          <TableCell>{s.drawerName ? `${s.drawerName}${s.drawerCode ? ` #${s.drawerCode}` : ''}` : '—'}</TableCell>
+                          <TableCell>{s.openingTime ? formatDateTime(s.openingTime) : '—'}</TableCell>
+                          <TableCell>{s.closingTime ? formatDateTime(s.closingTime) : '—'}</TableCell>
+                          <TableCell>
+                            <Chip size="small" variant="outlined" color={s.status === 'OPEN' ? 'warning' : 'success'} label={s.status} />
+                          </TableCell>
+                          <TableCell align="right">{s.transactionCount || 0}</TableCell>
+                          <TableCell align="right">{formatCurrency(s.netSales || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(s.cashSalesTotal || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(s.nonCashSalesTotal || 0)}</TableCell>
+                          <TableCell align="right">{s.expectedAmount != null ? formatCurrency(s.expectedAmount) : '—'}</TableCell>
+                          <TableCell align="right">
+                            <Typography color={(s.variance || 0) < 0 ? 'error' : 'success.main'}>
+                              {s.variance != null ? formatCurrency(s.variance) : '—'}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
+          )}
+        </Paper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* Cash Drawer Sessions                                               */}
+      {/* ------------------------------------------------------------------ */}
+      {reportType === 'drawerSessions' && (
+        <Paper sx={{ p: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 2 }}>
+            <Box>
+              <Typography variant="h6">{t('drawer_sessions_title')}</Typography>
+              <Typography variant="caption" color="text.secondary">{t('drawer_sessions_description')}</Typography>
+            </Box>
+            {drawerSessionRows.length > 0 && (
+              <Button size="small" startIcon={<Download />} onClick={() => exportCsv(
+                `drawer-sessions-${dateRange.start}-${dateRange.end}`,
+                drawerSessionRows.map((d) => ({
+                  drawer: d.drawerName,
+                  code: d.drawerCode || '',
+                  openedBy: d.openedByName || '',
+                  opened: d.openedAt || '',
+                  closed: d.closedAt || '',
+                  status: d.status,
+                  openingFloat: d.openingFloat,
+                  cashSales: d.cashSales,
+                  cashRefunds: d.cashRefunds,
+                  safeDrops: d.safeDrops,
+                  payIns: d.payIns,
+                  payOuts: d.payOuts,
+                  expected: d.expectedCash,
+                  counted: d.countedCash,
+                  variance: d.variance,
+                })),
+                [t('drawer'), t('code'), t('opened_by'), t('opened'), t('closed'), t('status'), t('opening_float'), t('cash_sales'), t('cash_refunds'), t('safe_drops'), t('pay_ins'), t('pay_outs'), t('expected_cash'), t('counted_cash'), t('variance')],
+              )}>{t('export_csv')}</Button>
+            )}
+          </Stack>
+          {drawerSessionLoading ? spinner : (
+            <>
+              <Grid container spacing={2} sx={{ mb: 3 }}>
+                <Grid item xs={6} md={3}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{drawerSessionReport.totalSessions || 0}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('total_sessions')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5" color="warning.main">{drawerSessionReport.openSessions || 0}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('open_sessions')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5">{formatCurrency(drawerSessionReport.cashSales || 0)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{t('cash_sales')}</Typography>
+                  </Paper>
+                </Grid>
+                <Grid item xs={6} md={3}>
+                  <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                    <Typography variant="h5" color={(drawerSessionReport.variance || 0) < 0 ? 'error.main' : 'success.main'}>
+                      {formatCurrency(drawerSessionReport.variance || 0)}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">{t('total_variance')}</Typography>
+                  </Paper>
+                </Grid>
+              </Grid>
+              {drawerSessionRows.length === 0 ? (
+                <Alert severity="info">{t('no_drawer_sessions_in_range')}</Alert>
+              ) : (
+                <TableContainer sx={{ maxHeight: 480 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>{t('drawer')}</TableCell>
+                        <TableCell>{t('opened_by')}</TableCell>
+                        <TableCell>{t('opened')}</TableCell>
+                        <TableCell>{t('closed')}</TableCell>
+                        <TableCell>{t('status')}</TableCell>
+                        <TableCell align="right">{t('opening_float')}</TableCell>
+                        <TableCell align="right">{t('cash_sales')}</TableCell>
+                        <TableCell align="right">{t('cash_refunds')}</TableCell>
+                        <TableCell align="right">{t('safe_drops')}</TableCell>
+                        <TableCell align="right">{t('pay_ins')}</TableCell>
+                        <TableCell align="right">{t('pay_outs')}</TableCell>
+                        <TableCell align="right">{t('expected_cash')}</TableCell>
+                        <TableCell align="right">{t('counted_cash')}</TableCell>
+                        <TableCell align="right">{t('variance')}</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {drawerSessionRows.map((d) => (
+                        <TableRow key={d.id} hover>
+                          <TableCell>{d.drawerName}{d.drawerCode ? ` #${d.drawerCode}` : ''}</TableCell>
+                          <TableCell>{d.openedByName || '—'}</TableCell>
+                          <TableCell>{d.openedAt ? formatDateTime(d.openedAt) : '—'}</TableCell>
+                          <TableCell>{d.closedAt ? formatDateTime(d.closedAt) : '—'}</TableCell>
+                          <TableCell>
+                            <Chip size="small" variant="outlined" color={d.status === 'OPEN' ? 'warning' : 'success'} label={d.status} />
+                          </TableCell>
+                          <TableCell align="right">{formatCurrency(d.openingFloat || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(d.cashSales || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(d.cashRefunds || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(d.safeDrops || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(d.payIns || 0)}</TableCell>
+                          <TableCell align="right">{formatCurrency(d.payOuts || 0)}</TableCell>
+                          <TableCell align="right">{d.expectedCash != null ? formatCurrency(d.expectedCash) : '—'}</TableCell>
+                          <TableCell align="right">{d.countedCash != null ? formatCurrency(d.countedCash) : '—'}</TableCell>
+                          <TableCell align="right">
+                            <Typography color={(d.variance || 0) < 0 ? 'error' : 'success.main'}>
+                              {d.variance != null ? formatCurrency(d.variance) : '—'}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </>
+          )}
+        </Paper>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* End of Day                                                         */}
+      {/* ------------------------------------------------------------------ */}
+      {reportType === 'endOfDay' && (
+        <Box>
+          <Paper sx={{ p: 3, mb: 3 }}>
+            <Typography variant="h6" gutterBottom>{t('end_of_day_title')}</Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              {t('end_of_day_description', { date: formatDate(dateRange.start) })}
+            </Typography>
+            {endOfDayLoading ? spinner : (
+              <>
+                <Grid container spacing={2}>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{endOfDayBusiness.transactionCount || 0}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('transactions')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{formatCurrency(endOfDayBusiness.grossSales || 0)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('gross_sales')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{formatCurrency(endOfDayBusiness.refunds || 0)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('refunds')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{formatCurrency(endOfDayBusiness.netSales || 0)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('net_sales')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{formatCurrency(endOfDayBusiness.cashSales || 0)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('cash_sales')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h5">{formatCurrency(endOfDayBusiness.digitalSales || 0)}</Typography>
+                      <Typography variant="body2" color="text.secondary">{t('digital_sales')}</Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </>
+            )}
+          </Paper>
+
+          {!endOfDayLoading && (
+            <>
+              <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography variant="h6" gutterBottom>{t('payments_by_method')}</Typography>
+                {(endOfDay.paymentMethods || []).length === 0 ? (
+                  <Alert severity="info">{t('no_payments_recorded')}</Alert>
+                ) : (
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>{t('payment_method')}</TableCell>
+                          <TableCell align="right">{t('transactions')}</TableCell>
+                          <TableCell align="right">{t('amount')}</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {(endOfDay.paymentMethods || []).map((row) => (
+                          <TableRow key={row.method} hover>
+                            <TableCell>{row.method}</TableCell>
+                            <TableCell align="right">{row.transactionCount || 0}</TableCell>
+                            <TableCell align="right">{formatCurrency(row.amount || 0)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                )}
+              </Paper>
+
+              <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography variant="h6" gutterBottom>{t('cash_drawer_summary')}</Typography>
+                <Grid container spacing={2}>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatCurrency(endOfDayDrawer.openingFloat || 0)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t('opening_float')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatCurrency(endOfDayDrawer.cashSales || 0)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t('cash_sales')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatCurrency(endOfDayDrawer.cashRefunds || 0)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t('cash_refunds')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatCurrency(endOfDayDrawer.expectedCash || 0)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t('expected_cash')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6">{formatCurrency(endOfDayDrawer.countedCash || 0)}</Typography>
+                      <Typography variant="caption" color="text.secondary">{t('counted_cash')}</Typography>
+                    </Paper>
+                  </Grid>
+                  <Grid item xs={6} md={2}>
+                    <Paper variant="outlined" sx={{ p: 2, textAlign: 'center' }}>
+                      <Typography variant="h6" color={(endOfDayDrawer.variance || 0) < 0 ? 'error.main' : 'success.main'}>
+                        {formatCurrency(endOfDayDrawer.variance || 0)}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">{t('variance')}</Typography>
+                    </Paper>
+                  </Grid>
+                </Grid>
+              </Paper>
+
+              <Paper sx={{ p: 3 }}>
+                <Typography variant="h6" gutterBottom>{t('end_of_day_exceptions')}</Typography>
+                {endOfDayExceptions.length === 0 ? (
+                  <Alert severity="success">{t('no_exceptions')}</Alert>
+                ) : (
+                  <Stack spacing={1}>
+                    {endOfDayExceptions.map((ex, index) => (
+                      <Alert
+                        key={`${ex.type}-${ex.entityId ?? index}`}
+                        severity={ex.severity === 'CRITICAL' ? 'error' : ex.severity === 'WARNING' ? 'warning' : 'info'}
+                      >
+                        <Typography variant="body2" fontWeight="medium">{ex.type}</Typography>
+                        <Typography variant="body2">{ex.message}</Typography>
+                      </Alert>
+                    ))}
+                  </Stack>
+                )}
+              </Paper>
+            </>
           )}
         </Box>
       )}

@@ -19,6 +19,25 @@ public class CashShift {
     @Column(name = "cashier_id", nullable = false)
     private Long cashierId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shift_type", nullable = false, length = 20,
+            columnDefinition = "varchar(20) not null default 'CASH_DRAWER'")
+    private ShiftType shiftType = ShiftType.CASH_DRAWER;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "drawer_session_id")
+    private CashDrawerSession drawerSession;
+
+    @Column(name = "closed_by")
+    private Long closedBy;
+
+    @Column(name = "force_closed", nullable = false,
+            columnDefinition = "boolean not null default 0")
+    private Boolean forceClosed = false;
+
+    @Column(name = "force_close_reason", length = 1000)
+    private String forceCloseReason;
+
     @Column(name = "opening_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal openingAmount;
 
@@ -53,6 +72,12 @@ public class CashShift {
     protected void onCreate() {
         createdAt = LocalDateTime.now();
         updatedAt = LocalDateTime.now();
+        if (shiftType == null) {
+            shiftType = ShiftType.CASH_DRAWER;
+        }
+        if (forceClosed == null) {
+            forceClosed = false;
+        }
     }
 
     @PreUpdate
@@ -65,6 +90,23 @@ public class CashShift {
 
     public Long getCashierId() { return cashierId; }
     public void setCashierId(Long cashierId) { this.cashierId = cashierId; }
+
+    public ShiftType getShiftType() {
+        return shiftType != null ? shiftType : ShiftType.CASH_DRAWER;
+    }
+    public void setShiftType(ShiftType shiftType) { this.shiftType = shiftType; }
+
+    public CashDrawerSession getDrawerSession() { return drawerSession; }
+    public void setDrawerSession(CashDrawerSession drawerSession) { this.drawerSession = drawerSession; }
+
+    public Long getClosedBy() { return closedBy; }
+    public void setClosedBy(Long closedBy) { this.closedBy = closedBy; }
+
+    public Boolean getForceClosed() { return forceClosed != null ? forceClosed : false; }
+    public void setForceClosed(Boolean forceClosed) { this.forceClosed = forceClosed; }
+
+    public String getForceCloseReason() { return forceCloseReason; }
+    public void setForceCloseReason(String forceCloseReason) { this.forceCloseReason = forceCloseReason; }
 
     public BigDecimal getOpeningAmount() { return openingAmount; }
     public void setOpeningAmount(BigDecimal openingAmount) { this.openingAmount = openingAmount; }

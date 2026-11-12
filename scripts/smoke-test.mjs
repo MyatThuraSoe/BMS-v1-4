@@ -81,13 +81,26 @@ async function main() {
   const productId = product.json?.data?.id;
   ok('product created with stock', Boolean(productId), JSON.stringify(product.json?.message || ''));
 
-  // 4) Ensure an open cash shift (cash sales require one)
+  // 4) Ensure an open employee shift. Cash is only possible when the physical
+  // drawer is free (or shared-drawer mode is on); otherwise the smoke test
+  // still exercises the non-cash path so it also covers upgraded databases
+  // where a migrated shift already holds the drawer.
   let shift = await api('GET', '/shifts/current');
+  let cashMode = Boolean(shift.json?.data?.cashAllowed);
   if (!shift.json?.data) {
-    const opened = await api('POST', '/shifts/open', { openingAmount: 1 });
-    shift = opened;
+    const opened = await api('POST', '/shifts/open', { shiftType: 'CASH_DRAWER', openingFloat: 1 });
+    if (opened.json?.data) {
+      shift = opened;
+      cashMode = opened.json.data.cashAllowed === true;
+    } else if (String(opened.json?.message || '').includes('DRAWER_ALREADY_OPEN')) {
+      const nonCash = await api('POST', '/shifts/open', { shiftType: 'NON_CASH' });
+      shift = nonCash;
+      cashMode = false;
+    } else {
+      shift = opened;
+    }
   }
-  ok('cash shift is open', Boolean(shift.json?.data), JSON.stringify(shift.json?.message || ''));
+  ok('employee shift is open', Boolean(shift.json?.data), JSON.stringify(shift.json?.message || ''));
 
   // 5) Verify cart (authoritative pricing)
   const verify = await api('POST', '/sales/verify-cart', {
@@ -117,14 +130,26 @@ async function main() {
     }
   }
   const EXPECTED_TOTAL = round2(SUBTOTAL + taxAmt - discountAmt);
+  const SALE_METHOD = cashMode ? 'CASH' : 'MOBILE_WALLET';
 
-  // 6) Create the cash sale
+  // 6) Pre-flight payment validation (same gate the POS uses)
+  const paymentCheck = await api('POST', '/sales/validate-payment', {
+    payments: [{ method: SALE_METHOD, amount: EXPECTED_TOTAL }],
+  });
+  ok(
+    `validate-payment allows ${SALE_METHOD}`,
+    paymentCheck.json?.data?.valid === true,
+    JSON.stringify(paymentCheck.json?.data || paymentCheck.json?.message || ''),
+  );
+
+  // 7) Create the sale
   const sale = await api('POST', '/sales', {
     items: [{ productId, quantity: 2 }],
     customerName: 'SMOKE Walk-in',
-    paymentMethod: 'CASH',
+    paymentMethod: SALE_METHOD,
     saleType: 'CASH',
-    amountPaid: AMOUNT_PAID,
+    amountPaid: cashMode ? AMOUNT_PAID : EXPECTED_TOTAL,
+    payments: [{ method: SALE_METHOD, amount: EXPECTED_TOTAL }],
   });
   const invoice = sale.json?.data?.invoiceNumber;
   const total = sale.json?.data?.totalAmount;
@@ -135,17 +160,21 @@ async function main() {
     Math.abs(Number(total) - EXPECTED_TOTAL) < 0.005,
     `got ${total}`,
   );
-  ok(
-    `change = paid - total (${(AMOUNT_PAID - EXPECTED_TOTAL).toFixed(2)})`,
-    Math.abs(Number(change) - (AMOUNT_PAID - EXPECTED_TOTAL)) < 0.005,
-    `got ${change}`,
-  );
+  if (cashMode) {
+    ok(
+      `change = paid - total (${(AMOUNT_PAID - EXPECTED_TOTAL).toFixed(2)})`,
+      Math.abs(Number(change) - (AMOUNT_PAID - EXPECTED_TOTAL)) < 0.005,
+      `got ${change}`,
+    );
+  } else {
+    ok('non-cash sale has no change', Number(change) === 0, `got ${change}`);
+  }
 
-  // 7) Receipt retrievable
+  // 8) Receipt retrievable
   const receipt = await api('GET', `/receipts/invoice/${encodeURIComponent(invoice)}`);
   ok('receipt retrievable by invoice number', receipt.status === 200 && Boolean(receipt.json?.data?.invoiceNumber));
 
-  // 8) Credit sale -> creates an AR invoice with the due date
+  // 9) Credit sale -> creates an AR invoice with the due date
   const customer = await api('POST', '/customers', {
     firstName: 'SMOKE',
     lastName: `Credit${Date.now() % 100000}`,
@@ -171,7 +200,7 @@ async function main() {
     JSON.stringify(creditSale.json?.message || ''),
   );
 
-  // 9) Void the cash sale — stock must be restored
+  // 10) Void the sale — stock must be restored
   const stockBefore = (await api('GET', `/products/${productId}`)).json?.data;
   const voidRes = await api('POST', `/sales/${sale.json.data.id}/void?reason=${encodeURIComponent('SMOKE test void')}`);
   ok('cash sale voided', voidRes.status === 200 && voidRes.json?.data?.isVoided === true, JSON.stringify(voidRes.json?.message || ''));

@@ -4,6 +4,7 @@ import com.bms.dto.request.CloseShiftRequest;
 import com.bms.dto.request.OpenShiftRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.CashShiftResponse;
+import com.bms.dto.response.ShiftStartContextResponse;
 import com.bms.service.CashShiftService;
 import com.bms.service.UserService;
 import jakarta.validation.Valid;
@@ -54,6 +55,20 @@ public class CashShiftController {
         return ResponseEntity.ok(new ApiResponse<>(true, shift != null ? "Current shift retrieved" : "No open shift", shift));
     }
 
+    @GetMapping("/start-context")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<ShiftStartContextResponse>> getStartContext(Authentication authentication) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Shift start context retrieved",
+                cashShiftService.getStartContext(getUserId(authentication))));
+    }
+
+    @GetMapping("/active")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<java.util.List<CashShiftResponse>>> getActiveShifts() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Active shifts retrieved",
+                cashShiftService.getActiveShifts()));
+    }
+
     @PostMapping("/{id}/close")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<CashShiftResponse>> closeShift(
@@ -67,7 +82,7 @@ public class CashShiftController {
         if (!isManagerOrAdmin && !shift.getCashierId().equals(userId)) {
             throw new com.bms.exception.BusinessException("You can only close your own shift");
         }
-        CashShiftResponse closed = cashShiftService.closeShift(id, request, userId);
+        CashShiftResponse closed = cashShiftService.closeShift(id, request, userId, isManagerOrAdmin);
         return ResponseEntity.ok(new ApiResponse<>(true, "Shift closed successfully", closed));
     }
 

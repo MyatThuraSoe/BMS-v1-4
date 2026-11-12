@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   Box,
@@ -31,6 +31,8 @@ import {
   CircularProgress,
   ToggleButton,
   ToggleButtonGroup,
+  MenuItem,
+  Stack,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -41,6 +43,7 @@ import {
   PersonAdd as CustomerIcon,
   FlashOn as DirectPrintIcon,
   ListAlt as OrderIcon,
+  PauseCircleOutline as ParkIcon,
 } from '@mui/icons-material';
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -53,7 +56,7 @@ import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
 import ReceiptDocument, { generatePrintHtml, generateQRDataUrl } from '../components/ReceiptDocument';
 
-import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService } from '../api/services';
+import { productService, customerService, saleService, categoryService, receiptService, shopInfoService, receiptCustomizationService, orderService, counterPrintService, shiftService } from '../api/services';
 import directPrint from '../services/directPrintService';
 import useShopConfig from '../hooks/useShopConfig';
 import {
@@ -66,6 +69,7 @@ import {
 const POS = () => {
 
   const { t } = useTranslation('pos');
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const draftId = searchParams.get('draftId');
 
@@ -108,6 +112,41 @@ const POS = () => {
   const [saleType, setSaleType] = useState('CASH'); // CASH | CREDIT
   const [dueDate, setDueDate] = useState('');
   const canUseCredit = isManager(); // credit sales are ADMIN/MANAGER only
+
+  // Employee shift: every sale needs an open shift. Cash payments additionally
+  // need the shift's physical drawer to be open.
+  const {
+    data: currentShiftData,
+    isLoading: shiftLoading,
+  } = useQuery({
+    queryKey: ['currentShift'],
+    queryFn: () => shiftService.getCurrentShift(),
+    refetchOnMount: 'always',
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+  });
+  const currentShift = currentShiftData?.data;
+  const cashAllowed = Boolean(currentShift?.cashAllowed);
+  const hasShift = Boolean(currentShift?.id);
+
+  const NON_CASH_METHODS = ['MOBILE_WALLET', 'CARD', 'BANK_TRANSFER'];
+  const defaultPaymentMethod = () => (cashAllowed ? 'CASH' : 'MOBILE_WALLET');
+
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [splitMode, setSplitMode] = useState(false);
+  const [splitPayments, setSplitPayments] = useState([{ method: 'CASH', amount: '' }]);
+  const [paymentChecking, setPaymentChecking] = useState(false);
+
+  // If the shift cannot take cash, never leave a cash option selected.
+  useEffect(() => {
+    if (cashAllowed) return;
+    setPaymentMethod((prev) => (prev === 'CASH' ? 'MOBILE_WALLET' : prev));
+    setSplitPayments((prev) => prev.map((row) => (
+      row.method === 'CASH' ? { ...row, method: 'MOBILE_WALLET' } : row
+    )));
+    setCashAmount('');
+    setCashManuallyEdited(false);
+  }, [cashAllowed]);
 
   const [showOrderDialog, setShowOrderDialog] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
@@ -359,6 +398,10 @@ const POS = () => {
     setCashierDiscount('');
     setDueDate('');
     setSaleType('CASH');
+    setPaymentMethod(defaultPaymentMethod());
+    setSplitMode(false);
+    setSplitPayments([{ method: defaultPaymentMethod(), amount: '' }]);
+    setPaymentChecking(false);
     setError('');
     setVerifiedTotals(null);
   };
@@ -406,15 +449,84 @@ const POS = () => {
     ? (selectedCustomer.creditLimit ?? 0) - (selectedCustomer.currentBalance ?? 0)
     : 0;
 
+  // Split payments: the rows must add up to the sale total exactly — the
+  // backend rejects any mismatch and does not round.
+  const splitTotal = splitPayments.reduce(
+    (sum, row) => sum + (parseFloat(row.amount) || 0),
+    0
+  );
+  const splitRemaining = displayTotal - splitTotal;
+
+  const methodOptions = useMemo(() => (
+    [
+      { value: 'CASH', label: t('payment_method_cash'), disabled: !cashAllowed },
+      { value: 'MOBILE_WALLET', label: t('payment_method_mobile_wallet') },
+      { value: 'CARD', label: t('payment_method_card') },
+      { value: 'BANK_TRANSFER', label: t('payment_method_bank_transfer') },
+    ]
+  ), [cashAllowed, t]);
+
+  const paymentMethodLabel = (method) => t(
+    `payment_method_${String(method || '').toLowerCase()}`,
+    method || t('payment_method_other')
+  );
+
+  // Payment lines sent both to the pre-flight validator and to sale creation.
+  const buildPaymentLines = (totalAmount) => {
+    const amount = Number(totalAmount) || 0;
+    if (saleType === 'CREDIT') {
+      return [{ method: 'CREDIT', amount }];
+    }
+    if (!splitMode) {
+      return [{ method: paymentMethod, amount }];
+    }
+    return splitPayments
+      .filter((row) => parseFloat(row.amount) > 0)
+      .map((row) => ({ method: row.method, amount: parseFloat(row.amount) }));
+  };
+
+  const validatePaymentSelection = (lines, totalAmount) => {
+    if (shiftLoading) return t('checking_shift');
+    if (!hasShift) return t('no_open_shift');
+    if (!lines.length) return t('add_payment_line_error');
+    if (lines.some((line) => line.method === 'CASH') && !cashAllowed) {
+      return t('cash_requires_drawer');
+    }
+    const sum = lines.reduce((acc, line) => acc + (Number(line.amount) || 0), 0);
+    if (Math.round(sum * 100) !== Math.round((Number(totalAmount) || 0) * 100)) {
+      return t('payment_total_mismatch', {
+        amount: formatCurrency(Math.abs((Number(totalAmount) || 0) - sum)),
+      });
+    }
+    return null;
+  };
+
+  const paymentErrorMessage = (result) => {
+    switch (result?.code) {
+      case 'NO_OPEN_SHIFT':
+        return t('no_open_shift');
+      case 'CASH_NOT_ALLOWED_FOR_SHIFT':
+        return t('cash_requires_drawer');
+      case 'DRAWER_SESSION_REQUIRED':
+        return t('drawer_session_required');
+      case 'INVALID_PAYMENT_METHOD':
+      case 'PAYMENT_INVALID':
+      case 'PAYMENT_TOTAL_MISMATCH':
+        return result?.message || t('payment_invalid');
+      default:
+        return result?.message || t('payment_invalid');
+    }
+  };
+
   // Auto-fill the cash-received field with the exact total so cashiers don't
   // have to type it. Once they edit it (customer pays more), we stop syncing.
   useEffect(() => {
-    if (saleType !== 'CASH') return;
+    if (saleType !== 'CASH' || splitMode || paymentMethod !== 'CASH') return;
     if (cart.length === 0 || cashManuallyEdited) return;
     const t = Number(displayTotal);
     if (!isFinite(t) || t <= 0) return;
     setCashAmount(t.toFixed(2));
-  }, [displayTotal, saleType, cart.length, cashManuallyEdited]);
+  }, [displayTotal, saleType, cart.length, cashManuallyEdited, splitMode, paymentMethod]);
 
   const verifyCartMutation = useMutation({
     mutationFn: (cartItems) => saleService.verifyCart(
@@ -460,8 +572,17 @@ const POS = () => {
         // createSaleMutation is defined below — safe, because this callback only
         // runs long after render (deferred execution), but the linter can't know.
         if (printAfterCheckout) {
+          const verifiedTotal = Number(result.totalAmount) || 0;
+          const lines = buildPaymentLines(verifiedTotal);
+          if (validatePaymentSelection(lines, verifiedTotal)) {
+            // The verified total no longer matches the split rows — keep the
+            // dialog open so the cashier can correct the amounts.
+            setPrintAfterCheckout(false);
+            setShowCheckoutDialog(true);
+            return;
+          }
           // eslint-disable-next-line no-use-before-define
-          createSaleMutation.mutate(buildSaleData());
+          createSaleMutation.mutate(buildSaleData(verifiedTotal));
           return;
         }
         setShowCheckoutDialog(true);
@@ -502,6 +623,9 @@ const POS = () => {
       queryClient.invalidateQueries({ queryKey: ['dailySales'] });
       queryClient.invalidateQueries({ queryKey: ['recentSales'] });
       queryClient.invalidateQueries({ queryKey: ['salesTrend'] });
+      queryClient.invalidateQueries({ queryKey: ['currentShift'] });
+      queryClient.invalidateQueries({ queryKey: ['shift-history'] });
+      queryClient.invalidateQueries({ queryKey: ['employee-shift-report'] });
     },
     onError: (err) => {
       setPrintAfterCheckout(false);
@@ -637,13 +761,19 @@ const POS = () => {
   }, [searchQuery]);
 
 
-  const handleCheckout = () => {
+  const handleCheckout = async () => {
     if (cart.length === 0) {
       setError(t('empty_cart'));
       return;
     }
     // Guard against double-clicks: never run a second verify while one is pending.
-    if (verifyCartMutation.isPending || createSaleMutation.isPending) {
+    if (verifyCartMutation.isPending || createSaleMutation.isPending || paymentChecking) {
+      return;
+    }
+    if (shiftLoading) return;
+    if (!hasShift) {
+      setPrintAfterCheckout(false);
+      setError(t('no_open_shift'));
       return;
     }
 
@@ -667,15 +797,47 @@ const POS = () => {
         setError(t('enter_due_date'));
         return;
       }
-    } else if (!cashAmount || parseFloat(cashAmount) <= 0) {
-      setError(t('enter_cash_amount'));
-      return;
-    } else if (parseFloat(cashAmount) < displayTotal) {
-      // Matches the confirmation dialog guard — the "Checkout & Print" path
-      // skips the dialog, so enforce the same under-tender rule here.
-      setError(t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) }));
+    } else if (!splitMode && paymentMethod === 'CASH') {
+      if (!cashAmount || parseFloat(cashAmount) <= 0) {
+        setError(t('enter_cash_amount'));
+        return;
+      }
+      if (parseFloat(cashAmount) < displayTotal) {
+        // Matches the confirmation dialog guard — the "Checkout & Print" path
+        // skips the dialog, so enforce the same under-tender rule here.
+        setError(t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) }));
+        return;
+      }
+    }
+
+    const saleTotal = Number(displayTotal) || 0;
+    const lines = buildPaymentLines(saleTotal);
+    const selectionError = validatePaymentSelection(lines, saleTotal);
+    if (selectionError) {
+      setPrintAfterCheckout(false);
+      setError(selectionError);
       return;
     }
+
+    // Server-side gate: a non-cash shift can never take cash, mixed payments
+    // need a drawer, and a sale must always have an open employee shift.
+    setPaymentChecking(true);
+    try {
+      const validation = await saleService.validatePayment(lines);
+      const result = validation?.data;
+      if (!result?.valid) {
+        setPrintAfterCheckout(false);
+        setError(paymentErrorMessage(result));
+        return;
+      }
+    } catch (err) {
+      setPrintAfterCheckout(false);
+      setError(err.friendlyMessage || err.response?.data?.message || t('payment_validation_failed'));
+      return;
+    } finally {
+      setPaymentChecking(false);
+    }
+
     verifyCartMutation.mutate(sanitizedCart); // opens the dialog itself on success, via onSuccess above
   };
 
@@ -685,7 +847,9 @@ const POS = () => {
       : null;
 
   // Shared by the confirm dialog and the direct Checkout & Print path
-  function buildSaleData() {
+  function buildSaleData(totalOverride) {
+    const saleTotal = Number(totalOverride ?? verifiedTotals?.totalAmount ?? displayTotal) || 0;
+    const payments = buildPaymentLines(saleTotal);
     if (saleType === 'CREDIT') {
       return {
         items: cart.map((item) => ({
@@ -700,8 +864,10 @@ const POS = () => {
         dueDate,
         amountPaid: 0,
         discountAmount: getDiscountPayload(),
+        payments,
       };
     }
+    const hasCashLine = payments.some((line) => line.method === 'CASH');
     return {
       items: cart.map((item) => ({
         productId: item.productId,
@@ -710,18 +876,30 @@ const POS = () => {
       })),
       customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
       customerName: registeredMode ? null : (customerNameInput.trim() || null),
-      paymentMethod: 'CASH',
+      paymentMethod: hasCashLine ? 'CASH' : (payments[0]?.method || 'OTHER'),
       saleType: 'CASH',
-      amountPaid: parseFloat(cashAmount),
+      // Cash tendered only exists for a single cash payment. Split lines are
+      // exact portions of the total, so change is zero.
+      amountPaid: hasCashLine && !splitMode ? (parseFloat(cashAmount) || saleTotal) : saleTotal,
       discountAmount: getDiscountPayload(),
+      payments,
     };
   }
 
   const confirmCheckout = () => {
-    if (createSaleMutation.isPending || verifyCartMutation.isPending) {
+    if (createSaleMutation.isPending || verifyCartMutation.isPending || paymentChecking) {
       return;
     }
-    createSaleMutation.mutate(buildSaleData());
+    const saleTotal = Number(verifiedTotals?.totalAmount ?? displayTotal) || 0;
+    const lines = buildPaymentLines(saleTotal);
+    const selectionError = validatePaymentSelection(lines, saleTotal);
+    if (selectionError) {
+      setShowCheckoutDialog(false);
+      setPrintAfterCheckout(false);
+      setError(selectionError);
+      return;
+    }
+    createSaleMutation.mutate(buildSaleData(saleTotal));
   }
 
   const handleSaleTypeChange = (event, newType) => {
@@ -733,8 +911,52 @@ const POS = () => {
     } else {
       // Back to CASH: re-enable auto-fill so the field tracks the total again
       setCashManuallyEdited(false);
+      if (!cashAllowed) setPaymentMethod('MOBILE_WALLET');
     }
     setError('');
+  };
+
+  const updateSplitRow = (index, patch) => {
+    setSplitPayments((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  };
+
+  const addSplitRow = () => {
+    setSplitPayments((prev) => [
+      ...prev,
+      { method: cashAllowed ? 'CASH' : 'MOBILE_WALLET', amount: '' },
+    ]);
+  };
+
+  const removeSplitRow = (index) => {
+    setSplitPayments((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)));
+  };
+
+  const handleSplitModeChange = (enabled) => {
+    setSplitMode(enabled);
+    if (enabled) {
+      setSplitPayments([{
+        method: paymentMethod,
+        amount: displayTotal > 0 ? Number(displayTotal).toFixed(2) : '',
+      }]);
+    } else {
+      const first = splitPayments.find((row) => parseFloat(row.amount) > 0);
+      setPaymentMethod(first?.method || defaultPaymentMethod());
+    }
+    setError('');
+  };
+
+  // "Park Sale for Cashier": a non-cash employee saves the cart as a draft so
+  // the cash drawer cashier can complete the cash payment at the main counter.
+  const handleParkSaleForCashier = () => {
+    if (cart.length === 0) {
+      setError(t('empty_cart'));
+      return;
+    }
+    const saved = persistDraft({ notify: false });
+    if (!saved) return;
+    clearCart();
+    notifySuccess(t('sale_parked_for_cashier'));
+    navigate('/drafts');
   };
 
   // Browser printing uses the same self-contained renderer as silent printing.
@@ -845,7 +1067,7 @@ const POS = () => {
 
   // Disable the checkout buttons while a sale is being verified or created so a
   // double-click can never post two sales.
-  const checkoutPending = createSaleMutation.isPending || verifyCartMutation.isPending;
+  const checkoutPending = createSaleMutation.isPending || verifyCartMutation.isPending || paymentChecking;
 
   async function handlePrintAfterCheckout(sale) {
     if (!sale?.invoiceNumber) return;
@@ -874,6 +1096,48 @@ const POS = () => {
       <Typography variant="h5"  sx={{ color:'primary.main'}} gutterBottom>
         {t('available_products')}
       </Typography>
+
+      {/* Shift status banner — always visible so the cashier knows whether cash
+          payments are currently allowed. */}
+      {shiftLoading ? (
+        <Paper sx={{ p: 1.5, mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CircularProgress size={16} />
+          <Typography variant="body2" color="text.secondary">{t('checking_shift')}</Typography>
+        </Paper>
+      ) : !hasShift ? (
+        <Alert
+          severity="warning"
+          sx={{ mb: 2 }}
+          action={(
+            <Button color="inherit" size="small" onClick={() => navigate('/cash-shift')}>
+              {t('open_shift')}
+            </Button>
+          )}
+        >
+          {t('no_open_shift_banner')}
+        </Alert>
+      ) : (
+        <Paper sx={{ p: 1.5, mb: 2, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <Chip
+            size="small"
+            color={currentShift.shiftType === 'CASH_DRAWER' ? 'success' : 'warning'}
+            label={currentShift.shiftType === 'CASH_DRAWER' ? t('shift_cash_drawer') : t('shift_non_cash')}
+          />
+          {currentShift.shiftType === 'CASH_DRAWER' && (
+            <Typography variant="body2" color="text.secondary">
+              {currentShift.drawerName || t('cash_drawer')}
+              {currentShift.drawerCode ? ` #${currentShift.drawerCode}` : ''}
+            </Typography>
+          )}
+          {!cashAllowed && (
+            <Typography variant="body2" color="warning.dark">
+              {t('cash_payments_disabled')}
+            </Typography>
+          )}
+          <Box sx={{ flexGrow: 1 }} />
+          <Button size="small" onClick={() => navigate('/cash-shift')}>{t('manage_shift')}</Button>
+        </Paper>
+      )}
 
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError('')}>
@@ -1338,24 +1602,115 @@ const POS = () => {
                 </>
               ) : (
                 <>
-                  <TextField
-                    fullWidth
-                    label={t('cash_amount')}
-                    type="number"
-                    value={cashAmount}
-                    onChange={(e) => { setCashAmount(e.target.value); setCashManuallyEdited(true); }}
-                    onWheel={preventWheelChange}
-                    size="small"
-                    sx={{ mb: 1 }}
-                  />
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="subtitle2">{t('payment_method')}</Typography>
+                    <Button size="small" onClick={() => handleSplitModeChange(!splitMode)}>
+                      {splitMode ? t('single_payment') : t('split_payment')}
+                    </Button>
+                  </Box>
 
-                  {cashAmount && (
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                      <Typography>{t('change')}</Typography>
-                      <Typography color={change < 0 ? 'error' : 'success'}>
-                        {formatCurrency(displayChange)}
-                      </Typography>
-                    </Box>
+                  {!splitMode ? (
+                    <>
+                      <TextField
+                        select
+                        fullWidth
+                        label={t('payment_method')}
+                        value={paymentMethod}
+                        onChange={(e) => {
+                          setPaymentMethod(e.target.value);
+                          setCashManuallyEdited(false);
+                        }}
+                        size="small"
+                        sx={{ mb: 1 }}
+                        helperText={!cashAllowed ? t('cash_requires_drawer') : undefined}
+                      >
+                        {methodOptions.map((option) => (
+                          <MenuItem key={option.value} value={option.value} disabled={option.disabled}>
+                            {option.label}
+                          </MenuItem>
+                        ))}
+                      </TextField>
+
+                      {paymentMethod === 'CASH' ? (
+                        <>
+                          <TextField
+                            fullWidth
+                            label={t('cash_amount')}
+                            type="number"
+                            value={cashAmount}
+                            onChange={(e) => { setCashAmount(e.target.value); setCashManuallyEdited(true); }}
+                            onWheel={preventWheelChange}
+                            size="small"
+                            sx={{ mb: 1 }}
+                          />
+
+                          {cashAmount && (
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
+                              <Typography>{t('change')}</Typography>
+                              <Typography color={change < 0 ? 'error' : 'success'}>
+                                {formatCurrency(displayChange)}
+                              </Typography>
+                            </Box>
+                          )}
+                        </>
+                      ) : (
+                        <Alert severity="info" sx={{ mb: 1, py: 0 }}>
+                          {t('non_cash_payment_help')}
+                        </Alert>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      {splitPayments.map((row, index) => (
+                        <Stack key={index} direction="row" spacing={1} sx={{ mb: 1 }} alignItems="center">
+                          <TextField
+                            select
+                            size="small"
+                            label={t('payment_method')}
+                            value={row.method}
+                            onChange={(e) => updateSplitRow(index, { method: e.target.value })}
+                            sx={{ flex: 1 }}
+                          >
+                            {methodOptions.map((option) => (
+                              <MenuItem key={option.value} value={option.value} disabled={option.disabled}>
+                                {option.label}
+                              </MenuItem>
+                            ))}
+                          </TextField>
+                          <TextField
+                            size="small"
+                            type="number"
+                            label={t('amount')}
+                            value={row.amount}
+                            onChange={(e) => updateSplitRow(index, { amount: e.target.value })}
+                            onWheel={preventWheelChange}
+                            inputProps={{ min: 0, step: '0.01' }}
+                            sx={{ width: 145 }}
+                          />
+                          <IconButton
+                            size="small"
+                            onClick={() => removeSplitRow(index)}
+                            disabled={splitPayments.length <= 1}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </Stack>
+                      ))}
+                      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                        <Button size="small" startIcon={<AddIcon />} onClick={addSplitRow}>
+                          {t('add_payment_line')}
+                        </Button>
+                        <Typography
+                          variant="body2"
+                          color={Math.abs(splitRemaining) < 0.005 ? 'success.main' : 'warning.main'}
+                        >
+                          {t('remaining_amount', { amount: formatCurrency(splitRemaining) })}
+                        </Typography>
+                      </Stack>
+                      {!cashAllowed && splitPayments.some((row) => row.method === 'CASH') && (
+                        <Alert severity="warning" sx={{ mb: 1 }}>{t('cash_requires_drawer')}</Alert>
+                      )}
+                    </>
                   )}
                 </>
               )}
@@ -1365,7 +1720,7 @@ const POS = () => {
                 variant="contained"
                 size="large"
                 onClick={handleCheckoutAndPrint}
-                disabled={cart.length === 0 || checkoutPending}
+                disabled={cart.length === 0 || checkoutPending || shiftLoading || !hasShift}
                 startIcon={checkoutPending ? <CircularProgress size={20} color="inherit" /> : <DirectPrintIcon />}
                 sx={{ py: 1.75, fontSize: '1.05rem', mt: 1, bgcolor: 'primary.main' }}
               >
@@ -1376,7 +1731,7 @@ const POS = () => {
                 variant="contained"
                 size="large"
                 onClick={() => { setPrintAfterCheckout(false); handleCheckout(); }}
-                disabled={cart.length === 0 || checkoutPending}
+                disabled={cart.length === 0 || checkoutPending || shiftLoading || !hasShift}
                 sx={{
                   py: 1.75,
                   fontSize: '1.05rem',
@@ -1417,6 +1772,19 @@ const POS = () => {
               >
                 {t('save_draft')}
               </Button>
+              {hasShift && !cashAllowed && (
+                <Button
+                  fullWidth
+                  variant="outlined"
+                  color="warning"
+                  startIcon={<ParkIcon />}
+                  onClick={handleParkSaleForCashier}
+                  disabled={cart.length === 0}
+                  sx={{ mt: 1 }}
+                >
+                  {t('park_sale_for_cashier')}
+                </Button>
+              )}
             </Box>
             </Box>
           </Paper>
@@ -1451,14 +1819,23 @@ const POS = () => {
             </>
           ) : (
             <>
-              <Typography>{t('cash_label')} {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
-              <Typography>{t('change')} {formatCurrency(displayChange)}</Typography>
+              {buildPaymentLines(Number(verifiedTotals?.totalAmount ?? displayTotal) || 0).map((line, index) => (
+                <Typography key={`${line.method}-${index}`}>
+                  {paymentMethodLabel(line.method)}: {formatCurrency(line.amount)}
+                </Typography>
+              ))}
+              {!splitMode && paymentMethod === 'CASH' && (
+                <>
+                  <Typography>{t('cash_label')} {formatCurrency(parseFloat(cashAmount) || 0)}</Typography>
+                  <Typography>{t('change')} {formatCurrency(displayChange)}</Typography>
+                </>
+              )}
             </>
           )}
           {selectedCustomer && (
             <Typography>{t('customer_label', { name: `${selectedCustomer.firstName} ${selectedCustomer.lastName}` })}</Typography>
           )}
-          {saleType !== 'CREDIT' && parseFloat(cashAmount) < displayTotal && (
+          {saleType !== 'CREDIT' && !splitMode && paymentMethod === 'CASH' && parseFloat(cashAmount) < displayTotal && (
             <Alert severity="error" sx={{ mt: 2 }}>
               {t('cash_less_than_total', { amount: formatCurrency(displayTotal - (parseFloat(cashAmount) || 0)) })}
             </Alert>
@@ -1470,7 +1847,12 @@ const POS = () => {
             onClick={confirmCheckout}
             variant="contained"
             color="primary"
-            disabled={checkoutPending || (saleType === 'CREDIT' ? false : parseFloat(cashAmount) < displayTotal)}
+            disabled={checkoutPending || (
+              saleType !== 'CREDIT'
+              && !splitMode
+              && paymentMethod === 'CASH'
+              && parseFloat(cashAmount) < displayTotal
+            )}
           >
             {checkoutPending ? t('processing') : (printAfterCheckout ? t('confirm_and_print') : t('confirm'))}
           </Button>

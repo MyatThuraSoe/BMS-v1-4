@@ -239,5 +239,15 @@
   "remote_auth_title": "Open on the main computer",
   "remote_auth_desc": "For security, Google returns you to the LumiPOS main computer after sign-in. Since you are on another device, open the link below on the MAIN computer (the one running the server) — or open LumiPOS there and press Connect.",
   "remote_auth_copy": "Copy Link",
-  "remote_auth_copied": "Copied!"
+  "remote_auth_copied": "Copied!",
+  "cash_drawer_security": "Cash Drawer & Shift Rules",
+  "cash_drawer_security_description": "Control how employees share physical cash drawers and how blind close behaves.",
+  "allow_shared_cash_drawer": "Allow employees to share a cash drawer",
+  "allow_shared_cash_drawer_help": "When enabled, another employee can join the drawer session that is already open instead of waiting for it to close.",
+  "require_manager_approval_shared_drawer": "Require manager approval to join a drawer",
+  "require_manager_approval_shared_drawer_help": "A manager or admin must approve before an employee joins an already open cash drawer.",
+  "blind_drawer_close": "Blind drawer close",
+  "blind_drawer_close_help": "Hide expected cash until the counted amount is submitted, so the cashier cannot adjust the count to match.",
+  "setting_updated": "Setting updated.",
+  "setting_update_failed": "Failed to update setting."
 }

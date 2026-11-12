@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Grid, Paper, Typography, Box, Button, Chip, Alert } from '@mui/material';
 import { useTheme } from '@mui/material/styles';
 import { useQuery } from '@tanstack/react-query';
-import { reportService, saleService, inventoryService } from '../api/services';
+import { reportService, saleService, inventoryService, shiftService } from '../api/services';
 import { ShoppingCart, Inventory, TrendingUp, Add as AddIcon, TrendingDown as TrendingDownIcon } from '@mui/icons-material';
 import { formatDateTime, formatCurrency, toLocalDateString } from '../utils/helpers';
 import { useTranslation } from 'react-i18next';
@@ -43,7 +43,7 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const theme = useTheme();
   const { t } = useTranslation('dashboard');
-  const { isAdmin } = useAuth();
+  const { isAdmin, isManager } = useAuth();
   // Local calendar day, NOT UTC: the server stores sale dates in local time, so
   // an ISO/UTC "today" puts pre-dawn Myanmar/Thailand sales on yesterday.
   const today = toLocalDateString(new Date());
@@ -84,6 +84,15 @@ const Dashboard = () => {
     queryKey: ['salesTrend', 7],
     queryFn: () => reportService.getSalesTrend(7),
   });
+
+  // Manager view of everyone currently working, cash or non-cash.
+  const { data: activeShiftsData } = useQuery({
+    queryKey: ['activeShifts'],
+    queryFn: () => shiftService.getActiveShifts(),
+    enabled: isManager(),
+    refetchInterval: 60_000,
+  });
+  const activeShifts = activeShiftsData?.data || [];
 
   // --- Advanced widgets ---
   const { data: topProductsData, isError: topProductsError } = useQuery({
@@ -178,6 +187,56 @@ const Dashboard = () => {
             onClick={() => navigate('/products?view=low-stock')}
           />
         </Grid>
+
+        {isManager() && (
+          <Grid item xs={12}>
+            <Paper sx={{ p: 3 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                <Typography variant="h6">{t('active_shifts')}</Typography>
+                <Button size="small" onClick={() => navigate('/cash-shift')}>{t('manage_shifts')}</Button>
+              </Box>
+              {activeShifts.length === 0 ? (
+                <Typography variant="body2" color="text.secondary">{t('no_active_shifts')}</Typography>
+              ) : (
+                <Box>
+                  {activeShifts.map((shift) => {
+                    const isCash = shift.shiftType === 'CASH_DRAWER';
+                    return (
+                      <Box
+                        key={shift.id}
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 2,
+                          py: 1,
+                          borderBottom: '1px solid #eee',
+                          flexWrap: 'wrap',
+                        }}
+                      >
+                        <Typography variant="body2" fontWeight="medium" sx={{ minWidth: 140 }}>
+                          {shift.cashierName || shift.cashierId}
+                        </Typography>
+                        <Chip
+                          size="small"
+                          color={isCash ? 'primary' : 'default'}
+                          label={isCash ? t('shift_type_cash_drawer') : t('shift_type_non_cash')}
+                        />
+                        <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                          {isCash
+                            ? `${shift.drawerName || t('cash_drawer')}${shift.drawerCode ? ` #${shift.drawerCode}` : ''}`
+                            : t('no_drawer')}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {shift.openingTime ? formatDateTime(shift.openingTime) : ''}
+                        </Typography>
+                      </Box>
+                    );
+                  })}
+                </Box>
+              )}
+            </Paper>
+          </Grid>
+        )}
 
         <Grid item xs={12}>
           <Paper sx={{ p: 3 }}>

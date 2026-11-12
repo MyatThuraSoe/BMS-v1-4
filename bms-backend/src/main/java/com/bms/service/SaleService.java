@@ -2,6 +2,7 @@ package com.bms.service;
 
 import com.bms.dto.request.CartVerifyRequest;
 import com.bms.dto.request.SaleCreateRequest;
+import com.bms.dto.request.SalePaymentRequest;
 import com.bms.dto.response.*;
 import com.bms.entity.*;
 import com.bms.exception.BusinessException;
@@ -66,6 +67,18 @@ public class SaleService {
 
     @Autowired
     private PromotionService promotionService;
+
+    @Autowired
+    private PaymentValidationService paymentValidationService;
+
+    @Autowired
+    private CashDrawerSessionService cashDrawerSessionService;
+
+    @Autowired
+    private SalePaymentRepository salePaymentRepository;
+
+    @Autowired
+    private SaleReturnRepository saleReturnRepository;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -160,10 +173,6 @@ public class SaleService {
         if (saleType == Sale.SaleType.CREDIT && request.getDueDate() == null) {
             throw new IllegalArgumentException("error.credit.dueDate.required");
         }
-        if (saleType == Sale.SaleType.CASH
-                && (request.getAmountPaid() == null || request.getAmountPaid().compareTo(BigDecimal.ZERO) <= 0)) {
-            throw new BusinessException("Amount paid is required and must be positive for cash sales");
-        }
 
         // Credit invoices get a CR- prefixed, per-day locked sequence number.
         String invoiceNumber = saleType == Sale.SaleType.CREDIT
@@ -208,13 +217,11 @@ public class SaleService {
             sale.setCustomerDisplayName("Walk-in");
         }
 
-        // Cash sales MUST belong to an open cash shift — credit sales bypass it.
-        if (saleType == Sale.SaleType.CASH) {
-            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
-                .orElseThrow(() -> new BusinessException(
-                    "No open cash shift. Please open a shift before recording cash sales."));
-            sale.setCashShiftId(openShift.getId());
-        }
+        // Every new sale belongs to an employee shift. Only cash payment
+        // lines additionally require that shift to have an open drawer.
+        CashShift openShift = paymentValidationService.requireOpenShift(cashierId);
+        sale.setCashShiftId(openShift.getId());
+        sale.setEmployeeShift(openShift);
 
         BigDecimal subtotal = BigDecimal.ZERO;
         BigDecimal taxAmount = BigDecimal.ZERO;
@@ -280,6 +287,13 @@ public class SaleService {
         BigDecimal totalAmount = subtotal.add(taxAmount).subtract(discountAmount);
         sale.setTotalAmount(totalAmount);
 
+        // Validate every split-payment line before the sale row or any stock
+        // movement is written. A cash line requires this shift's open drawer.
+        List<SalePaymentRequest> paymentLines = paymentValidationService.resolvePayments(
+                request.getPayments(), totalAmount, saleType);
+        paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
+        sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
+
         if (saleType == Sale.SaleType.CREDIT) {
             // Credit-limit check BEFORE persisting anything
             BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
@@ -290,17 +304,32 @@ public class SaleService {
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
         } else {
-            sale.setAmountPaid(request.getAmountPaid());
-
-            BigDecimal changeGiven = request.getAmountPaid().subtract(totalAmount);
-            if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
-                throw new BusinessException("Amount paid (" + request.getAmountPaid() +
-                    ") is less than total amount (" + totalAmount + ")");
+            boolean hasCash = paymentLines.stream()
+                    .anyMatch(line -> paymentValidationService.parseMethod(line.getMethod())
+                            == com.bms.entity.PaymentMethod.CASH);
+            BigDecimal tendered = request.getAmountPaid();
+            if (hasCash) {
+                if (tendered == null) {
+                    tendered = totalAmount;
+                }
+                if (tendered.compareTo(totalAmount) < 0) {
+                    throw new BusinessException("Amount paid (" + tendered
+                            + ") is less than total amount (" + totalAmount + ")");
+                }
+                sale.setAmountPaid(tendered);
+                sale.setChangeGiven(tendered.subtract(totalAmount));
+            } else {
+                if (tendered != null && tendered.compareTo(totalAmount) < 0) {
+                    throw new BusinessException("Amount paid (" + tendered
+                            + ") is less than total amount (" + totalAmount + ")");
+                }
+                sale.setAmountPaid(totalAmount);
+                sale.setChangeGiven(BigDecimal.ZERO);
             }
-            sale.setChangeGiven(changeGiven);
         }
 
         Sale savedSale = saleRepository.save(sale);
+        paymentValidationService.saveSalePayments(savedSale, openShift, paymentLines);
 
         // Credit sales raise the customer's outstanding balance by the full
         // invoice total (same transaction, customer row already locked).
@@ -327,6 +356,31 @@ public class SaleService {
             return Sale.SaleType.valueOf(saleType.trim().toUpperCase());
         } catch (IllegalArgumentException ex) {
             throw new BusinessException("Invalid sale type: " + saleType);
+        }
+    }
+
+    /**
+     * Keeps the legacy single-payment column meaningful for old reports:
+     * one method maps to itself, several map to MIXED.
+     */
+    private Sale.PaymentMethod resolveLegacyPaymentMethod(List<SalePaymentRequest> payments) {
+        if (payments == null || payments.isEmpty()) {
+            return Sale.PaymentMethod.CASH;
+        }
+        java.util.Set<com.bms.entity.PaymentMethod> methods = payments.stream()
+                .map(line -> paymentValidationService.parseMethod(line.getMethod()))
+                .collect(Collectors.toSet());
+        if (methods.size() > 1) {
+            return Sale.PaymentMethod.MIXED;
+        }
+        return legacyPaymentMethod(methods.iterator().next());
+    }
+
+    private Sale.PaymentMethod legacyPaymentMethod(com.bms.entity.PaymentMethod method) {
+        try {
+            return Sale.PaymentMethod.valueOf(method.name());
+        } catch (IllegalArgumentException ex) {
+            return Sale.PaymentMethod.OTHER;
         }
     }
 
@@ -380,8 +434,11 @@ public class SaleService {
                                                                   Long cashierId) {
         String method = paymentMethod != null ? paymentMethod.trim().toUpperCase() : "CASH";
         boolean isCredit = "CREDIT".equals(method);
-        if (!"CREDIT".equals(method) && !"CASH".equals(method)) {
-            throw new BusinessException("Invalid payment method: " + method);
+        com.bms.entity.PaymentMethod entityMethod;
+        if (isCredit) {
+            entityMethod = com.bms.entity.PaymentMethod.CREDIT;
+        } else {
+            entityMethod = paymentValidationService.parseMethod(method);
         }
 
         if (isCredit && order.getCustomer() == null) {
@@ -402,7 +459,7 @@ public class SaleService {
         sale.setInvoiceNumber(invoiceNumber);
         sale.setCashierId(cashierId);
         sale.setSaleDate(LocalDateTime.now());
-        sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        sale.setPaymentMethod(isCredit ? Sale.PaymentMethod.CREDIT : legacyPaymentMethod(entityMethod));
         sale.setSaleType(isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
         sale.setPaymentStatus(isCredit ? Sale.PaymentStatus.UNPAID : Sale.PaymentStatus.PAID);
         sale.setDueDate(isCredit ? dueDate : null);
@@ -425,12 +482,10 @@ public class SaleService {
             sale.setCustomerDisplayName(order.getCustomerDisplayName() != null ? order.getCustomerDisplayName() : "Walk-in");
         }
 
-        if (!isCredit) {
-            CashShift openShift = cashShiftRepository.findByCashierIdAndStatus(cashierId, "OPEN")
-                .orElseThrow(() -> new BusinessException(
-                    "No open cash shift. Please open a shift before recording cash sales."));
-            sale.setCashShiftId(openShift.getId());
-        }
+        // Every converted order belongs to the cashier's open employee shift.
+        CashShift openShift = paymentValidationService.requireOpenShift(cashierId);
+        sale.setCashShiftId(openShift.getId());
+        sale.setEmployeeShift(openShift);
 
         BigDecimal subtotal = order.getSubtotal();
         BigDecimal taxAmount = order.getTaxAmount();
@@ -471,6 +526,13 @@ public class SaleService {
         sale.setDiscountAmount(BigDecimal.ZERO);
         sale.setTotalAmount(totalAmount);
 
+        SalePaymentRequest paymentLine = new SalePaymentRequest();
+        paymentLine.setMethod(entityMethod.name());
+        paymentLine.setAmount(totalAmount);
+        List<SalePaymentRequest> paymentLines = List.of(paymentLine);
+        paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
+                isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+
         if (isCredit) {
             BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
             if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
@@ -480,16 +542,22 @@ public class SaleService {
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
         } else {
-            sale.setAmountPaid(amountPaid);
-            BigDecimal changeGiven = amountPaid.subtract(totalAmount);
-            if (changeGiven.compareTo(BigDecimal.ZERO) < 0) {
-                throw new BusinessException("Amount paid (" + amountPaid +
-                    ") is less than total amount (" + totalAmount + ")");
+            if (amountPaid.compareTo(totalAmount) < 0) {
+                throw new BusinessException("Amount paid (" + amountPaid
+                        + ") is less than total amount (" + totalAmount + ")");
             }
-            sale.setChangeGiven(changeGiven);
+            if (entityMethod == com.bms.entity.PaymentMethod.CASH) {
+                sale.setAmountPaid(amountPaid);
+                sale.setChangeGiven(amountPaid.subtract(totalAmount));
+            } else {
+                // Non-cash tenders cannot produce cash change.
+                sale.setAmountPaid(totalAmount);
+                sale.setChangeGiven(BigDecimal.ZERO);
+            }
         }
 
         Sale savedSale = saleRepository.save(sale);
+        paymentValidationService.saveSalePayments(savedSale, openShift, paymentLines);
 
         if (isCredit) {
             creditCustomer.setCurrentBalance(creditCustomer.getCurrentBalance().add(totalAmount));
@@ -546,6 +614,40 @@ public class SaleService {
         sale.setVoidedAt(LocalDateTime.now());
 
         Sale updatedSale = saleRepository.save(sale);
+
+        User voidingUser = userRepository.findById(userId).orElse(null);
+
+        // A cash sale still sitting in this employee's open drawer must be
+        // reversed, otherwise voiding a receipt would leave phantom cash.
+        CashShift voidShift = sale.getEmployeeShift();
+        if (voidShift != null && voidShift.getDrawerSession() != null
+                && voidShift.getDrawerSession().getStatus() == DrawerSessionStatus.OPEN) {
+            List<SalePayment> salePayments = salePaymentRepository
+                    .findBySaleIdOrderByPaidAtAsc(sale.getId());
+            BigDecimal cashPaid = salePayments.stream()
+                    .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
+                    .map(SalePayment::getAmount)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal alreadyRefunded = safeSum(
+                    saleReturnRepository.sumCashRefundedBySaleId(sale.getId()));
+            BigDecimal cashToReturn = cashPaid.subtract(alreadyRefunded);
+            if (cashToReturn.compareTo(BigDecimal.ZERO) > 0) {
+                cashDrawerSessionService.recordFinancialMovement(
+                        voidShift.getDrawerSession(),
+                        DrawerMovementType.CASH_REFUND,
+                        cashToReturn.negate(),
+                        "SALE",
+                        sale.getId(),
+                        voidingUser,
+                        voidShift,
+                        "Cash reversed for voided sale " + sale.getInvoiceNumber());
+            }
+            for (SalePayment payment : salePayments) {
+                payment.setPaymentStatus(PaymentStatus.REFUNDED);
+                salePaymentRepository.save(payment);
+            }
+        }
+
 
         // Restore stock for voided sale — only the portion that hasn't already
         // been restored via a prior refund on this item
@@ -764,6 +866,16 @@ public class SaleService {
                 .map(SaleReturn::getTotalReturnAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add));
         response.setReturnStatus(sale.getReturnStatus().name());
+
+        if (sale.getEmployeeShift() != null) {
+            response.setEmployeeShiftId(sale.getEmployeeShift().getId());
+            response.setShiftType(sale.getEmployeeShift().getShiftType().name());
+        }
+        response.setPayments(salePaymentRepository
+                .findBySaleIdOrderByPaidAtAsc(sale.getId())
+                .stream()
+                .map(paymentValidationService::toResponse)
+                .collect(Collectors.toList()));
 
         return response;
     }

@@ -1,12 +1,14 @@
 package com.bms.controller;
 
 import com.bms.dto.request.CartVerifyRequest;
+import com.bms.dto.request.PaymentValidationRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.request.SaleReturnRequest;
 import com.bms.dto.response.*;
 import com.bms.entity.Sale;
 import com.bms.service.SaleReturnService;
 import com.bms.service.SaleService;
+import com.bms.service.PaymentValidationService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -33,6 +35,9 @@ public class SaleController {
 
     @Autowired
     private SaleReturnService saleReturnService;
+
+    @Autowired
+    private PaymentValidationService paymentValidationService;
 
     @Autowired
     private com.bms.service.UserService userService;
@@ -166,6 +171,19 @@ public class SaleController {
             @Valid @RequestBody CartVerifyRequest request) {
         CartVerifyResponse response = saleService.verifyCart(request);
         return ResponseEntity.ok(new ApiResponse<>(true, "Cart verified", response));
+    }
+
+    @PostMapping("/validate-payment")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<PaymentValidationResponse>> validatePayment(
+            @Valid @RequestBody PaymentValidationRequest request,
+            Authentication authentication) {
+        org.springframework.security.core.userdetails.UserDetails userDetails =
+                (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+        PaymentValidationResponse response = paymentValidationService.validateForUser(userId, request);
+        return ResponseEntity.ok(new ApiResponse<>(response.isValid(),
+                response.isValid() ? "Payment methods are valid" : response.getMessage(), response));
     }
 
 

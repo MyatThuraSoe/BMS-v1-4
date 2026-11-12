@@ -16,6 +16,17 @@ public class SaleReturnRequest {
     @NotEmpty(message = "At least one return item is required")
     private List<SaleReturnItemRequest> items;
 
+    /** CASH, MOBILE_WALLET, CARD, BANK_TRANSFER, etc. Defaults from the original sale. */
+    private String refundMethod;
+
+    private String externalReference;
+
+    public String getRefundMethod() { return refundMethod; }
+    public void setRefundMethod(String refundMethod) { this.refundMethod = refundMethod; }
+
+    public String getExternalReference() { return externalReference; }
+    public void setExternalReference(String externalReference) { this.externalReference = externalReference; }
+
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
 

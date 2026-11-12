@@ -29,4 +29,11 @@ public interface SaleReturnRepository extends JpaRepository<SaleReturn, Long> {
     Page<SaleReturn> findFilteredReturns(@Param("saleId") Long saleId,
                                          @Param("invoice") String invoice,
                                          Pageable pageable);
+
+    @Query("SELECT COALESCE(SUM(r.totalReturnAmount), 0) FROM SaleReturn r WHERE r.employeeShift.id = :shiftId")
+    java.math.BigDecimal sumTotalByEmployeeShiftId(@Param("shiftId") Long shiftId);
+
+    @Query("SELECT COALESCE(SUM(r.totalReturnAmount), 0) FROM SaleReturn r " +
+           "WHERE r.sale.id = :saleId AND r.refundMethod = com.bms.entity.PaymentMethod.CASH")
+    java.math.BigDecimal sumCashRefundedBySaleId(@Param("saleId") Long saleId);
 }
