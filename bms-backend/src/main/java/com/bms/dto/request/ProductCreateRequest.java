@@ -23,9 +23,16 @@ public class ProductCreateRequest {
     @DecimalMin(value = "0.0", message = "Unit price cannot be negative")
     private BigDecimal unitPrice;
     
+    @NotNull(message = "Cost price is required")
     @DecimalMin(value = "0.0", message = "Cost price cannot be negative")
     private BigDecimal costPrice;
     
+    /**
+     * @deprecated Per-product tax is dead (D7). Tax comes exclusively from the
+     * shop-level tax percentage; this field is ignored by pricing and kept only
+     * so older clients do not break. Do not send it.
+     */
+    @Deprecated
     @DecimalMin(value = "0.0", message = "Tax rate cannot be negative")
     private BigDecimal taxRate;
     

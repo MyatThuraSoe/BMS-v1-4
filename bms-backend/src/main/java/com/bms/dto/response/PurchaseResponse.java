@@ -16,6 +16,10 @@ public class PurchaseResponse {
     private BigDecimal taxAmount;
     private BigDecimal totalAmount;
     private BigDecimal discountAmount;
+    private Boolean taxRecoverable;
+    private BigDecimal varianceAmount;
+    private BigDecimal returnedAmount;
+    private BigDecimal payableAmount;
     private String paymentStatus;
     private String receivingStatus;
     private String currencyCode;
@@ -49,6 +53,14 @@ public class PurchaseResponse {
     public void setTotalAmount(BigDecimal totalAmount) { this.totalAmount = totalAmount; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public Boolean getTaxRecoverable() { return taxRecoverable; }
+    public void setTaxRecoverable(Boolean taxRecoverable) { this.taxRecoverable = taxRecoverable; }
+    public BigDecimal getVarianceAmount() { return varianceAmount; }
+    public void setVarianceAmount(BigDecimal varianceAmount) { this.varianceAmount = varianceAmount; }
+    public BigDecimal getReturnedAmount() { return returnedAmount; }
+    public void setReturnedAmount(BigDecimal returnedAmount) { this.returnedAmount = returnedAmount; }
+    public BigDecimal getPayableAmount() { return payableAmount; }
+    public void setPayableAmount(BigDecimal payableAmount) { this.payableAmount = payableAmount; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
     public String getReceivingStatus() { return receivingStatus; }

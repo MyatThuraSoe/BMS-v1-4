@@ -224,7 +224,6 @@ public class SaleService {
         sale.setEmployeeShift(openShift);
 
         BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
 
@@ -259,17 +258,12 @@ public class SaleService {
             item.setPromotionId(quote.getPromotionId());
             item.setPromotionName(quote.getPromotionName());
 
-            BigDecimal[] pricing = calculateItemPricing(
-                    effectiveUnitPrice, itemRequest.getQuantity(), getShopTaxRate());
-            BigDecimal itemTotal = pricing[0];
-            BigDecimal itemTax = pricing[1];
+            BigDecimal itemTotal = lineGross(effectiveUnitPrice, itemRequest.getQuantity());
             item.setTotalPrice(itemTotal);
-            item.setTaxAmount(itemTax);
 
             sale.getItems().add(item);
 
             subtotal = subtotal.add(itemTotal);
-            taxAmount = taxAmount.add(itemTax);
             if ("PROMOTION".equals(quote.getSource())) {
                 promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
             } else if ("PRICE_LIST".equals(quote.getSource())) {
@@ -278,13 +272,17 @@ public class SaleService {
         }
 
         sale.setSubtotal(subtotal);
-        sale.setTaxAmount(taxAmount);
         sale.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         sale.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         sale.setDiscountAmount(discountAmount);
 
-        BigDecimal totalAmount = subtotal.add(taxAmount).subtract(discountAmount);
+        // P5: tax applies to the discounted line value, so the header discount
+        // is allocated to lines before any tax is computed.
+        BigDecimal taxAmount = applyDiscountedLineTaxes(sale, getShopTaxRate());
+        sale.setTaxAmount(taxAmount);
+
+        BigDecimal totalAmount = subtotal.subtract(discountAmount).add(taxAmount);
         sale.setTotalAmount(totalAmount);
 
         // Validate every split-payment line before the sale row or any stock
@@ -517,7 +515,9 @@ public class SaleService {
             item.setUnitPrice(orderItem.getUnitPrice());
             item.setTotalPrice(orderItem.getTotalPrice());
             item.setTaxAmount(orderItem.getTaxAmount());
-            item.setCostPriceAtSale(orderItem.getCostPriceAtOrder());
+            // P2: COGS uses the cost in force at fulfilment (read under the product lock above),
+            // not the order-time quote. costPriceAtOrder stays for margin quoting only.
+            item.setCostPriceAtSale(product.getCostPrice());
             sale.getItems().add(item);
         }
 
@@ -927,10 +927,12 @@ public class SaleService {
         List<CartVerifyResponse.CartVerifyItemResult> results = new java.util.ArrayList<>();
         List<String> messages = new java.util.ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
         boolean anyChanged = false;
+        // Ephemeral lines mirroring the cart so verifyCart allocates the header
+        // discount and computes tax exactly like createSale does.
+        List<SaleItem> taxLines = new java.util.ArrayList<>();
 
         Customer pricingCustomer = request.getCustomerId() != null
                 ? customerRepository.findById(request.getCustomerId())
@@ -979,11 +981,13 @@ public class SaleService {
                 messages.add(String.format("%s: %s applied", product.getName(), quote.getPromotionName()));
             }
 
-            BigDecimal[] linePricing = calculateItemPricing(
-                    quote.getUnitPrice(), itemRequest.getQuantity(), taxRate);
-            result.setLineTotal(linePricing[0]); // itemTotal (pre-tax)
-            subtotal = subtotal.add(linePricing[0]);
-            taxAmount = taxAmount.add(linePricing[1]);
+            BigDecimal lineTotal = lineGross(quote.getUnitPrice(), itemRequest.getQuantity());
+            result.setLineTotal(lineTotal); // pre-tax gross; tax follows the discount allocation
+            subtotal = subtotal.add(lineTotal);
+            SaleItem taxLine = new SaleItem();
+            taxLine.setQuantity(itemRequest.getQuantity());
+            taxLine.setTotalPrice(lineTotal);
+            taxLines.add(taxLine);
             if ("PROMOTION".equals(quote.getSource())) {
                 promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
             } else if ("PRICE_LIST".equals(quote.getSource())) {
@@ -995,31 +999,47 @@ public class SaleService {
 
         response.setItems(results);
         response.setSubtotal(subtotal);
-        response.setTaxAmount(taxAmount);
         response.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         response.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         response.setDiscountAmount(discountAmount);
-        response.setTotalAmount(subtotal.add(taxAmount).subtract(discountAmount));
+        Sale taxCarrier = new Sale();
+        taxCarrier.setItems(taxLines);
+        taxCarrier.setDiscountAmount(discountAmount);
+        BigDecimal taxAmount = applyDiscountedLineTaxes(taxCarrier, taxRate);
+        response.setTaxAmount(taxAmount);
+        response.setTotalAmount(subtotal.subtract(discountAmount).add(taxAmount));
         response.setMessages(messages);
         response.setValid(!anyChanged);
         return response;
     }
 
     // Shared by both verifyCart() and createSale() so the math can never drift apart again.
-    // Returns [itemTotal, itemTax], both rounded to 2dp BEFORE persisting so the
-    // ledger never stores uncompressed decimals.
-    private BigDecimal[] calculateItemPricing(Product product, Integer quantity, BigDecimal taxRate) {
-        BigDecimal unitPrice = product.getUnitPrice() != null ? product.getUnitPrice() : BigDecimal.ZERO;
-        return calculateItemPricing(unitPrice, quantity, taxRate);
+    private BigDecimal lineGross(BigDecimal unitPrice, int quantity) {
+        return unitPrice.multiply(BigDecimal.valueOf(quantity))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    private BigDecimal[] calculateItemPricing(BigDecimal unitPrice, Integer quantity, BigDecimal taxRate) {
-        BigDecimal itemTotal = unitPrice.multiply(new BigDecimal(quantity))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal itemTax = itemTotal.multiply(taxRate.divide(BigDecimal.valueOf(100)))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-        return new BigDecimal[]{itemTotal, itemTax};
+    /**
+     * Allocates the header discount across the sale's lines (proportional,
+     * rounding remainder on the last positive line) and stores each line's tax
+     * computed on its discounted base. Returns the header tax, which is always
+     * the exact sum of the stored line taxes. Refunds add back this stored tax,
+     * so they automatically return what was actually paid.
+     */
+    private BigDecimal applyDiscountedLineTaxes(Sale sale, BigDecimal taxRate) {
+        Map<SaleItem, BigDecimal> allocations = SaleDiscountUtils.allocateDiscounts(sale);
+        BigDecimal headerTax = BigDecimal.ZERO;
+        for (SaleItem item : sale.getItems()) {
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(allocations.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal itemTax = lineNet
+                    .multiply(taxRate.divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            item.setTaxAmount(itemTax);
+            headerTax = headerTax.add(itemTax);
+        }
+        return headerTax;
     }
 
     // Tax percentage comes from the Shop Info configuration (admin-controlled),

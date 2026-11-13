@@ -60,7 +60,7 @@ public class CountSheet {
     @Column(name = "sync_key", unique = true, length = 100)
     private String syncKey;
 
-    @Column(name = "variance_value", precision = 19, scale = 2)
+    @Column(name = "variance_value", precision = 19, scale = 6)
     private BigDecimal varianceValue = BigDecimal.ZERO;
 
     @Column(name = "created_at", nullable = false, updatable = false)

@@ -53,5 +53,14 @@
   "category_maintenance": "Maintenance",
   "category_marketing": "Marketing",
   "category_other": "Other",
-  "outstanding_ar": "Outstanding AR (To Collect)"
+  "outstanding_ar": "Outstanding AR (To Collect)",
+  "inventory_loss": "Inventory Loss",
+  "inventory_loss_breakdown": "Inventory Loss by Reason",
+  "no_inventory_loss_month": "No inventory losses for this month.",
+  "loss_spoilage_expiry": "Spoilage / Expiry",
+  "loss_theft_shrinkage": "Theft / Shrinkage",
+  "loss_damaged_in_store": "Damaged in Store",
+  "loss_internal_consumption": "Internal Consumption",
+  "loss_shrinkage": "Shrinkage (Count)",
+  "loss_other": "Other"
 }

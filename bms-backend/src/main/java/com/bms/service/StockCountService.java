@@ -313,7 +313,7 @@ public class StockCountService {
         item.setNote(note);
         item.setCountedAt(LocalDateTime.now());
         item.setValuationAmount(cost.multiply(BigDecimal.valueOf(variance))
-                .setScale(2, RoundingMode.HALF_UP));
+                .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
     }
 
     private void recalculateVarianceValue(CountSheet sheet, List<CountSheetItem> items) {

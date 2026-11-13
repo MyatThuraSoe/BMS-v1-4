@@ -179,6 +179,41 @@ class StockCountServiceTest {
     }
 
     @Test
+    void c7_countVarianceKeepsSixDecimalValuation() {
+        Product product = product(50, "0.337835");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(9, "MISCOUNT"), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("-0.337835").compareTo(captor.getValue().getValuationAmount()));
+    }
+
+    @Test
+    void c11_approvalUsesCountTimeCostAfterProductCostChanges() {
+        Product product = product(50, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(7, "THEFT_SHRINKAGE"), 99L);
+        product.setCostPrice(new BigDecimal("9.00"));
+        stockCountService.approve(sheet.getId(), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("-15.00").compareTo(captor.getValue().getValuationAmount()));
+        assertEquals(47, product.getStockQuantity());
+    }
+
+    @Test
     void syncWithAnAlreadyUsedKeyReturnsTheExistingSheetWithoutWritingAgain() {
         Product product = product(50, "5.00");
         CountSheet existing = inProgressSheet(product, 10);

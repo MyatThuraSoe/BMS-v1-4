@@ -24,6 +24,12 @@ public class PurchaseCreateRequest {
 
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
+    /**
+     * D2: when false (the default) the purchase tax is non-recoverable and is
+     * capitalised into landed cost. Set true for recoverable (input) tax.
+     */
+    private Boolean taxRecoverable = false;
+
     private String paymentStatus;
 
     /** ISO currency of the supplier invoice, e.g. USD. */
@@ -55,6 +61,8 @@ public class PurchaseCreateRequest {
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
+    public Boolean getTaxRecoverable() { return taxRecoverable; }
+    public void setTaxRecoverable(Boolean taxRecoverable) { this.taxRecoverable = taxRecoverable; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
     public String getCurrencyCode() { return currencyCode; }

@@ -38,7 +38,7 @@ public class OrderItem {
     @Column(name = "tax_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
-    @Column(name = "cost_price_at_order", precision = 10, scale = 2)
+    @Column(name = "cost_price_at_order", precision = 19, scale = 6)
     private BigDecimal costPriceAtOrder;
 
     @PrePersist

@@ -39,7 +39,7 @@ public class SaleItem {
     @Column(name = "tax_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
-    @Column(name = "cost_price_at_sale", precision = 10, scale = 2)
+    @Column(name = "cost_price_at_sale", precision = 19, scale = 6)
     private BigDecimal costPriceAtSale;
 
     @Column(name = "quantity_refunded", nullable = false)

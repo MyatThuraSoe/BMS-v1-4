@@ -41,7 +41,7 @@ public class CountSheetItem {
     @Column(name = "reason_code", length = 50)
     private String reasonCode;
 
-    @Column(name = "valuation_amount", precision = 19, scale = 2)
+    @Column(name = "valuation_amount", precision = 19, scale = 6)
     private BigDecimal valuationAmount;
 
     @Column(name = "counted_at")

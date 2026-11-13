@@ -29,6 +29,27 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
     List<StockMovement> findByReference(@Param("referenceType") StockMovement.ReferenceType referenceType,
                                        @Param("referenceId") Long referenceId);
 
+    /** Movements of one purchase line (receipts, RTV, reversals), oldest first. */
+    @Query("SELECT sm FROM StockMovement sm WHERE sm.referenceType = :referenceType "
+            + "AND sm.referenceId = :referenceId AND sm.purchaseItemId = :purchaseItemId "
+            + "ORDER BY sm.movementDate ASC, sm.id ASC")
+    List<StockMovement> findByReferenceAndPurchaseItem(@Param("referenceType") StockMovement.ReferenceType referenceType,
+                                                       @Param("referenceId") Long referenceId,
+                                                       @Param("purchaseItemId") Long purchaseItemId);
+
+    /** All movements carrying a purchase-line reference, oldest first. */
+    @Query("SELECT sm FROM StockMovement sm WHERE sm.purchaseItemId = :purchaseItemId "
+            + "ORDER BY sm.movementDate ASC, sm.id ASC")
+    List<StockMovement> findByPurchaseItemId(@Param("purchaseItemId") Long purchaseItemId);
+
+    /** Movements of one product at one location code, oldest first (FIFO attribution). */
+    @Query("SELECT sm FROM StockMovement sm WHERE sm.product.id = :productId "
+            + "AND sm.referenceType = :referenceType AND UPPER(sm.location) = UPPER(:location) "
+            + "ORDER BY sm.movementDate ASC, sm.id ASC")
+    List<StockMovement> findByProductAndReferenceTypeAndLocation(@Param("productId") Long productId,
+                                                                 @Param("referenceType") StockMovement.ReferenceType referenceType,
+                                                                 @Param("location") String location);
+
     // Global movement ledger with optional filters. Both joins are ManyToOne so
     // JOIN FETCH stays safe with pagination.
     @Query(value = """

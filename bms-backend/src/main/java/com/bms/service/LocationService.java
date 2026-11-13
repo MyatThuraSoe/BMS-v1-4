@@ -78,6 +78,44 @@ public class LocationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Location not found: " + id));
     }
 
+    public Optional<Location> findByCode(String code) {
+        if (code == null || code.isBlank()) {
+            return Optional.empty();
+        }
+        return locationRepository.findByCodeIgnoreCase(code.trim());
+    }
+
+    /** Units of one product in one bucket; SHOP mirrors Product.stockQuantity. */
+    public int quantityIn(Location location, Product product) {
+        if (location.getType() == Location.LocationType.SHOP) {
+            return product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+        }
+        return locationStockRepository.findByLocationIdAndProductId(location.getId(), product.getId())
+                .map(LocationStock::getQuantity).orElse(0);
+    }
+
+    /**
+     * Removes sellable shop stock, keeping the mirrored SHOP bucket in sync
+     * when one exists (legacy products may never have had one).
+     */
+    public void removeShopStock(Product product, int quantity) {
+        if (quantity <= 0) {
+            return;
+        }
+        int current = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+        if (current < quantity) {
+            throw new BusinessException("Only " + current + " sellable unit(s) of "
+                    + product.getName() + " are available");
+        }
+        product.setStockQuantity(current - quantity);
+        Location shop = getDefault(Location.LocationType.SHOP);
+        locationStockRepository.findForUpdate(shop.getId(), product.getId())
+                .ifPresent(stock -> {
+                    stock.setQuantity(Math.max(0, stock.getQuantity() - quantity));
+                    locationStockRepository.save(stock);
+                });
+    }
+
     public List<Location> list() {
         ensureDefaults();
         return locationRepository.findByIsActiveTrueOrderByNameAsc();
@@ -149,6 +187,17 @@ public class LocationService {
         row.put("locationCode", location.getCode());
         row.put("locationType", location.getType().name());
         return row;
+    }
+
+    /**
+     * Total units the business owns: sellable shop stock plus every non-shop
+     * bucket (backroom/warehouse, quarantine, transit). Product.stockQuantity
+     * mirrors only the SHOP bucket. Must be called while holding the product
+     * row lock, inside the same transaction as the cost calculation.
+     */
+    public int totalOwnedUnits(Product product) {
+        int shop = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+        return shop + (int) locationStockRepository.sumNonShopQuantityByProduct(product.getId());
     }
 
     /** Adds units to a location bucket without touching sellable product stock. */
@@ -433,36 +482,87 @@ public class LocationService {
         productRepository.save(product);
 
         User user = userRepository.findById(userId).orElse(null);
-        StockMovement out = new StockMovement();
-        out.setProduct(product);
-        out.setMovementType(StockMovement.MovementType.TRANSFER_OUT);
-        out.setQuantity(quantity);
-        out.setReferenceType(StockMovement.ReferenceType.TRANSFER);
-        out.setReferenceId(0L);
-        out.setReasonCode(reasonCode);
-        out.setLocation(from.getCode());
-        out.setDescription(description + " (" + from.getCode() + " -> " + to.getCode() + ")");
-        out.setValuationAmount(product.getCostPrice() != null
-                ? product.getCostPrice().multiply(java.math.BigDecimal.valueOf(quantity))
-                    .setScale(2, java.math.RoundingMode.HALF_UP)
-                : java.math.BigDecimal.ZERO);
-        out.setCreatedBy(user);
-        out.setMovementDate(LocalDateTime.now());
-        stockMovementRepository.save(out);
+        java.math.BigDecimal unitCost = product.getCostPrice() != null
+                ? product.getCostPrice() : java.math.BigDecimal.ZERO;
+        java.math.BigDecimal totalValuation = unitCost.multiply(java.math.BigDecimal.valueOf(quantity))
+                .setScale(CostCalculationUtils.COST_SCALE, java.math.RoundingMode.HALF_UP);
+        String movementDescription = description + " (" + from.getCode() + " -> " + to.getCode() + ")";
 
-        StockMovement in = new StockMovement();
-        in.setProduct(product);
-        in.setMovementType(StockMovement.MovementType.TRANSFER_IN);
-        in.setQuantity(quantity);
-        in.setReferenceType(StockMovement.ReferenceType.TRANSFER);
-        in.setReferenceId(0L);
-        in.setReasonCode(reasonCode);
-        in.setLocation(to.getCode());
-        in.setDescription(description + " (" + from.getCode() + " -> " + to.getCode() + ")");
-        in.setValuationAmount(out.getValuationAmount());
-        in.setCreatedBy(user);
-        in.setMovementDate(LocalDateTime.now());
-        stockMovementRepository.save(in);
+        if (from.getType() == Location.LocationType.QUARANTINE) {
+            recordQuarantineTransferOut(product, from, quantity, reasonCode, movementDescription, user, unitCost);
+        } else {
+            stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_OUT,
+                    quantity, from.getCode(), reasonCode, movementDescription, user, totalValuation, null));
+        }
+        stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_IN,
+                quantity, to.getCode(), reasonCode, movementDescription, user, totalValuation, null));
+    }
+
+    /**
+     * Attributes quarantine releases FIFO to the purchase receipts that put
+     * the goods there, so return-to-vendor scoping stays correct after a
+     * release. Legacy stock without a receipt trail stays unattributed.
+     */
+    private void recordQuarantineTransferOut(Product product, Location from, int quantity,
+                                             String reasonCode, String description, User user,
+                                             java.math.BigDecimal unitCost) {
+        int unattributed = quantity;
+        List<StockMovement> receipts = stockMovementRepository.findByProductAndReferenceTypeAndLocation(
+                product.getId(), StockMovement.ReferenceType.RECEIVING, from.getCode());
+        for (StockMovement receipt : receipts) {
+            if (unattributed <= 0) {
+                break;
+            }
+            if (receipt.getMovementType() != StockMovement.MovementType.IN
+                    || receipt.getPurchaseItemId() == null) {
+                continue;
+            }
+            int consumed = 0;
+            for (StockMovement movement : stockMovementRepository.findByPurchaseItemId(receipt.getPurchaseItemId())) {
+                if (from.getCode().equalsIgnoreCase(movement.getLocation())
+                        && (movement.getMovementType() == StockMovement.MovementType.OUT
+                            || movement.getMovementType() == StockMovement.MovementType.TRANSFER_OUT)) {
+                    consumed += movement.getQuantity();
+                }
+            }
+            int remaining = receipt.getQuantity() - consumed;
+            if (remaining <= 0) {
+                continue;
+            }
+            int take = Math.min(unattributed, remaining);
+            stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_OUT,
+                    take, from.getCode(), reasonCode, description, user,
+                    unitCost.multiply(java.math.BigDecimal.valueOf(take))
+                            .setScale(CostCalculationUtils.COST_SCALE, java.math.RoundingMode.HALF_UP),
+                    receipt.getPurchaseItemId()));
+            unattributed -= take;
+        }
+        if (unattributed > 0) {
+            stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_OUT,
+                    unattributed, from.getCode(), reasonCode, description, user,
+                    unitCost.multiply(java.math.BigDecimal.valueOf(unattributed))
+                            .setScale(CostCalculationUtils.COST_SCALE, java.math.RoundingMode.HALF_UP),
+                    null));
+        }
+    }
+
+    private StockMovement transferMovement(Product product, StockMovement.MovementType type, int quantity,
+                                           String locationCode, String reasonCode, String description,
+                                           User user, java.math.BigDecimal valuation, Long purchaseItemId) {
+        StockMovement movement = new StockMovement();
+        movement.setProduct(product);
+        movement.setMovementType(type);
+        movement.setQuantity(quantity);
+        movement.setReferenceType(StockMovement.ReferenceType.TRANSFER);
+        movement.setReferenceId(0L);
+        movement.setPurchaseItemId(purchaseItemId);
+        movement.setReasonCode(reasonCode);
+        movement.setLocation(locationCode);
+        movement.setDescription(description);
+        movement.setValuationAmount(valuation);
+        movement.setCreatedBy(user);
+        movement.setMovementDate(LocalDateTime.now());
+        return movement;
     }
 
     private String nextTransferNumber() {

@@ -413,8 +413,6 @@ const POS = () => {
 
   const shopTaxPercentage = Number(shopInfo?.taxPercentage) || 0;
 
-  const tax = subtotal * (shopTaxPercentage / 100);
-
   // Shop-level discount config (admin-controlled, mirrors tax)
   const discountEnabled = Boolean(shopInfo?.discountEnabled);
   const rawDiscountType = shopInfo?.discountType;
@@ -434,6 +432,10 @@ const POS = () => {
     }
   }
   discountEstimate = Math.max(0, Math.min(discountEstimate, subtotal));
+
+  // Live estimate only: tax applies to the discounted base (server recomputes
+  // authoritatively with per-line allocation on verify).
+  const tax = Math.max(0, subtotal - discountEstimate) * (shopTaxPercentage / 100);
 
   const total = subtotal + tax - discountEstimate;
   const change = cashAmount ? parseFloat(cashAmount) - total : 0;

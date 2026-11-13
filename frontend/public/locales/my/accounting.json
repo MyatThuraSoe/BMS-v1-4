@@ -64,5 +64,14 @@
   "category_marketing": "ကြော်ငြာနှင့် စျေးကွက်မြှင့်တင်ရေး",
   "category_other": "အခြား",
 
-  "outstanding_ar": "အကြွေး ရရန်ငွေ"
+  "outstanding_ar": "အကြွေး ရရန်ငွေ",
+  "inventory_loss": "ကုန်ပစ္စည်း ဆုံးရှုံးမှု",
+  "inventory_loss_breakdown": "အကြောင်းရင်းအလိုက် ကုန်ပစ္စည်း ဆုံးရှုံးမှု",
+  "no_inventory_loss_month": "ဤလအတွက် ကုန်ပစ္စည်း ဆုံးရှုံးမှု မရှိပါ။",
+  "loss_spoilage_expiry": "ပျက်စီး / သက်တမ်းကုန်",
+  "loss_theft_shrinkage": "ခိုးယူ / လျော့နည်း",
+  "loss_damaged_in_store": "ဆိုင်တွင်း ပျက်စီး",
+  "loss_internal_consumption": "အတွင်းသုံး",
+  "loss_shrinkage": "လျော့နည်း (ရေတွက်)",
+  "loss_other": "အခြား"
 }

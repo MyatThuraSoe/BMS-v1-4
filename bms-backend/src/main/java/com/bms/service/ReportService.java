@@ -67,6 +67,9 @@ public class ReportService {
     private StockMovementRepository stockMovementRepository;
 
     @Autowired
+    private InventoryLossService inventoryLossService;
+
+    @Autowired
     private JdbcTemplate jdbcTemplate;
 
     @Autowired
@@ -616,6 +619,21 @@ public class ReportService {
                     expense.getAmount(), BigDecimal::add);
         }
 
+        // P3: operating inventory losses (write-offs, damage, theft, count shrinkage)
+        // are expenses too. Same shared source the GL journal reads, so I4 holds.
+        Map<String, BigDecimal> inventoryLosses = inventoryLossService.lossesByReason(startDateTime, endDateTime);
+        BigDecimal totalInventoryLoss = BigDecimal.ZERO;
+        List<AccountingSummaryResponse.ExpenseCategorySummary> lossSummaries = new ArrayList<>();
+        for (Map.Entry<String, BigDecimal> lossEntry : inventoryLosses.entrySet()) {
+            totalInventoryLoss = totalInventoryLoss.add(lossEntry.getValue());
+            AccountingSummaryResponse.ExpenseCategorySummary lossSummary =
+                    new AccountingSummaryResponse.ExpenseCategorySummary();
+            lossSummary.setCategory(lossEntry.getKey());
+            lossSummary.setAmount(lossEntry.getValue());
+            lossSummaries.add(lossSummary);
+        }
+        totalExpenses = totalExpenses.add(totalInventoryLoss);
+
         // ONE revenue definition across every report: tax-EXCLUSIVE and already
         // net of returns, identical to the Daily Sales report and Profit summary.
         // The old tax-inclusive gross disagreed with the daily "Total Revenue" and,
@@ -645,6 +663,8 @@ public class ReportService {
             summaries.add(summary);
         });
         response.setExpensesByCategory(summaries);
+        response.setTotalInventoryLoss(totalInventoryLoss);
+        response.setInventoryLossByReason(lossSummaries);
         response.setTotalRefunds(totalRefunds);
         response.setOutstandingAr(saleRepository.sumOutstandingAr());
 
@@ -703,6 +723,7 @@ public class ReportService {
             if (expense.getDeletedAt() != null) continue;
             totalExpenses = totalExpenses.add(expense.getAmount());
         }
+        totalExpenses = totalExpenses.add(inventoryLossService.totalLosses(startDateTime, endDateTime));
 
         BigDecimal grossProfit = totalIncome.subtract(totalCogs);
         BigDecimal netProfit = grossProfit.subtract(totalExpenses);

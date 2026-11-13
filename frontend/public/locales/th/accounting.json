@@ -48,5 +48,14 @@
   "category_maintenance": "ซ่อมบำรุง",
   "category_marketing": "การตลาด",
   "category_other": "อื่น ๆ",
-  "outstanding_ar": "ลูกหนี้คงค้าง (ที่ต้องเก็บ)"
+  "outstanding_ar": "ลูกหนี้คงค้าง (ที่ต้องเก็บ)",
+  "inventory_loss": "สินค้าสูญหาย/เสียหาย",
+  "inventory_loss_breakdown": "สินค้าสูญหายตามสาเหตุ",
+  "no_inventory_loss_month": "ไม่มีการสูญหายของสินค้าในเดือนนี้",
+  "loss_spoilage_expiry": "เสื่อมสภาพ / หมดอายุ",
+  "loss_theft_shrinkage": "ขโมย / สูญหาย",
+  "loss_damaged_in_store": "เสียหายในร้าน",
+  "loss_internal_consumption": "ใช้ภายใน",
+  "loss_shrinkage": "สูญหาย (นับสต็อก)",
+  "loss_other": "อื่น ๆ"
 }

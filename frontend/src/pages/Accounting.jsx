@@ -135,6 +135,8 @@ const Accounting = () => {
   };
 
   const expenseBreakdown = summary.expensesByCategory || [];
+  const inventoryLossBreakdown = summary.inventoryLossByReason || [];
+  const lossLabel = (cat) => t(`loss_${String(cat).toLowerCase()}`, { defaultValue: cat });
 
   return (
     <Box>
@@ -238,6 +240,36 @@ const Accounting = () => {
           </Paper>
         </Grid>
       </Grid>
+
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>{t('inventory_loss_breakdown')}</Typography>
+        {inventoryLossBreakdown.length === 0 ? (
+          <Typography color="text.secondary">{t('no_inventory_loss_month')}</Typography>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('category')}</TableCell>
+                  <TableCell align="right">{t('amount')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {inventoryLossBreakdown.map((row) => (
+                  <TableRow key={row.category}>
+                    <TableCell>{lossLabel(row.category)}</TableCell>
+                    <TableCell align="right">{formatCurrency(row.amount)}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>{t('inventory_loss')}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(summary.totalInventoryLoss || 0)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingExpense ? t('edit_expense') : t('add_expense')}</DialogTitle>

@@ -133,7 +133,7 @@ public class ProductController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<ProductResponse>> updateProduct(
             @PathVariable Long id,
-            @Valid @RequestBody ProductCreateRequest request,
+            @Valid @RequestBody com.bms.dto.request.ProductUpdateRequest request,
             Authentication authentication) {
         org.springframework.security.core.userdetails.UserDetails userDetails =
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
@@ -141,6 +141,24 @@ public class ProductController {
         Product product = productService.updateProduct(id, request, userId);
         ProductResponse response = convertToResponse(product);
         return ResponseEntity.ok(new ApiResponse<>(true, "Product updated successfully", response));
+    }
+
+    /**
+     * C4/D4: explicit, reasoned cost revaluation. ADMIN only — a MANAGER must
+     * not be able to revalue stock. Rejects stale versions and short reasons.
+     */
+    @PostMapping("/{id}/cost-adjustment")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<ProductResponse>> adjustCost(
+            @PathVariable Long id,
+            @Valid @RequestBody com.bms.dto.request.CostAdjustmentRequest request,
+            Authentication authentication) {
+        org.springframework.security.core.userdetails.UserDetails userDetails =
+            (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
+        Long userId = userService.findByUsername(userDetails.getUsername()).getId();
+        Product product = productService.adjustCost(id, request, userId);
+        ProductResponse response = convertToResponse(product);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Cost adjusted successfully", response));
     }
 
     @DeleteMapping("/{id}")
@@ -222,8 +240,10 @@ public class ProductController {
 
     @GetMapping("/{id}/price-history")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<List<PriceHistoryDto>>> getPriceHistory(@PathVariable Long id) {
-        List<PriceHistoryDto> history = productService.getPriceHistory(id);
+    public ResponseEntity<ApiResponse<List<PriceHistoryDto>>> getPriceHistory(
+            @PathVariable Long id,
+            @RequestParam(required = false) com.bms.entity.ProductPriceHistory.PriceType priceType) {
+        List<PriceHistoryDto> history = productService.getPriceHistory(id, priceType);
         return ResponseEntity.ok(new ApiResponse<>(true, "Price history retrieved successfully", history));
     }
 
@@ -269,6 +289,7 @@ public class ProductController {
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
         response.setTaxRate(product.getTaxRate());
+        response.setVersion(product.getVersion());
         response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
         response.setAvailableQuantity(product.getAvailableQuantity());

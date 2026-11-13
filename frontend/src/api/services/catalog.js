@@ -26,6 +26,15 @@ export const productService = {
     return response.data;
   },
 
+  // C4/D4: explicit, reasoned cost revaluation (ADMIN only). expectedVersion
+  // guards against overwriting a cost that a receipt has already moved.
+  adjustCost: async (id, { newCost, reason, expectedVersion }) => {
+    const response = await apiClient.post(`/products/${id}/cost-adjustment`, {
+      newCost, reason, expectedVersion,
+    });
+    return response.data;
+  },
+
   delete: async (id) => {
     const response = await apiClient.delete(`/products/${id}`);
     return response.data;
@@ -85,8 +94,9 @@ export const productService = {
     return response.data;
   },
 
-  getPriceHistory: async (productId) => {
-    const response = await apiClient.get(`/products/${productId}/price-history`);
+  getPriceHistory: async (productId, priceType) => {
+    const query = priceType ? `?priceType=${encodeURIComponent(priceType)}` : '';
+    const response = await apiClient.get(`/products/${productId}/price-history${query}`);
     return response.data;
   },
 

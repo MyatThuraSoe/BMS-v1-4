@@ -36,7 +36,7 @@ public class Product {
     @Column(name = "unit_price", nullable = false, precision = 10, scale = 2)
     private BigDecimal unitPrice;
     
-    @Column(name = "cost_price", precision = 10, scale = 2)
+    @Column(name = "cost_price", precision = 19, scale = 6)
     private BigDecimal costPrice;
     
     @Column(name = "tax_rate", precision = 5, scale = 2)

@@ -83,4 +83,14 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
             "GROUP BY pi.product.id, pi.product.name " +
             "ORDER BY totalQty DESC")
     List<Object[]> findTopProductsBySupplierId(@Param("supplierId") Long supplierId, Pageable pageable);
+
+    /**
+     * C5/C6 (D2): legacy purchases predate taxRecoverable. The old code never
+     * capitalised tax into cost, i.e. it behaved as recoverable tax, so backfill
+     * null rows to true once. New purchases set the flag explicitly (default
+     * false). The WHERE clause makes re-runs no-ops.
+     */
+    @org.springframework.data.jpa.repository.Modifying
+    @Query("UPDATE Purchase p SET p.taxRecoverable = true WHERE p.taxRecoverable IS NULL")
+    int backfillLegacyTaxRecoverable();
 }

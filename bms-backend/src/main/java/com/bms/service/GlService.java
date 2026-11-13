@@ -30,17 +30,20 @@ public class GlService {
     private final PurchaseRepository purchaseRepository;
     private final SaleRepository saleRepository;
     private final StockMovementRepository stockMovementRepository;
+    private final InventoryLossService inventoryLossService;
 
     public GlService(GlAccountRepository accountRepository,
                      GlMappingRepository mappingRepository,
                      PurchaseRepository purchaseRepository,
                      SaleRepository saleRepository,
-                     StockMovementRepository stockMovementRepository) {
+                     StockMovementRepository stockMovementRepository,
+                     InventoryLossService inventoryLossService) {
         this.accountRepository = accountRepository;
         this.mappingRepository = mappingRepository;
         this.purchaseRepository = purchaseRepository;
         this.saleRepository = saleRepository;
         this.stockMovementRepository = stockMovementRepository;
+        this.inventoryLossService = inventoryLossService;
     }
 
     // ------------------------------------------------------------------
@@ -179,6 +182,7 @@ public class GlService {
                 continue;
             }
             BigDecimal amount = purchase.getTotalAmount()
+                    .subtract(purchase.getReturnedAmount())
                     .multiply(purchase.getExchangeRate())
                     .setScale(2, RoundingMode.HALF_UP);
             addPair(entries, accounts, purchase.getPurchaseDate(),
@@ -192,9 +196,10 @@ public class GlService {
             GlMapping.EventType debitAccount = sale.getSaleType() == Sale.SaleType.CREDIT
                     ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.CASH;
             BigDecimal total = money(sale.getTotalAmount());
-            BigDecimal discount = money(sale.getDiscountAmount())
-                    .add(money(sale.getPromotionDiscount()))
-                    .add(money(sale.getPriceListDiscount()));
+            // Promotion / price-list discounts are already netted out of the
+            // stored line prices (subtotal); only the header discount is an
+            // additional debit, otherwise the journal double-counts them.
+            BigDecimal discount = money(sale.getDiscountAmount());
             BigDecimal revenue = money(sale.getSubtotal());
             BigDecimal tax = money(sale.getTaxAmount());
             String reference = sale.getInvoiceNumber();
@@ -223,7 +228,8 @@ public class GlService {
             }
         }
 
-        // Stock write-offs / count variances / RTV: expense debit, inventory credit.
+        // Stock write-offs / count variances / RTV. Operating losses come from the
+        // shared InventoryLossService so GL expense equals P&L expense (P3 / I4).
         for (StockMovement movement : stockMovementRepository.findForJournal(
                 start.atStartOfDay(), end.plusDays(1).atStartOfDay())) {
             BigDecimal valuation = money(movement.getValuationAmount());
@@ -232,19 +238,28 @@ public class GlService {
             }
             LocalDate date = movement.getMovementDate().toLocalDate();
             String reference = "MOV-" + movement.getId();
+            String description = movement.getDescription() != null
+                    ? movement.getDescription() : "Stock movement";
+
+            if (inventoryLossService.isOperatingLoss(movement)) {
+                addPair(entries, accounts, date, reference, description,
+                        GlMapping.EventType.OPERATING_EXPENSE, GlMapping.EventType.INVENTORY,
+                        valuation.abs());
+                continue;
+            }
             if ("COUNT_CORRECTION".equalsIgnoreCase(movement.getReasonCode())
                     || "MISCOUNT".equalsIgnoreCase(movement.getReasonCode())) {
                 // Neutral inventory correction: no P&L impact.
                 continue;
             }
+            // Remaining movements (RTV, revaluations, gains) keep their existing
+            // classification; RTV reclassification is P4.4 and revaluation entries P4.5.
             if (valuation.signum() < 0) {
-                addPair(entries, accounts, date, reference,
-                        movement.getDescription() != null ? movement.getDescription() : "Stock write-off",
+                addPair(entries, accounts, date, reference, description,
                         GlMapping.EventType.OPERATING_EXPENSE, GlMapping.EventType.INVENTORY,
                         valuation.abs());
             } else {
-                addPair(entries, accounts, date, reference,
-                        movement.getDescription() != null ? movement.getDescription() : "Stock adjustment",
+                addPair(entries, accounts, date, reference, description,
                         GlMapping.EventType.INVENTORY, GlMapping.EventType.OPERATING_EXPENSE,
                         valuation);
             }

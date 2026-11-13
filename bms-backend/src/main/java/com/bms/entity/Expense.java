@@ -55,6 +55,7 @@ public class Expense {
         SUPPLIES,
         MAINTENANCE,
         MARKETING,
+        PURCHASE_VARIANCE,
         OTHER
     }
 

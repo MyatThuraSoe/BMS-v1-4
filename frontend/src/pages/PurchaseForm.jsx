@@ -108,6 +108,7 @@ const PurchaseForm = () => {
   );
   const [discountAmount, setDiscountAmount] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
+  const [taxRecoverable, setTaxRecoverable] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState('PENDING');
   const [currencyCode, setCurrencyCode] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState(1);
@@ -137,6 +138,7 @@ const PurchaseForm = () => {
       setItems(p.items || []);
       setDiscountAmount(p.discountAmount || 0);
       setTaxRate(p.taxAmount || 0);
+      setTaxRecoverable(p.taxRecoverable || false);
       setPaymentStatus(p.paymentStatus || 'PENDING');
       setCurrencyCode(p.currencyCode || 'USD');
       setExchangeRate(p.exchangeRate ?? 1);
@@ -160,11 +162,14 @@ const PurchaseForm = () => {
     return (subtotal - discount) * (rate / 100);
   }, [taxRate, discount, subtotal]);
 
-  const total = useMemo(() => Math.max(0, subtotal - discount + tax), [subtotal, discount, tax]);
-
   const landedCostTotal = useMemo(
     () => expenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0),
     [expenses]
+  );
+
+  const total = useMemo(
+    () => Math.max(0, subtotal - discount + tax + landedCostTotal),
+    [subtotal, discount, tax, landedCostTotal]
   );
 
   const addExpense = () => {
@@ -240,6 +245,7 @@ const PurchaseForm = () => {
       items: cleanItems,
       discountAmount: Math.round(discount * 100) / 100,
       taxAmount: Math.round(tax * 100) / 100,
+      taxRecoverable,
       paymentStatus,
       currencyCode: (currencyCode || 'USD').trim().toUpperCase(),
       exchangeRate: Number(exchangeRate) || 1,
@@ -551,6 +557,20 @@ const PurchaseForm = () => {
                     </Grid>
                   </Grid>
 
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={taxRecoverable}
+                        onChange={(e) => setTaxRecoverable(e.target.checked)}
+                        disabled={isEdit}
+                      />
+                    )}
+                    label="Recoverable tax"
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+                    Off (default): tax is non-recoverable and capitalised into inventory cost. On: tax stays out of cost and is credited pro-rata on returns.
+                  </Typography>
+
                   <FormControl fullWidth size="small">
                     <InputLabel>{t('payment_status')}</InputLabel>
                     <Select
@@ -588,8 +608,26 @@ const PurchaseForm = () => {
                   <Divider />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="h6" fontWeight="bold">{t('grand_total')}</Typography>
-                    <Typography variant="h6" fontWeight="bold">{formatCurrency(total)}</Typography>
+                    <Typography variant="h6" fontWeight="bold">
+                      {formatCurrency(isEdit ? (existingPurchase?.data?.totalAmount ?? total) : total)}
+                    </Typography>
                   </Box>
+                  {isEdit && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">Payable</Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {formatCurrency(existingPurchase?.data?.payableAmount ?? 0)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {isEdit && Number(existingPurchase?.data?.varianceAmount) > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">Purchase variance (expensed)</Typography>
+                      <Typography variant="body1" color="error.main">
+                        {formatCurrency(existingPurchase?.data?.varianceAmount)}
+                      </Typography>
+                    </Box>
+                  )}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">{t('payment_status')}</Typography>
                     <Chip size="small" label={t(paymentStatus.toLowerCase())} color={statusColor[paymentStatus] || 'default'} />

@@ -33,6 +33,14 @@ public class StockMovement {
     
     @Column(name = "reference_id", nullable = false)
     private Long referenceId;
+
+    /**
+     * Purchase line this movement belongs to (receipts, RTV, reversals).
+     * Plain column instead of a FK association so SQLite ddl-auto can add it
+     * to existing databases; null on legacy and non-purchase movements.
+     */
+    @Column(name = "purchase_item_id")
+    private Long purchaseItemId;
     
     @Column(length = 1000)
     private String description;
@@ -46,7 +54,7 @@ public class StockMovement {
     private String location;
 
     /** Monetary value of the movement (variance x unit cost, landed cost, ...). */
-    @Column(name = "valuation_amount", precision = 19, scale = 2)
+    @Column(name = "valuation_amount", precision = 19, scale = 6)
     private java.math.BigDecimal valuationAmount;
 
     @ManyToOne(fetch = FetchType.LAZY)
@@ -60,11 +68,11 @@ public class StockMovement {
     private LocalDateTime createdAt;
     
     public enum MovementType {
-        IN, OUT, ADJUSTMENT, ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_IN, TRANSFER_OUT
+        IN, OUT, ADJUSTMENT, ADJUSTMENT_IN, ADJUSTMENT_OUT, TRANSFER_IN, TRANSFER_OUT, REVALUATION
     }
     
     public enum ReferenceType {
-        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN, STOCK_COUNT, TRANSFER, RECEIVING, RTV
+        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN, STOCK_COUNT, TRANSFER, RECEIVING, RTV, OPENING_BALANCE
     }
     
     @PrePersist
@@ -93,6 +101,9 @@ public class StockMovement {
     
     public Long getReferenceId() { return referenceId; }
     public void setReferenceId(Long referenceId) { this.referenceId = referenceId; }
+
+    public Long getPurchaseItemId() { return purchaseItemId; }
+    public void setPurchaseItemId(Long purchaseItemId) { this.purchaseItemId = purchaseItemId; }
     
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

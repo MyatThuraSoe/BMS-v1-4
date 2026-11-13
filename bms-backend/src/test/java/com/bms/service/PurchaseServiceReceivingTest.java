@@ -127,6 +127,8 @@ class PurchaseServiceReceivingTest {
         when(purchaseRepository.findById(1L)).thenReturn(Optional.of(purchase));
         when(locationService.getDefault(Location.LocationType.SHOP)).thenReturn(shop);
         when(locationService.getDefault(Location.LocationType.QUARANTINE)).thenReturn(quarantine);
+        // Owned position before receipt: 10 shop units, no other buckets.
+        when(locationService.totalOwnedUnits(product)).thenReturn(10);
         when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
         when(productRepository.save(any(Product.class)))
@@ -155,8 +157,8 @@ class PurchaseServiceReceivingTest {
         // Only the 4 sellable units hit shop-floor stock; 2 go to quarantine.
         assertEquals(14, product.getStockQuantity());
 
-        // (4.00 * 10 old + 5.00 * 6 received) / 16 units = 4.375 -> 4.38
-        assertEquals(0, product.getCostPrice().compareTo(new BigDecimal("4.38")));
+        // (4.00 * 10 old + 5.00 * 6 received) / 16 units = 4.375 (C7 keeps scale 6).
+        assertEquals(0, product.getCostPrice().compareTo(new BigDecimal("4.375")));
 
         assertEquals(6, item.getReceivedQuantity());
         assertEquals("PARTIAL", response.getReceivingStatus());

@@ -14,6 +14,8 @@ import java.util.Optional;
 @Repository
 public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
 
+    boolean existsByProductId(Long productId);
+
     @Query("""
         SELECT si.sale.customer.id, si.sale.customer.firstName, si.sale.customer.lastName,
                si.sale.customer.phone,
