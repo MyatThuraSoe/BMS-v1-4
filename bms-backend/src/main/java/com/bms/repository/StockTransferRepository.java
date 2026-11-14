@@ -13,7 +13,7 @@ import java.util.Optional;
 public interface StockTransferRepository extends JpaRepository<StockTransfer, Long> {
 
     @EntityGraph(attributePaths = {"fromLocation", "toLocation", "items", "items.product"})
-    Page<StockTransfer> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    Page<StockTransfer> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
 
     @EntityGraph(attributePaths = {"fromLocation", "toLocation", "items", "items.product"})
     Optional<StockTransfer> findById(Long id);

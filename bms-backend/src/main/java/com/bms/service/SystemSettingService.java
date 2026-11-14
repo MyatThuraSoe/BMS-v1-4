@@ -46,6 +46,7 @@ public class SystemSettingService {
 
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse createSetting(SystemSettingRequest request, Long userId) {
+        assertEditable(request.getSettingKey());
         if (systemSettingRepository.existsBySettingKey(request.getSettingKey())) {
             throw new BusinessException("Setting with key '" + request.getSettingKey() + "' already exists");
         }
@@ -68,9 +69,11 @@ public class SystemSettingService {
 
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSetting(Long id, SystemSettingRequest request, Long userId) {
+        assertEditable(request.getSettingKey());
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));
 
+        assertEditable(setting.getSettingKey());
         String oldValues = setting.toString();
 
         if (!setting.getSettingKey().equals(request.getSettingKey()) && 
@@ -98,6 +101,7 @@ public class SystemSettingService {
         SystemSetting setting = systemSettingRepository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
 
+        assertEditable(setting.getSettingKey());
         String oldValues = setting.toString();
 
         setting.setSettingValue(settingValue);
@@ -116,6 +120,7 @@ public class SystemSettingService {
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));
 
+        assertEditable(setting.getSettingKey());
         systemSettingRepository.delete(setting);
 
         auditLogService.logAction(userId, "SETTING_DELETE", 
@@ -127,6 +132,12 @@ public class SystemSettingService {
         SystemSetting setting = systemSettingRepository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
         return convertToResponse(setting);
+    }
+
+    private void assertEditable(String key) {
+        if (key != null && key.startsWith("accounting.")) {
+            throw new BusinessException("Internal accounting settings cannot be edited through this endpoint");
+        }
     }
 
     private SystemSettingResponse convertToResponse(SystemSetting setting) {

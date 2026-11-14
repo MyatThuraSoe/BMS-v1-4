@@ -253,15 +253,6 @@ const ProductDetail = () => {
 
           <Grid item xs={6} md={3}>
             <Typography variant="caption" color="text.secondary">
-              {t('tax_rate')}
-            </Typography>
-            <Typography variant="body1">
-              {product.taxRate ? `${product.taxRate}%` : '0%'}
-            </Typography>
-          </Grid>
-
-          <Grid item xs={6} md={3}>
-            <Typography variant="caption" color="text.secondary">
               {t('stock_quantity')}
             </Typography>
             <Typography

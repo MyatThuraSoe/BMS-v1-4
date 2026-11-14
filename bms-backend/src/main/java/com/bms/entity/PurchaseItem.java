@@ -30,7 +30,7 @@ public class PurchaseItem {
     @Column(nullable = false)
     private Integer quantity;
 
-    @Column(name = "unit_cost", nullable = false, precision = 10, scale = 2)
+    @Column(name = "unit_cost", nullable = false, precision = 19, scale = 6)
     private BigDecimal unitCost;
 
     @Column(name = "total_cost", nullable = false, precision = 10, scale = 2)
@@ -49,11 +49,11 @@ public class PurchaseItem {
     private BigDecimal exchangeRate = BigDecimal.ONE;
 
     /** Unit cost including allocated freight/duty/insurance. */
-    @Column(name = "landed_unit_cost", precision = 19, scale = 4)
+    @Column(name = "landed_unit_cost", precision = 19, scale = 6)
     private BigDecimal landedUnitCost;
 
     /** Landed unit cost converted to the shop's base currency. */
-    @Column(name = "base_unit_cost", precision = 19, scale = 4)
+    @Column(name = "base_unit_cost", precision = 19, scale = 6)
     private BigDecimal baseUnitCost;
 
     @PrePersist

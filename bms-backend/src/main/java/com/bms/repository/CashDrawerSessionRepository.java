@@ -20,25 +20,25 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
 
     Optional<CashDrawerSession> findByDrawerIdAndStatus(Long drawerId, DrawerSessionStatus status);
 
-    Optional<CashDrawerSession> findFirstByStatusOrderByOpenedAtDesc(DrawerSessionStatus status);
+    Optional<CashDrawerSession> findFirstByStatusOrderByOpenedAtDescIdDesc(DrawerSessionStatus status);
 
-    List<CashDrawerSession> findByStatusOrderByOpenedAtAsc(DrawerSessionStatus status);
+    List<CashDrawerSession> findByStatusOrderByOpenedAtAscIdAsc(DrawerSessionStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM CashDrawerSession s WHERE s.id = :id")
     Optional<CashDrawerSession> findByIdForUpdate(@Param("id") Long id);
 
-    @Query("SELECT s FROM CashDrawerSession s WHERE s.openedAt BETWEEN :startDate AND :endDate ORDER BY s.openedAt DESC")
+    @Query("SELECT s FROM CashDrawerSession s WHERE s.openedAt BETWEEN :startDate AND :endDate ORDER BY s.openedAt DESC, s.id DESC")
     Page<CashDrawerSession> findByDateRange(
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate,
         Pageable pageable
     );
 
-    @Query("SELECT s FROM CashDrawerSession s WHERE s.status = 'OPEN' ORDER BY s.openedAt DESC")
+    @Query("SELECT s FROM CashDrawerSession s WHERE s.status = 'OPEN' ORDER BY s.openedAt DESC, s.id DESC")
     List<CashDrawerSession> findOpenSessions();
 
-    @Query("SELECT s FROM CashDrawerSession s WHERE s.drawer.id = :drawerId AND s.status = 'OPEN' ORDER BY s.openedAt ASC")
+    @Query("SELECT s FROM CashDrawerSession s WHERE s.drawer.id = :drawerId AND s.status = 'OPEN' ORDER BY s.openedAt ASC, s.id ASC")
     List<CashDrawerSession> findOpenSessionsForDrawer(@Param("drawerId") Long drawerId);
 
     /**
@@ -46,7 +46,7 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
      * closed today must be reconciled in today's end-of-day report.
      */
     @Query("SELECT s FROM CashDrawerSession s WHERE s.openedAt <= :endDate " +
-           "AND (s.closedAt IS NULL OR s.closedAt >= :startDate) ORDER BY s.openedAt ASC")
+           "AND (s.closedAt IS NULL OR s.closedAt >= :startDate) ORDER BY s.openedAt ASC, s.id ASC")
     List<CashDrawerSession> findForReport(
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate

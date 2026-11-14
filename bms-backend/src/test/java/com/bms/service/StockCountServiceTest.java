@@ -20,8 +20,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -31,6 +34,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -63,13 +67,25 @@ class StockCountServiceTest {
     @Mock
     private AuditLogService auditLogService;
 
+    @Mock
+    private LedgerPostingService ledgerPostingService;
+
+    @Mock
+    private ShopTimeService shopTimeService;
+
+    @Mock
+    private PeriodGuard periodGuard;
+
     private StockCountService stockCountService;
 
     @BeforeEach
     void setUp() {
         stockCountService = new StockCountService(countSheetRepository, countSheetItemRepository,
                 productRepository, saleItemRepository, stockMovementRepository, userRepository,
-                systemSettingRepository, auditLogService);
+                systemSettingRepository, auditLogService, ledgerPostingService, shopTimeService);
+        ReflectionTestUtils.setField(stockCountService, "periodGuard", periodGuard);
+        lenient().when(shopTimeService.now()).thenReturn(LocalDateTime.now());
+        lenient().when(shopTimeService.today()).thenReturn(LocalDate.now());
     }
 
     private Product product(int stockQuantity, String costPrice) {
@@ -176,6 +192,41 @@ class StockCountServiceTest {
         verify(productRepository, never()).save(any(Product.class));
         verify(stockMovementRepository, never()).save(any(StockMovement.class));
         verify(countSheetRepository).save(sheet);
+    }
+
+    @Test
+    void c7_countVarianceKeepsSixDecimalValuation() {
+        Product product = product(50, "0.337835");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(9, "MISCOUNT"), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("-0.337835").compareTo(captor.getValue().getValuationAmount()));
+    }
+
+    @Test
+    void c11_approvalUsesCountTimeCostAfterProductCostChanges() {
+        Product product = product(50, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(7, "THEFT_SHRINKAGE"), 99L);
+        product.setCostPrice(new BigDecimal("9.00"));
+        stockCountService.approve(sheet.getId(), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("-15.00").compareTo(captor.getValue().getValuationAmount()));
+        assertEquals(47, product.getStockQuantity());
     }
 
     @Test

@@ -231,7 +231,7 @@ public class CashDrawerSessionService {
     }
 
     public List<DrawerSessionResponse> getActiveSessions() {
-        return cashDrawerSessionRepository.findByStatusOrderByOpenedAtAsc(DrawerSessionStatus.OPEN)
+        return cashDrawerSessionRepository.findByStatusOrderByOpenedAtAscIdAsc(DrawerSessionStatus.OPEN)
                 .stream()
                 .map(session -> toResponse(session, false, false))
                 .collect(Collectors.toList());
@@ -516,7 +516,7 @@ public class CashDrawerSessionService {
         response.setAdjustments(summary.getOrDefault(DrawerMovementType.ADJUSTMENT, BigDecimal.ZERO));
 
         List<CashDrawerMovement> movements =
-                cashDrawerMovementRepository.findByDrawerSessionIdOrderByOccurredAtAsc(session.getId());
+                cashDrawerMovementRepository.findByDrawerSessionIdOrderByOccurredAtAscIdAsc(session.getId());
         response.setMovementCount(movements.size());
         Map<String, BigDecimal> breakdown = new HashMap<>();
         summary.forEach((type, amount) -> breakdown.put(type.name(), amount));

@@ -2,13 +2,18 @@ package com.bms.service;
 
 import com.bms.dto.request.ReceivePurchaseRequest;
 import com.bms.dto.response.PurchaseResponse;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.Location;
 import com.bms.entity.Product;
 import com.bms.entity.Purchase;
 import com.bms.entity.PurchaseItem;
 import com.bms.entity.StockMovement;
+import com.bms.repository.ExpenseRepository;
+import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.PurchaseItemRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.StockMovementRepository;
@@ -22,6 +27,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -32,6 +38,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +68,18 @@ class PurchaseServiceReceivingTest {
     private LocationService locationService;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private PeriodGuard periodGuard;
+    @Mock
+    private PurchasePaymentService purchasePaymentService;
+    @Mock
+    private ExpenseRepository expenseRepository;
+    @Mock
+    private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock
+    private ProfitLedgerRepository profitLedgerRepository;
+    @Mock
+    private LocationStockRepository locationStockRepository;
 
     @InjectMocks
     private PurchaseService purchaseService;
@@ -121,12 +140,27 @@ class PurchaseServiceReceivingTest {
         quarantine.setCode("QUARANTINE");
         quarantine.setName("Quarantine");
         quarantine.setType(Location.LocationType.QUARANTINE);
+
+        LedgerPostingService ledgerPostingService = new LedgerPostingService();
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLedgerRepository", inventoryLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "profitLedgerRepository", profitLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
+        lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);
+        lenient().when(inventoryLedgerRepository.save(any(InventoryLedger.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(purchasePaymentService.paidAmount(any())).thenReturn(BigDecimal.ZERO);
     }
 
     private void stubReceiving() {
         when(purchaseRepository.findById(1L)).thenReturn(Optional.of(purchase));
         when(locationService.getDefault(Location.LocationType.SHOP)).thenReturn(shop);
         when(locationService.getDefault(Location.LocationType.QUARANTINE)).thenReturn(quarantine);
+        // Owned position before receipt: 10 shop units, no other buckets.
+        when(locationService.totalOwnedUnits(product)).thenReturn(10);
         when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
         when(userRepository.findById(99L)).thenReturn(Optional.empty());
         when(productRepository.save(any(Product.class)))
@@ -155,8 +189,8 @@ class PurchaseServiceReceivingTest {
         // Only the 4 sellable units hit shop-floor stock; 2 go to quarantine.
         assertEquals(14, product.getStockQuantity());
 
-        // (4.00 * 10 old + 5.00 * 6 received) / 16 units = 4.375 -> 4.38
-        assertEquals(0, product.getCostPrice().compareTo(new BigDecimal("4.38")));
+        // (4.00 * 10 old + 5.00 * 6 received) / 16 units = 4.375 (C7 keeps scale 6).
+        assertEquals(0, product.getCostPrice().compareTo(new BigDecimal("4.375")));
 
         assertEquals(6, item.getReceivedQuantity());
         assertEquals("PARTIAL", response.getReceivingStatus());

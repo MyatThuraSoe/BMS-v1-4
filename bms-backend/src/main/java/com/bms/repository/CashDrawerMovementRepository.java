@@ -14,9 +14,9 @@ import java.util.List;
 @Repository
 public interface CashDrawerMovementRepository extends JpaRepository<CashDrawerMovement, Long> {
 
-    List<CashDrawerMovement> findByDrawerSessionIdOrderByOccurredAtAsc(Long drawerSessionId);
+    List<CashDrawerMovement> findByDrawerSessionIdOrderByOccurredAtAscIdAsc(Long drawerSessionId);
 
-    List<CashDrawerMovement> findByDrawerSessionIdAndMovementTypeOrderByOccurredAtAsc(
+    List<CashDrawerMovement> findByDrawerSessionIdAndMovementTypeOrderByOccurredAtAscIdAsc(
         Long drawerSessionId, DrawerMovementType movementType);
 
     @Query("SELECT COALESCE(SUM(m.amount), 0) FROM CashDrawerMovement m WHERE m.drawerSession.id = :sessionId")
@@ -46,9 +46,18 @@ public interface CashDrawerMovementRepository extends JpaRepository<CashDrawerMo
     List<Object[]> summariseByEmployee(@Param("sessionId") Long sessionId);
 
     @Query("SELECT m FROM CashDrawerMovement m WHERE m.occurredAt BETWEEN :startDate AND :endDate " +
-           "AND (:type IS NULL OR m.movementType = :type) ORDER BY m.occurredAt DESC")
+           "AND (:type IS NULL OR m.movementType = :type) ORDER BY m.occurredAt DESC, m.id DESC")
     List<CashDrawerMovement> findForReport(
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate,
         @Param("type") DrawerMovementType type);
+
+    // Half-open [startDate, endDate) drawer ledger for the GL journal (P4.5).
+    @Query("""
+        SELECT m FROM CashDrawerMovement m
+        WHERE m.occurredAt >= :startDate AND m.occurredAt < :endDate
+        ORDER BY m.occurredAt ASC, m.id ASC
+        """)
+    List<CashDrawerMovement> findForJournal(@Param("startDate") LocalDateTime startDate,
+                                            @Param("endDate") LocalDateTime endDate);
 }

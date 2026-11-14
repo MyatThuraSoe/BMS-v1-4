@@ -45,6 +45,27 @@ public class Purchase {
     @Column(name = "discount_amount", precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    /**
+     * D2: when false (the default) the purchase tax is non-recoverable and is
+     * capitalised into landed cost; when true it stays out of inventory cost.
+     */
+    @Column(name = "tax_recoverable")
+    private Boolean taxRecoverable = false;
+
+    /**
+     * D3: unabsorbed landed-cost expense (e.g. freight on a cancelled PO
+     * remainder) expensed to the P&L as purchase variance, in base currency.
+     */
+    @Column(name = "variance_amount", precision = 19, scale = 2)
+    private BigDecimal varianceAmount = BigDecimal.ZERO;
+
+    /**
+     * Cumulative supplier credit from returns-to-vendor (D1).
+     * Payable equals totalAmount - returnedAmount.
+     */
+    @Column(name = "returned_amount", precision = 19, scale = 2)
+    private BigDecimal returnedAmount = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "payment_status", nullable = false)
     private PaymentStatus paymentStatus = PaymentStatus.PENDING;
@@ -138,6 +159,23 @@ public class Purchase {
 
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
+    public boolean isTaxRecoverable() { return taxRecoverable != null && taxRecoverable; }
+    public void setTaxRecoverable(Boolean taxRecoverable) { this.taxRecoverable = taxRecoverable; }
+
+    public BigDecimal getVarianceAmount() {
+        return varianceAmount != null ? varianceAmount : BigDecimal.ZERO;
+    }
+    public void setVarianceAmount(BigDecimal varianceAmount) { this.varianceAmount = varianceAmount; }
+
+    public BigDecimal getReturnedAmount() { return returnedAmount != null ? returnedAmount : BigDecimal.ZERO; }
+    public void setReturnedAmount(BigDecimal returnedAmount) { this.returnedAmount = returnedAmount; }
+
+    /** What is still owed to the supplier for this purchase (D1). */
+    public BigDecimal getPayableAmount() {
+        BigDecimal total = totalAmount != null ? totalAmount : BigDecimal.ZERO;
+        return total.subtract(getReturnedAmount());
+    }
 
     public PaymentStatus getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(PaymentStatus paymentStatus) { this.paymentStatus = paymentStatus; }

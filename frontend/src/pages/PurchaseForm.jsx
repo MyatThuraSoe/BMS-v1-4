@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams, useSearchParams, useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete, Chip, MenuItem, Select, FormControl, InputLabel, Divider, Stack, FormControlLabel, Switch,
+  Box, Typography, TextField, Button, Grid, Paper, Alert, CircularProgress, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, IconButton, Autocomplete, Chip, MenuItem, Divider, Stack, FormControlLabel, Switch,
 } from '@mui/material';
 import { Add as AddIcon, Remove as RemoveIcon, Payments as PaymentsIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -108,7 +108,7 @@ const PurchaseForm = () => {
   );
   const [discountAmount, setDiscountAmount] = useState(0);
   const [taxRate, setTaxRate] = useState(0);
-  const [paymentStatus, setPaymentStatus] = useState('PENDING');
+  const [taxRecoverable, setTaxRecoverable] = useState(false);
   const [currencyCode, setCurrencyCode] = useState('USD');
   const [exchangeRate, setExchangeRate] = useState(1);
   const [expenses, setExpenses] = useState([]);
@@ -137,7 +137,7 @@ const PurchaseForm = () => {
       setItems(p.items || []);
       setDiscountAmount(p.discountAmount || 0);
       setTaxRate(p.taxAmount || 0);
-      setPaymentStatus(p.paymentStatus || 'PENDING');
+      setTaxRecoverable(p.taxRecoverable || false);
       setCurrencyCode(p.currencyCode || 'USD');
       setExchangeRate(p.exchangeRate ?? 1);
       setExpenses(p.expenses || []);
@@ -160,11 +160,14 @@ const PurchaseForm = () => {
     return (subtotal - discount) * (rate / 100);
   }, [taxRate, discount, subtotal]);
 
-  const total = useMemo(() => Math.max(0, subtotal - discount + tax), [subtotal, discount, tax]);
-
   const landedCostTotal = useMemo(
     () => expenses.reduce((sum, expense) => sum + (Number(expense.amount) || 0), 0),
     [expenses]
+  );
+
+  const total = useMemo(
+    () => Math.max(0, subtotal - discount + tax + landedCostTotal),
+    [subtotal, discount, tax, landedCostTotal]
   );
 
   const addExpense = () => {
@@ -240,7 +243,7 @@ const PurchaseForm = () => {
       items: cleanItems,
       discountAmount: Math.round(discount * 100) / 100,
       taxAmount: Math.round(tax * 100) / 100,
-      paymentStatus,
+      taxRecoverable,
       currencyCode: (currencyCode || 'USD').trim().toUpperCase(),
       exchangeRate: Number(exchangeRate) || 1,
       expenses: cleanExpenses,
@@ -255,6 +258,9 @@ const PurchaseForm = () => {
     PARTIAL: 'info',
     PAID: 'success',
   };
+
+  // O3: payment status is derived server-side from recorded payments; never hand-set.
+  const displayedStatus = isEdit ? (existingPurchase?.data?.paymentStatus || 'PENDING') : 'PENDING';
 
   return (
     <Box>
@@ -551,19 +557,19 @@ const PurchaseForm = () => {
                     </Grid>
                   </Grid>
 
-                  <FormControl fullWidth size="small">
-                    <InputLabel>{t('payment_status')}</InputLabel>
-                    <Select
-                      value={paymentStatus}
-                      onChange={(e) => setPaymentStatus(e.target.value)}
-                      label={t('payment_status')}
-                      disabled={isEdit}
-                    >
-                      <MenuItem value="PENDING">{t('pending')}</MenuItem>
-                      <MenuItem value="PARTIAL">{t('partial')}</MenuItem>
-                      <MenuItem value="PAID">{t('paid')}</MenuItem>
-                    </Select>
-                  </FormControl>
+                  <FormControlLabel
+                    control={(
+                      <Switch
+                        checked={taxRecoverable}
+                        onChange={(e) => setTaxRecoverable(e.target.checked)}
+                        disabled={isEdit}
+                      />
+                    )}
+                    label="Recoverable tax"
+                  />
+                  <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+                    Off (default): tax is non-recoverable and capitalised into inventory cost. On: tax stays out of cost and is credited pro-rata on returns.
+                  </Typography>
                 </Stack>
 
                 <Divider sx={{ my: 1 }} />
@@ -588,11 +594,45 @@ const PurchaseForm = () => {
                   <Divider />
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="h6" fontWeight="bold">{t('grand_total')}</Typography>
-                    <Typography variant="h6" fontWeight="bold">{formatCurrency(total)}</Typography>
+                    <Typography variant="h6" fontWeight="bold">
+                      {formatCurrency(isEdit ? (existingPurchase?.data?.totalAmount ?? total) : total)}
+                    </Typography>
                   </Box>
+                  {isEdit && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">Payable</Typography>
+                      <Typography variant="body1" fontWeight="bold">
+                        {formatCurrency(existingPurchase?.data?.payableAmount ?? 0)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {isEdit && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">{t('paid_amount')}</Typography>
+                      <Typography variant="body1" color="success.main">
+                        {formatCurrency(existingPurchase?.data?.paidAmount ?? 0)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {isEdit && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">{t('outstanding')}</Typography>
+                      <Typography variant="body1" color={Number(existingPurchase?.data?.outstandingAmount) > 0 ? 'warning.main' : 'text.secondary'}>
+                        {formatCurrency(existingPurchase?.data?.outstandingAmount ?? 0)}
+                      </Typography>
+                    </Box>
+                  )}
+                  {isEdit && Number(existingPurchase?.data?.varianceAmount) > 0 && (
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <Typography variant="body2" color="text.secondary">Purchase variance (expensed)</Typography>
+                      <Typography variant="body1" color="error.main">
+                        {formatCurrency(existingPurchase?.data?.varianceAmount)}
+                      </Typography>
+                    </Box>
+                  )}
                   <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
                     <Typography variant="body2" color="text.secondary">{t('payment_status')}</Typography>
-                    <Chip size="small" label={t(paymentStatus.toLowerCase())} color={statusColor[paymentStatus] || 'default'} />
+                    <Chip size="small" label={t(displayedStatus.toLowerCase())} color={statusColor[displayedStatus] || 'default'} />
                   </Box>
                 </Stack>
               </Paper>

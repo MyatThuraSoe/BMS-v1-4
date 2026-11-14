@@ -48,5 +48,14 @@
   "category_maintenance": "メンテナンス",
   "category_marketing": "マーケティング",
   "category_other": "その他",
-  "outstanding_ar": "未回収の売掛金（回収予定額）"
+  "outstanding_ar": "未回収の売掛金（回収予定額）",
+  "inventory_loss": "棚卸損失",
+  "inventory_loss_breakdown": "理由別棚卸損失",
+  "no_inventory_loss_month": "今月の棚卸損失はありません。",
+  "loss_spoilage_expiry": "腐敗 / 期限切れ",
+  "loss_theft_shrinkage": "盗難 / 目減り",
+  "loss_damaged_in_store": "店内破損",
+  "loss_internal_consumption": "内部消費",
+  "loss_shrinkage": "目減り（棚卸）",
+  "loss_other": "その他"
 }

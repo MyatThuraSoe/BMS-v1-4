@@ -2,15 +2,17 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
-  Alert, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Select,
+  Alert, Box, Typography, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, Button, IconButton, TablePagination, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Select, Chip, TextField, Divider, Stack, InputLabel, FormControl,
 } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon } from '@mui/icons-material';
+import { Add as AddIcon, Delete as DeleteIcon, Payments as PaymentsIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { purchaseService } from '../api/services';
 import { formatDateTime, formatCurrency } from '../utils/helpers';
 import { useAuth } from '../context/AuthContext';
 import { notifyError, notifySuccess } from '../utils/notify';
 import useListFilters from '../hooks/useListFilters';
+
+const PAYMENT_METHODS = ['CASH', 'BANK_TRANSFER', 'CARD', 'MOBILE_WALLET', 'OTHER'];
 
 const Purchases = () => {
   const { filters, update, detailUrl } = useListFilters({
@@ -20,6 +22,9 @@ const Purchases = () => {
   const { page, size } = filters;
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedPurchase, setSelectedPurchase] = useState(null);
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentPurchase, setPaymentPurchase] = useState(null);
+  const [paymentForm, setPaymentForm] = useState({ amount: '', paymentMethod: 'CASH', notes: '', paymentDate: '' });
   
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -31,14 +36,23 @@ const Purchases = () => {
     queryFn: () => purchaseService.getAll(page, size),
   });
 
-  // ✅ Single consolidated mutation for payment status
-  const updatePaymentStatusMutation = useMutation({
-    mutationFn: ({ id, paymentStatus }) => purchaseService.updatePaymentStatus(id, paymentStatus),
+  const { data: paymentsData, isLoading: paymentsLoading } = useQuery({
+    queryKey: ['purchase-payments', paymentPurchase?.id],
+    queryFn: () => purchaseService.getPayments(paymentPurchase.id),
+    enabled: paymentDialogOpen && !!paymentPurchase,
+  });
+  const payments = paymentsData?.data || [];
+
+  const recordPaymentMutation = useMutation({
+    mutationFn: ({ id, data }) => purchaseService.recordPayment(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['purchases'] });
-      notifySuccess(t('payment_status_updated'));
+      queryClient.invalidateQueries({ queryKey: ['purchase-payments', paymentPurchase?.id] });
+      notifySuccess(t('payment_recorded'));
+      setPaymentDialogOpen(false);
+      setPaymentPurchase(null);
     },
-    onError: (err) => notifyError(err.friendlyMessage || t('update_payment_status_failed')),
+    onError: (err) => notifyError(err.friendlyMessage || t('record_payment_failed')),
   });
 
   const deleteMutation = useMutation({
@@ -59,16 +73,40 @@ const Purchases = () => {
     if (selectedPurchase) deleteMutation.mutate(selectedPurchase.id);
   };
 
-  const handleStatusChange = (e, purchaseId) => {
-    e.stopPropagation();
-    const newStatus = e.target.value;
-    updatePaymentStatusMutation.mutate({ id: purchaseId, paymentStatus: newStatus });
+  const openPaymentDialog = (purchase) => {
+    setPaymentPurchase(purchase);
+    const outstanding = Number(purchase.outstandingAmount || 0);
+    setPaymentForm({
+      amount: outstanding > 0 ? String(outstanding) : '',
+      paymentMethod: 'CASH',
+      notes: '',
+      paymentDate: '',
+    });
+    setPaymentDialogOpen(true);
+  };
+
+  const handleRecordPayment = () => {
+    if (!paymentPurchase) return;
+    const amount = Number(paymentForm.amount);
+    if (!amount || amount <= 0) {
+      notifyError(t('invalid_amount'));
+      return;
+    }
+    recordPaymentMutation.mutate({
+      id: paymentPurchase.id,
+      data: {
+        amount,
+        paymentMethod: paymentForm.paymentMethod,
+        notes: paymentForm.notes?.trim() || null,
+        paymentDate: paymentForm.paymentDate || null,
+      },
+    });
   };
 
   const purchases = purchasesData?.data?.content || [];
   const totalElements = purchasesData?.data?.page?.totalElements || 0;
 
-  // Helper to get color based on status
+  // Helper to get color based on derived status
   const getStatusColor = (status) => {
     switch (status) {
       case 'PAID': return 'success';
@@ -76,6 +114,8 @@ const Purchases = () => {
       default: return 'default';
     }
   };
+
+  const paymentOutstanding = Number(paymentPurchase?.outstandingAmount || 0);
 
   return (
     <Box>
@@ -94,16 +134,18 @@ const Purchases = () => {
               <TableCell>{t('purchase_number')}</TableCell>
               <TableCell>{t('supplier')}</TableCell>
               <TableCell align="right">{t('total')}</TableCell>
+              <TableCell align="right">{t('paid_amount')}</TableCell>
+              <TableCell align="right">{t('outstanding')}</TableCell>
               <TableCell>{t('payment_status')}</TableCell>
               <TableCell sx={{ display: { xs: 'none', md: 'table-cell' } }}>{t('date')}</TableCell>
-              {isManager() && <TableCell align="center" width={80}>{t('actions')}</TableCell>}
+              {isManager() && <TableCell align="center" width={110}>{t('actions')}</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {isLoading ? (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}>{t('loading')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 4 }}>{t('loading')}</TableCell></TableRow>
             ) : purchases.length === 0 ? (
-              <TableRow><TableCell colSpan={6} align="center" sx={{ py: 4 }}>{t('no_purchases_found')}</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 4 }}>{t('no_purchases_found')}</TableCell></TableRow>
             ) : (
               purchases.map((p) => (
                 <TableRow
@@ -117,58 +159,22 @@ const Purchases = () => {
                   <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
                     {formatCurrency(p.totalAmount)}
                   </TableCell>
+                  <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', color: 'success.main' }}>
+                    {formatCurrency(p.paidAmount)}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace', color: Number(p.outstandingAmount) > 0 ? 'warning.main' : 'text.secondary' }}>
+                    {formatCurrency(p.outstandingAmount)}
+                  </TableCell>
                   
-                  {/* ✅ Unified Payment Status Cell */}
-                  <TableCell onClick={(e) => e.stopPropagation()}>
-                    {isManager() ? (
-                      <Select
-                        size="small"
-                        value={p.paymentStatus || 'PENDING'}
-                        onChange={(e) => handleStatusChange(e, p.id)}
-                        sx={{ 
-                          minWidth: 120,
-                          fontWeight: 600,
-                          fontSize: '0.8rem',
-                          borderRadius: 1,
-                          '& .MuiSelect-select': { py: 0.75, pl: 1.5, pr: 4 },
-                          
-                          // ✅ Dynamic coloring based on status
-                          color: `${getStatusColor(p.paymentStatus)}.main`,
-                          bgcolor: `${getStatusColor(p.paymentStatus)}.50`,
-                          '& fieldset': { 
-                            borderColor: `${getStatusColor(p.paymentStatus)}.main` 
-                          },
-                          '&:hover fieldset': {
-                            borderColor: `${getStatusColor(p.paymentStatus)}.dark`,
-                          },
-                          '&.Mui-focused fieldset': {
-                            borderColor: `${getStatusColor(p.paymentStatus)}.main`,
-                            borderWidth: 2,
-                          },
-                          // Color the dropdown arrow icon to match
-                          '& .MuiSvgIcon-root': {
-                            color: `${getStatusColor(p.paymentStatus)}.main`,
-                          }
-                        }}
-                      >
-                        <MenuItem value="PENDING" sx={{ fontWeight: 600 }}>{t('pending')}</MenuItem>
-                        <MenuItem value="PARTIAL" sx={{ fontWeight: 600 }}>{t('partial')}</MenuItem>
-                        <MenuItem value="PAID" sx={{ fontWeight: 600 }}>{t('paid')}</MenuItem>
-                      </Select>
-                    ) : (
-                      // Read-only badge for non-managers (already handles green correctly)
-                      <Box 
-                        sx={{ 
-                          display: 'inline-block', px: 1.5, py: 0.5, borderRadius: 1, fontSize: '0.8rem', fontWeight: 600,
-                          bgcolor: `${getStatusColor(p.paymentStatus)}.50`,
-                          color: `${getStatusColor(p.paymentStatus)}.main`,
-                          border: '1px solid',
-                          borderColor: `${getStatusColor(p.paymentStatus)}.main`
-                        }}
-                      >
-                        {t((p.paymentStatus || 'PENDING').toLowerCase())}
-                      </Box>
-                    )}
+                  {/* Derived payment status — read-only, driven by recorded payments */}
+                  <TableCell>
+                    <Chip
+                      size="small"
+                      variant="outlined"
+                      color={getStatusColor(p.paymentStatus)}
+                      label={t((p.paymentStatus || 'PENDING').toLowerCase())}
+                      sx={{ fontWeight: 600 }}
+                    />
                   </TableCell>
 
                   <TableCell sx={{ display: { xs: 'none', md: 'table-cell' }, color: 'text.secondary' }}>
@@ -178,6 +184,14 @@ const Purchases = () => {
                   {/* ✅ Clean Actions Column */}
                   {isManager() && (
                     <TableCell align="center">
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        title={t('record_payment')}
+                        onClick={(e) => { e.stopPropagation(); openPaymentDialog(p); }}
+                      >
+                        <PaymentsIcon fontSize="small" />
+                      </IconButton>
                       <IconButton 
                         size="small" 
                         color="error" 
@@ -221,6 +235,114 @@ const Purchases = () => {
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>{t('cancel')}</Button>
           <Button onClick={handleDelete} color="error" variant="contained">{t('delete')}</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Record Payment Dialog */}
+      <Dialog open={paymentDialogOpen} onClose={() => setPaymentDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {t('record_payment')}
+          {paymentPurchase?.purchaseNumber ? ` — ${paymentPurchase.purchaseNumber}` : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack direction="row" spacing={3} sx={{ mb: 2 }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">{t('payable')}</Typography>
+              <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>{formatCurrency(paymentPurchase?.payableAmount)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">{t('paid_amount')}</Typography>
+              <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace', color: 'success.main' }}>{formatCurrency(paymentPurchase?.paidAmount)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">{t('outstanding')}</Typography>
+              <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace', color: paymentOutstanding > 0 ? 'warning.main' : 'text.secondary' }}>{formatCurrency(paymentPurchase?.outstandingAmount)}</Typography>
+            </Box>
+          </Stack>
+
+          {paymentOutstanding <= 0 ? (
+            <Alert severity="success" sx={{ mb: 2 }}>{t('fully_paid')}</Alert>
+          ) : (
+            <Stack spacing={2} sx={{ mb: 1 }}>
+              <TextField
+                label={t('amount')}
+                type="number"
+                size="small"
+                value={paymentForm.amount}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, amount: e.target.value }))}
+                inputProps={{ min: 0, step: '0.01' }}
+                fullWidth
+              />
+              <FormControl size="small" fullWidth>
+                <InputLabel id="purchase-payment-method-label">{t('payment_method')}</InputLabel>
+                <Select
+                  labelId="purchase-payment-method-label"
+                  label={t('payment_method')}
+                  value={paymentForm.paymentMethod}
+                  onChange={(e) => setPaymentForm((f) => ({ ...f, paymentMethod: e.target.value }))}
+                >
+                  {PAYMENT_METHODS.map((m) => (
+                    <MenuItem key={m} value={m}>{t(`method_${m.toLowerCase()}`)}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <TextField
+                label={t('payment_date')}
+                type="date"
+                size="small"
+                value={paymentForm.paymentDate}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, paymentDate: e.target.value }))}
+                InputLabelProps={{ shrink: true }}
+                helperText={t('payment_date_hint')}
+                fullWidth
+              />
+              <TextField
+                label={t('payment_notes')}
+                size="small"
+                multiline
+                minRows={2}
+                value={paymentForm.notes}
+                onChange={(e) => setPaymentForm((f) => ({ ...f, notes: e.target.value }))}
+                fullWidth
+              />
+            </Stack>
+          )}
+
+          <Divider sx={{ my: 2 }} />
+          <Typography variant="subtitle2" sx={{ mb: 1 }}>{t('payment_history')}</Typography>
+          {paymentsLoading ? (
+            <Typography variant="body2" color="text.secondary">{t('loading')}</Typography>
+          ) : payments.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">{t('no_payments')}</Typography>
+          ) : (
+            <Stack spacing={1}>
+              {payments.map((pay) => (
+                <Box key={pay.id} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 2 }}>
+                  <Box>
+                    <Typography variant="body2">{formatDateTime(pay.paymentDate)}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {t(`method_${(pay.paymentMethod || 'CASH').toLowerCase()}`)}
+                      {pay.recordedByName ? ` · ${pay.recordedByName}` : ''}
+                      {pay.notes ? ` · ${pay.notes}` : ''}
+                    </Typography>
+                  </Box>
+                  <Typography variant="body2" sx={{ fontFamily: '"IBM Plex Mono", monospace', whiteSpace: 'nowrap' }}>
+                    {formatCurrency(pay.amount)}
+                  </Typography>
+                </Box>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPaymentDialogOpen(false)}>{t('cancel')}</Button>
+          <Button
+            onClick={handleRecordPayment}
+            variant="contained"
+            disabled={paymentOutstanding <= 0 || recordPaymentMutation.isPending}
+          >
+            {t('record_payment')}
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

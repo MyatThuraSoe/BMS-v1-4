@@ -12,6 +12,10 @@ import java.util.List;
 @Repository
 public interface ExpenseRepository extends JpaRepository<Expense, Long> {
 
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT e FROM Expense e WHERE e.id = :id")
+    java.util.Optional<Expense> findByIdForUpdate(@Param("id") Long id);
+
     @Query("SELECT e FROM Expense e WHERE e.deletedAt IS NULL AND (:category IS NULL OR e.category = :category) " +
             "AND (:startDate IS NULL OR e.expenseDate >= :startDate) " +
             "AND (:endDate IS NULL OR e.expenseDate <= :endDate) ORDER BY e.expenseDate DESC")

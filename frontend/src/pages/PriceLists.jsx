@@ -8,7 +8,7 @@ import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/ico
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { priceListService, productService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
-import { notifyError, notifySuccess } from '../utils/notify';
+import { notifyError, notifySuccess, notifyWarning } from '../utils/notify';
 
 const emptyForm = {
   name: '',
@@ -50,8 +50,12 @@ const PriceListDialog = ({ open, onClose, priceList, products }) => {
     mutationFn: (payload) => priceList
       ? priceListService.update(priceList.id, payload)
       : priceListService.create(payload),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['price-lists'] });
+      const warnings = response?.data?.belowCostWarnings;
+      if (warnings && warnings.length > 0) {
+        notifyWarning(warnings.join(' | '));
+      }
       notifySuccess(priceList ? 'Price list updated' : 'Price list created');
       onClose();
     },

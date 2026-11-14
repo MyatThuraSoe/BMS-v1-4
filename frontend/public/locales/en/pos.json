@@ -63,6 +63,7 @@
   "prices_changed_warning": "Prices or stock changed while you were checking out. Re-checking your cart...",
   "failed_create_sale": "Failed to create sale",
   "items_changed_warning": "Some items changed: {{messages}}. Please review and checkout again.",
+  "below_cost_warning": "Below cost: {{products}}. Review before checkout.",
   "verify_cart_failed": "Could not verify cart. Please try again.",
   "load_print_failed": "Failed to load print view. Please try again.",
   "download_pdf_failed": "Failed to download PDF.",

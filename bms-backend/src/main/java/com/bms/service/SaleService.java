@@ -80,6 +80,15 @@ public class SaleService {
     @Autowired
     private SaleReturnRepository saleReturnRepository;
 
+    @Autowired
+    private SystemSettingRepository systemSettingRepository;
+
+    @Autowired
+    private LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -160,6 +169,7 @@ public class SaleService {
 
     @Transactional(rollbackFor = Exception.class)
     public SaleResponse createSale(SaleCreateRequest request, Long cashierId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException("Sale must have at least one item");
         }
@@ -224,7 +234,6 @@ public class SaleService {
         sale.setEmployeeShift(openShift);
 
         BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
 
@@ -239,6 +248,15 @@ public class SaleService {
             }
         }
 
+        // P10: resolve the below-cost policy once for this sale. The role lookup
+        // only runs when the policy actually gates on it (REQUIRE_MANAGER).
+        BelowCostPolicy belowCostPolicy = getBelowCostPolicy();
+        boolean belowCostAllowedForUser = belowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
+                || isManagerOrAdmin(cashierId);
+
+        LocalDateTime pricingMoment = sale.getSaleDate();
+        List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
+
         // Second pass: create items and calculate totals (use locked products)
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
@@ -251,25 +269,36 @@ public class SaleService {
             item.setCostPriceAtSale(product.getCostPrice());
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), pricingCustomer, sale.getSaleDate());
+                    product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
             BigDecimal effectiveUnitPrice = quote.getUnitPrice();
+
+            // P10: below-cost guard on the effective (post-promotion/price-list)
+            // price. ALLOW_WARN proceeds; REQUIRE_MANAGER gates to ADMIN/MANAGER;
+            // BLOCK rejects. Refund money and stock are untouched by this check.
+            BigDecimal lineCost = product.getCostPrice();
+            if (lineCost != null && effectiveUnitPrice.compareTo(lineCost) < 0) {
+                if (belowCostPolicy == BelowCostPolicy.BLOCK) {
+                    throw new BusinessException("Product '" + product.getName()
+                            + "' is priced below cost; below-cost sales are blocked");
+                }
+                if (belowCostPolicy == BelowCostPolicy.REQUIRE_MANAGER && !belowCostAllowedForUser) {
+                    throw new BusinessException("Product '" + product.getName()
+                            + "' is priced below cost; manager approval is required");
+                }
+            }
+
             item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
             item.setUnitPrice(effectiveUnitPrice);
             item.setLineDiscount(quote.getLineDiscount());
             item.setPromotionId(quote.getPromotionId());
             item.setPromotionName(quote.getPromotionName());
 
-            BigDecimal[] pricing = calculateItemPricing(
-                    effectiveUnitPrice, itemRequest.getQuantity(), getShopTaxRate());
-            BigDecimal itemTotal = pricing[0];
-            BigDecimal itemTax = pricing[1];
+            BigDecimal itemTotal = lineGross(effectiveUnitPrice, itemRequest.getQuantity());
             item.setTotalPrice(itemTotal);
-            item.setTaxAmount(itemTax);
 
             sale.getItems().add(item);
 
             subtotal = subtotal.add(itemTotal);
-            taxAmount = taxAmount.add(itemTax);
             if ("PROMOTION".equals(quote.getSource())) {
                 promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
             } else if ("PRICE_LIST".equals(quote.getSource())) {
@@ -278,13 +307,17 @@ public class SaleService {
         }
 
         sale.setSubtotal(subtotal);
-        sale.setTaxAmount(taxAmount);
         sale.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         sale.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         sale.setDiscountAmount(discountAmount);
 
-        BigDecimal totalAmount = subtotal.add(taxAmount).subtract(discountAmount);
+        // P5: tax applies to the discounted line value, so the header discount
+        // is allocated to lines before any tax is computed.
+        BigDecimal taxAmount = applyDiscountedLineTaxes(sale, getShopTaxRate());
+        sale.setTaxAmount(taxAmount);
+
+        BigDecimal totalAmount = subtotal.subtract(discountAmount).add(taxAmount);
         sale.setTotalAmount(totalAmount);
 
         // Validate every split-payment line before the sale row or any stock
@@ -401,7 +434,15 @@ public class SaleService {
             if (newStock < 0) {
                 throw new BusinessException("Stock cannot go below zero for product: " + product.getName());
             }
-            
+
+            // P1/O8: inventory relief at costPriceAtSale, posted before stock moves.
+            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
+                    "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
+                    costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),
+                    null, "Sale " + sale.getInvoiceNumber(), sale.getSaleDate(), userId);
+            ledgerPostingService.postSaleProfit(sale, item);
+
             product.setStockQuantity(newStock);
             productRepository.save(product);
 
@@ -432,6 +473,7 @@ public class SaleService {
     public com.bms.dto.response.SaleResponse createSaleFromOrder(Order order, String paymentMethod,
                                                                   BigDecimal amountPaid, LocalDate dueDate,
                                                                   Long cashierId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         String method = paymentMethod != null ? paymentMethod.trim().toUpperCase() : "CASH";
         boolean isCredit = "CREDIT".equals(method);
         com.bms.entity.PaymentMethod entityMethod;
@@ -517,13 +559,17 @@ public class SaleService {
             item.setUnitPrice(orderItem.getUnitPrice());
             item.setTotalPrice(orderItem.getTotalPrice());
             item.setTaxAmount(orderItem.getTaxAmount());
-            item.setCostPriceAtSale(orderItem.getCostPriceAtOrder());
+            // P2: COGS uses the cost in force at fulfilment (read under the product lock above),
+            // not the order-time quote. costPriceAtOrder stays for margin quoting only.
+            item.setCostPriceAtSale(product.getCostPrice());
             sale.getItems().add(item);
         }
 
         sale.setSubtotal(subtotal);
         sale.setTaxAmount(taxAmount);
-        sale.setDiscountAmount(BigDecimal.ZERO);
+        // O2: the order locked its prices (and shop discount) at creation; carry the
+        // header discount so line allocation, refunds and reports match the order.
+        sale.setDiscountAmount(order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
         sale.setTotalAmount(totalAmount);
 
         SalePaymentRequest paymentLine = new SalePaymentRequest();
@@ -573,6 +619,13 @@ public class SaleService {
             if (newStock < 0) {
                 throw new BusinessException("Stock cannot go below zero for product: " + product.getName());
             }
+            // P1/O8: inventory relief at fulfilment cost, posted before stock moves.
+            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
+                    "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
+                    costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),
+                    null, "Sale (order conversion) " + savedSale.getInvoiceNumber(), sale.getSaleDate(), cashierId);
+            ledgerPostingService.postSaleProfit(savedSale, item);
             product.setStockQuantity(newStock);
             int newReserved = Math.max(0, product.getReservedQuantity() - item.getQuantity());
             product.setReservedQuantity(newReserved);
@@ -599,14 +652,64 @@ public class SaleService {
     }
 
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Sale sale = saleRepository.findById(saleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
 
         if (sale.getIsVoided()) {
             throw new BusinessException("Sale is already voided");
         }
+        if (reason == null || reason.isBlank()) {
+            throw new BusinessException("A reason is required to void a sale");
+        }
+
+        User voidingUser = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+
+        // D5: managers may only void within 24 hours of the sale; admins may
+        // void later, and the reason above is mandatory for every void.
+        if (voidingUser.getRole() != null
+                && voidingUser.getRole().getName() == Role.RoleName.ROLE_MANAGER
+                && sale.getSaleDate() != null
+                && sale.getSaleDate().isBefore(LocalDateTime.now().minusHours(24))) {
+            throw new BusinessException("Voids older than 24 hours require an administrator");
+        }
 
         String oldValues = sale.toString();
+
+        // Resolve the cash reversal before mutating the sale so a missing open
+        // drawer rejects the whole void instead of silently flipping isVoided.
+        List<SalePayment> salePayments = salePaymentRepository
+                .findBySaleIdOrderByPaidAtAsc(sale.getId());
+        BigDecimal cashPaid = salePayments.stream()
+                .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
+                .map(SalePayment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cashAlreadyRefunded = safeSum(
+                saleReturnRepository.sumCashRefundedBySaleId(sale.getId()));
+        BigDecimal cashToReturn = cashPaid.subtract(cashAlreadyRefunded);
+
+        CashShift voidShift = sale.getEmployeeShift();
+        CashDrawerSession originalSession = voidShift != null ? voidShift.getDrawerSession() : null;
+        CashDrawerSession reversalSession = null;
+        boolean lateVoid = false;
+        if (cashToReturn.compareTo(BigDecimal.ZERO) > 0) {
+            if (originalSession != null && originalSession.getStatus() == DrawerSessionStatus.OPEN) {
+                reversalSession = originalSession;
+            } else {
+                for (CashDrawer drawer : cashDrawerSessionService.getActiveDrawers()) {
+                    reversalSession = cashDrawerSessionService.getOpenSession(drawer.getId());
+                    if (reversalSession != null) {
+                        break;
+                    }
+                }
+                if (reversalSession == null) {
+                    throw new BusinessException(
+                            "No cash drawer is open. Open a drawer before voiding this cash sale.");
+                }
+                lateVoid = true;
+            }
+        }
 
         sale.setIsVoided(true);
         sale.setVoidedReason(reason);
@@ -615,25 +718,31 @@ public class SaleService {
 
         Sale updatedSale = saleRepository.save(sale);
 
-        User voidingUser = userRepository.findById(userId).orElse(null);
-
-        // A cash sale still sitting in this employee's open drawer must be
-        // reversed, otherwise voiding a receipt would leave phantom cash.
-        CashShift voidShift = sale.getEmployeeShift();
-        if (voidShift != null && voidShift.getDrawerSession() != null
-                && voidShift.getDrawerSession().getStatus() == DrawerSessionStatus.OPEN) {
-            List<SalePayment> salePayments = salePaymentRepository
-                    .findBySaleIdOrderByPaidAtAsc(sale.getId());
-            BigDecimal cashPaid = salePayments.stream()
-                    .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
-                    .map(SalePayment::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal alreadyRefunded = safeSum(
-                    saleReturnRepository.sumCashRefundedBySaleId(sale.getId()));
-            BigDecimal cashToReturn = cashPaid.subtract(alreadyRefunded);
-            if (cashToReturn.compareTo(BigDecimal.ZERO) > 0) {
+        if (reversalSession != null) {
+            if (lateVoid) {
+                // The original drawer is closed: its totals must stay frozen,
+                // so the cash leaves today's drawer as a linked paid-out.
+                final CashDrawerSession targetSession = reversalSession;
+                CashShift performerShift = cashShiftRepository
+                        .findByCashierIdAndStatus(userId, "OPEN")
+                        .filter(shift -> shift.getShiftType() == ShiftType.CASH_DRAWER
+                                && shift.getDrawerSession() != null
+                                && java.util.Objects.equals(
+                                        shift.getDrawerSession().getId(), targetSession.getId()))
+                        .orElse(null);
                 cashDrawerSessionService.recordFinancialMovement(
-                        voidShift.getDrawerSession(),
+                        reversalSession,
+                        DrawerMovementType.PAY_OUT,
+                        cashToReturn.negate(),
+                        "SALE",
+                        sale.getId(),
+                        voidingUser,
+                        performerShift,
+                        "Late void of sale " + sale.getInvoiceNumber()
+                                + " (original drawer closed): " + reason);
+            } else {
+                cashDrawerSessionService.recordFinancialMovement(
+                        reversalSession,
                         DrawerMovementType.CASH_REFUND,
                         cashToReturn.negate(),
                         "SALE",
@@ -651,7 +760,7 @@ public class SaleService {
 
         // Restore stock for voided sale — only the portion that hasn't already
         // been restored via a prior refund on this item
-        User user = userRepository.findById(userId).orElse(null);
+        User user = voidingUser;
 
         for (SaleItem item : sale.getItems()) {
             // Lock the item row so a concurrent refund cannot restart/duplicate
@@ -670,6 +779,13 @@ public class SaleService {
 
             Product product = productRepository.findByIdForUpdate(lockedItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + lockedItem.getProduct().getId()));
+            // P1/O8: void restores inventory at costPriceAtSale, dated on the void.
+            BigDecimal costAtSale = lockedItem.getCostPriceAtSale() != null ? lockedItem.getCostPriceAtSale() : BigDecimal.ZERO;
+            ledgerPostingService.postInventory(product, InventoryLedger.EventType.VOID,
+                    "SALE_VOID", sale.getId(), String.valueOf(lockedItem.getId()), quantityToRestore,
+                    costAtSale, costAtSale.multiply(BigDecimal.valueOf(quantityToRestore)),
+                    null, "Stock restored from voided sale " + sale.getInvoiceNumber(), sale.getVoidedAt(), userId);
+            ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
             product.setStockQuantity(product.getStockQuantity() + quantityToRestore);
             productRepository.save(product);
 
@@ -726,6 +842,9 @@ public class SaleService {
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
         BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(toReverse);
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            // O1: keep the excess as customer credit instead of dropping it.
+            creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
+                    .add(newBalance.negate()).setScale(2, java.math.RoundingMode.HALF_UP));
             newBalance = BigDecimal.ZERO;
         }
         creditCustomer.setCurrentBalance(newBalance);
@@ -927,10 +1046,12 @@ public class SaleService {
         List<CartVerifyResponse.CartVerifyItemResult> results = new java.util.ArrayList<>();
         List<String> messages = new java.util.ArrayList<>();
         BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
         boolean anyChanged = false;
+        // Ephemeral lines mirroring the cart so verifyCart allocates the header
+        // discount and computes tax exactly like createSale does.
+        List<SaleItem> taxLines = new java.util.ArrayList<>();
 
         Customer pricingCustomer = request.getCustomerId() != null
                 ? customerRepository.findById(request.getCustomerId())
@@ -938,13 +1059,15 @@ public class SaleService {
                             "Customer not found: " + request.getCustomerId()))
                 : null;
         BigDecimal taxRate = getShopTaxRate();
+        LocalDateTime pricingMoment = LocalDateTime.now();
+        List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
 
         for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), pricingCustomer, LocalDateTime.now());
+                    product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
 
             CartVerifyResponse.CartVerifyItemResult result = new CartVerifyResponse.CartVerifyItemResult();
             result.setProductId(product.getId());
@@ -958,6 +1081,17 @@ public class SaleService {
             result.setPricingSource(quote.getSource());
             result.setTaxRate(taxRate);
             result.setAvailableStock(product.getAvailableQuantity());
+
+            // P10: flag lines whose effective price is below cost so the POS can
+            // warn the cashier. Enforcement of the configured policy happens in
+            // createSale; verifyCart only surfaces the flag and a message.
+            BigDecimal lineCost = product.getCostPrice();
+            boolean belowCost = lineCost != null && quote.getUnitPrice().compareTo(lineCost) < 0;
+            result.setBelowCost(belowCost);
+            if (belowCost) {
+                messages.add(String.format("%s is priced below cost (price %s, cost %s)",
+                        product.getName(), quote.getUnitPrice(), lineCost));
+            }
 
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
             boolean priceChanged = product.getUnitPrice().compareTo(itemRequest.getExpectedUnitPrice()) != 0;
@@ -979,11 +1113,13 @@ public class SaleService {
                 messages.add(String.format("%s: %s applied", product.getName(), quote.getPromotionName()));
             }
 
-            BigDecimal[] linePricing = calculateItemPricing(
-                    quote.getUnitPrice(), itemRequest.getQuantity(), taxRate);
-            result.setLineTotal(linePricing[0]); // itemTotal (pre-tax)
-            subtotal = subtotal.add(linePricing[0]);
-            taxAmount = taxAmount.add(linePricing[1]);
+            BigDecimal lineTotal = lineGross(quote.getUnitPrice(), itemRequest.getQuantity());
+            result.setLineTotal(lineTotal); // pre-tax gross; tax follows the discount allocation
+            subtotal = subtotal.add(lineTotal);
+            SaleItem taxLine = new SaleItem();
+            taxLine.setQuantity(itemRequest.getQuantity());
+            taxLine.setTotalPrice(lineTotal);
+            taxLines.add(taxLine);
             if ("PROMOTION".equals(quote.getSource())) {
                 promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
             } else if ("PRICE_LIST".equals(quote.getSource())) {
@@ -995,31 +1131,47 @@ public class SaleService {
 
         response.setItems(results);
         response.setSubtotal(subtotal);
-        response.setTaxAmount(taxAmount);
         response.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         response.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         response.setDiscountAmount(discountAmount);
-        response.setTotalAmount(subtotal.add(taxAmount).subtract(discountAmount));
+        Sale taxCarrier = new Sale();
+        taxCarrier.setItems(taxLines);
+        taxCarrier.setDiscountAmount(discountAmount);
+        BigDecimal taxAmount = applyDiscountedLineTaxes(taxCarrier, taxRate);
+        response.setTaxAmount(taxAmount);
+        response.setTotalAmount(subtotal.subtract(discountAmount).add(taxAmount));
         response.setMessages(messages);
         response.setValid(!anyChanged);
         return response;
     }
 
     // Shared by both verifyCart() and createSale() so the math can never drift apart again.
-    // Returns [itemTotal, itemTax], both rounded to 2dp BEFORE persisting so the
-    // ledger never stores uncompressed decimals.
-    private BigDecimal[] calculateItemPricing(Product product, Integer quantity, BigDecimal taxRate) {
-        BigDecimal unitPrice = product.getUnitPrice() != null ? product.getUnitPrice() : BigDecimal.ZERO;
-        return calculateItemPricing(unitPrice, quantity, taxRate);
+    private BigDecimal lineGross(BigDecimal unitPrice, int quantity) {
+        return unitPrice.multiply(BigDecimal.valueOf(quantity))
+                .setScale(2, java.math.RoundingMode.HALF_UP);
     }
 
-    private BigDecimal[] calculateItemPricing(BigDecimal unitPrice, Integer quantity, BigDecimal taxRate) {
-        BigDecimal itemTotal = unitPrice.multiply(new BigDecimal(quantity))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-        BigDecimal itemTax = itemTotal.multiply(taxRate.divide(BigDecimal.valueOf(100)))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-        return new BigDecimal[]{itemTotal, itemTax};
+    /**
+     * Allocates the header discount across the sale's lines (proportional,
+     * rounding remainder on the last positive line) and stores each line's tax
+     * computed on its discounted base. Returns the header tax, which is always
+     * the exact sum of the stored line taxes. Refunds add back this stored tax,
+     * so they automatically return what was actually paid.
+     */
+    private BigDecimal applyDiscountedLineTaxes(Sale sale, BigDecimal taxRate) {
+        Map<SaleItem, BigDecimal> allocations = SaleDiscountUtils.allocateDiscounts(sale);
+        BigDecimal headerTax = BigDecimal.ZERO;
+        for (SaleItem item : sale.getItems()) {
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(allocations.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal itemTax = lineNet
+                    .multiply(taxRate.divide(BigDecimal.valueOf(100), 6, java.math.RoundingMode.HALF_UP))
+                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            item.setTaxAmount(itemTax);
+            headerTax = headerTax.add(itemTax);
+        }
+        return headerTax;
     }
 
     // Tax percentage comes from the Shop Info configuration (admin-controlled),
@@ -1028,6 +1180,27 @@ public class SaleService {
         return shopInfoRepository.findTopByOrderByIdAsc()
                 .map(ShopInfo::getTaxPercentage)
                 .orElse(BigDecimal.ZERO);
+    }
+
+    // P10: below-cost policy is admin-controlled via the shop.belowCostPolicy
+    // system setting. Missing or invalid config defaults to ALLOW_WARN so the
+    // cashier flow is never silently blocked by a bad value.
+    private BelowCostPolicy getBelowCostPolicy() {
+        return systemSettingRepository.findBySettingKey("shop.belowCostPolicy")
+                .map(SystemSetting::getSettingValue)
+                .map(BelowCostPolicy::fromString)
+                .orElse(BelowCostPolicy.ALLOW_WARN);
+    }
+
+    private boolean isManagerOrAdmin(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(u -> u.getRole() != null
+                        && (u.getRole().getName() == Role.RoleName.ROLE_ADMIN
+                            || u.getRole().getName() == Role.RoleName.ROLE_MANAGER))
+                .orElse(false);
     }
 
     // Discount config comes from Shop Info (admin-controlled):

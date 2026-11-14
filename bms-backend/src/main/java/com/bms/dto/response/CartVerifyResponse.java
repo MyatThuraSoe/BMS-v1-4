@@ -50,6 +50,7 @@ public class CartVerifyResponse {
         private BigDecimal lineTotal;
         private boolean priceChanged;
         private boolean insufficientStock;
+        private boolean belowCost;
 
         // getters/setters for all fields
         public Long getProductId() { return productId; }
@@ -80,5 +81,7 @@ public class CartVerifyResponse {
         public void setPriceChanged(boolean priceChanged) { this.priceChanged = priceChanged; }
         public boolean isInsufficientStock() { return insufficientStock; }
         public void setInsufficientStock(boolean insufficientStock) { this.insufficientStock = insufficientStock; }
+        public boolean isBelowCost() { return belowCost; }
+        public void setBelowCost(boolean belowCost) { this.belowCost = belowCost; }
     }
 }

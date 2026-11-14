@@ -46,6 +46,11 @@ public class StockCountService {
     private final UserRepository userRepository;
     private final SystemSettingRepository systemSettingRepository;
     private final AuditLogService auditLogService;
+    private final LedgerPostingService ledgerPostingService;
+    private final ShopTimeService shopTimeService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PeriodGuard periodGuard;
 
     public StockCountService(CountSheetRepository countSheetRepository,
                              CountSheetItemRepository countSheetItemRepository,
@@ -54,7 +59,9 @@ public class StockCountService {
                              StockMovementRepository stockMovementRepository,
                              UserRepository userRepository,
                              SystemSettingRepository systemSettingRepository,
-                             AuditLogService auditLogService) {
+                             AuditLogService auditLogService,
+                             LedgerPostingService ledgerPostingService,
+                             ShopTimeService shopTimeService) {
         this.countSheetRepository = countSheetRepository;
         this.countSheetItemRepository = countSheetItemRepository;
         this.productRepository = productRepository;
@@ -63,6 +70,8 @@ public class StockCountService {
         this.userRepository = userRepository;
         this.systemSettingRepository = systemSettingRepository;
         this.auditLogService = auditLogService;
+        this.ledgerPostingService = ledgerPostingService;
+        this.shopTimeService = shopTimeService;
     }
 
     // ------------------------------------------------------------------
@@ -71,7 +80,7 @@ public class StockCountService {
 
     /** Reclassifies products by revenue contribution over the last 90 days. */
     public int refreshAbcClasses() {
-        LocalDateTime from = LocalDateTime.now().minusDays(90);
+        LocalDateTime from = shopTimeService.now().minusDays(90);
         Map<Long, BigDecimal> revenue = new HashMap<>();
         for (Object[] row : saleItemRepository.findRevenueByProductSince(from)) {
             Long productId = ((Number) row[0]).longValue();
@@ -122,7 +131,7 @@ public class StockCountService {
 
     /** Creates one sheet per ABC class for every product that is due. */
     public List<CountSheet> generateDueSheets() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = shopTimeService.today();
         Set<Long> alreadyOpen = new HashSet<>(
                 countSheetRepository.findProductIdsOnOpenSheets(List.of(
                         CountSheet.CountStatus.DRAFT,
@@ -179,7 +188,7 @@ public class StockCountService {
         sheet.setSheetNumber(nextSheetNumber());
         sheet.setCountType(type);
         sheet.setStatus(CountSheet.CountStatus.DRAFT);
-        sheet.setScheduledDate(LocalDate.now());
+        sheet.setScheduledDate(shopTimeService.today());
         sheet.setCreatedBy(userId);
         sheet.setNotes(notes);
         for (Product product : products) {
@@ -196,7 +205,7 @@ public class StockCountService {
         CountSheet sheet = getSheet(id);
         if (sheet.getStatus() == CountSheet.CountStatus.DRAFT) {
             sheet.setStatus(CountSheet.CountStatus.IN_PROGRESS);
-            sheet.setStartedAt(LocalDateTime.now());
+            sheet.setStartedAt(shopTimeService.now());
             countSheetRepository.save(sheet);
         }
         return toResponse(sheet, false);
@@ -205,8 +214,8 @@ public class StockCountService {
     @Transactional(readOnly = true)
     public Page<CountSheetResponse> list(CountSheet.CountStatus status, Pageable pageable) {
         Page<CountSheet> page = status != null
-                ? countSheetRepository.findByStatusInOrderByCreatedAtDesc(List.of(status), pageable)
-                : countSheetRepository.findAllByOrderByCreatedAtDesc(pageable);
+                ? countSheetRepository.findByStatusInOrderByCreatedAtDescIdDesc(List.of(status), pageable)
+                : countSheetRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
         return page.map(sheet -> toResponse(sheet, false));
     }
 
@@ -246,7 +255,7 @@ public class StockCountService {
         }
 
         sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
-        sheet.setSubmittedAt(LocalDateTime.now());
+        sheet.setSubmittedAt(shopTimeService.now());
         sheet.setSubmittedBy(userId);
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
             sheet.setNotes(request.getNotes());
@@ -311,9 +320,9 @@ public class StockCountService {
         item.setVariance(variance);
         item.setReasonCode(reasonCode != null ? reasonCode.toUpperCase() : null);
         item.setNote(note);
-        item.setCountedAt(LocalDateTime.now());
+        item.setCountedAt(shopTimeService.now());
         item.setValuationAmount(cost.multiply(BigDecimal.valueOf(variance))
-                .setScale(2, RoundingMode.HALF_UP));
+                .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
     }
 
     private void recalculateVarianceValue(CountSheet sheet, List<CountSheetItem> items) {
@@ -346,9 +355,10 @@ public class StockCountService {
     }
 
     private void applySheet(CountSheet sheet, Long userId) {
+        periodGuard.assertOpen(sheet.getSubmittedAt() != null ? sheet.getSubmittedAt() : shopTimeService.now());
         List<CountSheetItem> items = countSheetItemRepository.findWithProductBySheetId(sheet.getId());
         User user = userRepository.findById(userId).orElse(null);
-        LocalDate today = LocalDate.now();
+        LocalDate today = shopTimeService.today();
         for (CountSheetItem item : items) {
             if (item.getCountedQuantity() == null) {
                 continue;
@@ -362,9 +372,6 @@ public class StockCountService {
                 throw new BusinessException("Count variance would drive " + product.getName()
                         + " stock below zero");
             }
-            product.setStockQuantity(newQuantity);
-            product.setLastCountDate(today);
-            productRepository.save(product);
 
             if (variance != 0) {
                 StockMovement movement = new StockMovement();
@@ -381,12 +388,24 @@ public class StockCountService {
                 movement.setDescription("Stock count " + sheet.getSheetNumber()
                         + " variance " + variance + " for " + product.getName());
                 movement.setCreatedBy(user);
-                movement.setMovementDate(LocalDateTime.now());
+                movement.setMovementDate(sheet.getSubmittedAt() != null ? sheet.getSubmittedAt() : shopTimeService.now());
                 stockMovementRepository.save(movement);
+
+                BigDecimal unitCost = item.getValuationAmount().divide(BigDecimal.valueOf(variance),
+                        CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+                ledgerPostingService.postInventory(product, InventoryLedger.EventType.COUNT,
+                        "STOCK_MOVEMENT", movement.getId(), "count", variance, unitCost,
+                        item.getValuationAmount(), null,
+                        movement.getDescription(), movement.getMovementDate(), userId);
+                ledgerPostingService.postOperatingLoss(movement);
             }
+
+            product.setStockQuantity(newQuantity);
+            product.setLastCountDate(today);
+            productRepository.save(product);
         }
         sheet.setStatus(CountSheet.CountStatus.APPROVED);
-        sheet.setApprovedAt(LocalDateTime.now());
+        sheet.setApprovedAt(shopTimeService.now());
         sheet.setApprovedBy(userId);
         countSheetRepository.save(sheet);
         auditLogService.logAction(userId, "STOCK_COUNT_APPROVE",
@@ -404,15 +423,22 @@ public class StockCountService {
             return toResponse(existing.get(), false);
         }
 
+        // O7: keep the client event time and the server receive time apart.
+        // PeriodGuard assigns the accounting period from the guarded event
+        // date (the client timestamp when present), never the receive time.
+        LocalDateTime receivedAt = shopTimeService.now();
+        LocalDateTime eventAt = request.getSubmittedAt() != null ? request.getSubmittedAt() : receivedAt;
+        periodGuard.assertOpen(eventAt);
         CountSheet sheet = new CountSheet();
         sheet.setSheetNumber(nextSheetNumber());
         sheet.setSyncKey(request.getSyncKey());
         sheet.setCountType(parseType(request.getCountType()));
         sheet.setStatus(CountSheet.CountStatus.IN_PROGRESS);
-        sheet.setScheduledDate(request.getSubmittedAt() != null
-                ? request.getSubmittedAt().toLocalDate() : LocalDate.now());
-        sheet.setStartedAt(request.getSubmittedAt() != null ? request.getSubmittedAt() : LocalDateTime.now());
-        sheet.setSubmittedAt(request.getSubmittedAt() != null ? request.getSubmittedAt() : LocalDateTime.now());
+        sheet.setScheduledDate(shopTimeService.toShopDate(eventAt));
+        sheet.setStartedAt(eventAt);
+        sheet.setSubmittedAt(eventAt);
+        sheet.setClientSubmittedAt(request.getSubmittedAt());
+        sheet.setSyncReceivedAt(receivedAt);
         sheet.setSubmittedBy(userId);
         sheet.setCreatedBy(userId);
         sheet.setNotes(request.getNotes());
@@ -468,6 +494,8 @@ public class StockCountService {
         response.setScheduledDate(sheet.getScheduledDate());
         response.setStartedAt(sheet.getStartedAt());
         response.setSubmittedAt(sheet.getSubmittedAt());
+        response.setClientSubmittedAt(sheet.getClientSubmittedAt());
+        response.setSyncReceivedAt(sheet.getSyncReceivedAt());
         response.setApprovedAt(sheet.getApprovedAt());
         response.setNotes(sheet.getNotes());
         response.setVarianceValue(sheet.getVarianceValue());
@@ -512,7 +540,7 @@ public class StockCountService {
     }
 
     private String nextSheetNumber() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = shopTimeService.today();
         String prefix = "CS-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
         long next = countSheetRepository.countBySheetNumberStartingWith(prefix) + 1;
         String number = prefix + String.format("%04d", next);

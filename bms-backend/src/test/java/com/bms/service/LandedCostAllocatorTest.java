@@ -105,4 +105,53 @@ class LandedCostAllocatorTest {
 
         assertEquals(Map.of(), costs);
     }
+
+    @Test
+    void allocateByValueSplitsProportionallyAndKeepsTotalExact() {
+        List<LandedCostAllocator.Line> lines = List.of(
+                line(1L, "10.00", 1, "1"),
+                line(2L, "20.00", 1, "1"),
+                line(3L, "30.00", 1, "1"));
+
+        Map<Long, BigDecimal> shares = LandedCostAllocator.allocateByValue(lines, bd("100.00"));
+
+        // 100 split 10/60, 20/60, 30/60 => 16.67, 33.33, remainder 50.00.
+        assertEquals(bd("16.67"), shares.get(1L));
+        assertEquals(bd("33.33"), shares.get(2L));
+        assertEquals(bd("50.00"), shares.get(3L));
+        assertEquals(0, shares.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .compareTo(bd("100.00")));
+    }
+
+    @Test
+    void allocateByValuePutsRemainderOnARealPositiveValueLine() {
+        // Trailing zero-value line must not absorb the rounding remainder.
+        List<LandedCostAllocator.Line> lines = List.of(
+                line(1L, "10.00", 1, "1"),
+                line(2L, "10.00", 1, "1"),
+                line(3L, "0.00", 1, "1"));
+
+        Map<Long, BigDecimal> shares = LandedCostAllocator.allocateByValue(lines, bd("10.00"));
+
+        assertEquals(bd("5.00"), shares.get(1L));
+        assertEquals(bd("5.00"), shares.get(2L));
+        assertEquals(0, shares.get(3L).compareTo(BigDecimal.ZERO));
+        assertEquals(0, shares.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add)
+                .compareTo(bd("10.00")));
+    }
+
+    @Test
+    void allocateExpenseAmountsReturnsRawSharesSummingToExpense() {
+        List<LandedCostAllocator.Line> lines = List.of(
+                line(1L, "10.00", 2, "1"),
+                line(2L, "10.00", 3, "1"));
+
+        List<Map<Long, BigDecimal>> perExpense = LandedCostAllocator.allocateExpenseAmounts(lines,
+                List.of(expense("50.00", PurchaseExpense.AllocationMethod.QUANTITY)));
+
+        assertEquals(1, perExpense.size());
+        // 50 split 2/5 and 3/5 => 20 and 30 (raw amounts, not per unit).
+        assertEquals(bd("20.00"), perExpense.get(0).get(1L));
+        assertEquals(bd("30.00"), perExpense.get(0).get(2L));
+    }
 }

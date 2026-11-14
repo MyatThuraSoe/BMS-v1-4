@@ -170,5 +170,16 @@
   "no_payments_recorded": "No payments recorded for this day.",
   "cash_drawer_summary": "Cash Drawer Summary",
   "end_of_day_exceptions": "Exceptions",
-  "no_exceptions": "No exceptions detected."
+  "no_exceptions": "No exceptions detected.",
+  "end_of_day_truncated": "This day has more sales than the report can load. Totals below cover only the first {{rowCount}} sales; later sales are not included. Review the day in smaller batches for a complete close.",
+  "report_type_payablesAging": "Payables Aging",
+  "payables_aging_title": "Accounts Payable Aging",
+  "payables_aging_description": "Outstanding supplier balances as of {{date}}, grouped by supplier and bucketed by purchase age. Amounts are in base currency.",
+  "aging_current": "Current",
+  "aging_1_30": "1–30 days",
+  "aging_31_60": "31–60 days",
+  "aging_61_90": "61–90 days",
+  "aging_90_plus": "90+ days",
+  "aging_total": "Total Outstanding",
+  "no_payables": "No outstanding payables as of this date."
 }

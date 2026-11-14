@@ -10,6 +10,10 @@ import java.math.BigDecimal;
     @Index(name = "idx_sale_return_item_sale_item", columnList = "sale_item_id")
 })
 public class SaleReturnItem {
+
+    /** P9: what happens to the returned units. Defaults to RESTOCK so the cashier flow is unchanged. */
+    public enum ReturnDisposition { RESTOCK, QUARANTINE, WRITE_OFF }
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -28,6 +32,11 @@ public class SaleReturnItem {
     @Column(name = "return_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal returnAmount;
 
+    /** P9: per-line condition. Null on legacy rows is treated as RESTOCK. */
+    @Column(name = "disposition", length = 20)
+    @Enumerated(EnumType.STRING)
+    private ReturnDisposition disposition;
+
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 
@@ -42,4 +51,7 @@ public class SaleReturnItem {
 
     public BigDecimal getReturnAmount() { return returnAmount; }
     public void setReturnAmount(BigDecimal returnAmount) { this.returnAmount = returnAmount; }
+
+    public ReturnDisposition getDisposition() { return disposition; }
+    public void setDisposition(ReturnDisposition disposition) { this.disposition = disposition; }
 }

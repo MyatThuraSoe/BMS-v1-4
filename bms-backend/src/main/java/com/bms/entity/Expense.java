@@ -41,6 +41,40 @@ public class Expense {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    @Column(name = "ledger_revision", nullable = false, columnDefinition = "BIGINT DEFAULT 0")
+    private long ledgerRevision;
+
+    /**
+     * O4: marks a cost that was already capitalised into inventory through a
+     * purchase (freight/duty/insurance). Capitalised expenses are excluded
+     * from the operating P&L, the profit ledger and the GL expense entries so
+     * the cost is never counted twice.
+     */
+    @Column(name = "capitalized")
+    private Boolean capitalized = false;
+
+    /**
+     * O4: optional logical reference to the purchase_expenses row that already
+     * capitalised this cost. Kept as a plain id (no DB constraint) because
+     * purchase expenses are cascade-removed when a purchase is deleted.
+     */
+    @Column(name = "purchase_expense_id")
+    private Long purchaseExpenseId;
+
+    public long getLedgerRevision() { return ledgerRevision; }
+    public void setLedgerRevision(long ledgerRevision) { this.ledgerRevision = ledgerRevision; }
+
+    public Boolean getCapitalized() { return capitalized; }
+    public void setCapitalized(Boolean capitalized) { this.capitalized = capitalized; }
+
+    public Long getPurchaseExpenseId() { return purchaseExpenseId; }
+    public void setPurchaseExpenseId(Long purchaseExpenseId) { this.purchaseExpenseId = purchaseExpenseId; }
+
+    /** True when this cost belongs to inventory valuation, not the P&L. */
+    public boolean isCapitalized() {
+        return Boolean.TRUE.equals(capitalized) || purchaseExpenseId != null;
+    }
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -55,6 +89,7 @@ public class Expense {
         SUPPLIES,
         MAINTENANCE,
         MARKETING,
+        PURCHASE_VARIANCE,
         OTHER
     }
 

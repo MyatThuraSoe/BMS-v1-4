@@ -2,8 +2,12 @@ package com.bms.service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.function.Consumer;
 
 public final class CostCalculationUtils {
+
+    /** C7: stored costs keep scale 6; round only in DTOs and report output. */
+    public static final int COST_SCALE = 6;
 
     private CostCalculationUtils() {
     }
@@ -20,7 +24,7 @@ public final class CostCalculationUtils {
         }
 
         return totalOldValue.add(totalNewValue)
-                .divide(BigDecimal.valueOf(totalQty), 2, RoundingMode.HALF_UP);
+                .divide(BigDecimal.valueOf(totalQty), COST_SCALE, RoundingMode.HALF_UP);
     }
 
     /**
@@ -32,38 +36,63 @@ public final class CostCalculationUtils {
     public static BigDecimal calculateWeightedAverageCostAfterRemoval(
             BigDecimal currentCostPrice, int currentStockQty,
             BigDecimal removedUnitCost, int removedQty) {
-        int remainingQty = currentStockQty - removedQty;
-        if (remainingQty <= 0) {
-            return BigDecimal.ZERO;
-        }
+        return calculateWeightedAverageCostAfterRemoval(currentCostPrice, currentStockQty,
+                removedUnitCost, removedQty, null);
+    }
 
+    /**
+     * C8: when the reversal empties the stock, keep the last known cost so the
+     * next receipt averages from it instead of from zero. When a reversal would
+     * drive the remaining value negative (other units were sold cheaper), keep
+     * the last known cost rather than clamping silently, and raise a
+     * reconciliation alert through {@code alertSink} so the anomaly is recorded.
+     */
+    public static BigDecimal calculateWeightedAverageCostAfterRemoval(
+            BigDecimal currentCostPrice, int currentStockQty,
+            BigDecimal removedUnitCost, int removedQty,
+            Consumer<String> alertSink) {
         BigDecimal currentCost = currentCostPrice != null ? currentCostPrice : BigDecimal.ZERO;
         BigDecimal removedCost = removedUnitCost != null ? removedUnitCost : BigDecimal.ZERO;
+        int remainingQty = currentStockQty - removedQty;
+
+        if (remainingQty <= 0) {
+            return currentCost.setScale(COST_SCALE, RoundingMode.HALF_UP);
+        }
+
         BigDecimal remainingValue = currentCost.multiply(BigDecimal.valueOf(currentStockQty))
                 .subtract(removedCost.multiply(BigDecimal.valueOf(removedQty)));
 
-        // A reversal can legitimately wipe out more value than the average
-        // implies when other units were sold; never report a negative cost.
         if (remainingValue.signum() < 0) {
-            remainingValue = BigDecimal.ZERO;
+            if (alertSink != null) {
+                alertSink.accept("Purchase reversal drove remaining inventory value negative ("
+                        + remainingValue.toPlainString() + ") across " + remainingQty
+                        + " unit(s); kept last known cost " + currentCost.toPlainString());
+            }
+            return currentCost.setScale(COST_SCALE, RoundingMode.HALF_UP);
         }
 
-        return remainingValue.divide(BigDecimal.valueOf(remainingQty), 2, RoundingMode.HALF_UP);
+        return remainingValue.divide(BigDecimal.valueOf(remainingQty), COST_SCALE, RoundingMode.HALF_UP);
     }
 
     public static BigDecimal calculateProfit(BigDecimal unitPrice, BigDecimal costPriceAtSale, int quantity) {
-        if (unitPrice == null || costPriceAtSale == null) {
+        if (costPriceAtSale == null) {
+            // C4: a missing cost must surface as an error, never as silent zero
+            // profit that hides the fact the line was never costed.
+            throw new com.bms.exception.BusinessException(
+                    "Cannot compute profit: cost price at sale is missing");
+        }
+        if (unitPrice == null) {
             return BigDecimal.ZERO;
         }
 
         BigDecimal profitPerUnit = unitPrice.subtract(costPriceAtSale);
-        return profitPerUnit.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
+        return profitPerUnit.multiply(BigDecimal.valueOf(quantity)).setScale(COST_SCALE, RoundingMode.HALF_UP);
     }
 
     public static BigDecimal calculateCogs(BigDecimal costPriceAtSale, int quantity) {
         if (costPriceAtSale == null) {
             return BigDecimal.ZERO;
         }
-        return costPriceAtSale.multiply(BigDecimal.valueOf(quantity)).setScale(2, RoundingMode.HALF_UP);
+        return costPriceAtSale.multiply(BigDecimal.valueOf(quantity)).setScale(COST_SCALE, RoundingMode.HALF_UP);
     }
 }

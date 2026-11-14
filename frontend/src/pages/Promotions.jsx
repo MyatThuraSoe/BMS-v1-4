@@ -8,7 +8,7 @@ import {
 import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { categoryService, productService, promotionService } from '../api/services';
-import { notifyError, notifySuccess } from '../utils/notify';
+import { notifyError, notifySuccess, notifyWarning } from '../utils/notify';
 
 const TYPES = ['PERCENT_DISCOUNT', 'FIXED_DISCOUNT', 'BOGO', 'TIERED', 'FLASH_SALE'];
 const SCOPES = ['ALL', 'PRODUCT', 'CATEGORY'];
@@ -73,8 +73,12 @@ const PromotionDialog = ({ open, onClose, promotion, products, categories }) => 
     mutationFn: (payload) => promotion
       ? promotionService.update(promotion.id, payload)
       : promotionService.create(payload),
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['promotions'] });
+      const warnings = response?.data?.belowCostWarnings;
+      if (warnings && warnings.length > 0) {
+        notifyWarning(warnings.join(' | '));
+      }
       notifySuccess(promotion ? 'Promotion updated' : 'Promotion created');
       onClose();
     },

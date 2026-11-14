@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Box, Typography, Paper, Grid, TextField, Button, Stack, CircularProgress, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem } from '@mui/material';
+import { Box, Typography, Paper, Grid, TextField, Button, Stack, CircularProgress, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Dialog, DialogTitle, DialogContent, DialogActions, MenuItem, Alert, Switch, FormControlLabel, Chip } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { reportService, expenseService } from '../api/services';
+import PeriodControl from '../components/PeriodControl';
+import { useAuth } from '../context/AuthContext';
 import { formatCurrency } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
-import { notifySuccess, notifyError } from '../utils/notify';
+import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 const categories = ['RENT', 'UTILITIES', 'TRAVEL', 'TAXES', 'SALARY', 'SUPPLIES', 'MAINTENANCE', 'MARKETING', 'OTHER'];
@@ -13,6 +15,7 @@ const COLORS = ['#1976d2', '#2e7d32', '#ed6c02', '#9c27b0', '#d32f2f', '#00838f'
 
 const Accounting = () => {
   const { t } = useTranslation('accounting');
+  const { isAdmin } = useAuth();
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth() + 1);
   const [year, setYear] = useState(today.getFullYear());
@@ -20,7 +23,7 @@ const Accounting = () => {
   const [editingExpense, setEditingExpense] = useState(null);
   const [formError, setFormError] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
-  const [form, setForm] = useState({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0] });
+  const [form, setForm] = useState({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0], capitalized: false, purchaseExpenseId: '' });
   const [receiptFile, setReceiptFile] = useState(null);
   const [removeReceiptImage, setRemoveReceiptImage] = useState(false);
 
@@ -44,12 +47,14 @@ const Accounting = () => {
       }
       return response;
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['expenses'] });
       queryClient.invalidateQueries({ queryKey: ['accountingSummary'] });
       setDialogOpen(false);
       resetForm();
       notifySuccess(t('expense_added'));
+      const warnings = response?.data?.duplicateWarnings || [];
+      warnings.forEach((warning) => notifyWarning(warning));
     },
     onError: (err) => notifyError(err.friendlyMessage || t('unable_add_expense')),
   });
@@ -106,11 +111,11 @@ const Accounting = () => {
     setFormError('');
     setReceiptFile(null);
     setRemoveReceiptImage(false);
-    setForm({ category: expense.category, description: expense.description || '', amount: expense.amount || '', expenseDate: expense.expenseDate || today.toISOString().split('T')[0] });
+    setForm({ category: expense.category, description: expense.description || '', amount: expense.amount || '', expenseDate: expense.expenseDate || today.toISOString().split('T')[0], capitalized: !!expense.capitalized, purchaseExpenseId: expense.purchaseExpenseId ?? '' });
     setDialogOpen(true);
   };
   function resetForm() {
-    setForm({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0] });
+    setForm({ category: 'OTHER', description: '', amount: '', expenseDate: today.toISOString().split('T')[0], capitalized: false, purchaseExpenseId: '' });
     setReceiptFile(null);
     setRemoveReceiptImage(false);
   }
@@ -126,7 +131,14 @@ const Accounting = () => {
       return;
     }
     setFormError('');
-    const payload = { category: form.category, description: form.description, amount, expenseDate: form.expenseDate };
+    const payload = {
+      category: form.category,
+      description: form.description,
+      amount,
+      expenseDate: form.expenseDate,
+      capitalized: !!form.capitalized,
+      purchaseExpenseId: form.purchaseExpenseId === '' || form.purchaseExpenseId == null ? null : Number(form.purchaseExpenseId),
+    };
     if (editingExpense) {
       updateMutation.mutate({ id: editingExpense.id, payload, file: receiptFile, removeImage: removeReceiptImage });
     } else {
@@ -135,12 +147,16 @@ const Accounting = () => {
   };
 
   const expenseBreakdown = summary.expensesByCategory || [];
+  const inventoryLossBreakdown = summary.inventoryLossByReason || [];
+  const lossLabel = (cat) => t(`loss_${String(cat).toLowerCase()}`, { defaultValue: cat });
 
   return (
     <Box>
       <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="right" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2} sx={{ mb: 3 }}>
         <Button variant="contained" onClick={openCreate}>{t('add_expense')}</Button>
       </Stack>
+
+      {isAdmin() && <PeriodControl />}
 
       <Paper sx={{ p: 2, mb: 3 }}>
         <Grid container spacing={2}>
@@ -222,7 +238,10 @@ const Accounting = () => {
                   <TableRow key={expense.id}>
                     <TableCell><ExpenseReceiptImage expenseId={expense.id} hasImage={expense.hasReceiptImage} /></TableCell>
                     <TableCell>{categoryLabel(expense.category)}</TableCell>
-                    <TableCell>{expense.description}</TableCell>
+                    <TableCell>
+                      {expense.description}
+                      {expense.capitalized && <Chip size="small" color="info" label={t('capitalized')} sx={{ ml: 1 }} />}
+                    </TableCell>
                     <TableCell>{formatCurrency(expense.amount)}</TableCell>
                     <TableCell>{expense.expenseDate}</TableCell>
                     <TableCell align="right">
@@ -239,6 +258,36 @@ const Accounting = () => {
         </Grid>
       </Grid>
 
+      <Paper sx={{ p: 3, mt: 3 }}>
+        <Typography variant="h6" gutterBottom>{t('inventory_loss_breakdown')}</Typography>
+        {inventoryLossBreakdown.length === 0 ? (
+          <Typography color="text.secondary">{t('no_inventory_loss_month')}</Typography>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('category')}</TableCell>
+                  <TableCell align="right">{t('amount')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {inventoryLossBreakdown.map((row) => (
+                  <TableRow key={row.category}>
+                    <TableCell>{lossLabel(row.category)}</TableCell>
+                    <TableCell align="right">{formatCurrency(row.amount)}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>{t('inventory_loss')}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(summary.totalInventoryLoss || 0)}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+      </Paper>
+
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>{editingExpense ? t('edit_expense') : t('add_expense')}</DialogTitle>
         <DialogContent>
@@ -250,6 +299,23 @@ const Accounting = () => {
             <TextField label={t('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
             <TextField label={t('amount')} type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} onWheel={preventNumberScroll} required />
             <TextField label={t('expense_date')} type="date" value={form.expenseDate} onChange={(e) => setForm({ ...form, expenseDate: e.target.value })} InputLabelProps={{ shrink: true }} required />
+            <FormControlLabel
+              control={<Switch checked={form.capitalized} onChange={(e) => setForm({ ...form, capitalized: e.target.checked, purchaseExpenseId: e.target.checked ? form.purchaseExpenseId : '' })} />}
+              label={t('capitalized_expense')}
+            />
+            <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+              {t('capitalized_expense_hint')}
+            </Typography>
+            {form.capitalized && (
+              <TextField
+                label={t('purchase_expense_id')}
+                type="number"
+                value={form.purchaseExpenseId}
+                onChange={(e) => setForm({ ...form, purchaseExpenseId: e.target.value })}
+                onWheel={preventNumberScroll}
+                helperText={t('purchase_expense_id_hint')}
+              />
+            )}
             {editingExpense?.hasReceiptImage && !removeReceiptImage && !receiptFile && (
               <Stack direction="row" spacing={2} alignItems="center">
                 <ExpenseReceiptImage expenseId={editingExpense.id} hasImage size={72} />

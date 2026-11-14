@@ -16,7 +16,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -88,6 +90,7 @@ public class PriceListService {
             throw new BusinessException("Price list end date cannot be before its start date");
         }
 
+        List<String> warnings = new ArrayList<>();
         priceList.getItems().clear();
         if (request.getItems() != null) {
             Set<Long> seen = new HashSet<>();
@@ -101,6 +104,14 @@ public class PriceListService {
                 if (itemRequest.getPrice() == null || itemRequest.getPrice().compareTo(BigDecimal.ZERO) < 0) {
                     throw new BusinessException("Price list prices cannot be negative");
                 }
+                // P10: warn (do not block) when a contract price falls below cost.
+                if (product.getCostPrice() != null
+                        && itemRequest.getPrice().compareTo(product.getCostPrice()) < 0) {
+                    warnings.add(String.format("%s: price %s is below cost %s",
+                            product.getName(),
+                            itemRequest.getPrice().setScale(2, RoundingMode.HALF_UP),
+                            product.getCostPrice().setScale(2, RoundingMode.HALF_UP)));
+                }
                 PriceListItem item = new PriceListItem();
                 item.setPriceList(priceList);
                 item.setProduct(product);
@@ -108,6 +119,7 @@ public class PriceListService {
                 priceList.getItems().add(item);
             }
         }
+        priceList.setBelowCostWarnings(warnings);
     }
 
     /**

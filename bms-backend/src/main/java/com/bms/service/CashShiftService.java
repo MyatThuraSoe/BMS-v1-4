@@ -143,7 +143,7 @@ public class CashShiftService {
             // Attach the opening float ledger line to this employee shift so a
             // drawer report can attribute every line.
             List<CashDrawerMovement> movements = cashDrawerMovementRepository
-                    .findByDrawerSessionIdAndMovementTypeOrderByOccurredAtAsc(
+                    .findByDrawerSessionIdAndMovementTypeOrderByOccurredAtAscIdAsc(
                             saved.getDrawerSession().getId(), DrawerMovementType.OPENING_FLOAT);
             for (CashDrawerMovement movement : movements) {
                 if (movement.getEmployeeShift() == null) {
@@ -259,7 +259,7 @@ public class CashShiftService {
      */
     @Transactional(readOnly = true)
     public List<CashShiftResponse> getActiveShifts() {
-        return cashShiftRepository.findByStatusOrderByOpeningTimeAsc("OPEN").stream()
+        return cashShiftRepository.findByStatusOrderByOpeningTimeAscIdAsc("OPEN").stream()
                 .map(shift -> toResponse(shift, false))
                 .collect(Collectors.toList());
     }

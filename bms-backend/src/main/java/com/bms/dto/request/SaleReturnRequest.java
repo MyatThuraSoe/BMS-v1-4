@@ -41,10 +41,16 @@ public class SaleReturnRequest {
         @Min(value = 1, message = "Quantity must be at least 1")
         private Integer quantity;
 
+        /** P9: RESTOCK (default), QUARANTINE or WRITE_OFF. Blank defaults to RESTOCK. */
+        private String disposition;
+
         public Long getSaleItemId() { return saleItemId; }
         public void setSaleItemId(Long saleItemId) { this.saleItemId = saleItemId; }
 
         public Integer getQuantity() { return quantity; }
         public void setQuantity(Integer quantity) { this.quantity = quantity; }
+
+        public String getDisposition() { return disposition; }
+        public void setDisposition(String disposition) { this.disposition = disposition; }
     }
 }

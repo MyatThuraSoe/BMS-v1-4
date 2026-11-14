@@ -50,6 +50,7 @@ public class SaleReturnResponse {
         private String productName;
         private Integer quantityReturned;
         private BigDecimal returnAmount;
+        private String disposition;
 
         public Long getId() { return id; }
         public void setId(Long id) { this.id = id; }
@@ -63,5 +64,7 @@ public class SaleReturnResponse {
         public void setQuantityReturned(Integer quantityReturned) { this.quantityReturned = quantityReturned; }
         public BigDecimal getReturnAmount() { return returnAmount; }
         public void setReturnAmount(BigDecimal returnAmount) { this.returnAmount = returnAmount; }
+        public String getDisposition() { return disposition; }
+        public void setDisposition(String disposition) { this.disposition = disposition; }
     }
 }

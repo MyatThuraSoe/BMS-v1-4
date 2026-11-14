@@ -37,6 +37,9 @@ const INVALIDATION_KEYS = [
   ['movement-stats'],
 ];
 
+// P9: per-line condition for returned units. RESTOCK keeps the cashier flow unchanged.
+const DISPOSITIONS = ['RESTOCK', 'QUARANTINE', 'WRITE_OFF'];
+
 /**
  * Shared Sale Return dialog.
  * Fetches the authoritative returnable snapshot from
@@ -47,6 +50,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
   const { t } = useTranslation('sales');
   const queryClient = useQueryClient();
   const [quantities, setQuantities] = useState({});
+  const [dispositions, setDispositions] = useState({});
   const [reason, setReason] = useState('');
   const [step, setStep] = useState('form'); // 'form' | 'confirm'
 
@@ -59,6 +63,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
   useEffect(() => {
     if (open) {
       setQuantities({});
+      setDispositions({});
       setReason('');
       setStep('form');
     }
@@ -71,6 +76,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
     .map((item) => ({
       item,
       qty: Number(quantities[item.saleItemId] || 0),
+      disposition: dispositions[item.saleItemId] || 'RESTOCK',
     }))
     .filter((line) => line.qty > 0);
 
@@ -81,6 +87,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
 
   const resetState = () => {
     setQuantities({});
+    setDispositions({});
     setReason('');
     setStep('form');
   };
@@ -110,12 +117,17 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
     setQuantities((cur) => ({ ...cur, [item.saleItemId]: qty }));
   };
 
+  const setDisposition = (item, value) => {
+    setDispositions((cur) => ({ ...cur, [item.saleItemId]: value }));
+  };
+
   const handleConfirm = () => {
     const payload = {
       reason: reason.trim(),
       items: selectedLines.map((line) => ({
         saleItemId: line.item.saleItemId,
         quantity: line.qty,
+        disposition: line.disposition,
       })),
     };
     if (!payload.reason || payload.items.length === 0) return;
@@ -152,6 +164,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                     <TableCell align="right">{t('already_returned')}</TableCell>
                     <TableCell align="right">{t('returnable_qty')}</TableCell>
                     <TableCell align="right" sx={{ width: 110 }}>{t('return_qty')}</TableCell>
+                    <TableCell sx={{ width: 150 }}>{t('return_disposition')}</TableCell>
                     <TableCell align="right">{t('refund_amount')}</TableCell>
                   </TableRow>
                 </TableHead>
@@ -178,6 +191,20 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                             onWheel={preventNumberScroll}
                             sx={{ width: 90 }}
                           />
+                        </TableCell>
+                        <TableCell>
+                          <TextField
+                            size="small"
+                            select
+                            SelectProps={{ native: true }}
+                            value={dispositions[item.saleItemId] || 'RESTOCK'}
+                            onChange={(e) => setDisposition(item, e.target.value)}
+                            sx={{ width: 140 }}
+                          >
+                            {DISPOSITIONS.map((d) => (
+                              <option key={d} value={d}>{t(`disposition_${d.toLowerCase()}`)}</option>
+                            ))}
+                          </TextField>
                         </TableCell>
                         <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
                           {qty > 0 ? formatCurrency(Number(item.unitRefundAmount || 0) * qty) : '-'}
@@ -218,14 +245,16 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                   <TableRow sx={{ '& th': { bgcolor: 'grey.50', fontWeight: 700, color: 'text.secondary' } }}>
                     <TableCell>{t('product')}</TableCell>
                     <TableCell align="right">{t('return_qty')}</TableCell>
+                    <TableCell>{t('return_disposition')}</TableCell>
                     <TableCell align="right">{t('refund_amount')}</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {selectedLines.map(({ item, qty }) => (
+                  {selectedLines.map(({ item, qty, disposition }) => (
                     <TableRow key={item.saleItemId}>
                       <TableCell>{item.productName}</TableCell>
                       <TableCell align="right">{qty}</TableCell>
+                      <TableCell>{t(`disposition_${disposition.toLowerCase()}`)}</TableCell>
                       <TableCell align="right" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
                         {formatCurrency(Number(item.unitRefundAmount || 0) * qty)}
                       </TableCell>

@@ -17,8 +17,8 @@ public interface CountSheetRepository extends JpaRepository<CountSheet, Long> {
 
     Optional<CountSheet> findBySheetNumber(String sheetNumber);
     Optional<CountSheet> findBySyncKey(String syncKey);
-    Page<CountSheet> findByStatusInOrderByCreatedAtDesc(Collection<CountSheet.CountStatus> statuses, Pageable pageable);
-    Page<CountSheet> findAllByOrderByCreatedAtDesc(Pageable pageable);
+    Page<CountSheet> findByStatusInOrderByCreatedAtDescIdDesc(Collection<CountSheet.CountStatus> statuses, Pageable pageable);
+    Page<CountSheet> findAllByOrderByCreatedAtDescIdDesc(Pageable pageable);
     List<CountSheet> findByStatusIn(Collection<CountSheet.CountStatus> statuses);
     long countBySheetNumberStartingWith(String prefix);
 

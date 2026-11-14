@@ -14,9 +14,13 @@ import java.util.List;
 @Repository
 public interface SalePaymentRepository extends JpaRepository<SalePayment, Long> {
 
-    List<SalePayment> findBySaleIdOrderByPaidAtAsc(Long saleId);
+    // Method names kept for existing callers; explicit queries add the id
+    // tiebreaker so same-timestamp payments always replay in insertion order.
+    @Query("SELECT p FROM SalePayment p WHERE p.sale.id = :saleId ORDER BY p.paidAt ASC, p.id ASC")
+    List<SalePayment> findBySaleIdOrderByPaidAtAsc(@Param("saleId") Long saleId);
 
-    List<SalePayment> findBySaleIdInOrderByPaidAtAsc(Collection<Long> saleIds);
+    @Query("SELECT p FROM SalePayment p WHERE p.sale.id IN :saleIds ORDER BY p.paidAt ASC, p.id ASC")
+    List<SalePayment> findBySaleIdInOrderByPaidAtAsc(@Param("saleIds") Collection<Long> saleIds);
 
     @Query("SELECT p.paymentMethod, COALESCE(SUM(p.amount), 0) FROM SalePayment p " +
            "WHERE p.sale.id = :saleId GROUP BY p.paymentMethod")

@@ -50,4 +50,13 @@ public interface LocationStockRepository extends JpaRepository<LocationStock, Lo
 
     @Query("SELECT COALESCE(SUM(ls.quantity), 0) FROM LocationStock ls WHERE ls.product.id = :productId")
     long sumQuantityByProduct(@Param("productId") Long productId);
+
+    /**
+     * Units in every non-SHOP bucket. The SHOP bucket mirrors
+     * Product.stockQuantity, so it is excluded here to avoid double counting.
+     */
+    @Query("SELECT COALESCE(SUM(ls.quantity), 0) FROM LocationStock ls "
+            + "WHERE ls.product.id = :productId "
+            + "AND ls.location.type <> com.bms.entity.Location.LocationType.SHOP")
+    long sumNonShopQuantityByProduct(@Param("productId") Long productId);
 }

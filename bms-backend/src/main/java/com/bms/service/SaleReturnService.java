@@ -9,8 +9,11 @@ import com.bms.entity.CashDrawerMovement;
 import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
 import com.bms.entity.DrawerMovementType;
+import com.bms.entity.InventoryLedger;
+import com.bms.entity.Location;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
+import com.bms.entity.ProductPriceHistory;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
@@ -22,6 +25,7 @@ import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
@@ -35,6 +39,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.HashSet;
 import java.util.List;
@@ -79,6 +84,18 @@ public class SaleReturnService {
     @Autowired
     private SalePaymentRepository salePaymentRepository;
 
+    @Autowired
+    private LocationService locationService;
+
+    @Autowired
+    private ProductPriceHistoryRepository priceHistoryRepository;
+
+    @Autowired
+    private LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
+
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
      * off the original SaleItem so the client never computes refund money.
@@ -119,6 +136,7 @@ public class SaleReturnService {
      * total returned quantities across all return transactions.
      */
     public SaleReturnResponse createSaleReturn(Long saleId, SaleReturnRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Sale sale = loadActiveSale(saleId);
 
         if (sale.getIsVoided() != null && sale.getIsVoided()) {
@@ -165,6 +183,7 @@ public class SaleReturnService {
 
         BigDecimal totalReturnAmount = BigDecimal.ZERO;
         Set<Long> requestedSaleItemIds = new HashSet<>();
+        Map<Long, Integer> returnedBefore = new java.util.HashMap<>();
 
         for (SaleReturnRequest.SaleReturnItemRequest itemRequest : request.getItems()) {
             if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
@@ -193,16 +212,25 @@ public class SaleReturnService {
             // so it must be given back too — otherwise returns silently leak tax). The
             // customer's share of any sale-level discount is deducted first, otherwise a
             // return on a discounted sale refunds more than was actually paid.
-            BigDecimal unitRefundAmount = calculateUnitRefundAmount(sale, saleItem);
-            BigDecimal returnAmount = unitRefundAmount
-                    .multiply(BigDecimal.valueOf(requestedQuantity))
-                    .setScale(2, java.math.RoundingMode.HALF_UP);
+            int remainingAfter = returnableQuantity - requestedQuantity;
+            BigDecimal returnAmount = SaleDiscountUtils.netItemRevenue(sale, saleItem, returnableQuantity)
+                    .subtract(SaleDiscountUtils.netItemRevenue(sale, saleItem, remainingAfter))
+                    .add(SaleDiscountUtils.taxForQuantity(saleItem, returnableQuantity)
+                            .subtract(SaleDiscountUtils.taxForQuantity(saleItem, remainingAfter)))
+                    .setScale(2, RoundingMode.HALF_UP);
 
             Product product = productRepository.findByIdForUpdate(saleItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + saleItem.getProduct().getId()));
-            product.setStockQuantity(product.getStockQuantity() + requestedQuantity);
-            productRepository.save(product);
 
+            // P9: value the returned units at the cost they carried at sale time, not
+            // today's average, so inventory value stays consistent if cost moved since.
+            SaleReturnItem.ReturnDisposition disposition = resolveDisposition(itemRequest.getDisposition());
+            BigDecimal costAtSale = saleItem.getCostPriceAtSale() != null
+                    ? saleItem.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal lineValuation = costAtSale.multiply(BigDecimal.valueOf(requestedQuantity))
+                    .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+
+            returnedBefore.put(saleItem.getId(), alreadyReturned);
             saleItem.setQuantityRefunded(alreadyReturned + requestedQuantity);
 
             SaleReturnItem returnItem = new SaleReturnItem();
@@ -210,24 +238,95 @@ public class SaleReturnService {
             returnItem.setSaleItem(saleItem);
             returnItem.setQuantityReturned(requestedQuantity);
             returnItem.setReturnAmount(returnAmount);
+            returnItem.setDisposition(disposition);
             saleReturn.getItems().add(returnItem);
 
-            StockMovement movement = new StockMovement();
-            movement.setProduct(product);
-            movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
-            movement.setQuantity(requestedQuantity);
-            movement.setReferenceType(StockMovement.ReferenceType.RETURN);
-            movement.setReferenceId(sale.getId());
-            movement.setDescription("Stock restored from sale return: " + sale.getInvoiceNumber());
-            movement.setCreatedBy(returnedBy);
-            movement.setMovementDate(LocalDateTime.now());
-            stockMovementRepository.save(movement);
+            if (disposition == SaleReturnItem.ReturnDisposition.WRITE_OFF) {
+                // Unsellable: no stock re-enters. Expense the units at costPriceAtSale
+                // through the shared operating-loss path (P3/5.4) so the P&L and the GL
+                // journal agree (I4). STOCK_ADJUSTMENT + a recognised loss reason is the
+                // exact predicate InventoryLossService filters on.
+                StockMovement loss = new StockMovement();
+                loss.setProduct(product);
+                loss.setMovementType(StockMovement.MovementType.ADJUSTMENT_OUT);
+                loss.setQuantity(requestedQuantity);
+                loss.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
+                loss.setReferenceId(sale.getId());
+                loss.setReasonCode("RETURN_WRITE_OFF");
+                loss.setValuationAmount(lineValuation.negate());
+                loss.setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
+                loss.setCreatedBy(returnedBy);
+                loss.setMovementDate(LocalDateTime.now());
+                stockMovementRepository.save(loss);
+                ledgerPostingService.postOperatingLoss(loss);
+            } else {
+                // RESTOCK -> sellable shop stock; QUARANTINE -> owned but not sellable.
+                // Both re-enter owned inventory as a receipt at costPriceAtSale, so the
+                // weighted average is recomputed over ALL owned units (C1), exactly like
+                // a purchase receipt.
+                BigDecimal oldCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+                Location quarantine = disposition == SaleReturnItem.ReturnDisposition.QUARANTINE
+                        ? locationService.getDefault(Location.LocationType.QUARANTINE) : null;
+
+                // P1/O8: post the valued return BEFORE mutating stock; sole writer of cost.
+                InventoryLedger posting = ledgerPostingService.postInventory(
+                        product, InventoryLedger.EventType.RETURN, "SALE_RETURN", sale.getId(),
+                        saleItem.getId() + ":" + alreadyReturned, requestedQuantity, costAtSale,
+                        lineValuation, quarantine != null ? quarantine.getId() : null,
+                        "Stock restored from sale return (" + disposition.name() + "): " + sale.getInvoiceNumber(),
+                        LocalDateTime.now(), returnedBy.getId());
+                BigDecimal newCost = posting.getUnitCostAfter();
+
+                String locationCode;
+                if (quarantine != null) {
+                    locationService.addStock(product, quarantine, requestedQuantity);
+                    locationCode = quarantine.getCode();
+                } else {
+                    int oldStock = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+                    product.setStockQuantity(oldStock + requestedQuantity);
+                    locationCode = "SHOP";
+                }
+                productRepository.save(product);
+
+                if (oldCost.compareTo(newCost) != 0) {
+                    ProductPriceHistory history = new ProductPriceHistory();
+                    history.setProduct(product);
+                    history.setOldPrice(oldCost);
+                    history.setNewPrice(newCost);
+                    history.setPriceType(ProductPriceHistory.PriceType.COST);
+                    history.setSource(ProductPriceHistory.Source.SALE_RETURN);
+                    history.setChangedBy(returnedBy);
+                    history.setPurchaseQuantity(requestedQuantity);
+                    history.setPurchaseUnitPrice(costAtSale);
+                    history.setStockQtyAtChange(locationService.totalOwnedUnits(product));
+                    history.setInventoryValueDelta(lineValuation);
+                    priceHistoryRepository.save(history);
+                }
+
+                StockMovement movement = new StockMovement();
+                movement.setProduct(product);
+                movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
+                movement.setQuantity(requestedQuantity);
+                movement.setReferenceType(StockMovement.ReferenceType.RETURN);
+                movement.setReferenceId(sale.getId());
+                movement.setLocation(locationCode);
+                movement.setValuationAmount(lineValuation);
+                movement.setDescription("Stock restored from sale return (" + disposition.name() + "): "
+                        + sale.getInvoiceNumber());
+                movement.setCreatedBy(returnedBy);
+                movement.setMovementDate(LocalDateTime.now());
+                stockMovementRepository.save(movement);
+            }
 
             totalReturnAmount = totalReturnAmount.add(returnAmount);
         }
 
         saleReturn.setTotalReturnAmount(totalReturnAmount);
         SaleReturn savedReturn = saleReturnRepository.save(saleReturn);
+        for (SaleReturnItem item : savedReturn.getItems()) {
+            ledgerPostingService.postReturnProfit(savedReturn, item.getSaleItem(), item.getQuantityReturned(),
+                    returnedBefore.get(item.getSaleItem().getId()));
+        }
 
         // Cash physically leaves the drawer only for a real cash refund. An
         // unpaid credit return is a balance reduction, not cash.
@@ -349,6 +448,10 @@ public class SaleReturnService {
         BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(reduced)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            // O1: a return worth more than the remaining debt becomes customer
+            // credit instead of being silently dropped.
+            creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
+                    .add(newBalance.negate()).setScale(2, java.math.RoundingMode.HALF_UP));
             newBalance = BigDecimal.ZERO;
         }
         creditCustomer.setCurrentBalance(newBalance);
@@ -365,6 +468,18 @@ public class SaleReturnService {
         int itemQty = saleItem.getQuantity() != null && saleItem.getQuantity() > 0 ? saleItem.getQuantity() : 1;
         BigDecimal allocatedDiscount = SaleDiscountUtils.discountForItem(sale, saleItem);
         return SaleDiscountUtils.unitRefundAmount(itemTotal, itemTax, allocatedDiscount, itemQty);
+    }
+
+    /** P9: blank/absent disposition keeps the historical RESTOCK behaviour. */
+    private SaleReturnItem.ReturnDisposition resolveDisposition(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return SaleReturnItem.ReturnDisposition.RESTOCK;
+        }
+        try {
+            return SaleReturnItem.ReturnDisposition.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException ex) {
+            throw new BusinessException("Unknown return disposition: " + raw);
+        }
     }
 
     private Sale loadActiveSale(Long saleId) {
@@ -424,6 +539,8 @@ public class SaleReturnService {
             itemResponse.setProductName(item.getSaleItem().getProduct().getName());
             itemResponse.setQuantityReturned(item.getQuantityReturned());
             itemResponse.setReturnAmount(item.getReturnAmount());
+            itemResponse.setDisposition(item.getDisposition() != null
+                    ? item.getDisposition().name() : SaleReturnItem.ReturnDisposition.RESTOCK.name());
             return itemResponse;
         }).collect(Collectors.toList()));
         return response;

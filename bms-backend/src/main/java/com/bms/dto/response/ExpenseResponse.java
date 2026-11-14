@@ -4,6 +4,8 @@ import com.bms.entity.Expense;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ExpenseResponse {
     private Long id;
@@ -14,6 +16,10 @@ public class ExpenseResponse {
     private Long createdBy;
     private LocalDateTime createdAt;
     private Boolean hasReceiptImage;
+    private Boolean capitalized;
+    private Long purchaseExpenseId;
+    /** O4: non-blocking hints about likely duplicate purchase freight bills. */
+    private List<String> duplicateWarnings = new ArrayList<>();
 
     public static ExpenseResponse fromEntity(Expense expense) {
         ExpenseResponse response = new ExpenseResponse();
@@ -25,6 +31,8 @@ public class ExpenseResponse {
         response.setCreatedBy(expense.getCreatedBy());
         response.setCreatedAt(expense.getCreatedAt());
         response.setHasReceiptImage(expense.getReceiptImage() != null);
+        response.setCapitalized(expense.isCapitalized());
+        response.setPurchaseExpenseId(expense.getPurchaseExpenseId());
         return response;
     }
 
@@ -44,4 +52,10 @@ public class ExpenseResponse {
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public Boolean getHasReceiptImage() { return hasReceiptImage; }
     public void setHasReceiptImage(Boolean hasReceiptImage) { this.hasReceiptImage = hasReceiptImage; }
+    public Boolean getCapitalized() { return capitalized; }
+    public void setCapitalized(Boolean capitalized) { this.capitalized = capitalized; }
+    public Long getPurchaseExpenseId() { return purchaseExpenseId; }
+    public void setPurchaseExpenseId(Long purchaseExpenseId) { this.purchaseExpenseId = purchaseExpenseId; }
+    public List<String> getDuplicateWarnings() { return duplicateWarnings; }
+    public void setDuplicateWarnings(List<String> duplicateWarnings) { this.duplicateWarnings = duplicateWarnings; }
 }

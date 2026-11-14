@@ -200,6 +200,7 @@ public class CustomerService {
         response.setIsQuickAdd(customer.getIsQuickAdd());
         response.setCreditLimit(customer.getCreditLimit());
         response.setCurrentBalance(customer.getCurrentBalance());
+        response.setCreditBalance(customer.getCreditBalance());
         response.setCreatedAt(customer.getCreatedAt());
         response.setUpdatedAt(customer.getUpdatedAt());
         return response;

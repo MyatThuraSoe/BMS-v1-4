@@ -12,6 +12,10 @@ public class AccountingSummaryResponse {
     private List<ExpenseCategorySummary> expensesByCategory;
     private BigDecimal totalRefunds = BigDecimal.ZERO;
 
+    /** P3: operating inventory losses (write-offs/shrinkage) included in totalExpenses. */
+    private BigDecimal totalInventoryLoss = BigDecimal.ZERO;
+    private List<ExpenseCategorySummary> inventoryLossByReason;
+
     private BigDecimal previousPeriodIncome;
     private BigDecimal previousPeriodProfit;
     private BigDecimal incomeChangePercent;
@@ -66,6 +70,10 @@ public class AccountingSummaryResponse {
     public void setExpensesByCategory(List<ExpenseCategorySummary> expensesByCategory) { this.expensesByCategory = expensesByCategory; }
     public BigDecimal getTotalRefunds() { return totalRefunds; }
     public void setTotalRefunds(BigDecimal totalRefunds) { this.totalRefunds = totalRefunds; }
+    public BigDecimal getTotalInventoryLoss() { return totalInventoryLoss; }
+    public void setTotalInventoryLoss(BigDecimal totalInventoryLoss) { this.totalInventoryLoss = totalInventoryLoss; }
+    public List<ExpenseCategorySummary> getInventoryLossByReason() { return inventoryLossByReason; }
+    public void setInventoryLossByReason(List<ExpenseCategorySummary> inventoryLossByReason) { this.inventoryLossByReason = inventoryLossByReason; }
     public BigDecimal getOutstandingAr() { return outstandingAr; }
     public void setOutstandingAr(BigDecimal outstandingAr) { this.outstandingAr = outstandingAr; }
 

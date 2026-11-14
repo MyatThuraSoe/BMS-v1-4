@@ -13,7 +13,10 @@ public class ProductResponse {
     private String categoryName;
     private BigDecimal unitPrice;
     private BigDecimal costPrice;
+    /** @deprecated Per-product tax is dead (D7); tax is shop-level only. */
+    @Deprecated
     private BigDecimal taxRate;
+    private Long version;
     private Integer stockQuantity;
     private Integer reservedQuantity;
     private Integer availableQuantity;
@@ -46,8 +49,12 @@ public class ProductResponse {
     public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
     public BigDecimal getCostPrice() { return costPrice; }
     public void setCostPrice(BigDecimal costPrice) { this.costPrice = costPrice; }
+    @Deprecated
     public BigDecimal getTaxRate() { return taxRate; }
+    @Deprecated
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
+    public Long getVersion() { return version; }
+    public void setVersion(Long version) { this.version = version; }
     public Integer getStockQuantity() { return stockQuantity; }
     public void setStockQuantity(Integer stockQuantity) { this.stockQuantity = stockQuantity; }
     public Integer getReservedQuantity() { return reservedQuantity; }

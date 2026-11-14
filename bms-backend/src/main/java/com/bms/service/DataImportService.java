@@ -45,11 +45,32 @@ public class DataImportService {
     @PersistenceContext
     private EntityManager entityManager;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private PeriodGuard periodGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PeriodCloseRepository periodCloseRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private InventoryLedgerRepository inventoryLedgerRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private ProfitLedgerRepository profitLedgerRepository;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private LedgerReadService ledgerReadService;
+
     public enum ImportMode { REPLACE_ALL, MERGE }
 
     @Transactional
     @SuppressWarnings("unchecked")
     public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode) {
+        periodGuard.lock();
+        if (mode == ImportMode.REPLACE_ALL && (periodCloseRepository.count() > 0
+                || inventoryLedgerRepository.count() > 0 || profitLedgerRepository.count() > 0)) {
+            throw new com.bms.exception.BusinessException(
+                    "Cannot replace business rows independently of accounting ledgers. Use a complete database restore instead.");
+        }
 
         Map<String, Object> rawData = (Map<String, Object>) backup.get("data");
         if (rawData == null) throw new IllegalArgumentException("Invalid backup file: missing 'data' section");
@@ -87,7 +108,15 @@ public class DataImportService {
         List<Expense> expenses = readList(mapper, rawData.get("expenses"), Expense.class);
         List<CashShift> cashShifts = readList(mapper, rawData.get("cashShifts"), CashShift.class);
         List<ShopInfo> shopInfoRows = readList(mapper, rawData.get("shopInfo"), ShopInfo.class);
-        List<SystemSetting> systemSettings = readList(mapper, rawData.get("systemSettings"), SystemSetting.class);
+        List<Long> internalSettingIds = systemSettingRepository.findAll().stream()
+                .filter(setting -> setting.getSettingKey().startsWith("accounting."))
+                .map(SystemSetting::getId).toList();
+        List<SystemSetting> systemSettings = readList(mapper, rawData.get("systemSettings"), SystemSetting.class).stream()
+                .filter(setting -> !setting.getSettingKey().startsWith("accounting."))
+                .toList();
+        if (systemSettings.stream().anyMatch(setting -> internalSettingIds.contains(setting.getId()))) {
+            throw new com.bms.exception.BusinessException("Backup setting IDs conflict with internal accounting settings");
+        }
 
         // 2️⃣ REPLACE mode: wipe existing data with FK checks disabled so child
         //    tables (stock_movements, refunds, *_items, product_images, ...) never
@@ -96,6 +125,10 @@ public class DataImportService {
         //    backup actually contains their data — a restore from an old file can
         //    never lock you out by replacing everything else with nothing.
         if (mode == ImportMode.REPLACE_ALL) {
+            for (Sale sale : sales) periodGuard.assertOpen(sale.getSaleDate());
+            for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
+            for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
+            for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
             wipeAllData(rawData);
         }
 
@@ -124,6 +157,21 @@ public class DataImportService {
             shopInfoRows = keepOnlyNew(shopInfoRows, shopInfoRepository::findAll);
             systemSettings = keepOnlyNew(systemSettings, systemSettingRepository::findAll);
         }
+
+        if (ledgerReadService.isActive() && (!products.isEmpty() || !sales.isEmpty()
+                || !saleReturns.isEmpty() || !purchases.isEmpty() || !expenses.isEmpty()
+                || !arPayments.isEmpty() || !customers.isEmpty())) {
+            throw new com.bms.exception.BusinessException(
+                    "Business-only imports cannot append reconciled accounting history. Use a complete database restore instead.");
+        }
+
+        for (Sale sale : sales) {
+            periodGuard.assertOpen(sale.getSaleDate());
+            if (sale.getVoidedAt() != null) periodGuard.assertOpen(sale.getVoidedAt());
+        }
+        for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
+        for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
+        for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
 
         // 5️⃣ Save (parents first, FK-safe order). IDs are preserved so
         //    REPLACE_ALL re-inserts the exact rows and MERGE inserts new ones.
@@ -251,7 +299,11 @@ public class DataImportService {
         try {
             for (String table : tables) {
                 try {
-                    jdbcTemplate.execute("DELETE FROM " + table);
+                    if (table.equals("system_settings")) {
+                        jdbcTemplate.execute("DELETE FROM system_settings WHERE setting_key NOT LIKE 'accounting.%'");
+                    } else {
+                        jdbcTemplate.execute("DELETE FROM " + table);
+                    }
                 } catch (Exception ignored) {
                     // Table may not exist in an older installation — safe to skip
                 }

@@ -19,7 +19,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -51,6 +53,15 @@ public class ProductService {
 
     @Autowired
     private ProductPriceHistoryRepository priceHistoryRepository;
+
+    @Autowired
+    private LocationService locationService;
+
+    @Autowired
+    private LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
 
     public Page<ProductResponse> getAllProducts(Pageable pageable) {
         return getAllProducts(null, null, pageable);
@@ -157,6 +168,7 @@ public class ProductService {
     }
 
     public Product createProduct(ProductCreateRequest request) {
+        periodGuard.assertOpen(LocalDateTime.now());
         if (productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
@@ -168,15 +180,17 @@ public class ProductService {
 
         validateNonNegativeValues(request);
         validateExpiry(request.getHasExpiry(), request.getExpiryDate());
+        if (request.getCostPrice() == null) {
+            throw new BusinessException("Cost price is required");
+        }
 
         Product product = new Product();
         product.setSku(request.getSku());
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setUnitPrice(request.getUnitPrice());
-        product.setCostPrice(request.getCostPrice());
         product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
-        product.setStockQuantity(request.getStockQuantity() != null ? request.getStockQuantity() : 0);
+        product.setStockQuantity(0);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
         product.setUnit(request.getUnit());
         product.setBarcode(barcode);
@@ -193,23 +207,76 @@ public class ProductService {
         }
 
         Product savedProduct = productRepository.save(product);
-        auditLogService.logAction(getCurrentUserId(), "PRODUCT_CREATE",
+        Long userId = getCurrentUserId();
+        User user = userId != null ? userRepository.findById(userId).orElse(null) : null;
+        int openingQuantity = request.getStockQuantity() != null ? request.getStockQuantity() : 0;
+        BigDecimal openingUnitCost = request.getCostPrice().setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+        BigDecimal openingValue = openingUnitCost.multiply(BigDecimal.valueOf(openingQuantity))
+                .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+
+        // P1/O8: the opening balance is the sole writer of the new product's cost.
+        // Post before setting stock so the ledger derives from a zero owned balance.
+        ledgerPostingService.postInventory(savedProduct, InventoryLedger.EventType.OPENING,
+                "PRODUCT", savedProduct.getId(), "opening", openingQuantity, openingUnitCost,
+                openingValue, null, "Product opening balance", LocalDateTime.now(), userId);
+
+        if (openingQuantity > 0) {
+            // The new row remains exclusively locked by its insert until this transaction commits.
+            savedProduct.setStockQuantity(openingQuantity);
+            productRepository.save(savedProduct);
+
+            StockMovement movement = new StockMovement();
+            movement.setProduct(savedProduct);
+            movement.setMovementType(StockMovement.MovementType.IN);
+            movement.setQuantity(openingQuantity);
+            movement.setReferenceType(StockMovement.ReferenceType.OPENING_BALANCE);
+            movement.setReferenceId(savedProduct.getId());
+            movement.setReasonCode("OPENING_BALANCE");
+            movement.setLocation("SHOP");
+            movement.setValuationAmount(openingValue);
+            movement.setDescription("Product opening balance");
+            movement.setCreatedBy(user);
+            movement.setMovementDate(LocalDateTime.now());
+            stockMovementRepository.save(movement);
+        }
+        ProductPriceHistory history = new ProductPriceHistory();
+        history.setProduct(savedProduct);
+        history.setOldPrice(BigDecimal.ZERO);
+        history.setNewPrice(savedProduct.getCostPrice());
+        history.setPriceType(ProductPriceHistory.PriceType.COST);
+        history.setSource(ProductPriceHistory.Source.OPENING_BALANCE);
+        history.setReason("Product opening balance");
+        history.setStockQtyAtChange(openingQuantity);
+        history.setInventoryValueDelta(openingValue);
+        history.setChangedBy(user);
+        priceHistoryRepository.save(history);
+
+        auditLogService.logAction(userId, "PRODUCT_CREATE",
                 "Product created: " + savedProduct.getName(),
                 "Product", savedProduct.getId(), null, savedProduct.toString());
 
         return savedProduct;
     }
 
-    public Product updateProduct(Long id, ProductCreateRequest request, Long userId) {
+    public Product updateProduct(Long id, com.bms.dto.request.ProductUpdateRequest request, Long userId) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
         if (!product.getIsActive() || product.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Product not found: " + id);
         }
 
+        // C4: reject stale writes so a form opened before a receipt cannot roll
+        // back the receipt's data. The client must round-trip the version it read.
+        assertVersionMatches(product, request.getVersion());
+
         String oldValues = product.toString() + ", costPrice:" + product.getCostPrice();
 
-        validateNonNegativeValues(request);
+        if (request.getUnitPrice() != null && request.getUnitPrice().compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Unit price cannot be negative");
+        }
+        if (request.getMinStockLevel() != null && request.getMinStockLevel() < 0) {
+            throw new BusinessException("Min stock level cannot be negative");
+        }
         validateExpiry(request.getHasExpiry(), request.getExpiryDate());
 
         if (!product.getSku().equalsIgnoreCase(request.getSku()) && productRepository.existsBySkuIgnoreCase(request.getSku())) {
@@ -224,37 +291,27 @@ public class ProductService {
 
         BigDecimal oldPrice = product.getUnitPrice();
         BigDecimal newPrice = request.getUnitPrice();
-        if (oldPrice != null && newPrice != null && oldPrice.compareTo(newPrice) != 0) {
+        // P8 req 3: symmetric with cost history — record null -> value as well as value -> value.
+        boolean sellingChanged = newPrice != null
+                && (oldPrice == null || oldPrice.compareTo(newPrice) != 0);
+        if (sellingChanged) {
             ProductPriceHistory priceHistory = new ProductPriceHistory();
             priceHistory.setProduct(product);
-            priceHistory.setOldPrice(oldPrice);
+            priceHistory.setOldPrice(oldPrice != null ? oldPrice : BigDecimal.ZERO);
             priceHistory.setNewPrice(newPrice);
+            priceHistory.setPriceType(ProductPriceHistory.PriceType.SELLING);
+            priceHistory.setSource(ProductPriceHistory.Source.SELLING_PRICE_EDIT);
             User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
             priceHistory.setChangedBy(changedBy);
             priceHistoryRepository.save(priceHistory);
         }
 
-        BigDecimal oldCost = product.getCostPrice();
-        BigDecimal newCost = request.getCostPrice();
-        if ((oldCost == null && newCost != null)
-                || (oldCost != null && newCost == null)
-                || (oldCost != null && newCost != null && oldCost.compareTo(newCost) != 0)) {
-            ProductPriceHistory costHistory = new ProductPriceHistory();
-            costHistory.setProduct(product);
-            costHistory.setOldPrice(oldCost != null ? oldCost : BigDecimal.ZERO);
-            costHistory.setNewPrice(newCost != null ? newCost : BigDecimal.ZERO);
-            User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
-            costHistory.setChangedBy(changedBy);
-            costHistory.setPriceType(ProductPriceHistory.PriceType.COST);
-            priceHistoryRepository.save(costHistory);
-        }
-
+        // C4: cost and stock are intentionally NOT touched here. Cost moves only
+        // through adjustCost; stock only through adjustStock.
         product.setSku(request.getSku());
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setUnitPrice(newPrice);
-        product.setCostPrice(request.getCostPrice());
-        product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
         product.setUnit(request.getUnit());
         product.setBarcode(barcode);
@@ -281,9 +338,105 @@ public class ProductService {
         return updatedProduct;
     }
 
-    public void deleteProduct(Long id) {
-        Product product = productRepository.findById(id)
+    /**
+     * C4/D4: explicit, reasoned cost revaluation (ADMIN only at the controller).
+     * Runs in one transaction under the product lock: revalues every owned unit,
+     * writes a REVALUATION movement carrying the value delta and a COST history
+     * row with source MANUAL_ADJUSTMENT, the reason and the user.
+     */
+    public Product adjustCost(Long id, com.bms.dto.request.CostAdjustmentRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
+        Product product = productRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
+        if (!product.getIsActive() || product.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Product not found: " + id);
+        }
+
+        assertVersionMatches(product, request.getExpectedVersion());
+
+        BigDecimal newCost = request.getNewCost();
+        if (newCost == null) {
+            throw new BusinessException("New cost is required");
+        }
+        if (newCost.compareTo(BigDecimal.ZERO) < 0) {
+            throw new BusinessException("Cost cannot be negative");
+        }
+        String reason = request.getReason() != null ? request.getReason().trim() : "";
+        if (reason.length() < 10) {
+            throw new BusinessException("A reason of at least 10 characters is required for cost adjustments");
+        }
+
+        newCost = newCost.setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+        BigDecimal oldCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
+        int ownedUnits = locationService.totalOwnedUnits(product);
+        BigDecimal valueDelta = newCost.subtract(oldCost)
+                .multiply(BigDecimal.valueOf(ownedUnits))
+                .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+
+        User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
+
+        StockMovement movement = new StockMovement();
+        movement.setProduct(product);
+        movement.setMovementType(StockMovement.MovementType.REVALUATION);
+        movement.setQuantity(0);
+        movement.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
+        movement.setReferenceId(id);
+        movement.setReasonCode("REVALUATION");
+        movement.setValuationAmount(valueDelta);
+        movement.setDescription("Cost revaluation " + oldCost + " -> " + newCost + ": " + reason);
+        movement.setCreatedBy(changedBy);
+        movement.setMovementDate(LocalDateTime.now());
+        stockMovementRepository.save(movement);
+
+        // P1/O8: revaluation posts a zero-qty value delta keyed to its movement; the
+        // ledger sets the new cost regardless of owned qty (sole writer of costPrice).
+        ledgerPostingService.postInventory(product, InventoryLedger.EventType.REVALUATION,
+                "STOCK_MOVEMENT", movement.getId(), "revaluation", 0, newCost, valueDelta,
+                null, reason, movement.getMovementDate(), userId);
+        ledgerPostingService.postProfit(ProfitLedger.EventType.REVALUATION, "STOCK_MOVEMENT", movement.getId(),
+                product.getId(), "revaluation", 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                movement.getMovementDate());
+        Product saved = productRepository.save(product);
+
+        ProductPriceHistory history = new ProductPriceHistory();
+        history.setProduct(saved);
+        history.setOldPrice(oldCost);
+        history.setNewPrice(newCost);
+        history.setPriceType(ProductPriceHistory.PriceType.COST);
+        history.setSource(ProductPriceHistory.Source.MANUAL_ADJUSTMENT);
+        history.setReason(reason);
+        history.setChangedBy(changedBy);
+        history.setStockQtyAtChange(ownedUnits);
+        history.setInventoryValueDelta(valueDelta);
+        priceHistoryRepository.save(history);
+
+        auditLogService.logAction(userId, "PRODUCT_COST_ADJUSTMENT",
+                "Cost adjusted for product: " + saved.getName() + " " + oldCost + " -> " + newCost
+                        + " (" + reason + ")",
+                "Product", id, oldCost.toString(), newCost.toString());
+
+        return saved;
+    }
+
+    private void assertVersionMatches(Product product, Long expectedVersion) {
+        if (expectedVersion == null) {
+            throw new BusinessException("Product version is required; reload the product and try again");
+        }
+        if (!expectedVersion.equals(product.getVersion())) {
+            throw new org.springframework.orm.ObjectOptimisticLockingFailureException(Product.class, product.getId());
+        }
+    }
+
+    public void deleteProduct(Long id) {
+        Product product = productRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
+
+        if (locationService.totalOwnedUnits(product) != 0) {
+            throw new BusinessException("Cannot delete a product with owned stock; write off or reconcile stock first");
+        }
+        if (saleItemRepository.existsByProductId(id) || purchaseItemRepository.existsByProductId(id)) {
+            throw new BusinessException("Cannot delete a product with sale or purchase history; deactivate it instead");
+        }
 
         // Free the unique SKU so a new product can reuse it after this soft delete.
         product.setSku(com.bms.util.SoftDeleteKeys.release(product.getSku(), product.getId(), 255));
@@ -368,6 +521,7 @@ public class ProductService {
     }
 
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason, String reasonCode) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
@@ -389,13 +543,11 @@ public class ProductService {
         }
 
         String oldStock = String.valueOf(product.getStockQuantity());
-        product.setStockQuantity(newQuantity);
-        productRepository.save(product);
-
         BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
         BigDecimal valuation = unitCost.multiply(BigDecimal.valueOf(quantityChange))
-                .setScale(2, java.math.RoundingMode.HALF_UP);
+                .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
 
+        User user = userRepository.findById(userId).orElse(null);
         StockMovement movement = new StockMovement();
         movement.setProduct(product);
         movement.setMovementType(quantityChange > 0 ?
@@ -408,10 +560,19 @@ public class ProductService {
         movement.setValuationAmount(valuation);
         movement.setDescription((reason != null && !reason.isBlank() ? reason : normalizedReason.replace('_', ' '))
                 + " (" + normalizedReason + ")");
-        User user = userRepository.findById(userId).orElse(null);
         movement.setCreatedBy(user);
         movement.setMovementDate(LocalDateTime.now());
         stockMovementRepository.save(movement);
+
+        // P1/O8: post the valued adjustment (keyed to its movement) before stock moves;
+        // cost is unchanged because units enter/leave at the current average.
+        ledgerPostingService.postInventory(product, InventoryLedger.EventType.ADJUSTMENT,
+                "STOCK_MOVEMENT", movement.getId(), "adjustment", quantityChange, unitCost, valuation,
+                null, movement.getDescription(), movement.getMovementDate(), userId);
+        ledgerPostingService.postOperatingLoss(movement);
+
+        product.setStockQuantity(newQuantity);
+        productRepository.save(product);
 
         auditLogService.logAction(userId, "STOCK_ADJUSTMENT",
                 "Stock adjusted for product: " + product.getName() + " by " + quantityChange
@@ -427,16 +588,27 @@ public class ProductService {
         productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
+        // P8 req 6: most recent RECEIVED cost per supplier (latest invoice date, id tiebreaker),
+        // not MAX(unitCost). Rows arrive latest-first, so the first seen per supplier wins.
+        Map<Long, BigDecimal> latestCostBySupplier = new HashMap<>();
+        Map<Long, java.time.LocalDate> latestDateBySupplier = new HashMap<>();
+        for (Object[] row : purchaseItemRepository.findReceivedUnitCostsLatestFirst(productId)) {
+            Long supplierId = (Long) row[0];
+            latestCostBySupplier.putIfAbsent(supplierId, (BigDecimal) row[1]);
+            latestDateBySupplier.putIfAbsent(supplierId, (java.time.LocalDate) row[2]);
+        }
+
         List<Object[]> results = purchaseItemRepository.findProductSupplierHistory(productId);
         List<ProductSupplierHistoryDto> dtos = new ArrayList<>();
 
         for (Object[] row : results) {
             ProductSupplierHistoryDto dto = new ProductSupplierHistoryDto();
-            dto.setSupplierId((Long) row[0]);
+            Long supplierId = (Long) row[0];
+            dto.setSupplierId(supplierId);
             dto.setSupplierName((String) row[1]);
             dto.setTimesPurchased((Long) row[2]);
-            dto.setMostRecentUnitCost((BigDecimal) row[3]);
-            dto.setMostRecentPurchaseDate((java.time.LocalDate) row[4]);
+            dto.setMostRecentUnitCost(latestCostBySupplier.getOrDefault(supplierId, (BigDecimal) row[3]));
+            dto.setMostRecentPurchaseDate(latestDateBySupplier.getOrDefault(supplierId, (java.time.LocalDate) row[4]));
             dto.setTotalQuantityPurchased(row[5] != null ? ((Number) row[5]).intValue() : 0);
             dto.setTotalAmountSpent(row[6] != null ? (BigDecimal) row[6] : BigDecimal.ZERO);
             dtos.add(dto);
@@ -445,21 +617,29 @@ public class ProductService {
         return dtos;
     }
 
-    public List<PriceHistoryDto> getPriceHistory(Long productId) {
+    public List<PriceHistoryDto> getPriceHistory(Long productId, ProductPriceHistory.PriceType priceType) {
         productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        List<ProductPriceHistory> records = priceHistoryRepository.findByProductIdOrderByChangedAtDesc(productId);
+        List<ProductPriceHistory> records = priceType != null
+                ? priceHistoryRepository.findByProductIdAndPriceTypeOrderByChangedAtDescIdDesc(productId, priceType)
+                : priceHistoryRepository.findByProductIdOrderByChangedAtDescIdDesc(productId);
         List<PriceHistoryDto> dtos = new ArrayList<>();
 
         for (ProductPriceHistory record : records) {
-            String username = record.getChangedBy() != null ? record.getChangedBy().getUsername() : "unknown";
-            dtos.add(new PriceHistoryDto(
-                    record.getOldPrice(),
-                    record.getNewPrice(),
-                    record.getChangedAt(),
-                    username
-            ));
+            PriceHistoryDto dto = new PriceHistoryDto();
+            dto.setOldPrice(record.getOldPrice());
+            dto.setNewPrice(record.getNewPrice());
+            dto.setChangedAt(record.getChangedAt());
+            dto.setChangedByUsername(record.getChangedBy() != null ? record.getChangedBy().getUsername() : "unknown");
+            dto.setPriceType(record.getPriceType() != null ? record.getPriceType().name() : null);
+            dto.setSource(record.getSource() != null ? record.getSource().name() : null);
+            dto.setReason(record.getReason());
+            dto.setSupplierId(record.getSupplierId());
+            dto.setPurchaseId(record.getPurchaseId());
+            dto.setStockQtyAtChange(record.getStockQtyAtChange());
+            dto.setInventoryValueDelta(record.getInventoryValueDelta());
+            dtos.add(dto);
         }
 
         return dtos;
@@ -634,10 +814,19 @@ public class ProductService {
     }
 
     public List<CostHistoryDto> getCostHistory(Long productId) {
-        Product product = productRepository.findById(productId)
+        productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        BigDecimal currentSellingPrice = product.getUnitPrice();
+        // P8 req 7: resulting WAC after each purchase's receipt, from COST history keyed by
+        // purchaseId. Rows arrive latest-first, so the first seen per purchase is the result.
+        Map<Long, BigDecimal> wacByPurchase = new HashMap<>();
+        for (ProductPriceHistory record : priceHistoryRepository
+                .findByProductIdAndPriceTypeOrderByChangedAtDescIdDesc(productId, ProductPriceHistory.PriceType.COST)) {
+            if (record.getPurchaseId() != null) {
+                wacByPurchase.putIfAbsent(record.getPurchaseId(), record.getNewPrice());
+            }
+        }
+
         List<Object[]> results = purchaseItemRepository.findProductCostHistory(productId);
         List<CostHistoryDto> dtos = new ArrayList<>();
 
@@ -645,18 +834,15 @@ public class ProductService {
             java.time.LocalDate purchaseDate = (java.time.LocalDate) row[0];
             String supplierName = (String) row[1];
             Long supplierId = (Long) row[2];
-            Integer quantity = ((Number) row[3]).intValue();
+            Integer quantity = row[3] != null ? ((Number) row[3]).intValue() : 0;
             BigDecimal unitCost = (BigDecimal) row[4];
-
-            BigDecimal impliedMarginPercent = BigDecimal.ZERO;
-            if (currentSellingPrice.compareTo(BigDecimal.ZERO) > 0) {
-                impliedMarginPercent = currentSellingPrice.subtract(unitCost)
-                        .multiply(BigDecimal.valueOf(100))
-                        .divide(currentSellingPrice, 2, RoundingMode.HALF_UP);
-            }
+            BigDecimal landedUnitCost = row[5] != null ? (BigDecimal) row[5] : unitCost;
+            BigDecimal baseUnitCost = row[6] != null ? (BigDecimal) row[6] : landedUnitCost;
+            Long purchaseId = (Long) row[7];
 
             CostHistoryDto dto = new CostHistoryDto(purchaseDate, supplierName, supplierId,
-                    quantity, unitCost, currentSellingPrice, impliedMarginPercent);
+                    quantity, unitCost, landedUnitCost, baseUnitCost,
+                    "PURCHASE_UNIT_COST", wacByPurchase.get(purchaseId));
             dtos.add(dto);
         }
 
@@ -670,7 +856,7 @@ public class ProductService {
         List<UnifiedPriceHistoryDto> unifiedHistory = new ArrayList<>();
 
         List<ProductPriceHistory> priceChanges =
-            priceHistoryRepository.findByProductIdOrderByChangedAtDesc(productId);
+            priceHistoryRepository.findByProductIdOrderByChangedAtDescIdDesc(productId);
         for (ProductPriceHistory record : priceChanges) {
             boolean isCostChange = record.getPriceType() == ProductPriceHistory.PriceType.COST;
 
@@ -687,13 +873,17 @@ public class ProductService {
             ));
         }
 
-        unifiedHistory.sort((first, second) -> second.getChangedAt().compareTo(first.getChangedAt()));
+        // P8 req 9: repository already orders by (changedAt DESC, id DESC); re-sorting on
+        // changedAt alone would discard the stable id tiebreaker.
         return unifiedHistory;
     }
 
 
     private ProductResponse convertToResponse(Product product) {
-        ProductResponse response = new ProductResponse();
+        // P10: only ADMIN/MANAGER tokens may receive costPrice. Everyone else
+        // (cashiers, or any non-privileged/unauthenticated context) gets the
+        // cashier projection, which never serializes cost.
+        ProductResponse response = canViewCost() ? new ProductResponse() : new CashierProductResponse();
         response.setId(product.getId());
         response.setSku(product.getSku());
         response.setName(product.getName());
@@ -701,6 +891,7 @@ public class ProductService {
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
         response.setTaxRate(product.getTaxRate());
+        response.setVersion(product.getVersion());
         response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
         response.setAvailableQuantity(product.getAvailableQuantity());
@@ -725,6 +916,15 @@ public class ProductService {
         response.setHasImage(product.getImageData() != null);
 
         return response;
+    }
+
+    private boolean canViewCost() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a ->
+                "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_MANAGER".equals(a.getAuthority()));
     }
 
     private Long getCurrentUserId() {

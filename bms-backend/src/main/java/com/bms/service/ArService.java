@@ -4,10 +4,12 @@ import com.bms.dto.request.ArPaymentRequest;
 import com.bms.dto.request.SalePaymentRequest;
 import com.bms.dto.response.ArOutstandingItemResponse;
 import com.bms.dto.response.ArPaymentResponse;
+import com.bms.dto.response.ArReconciliationResponse;
 import com.bms.dto.response.PaymentValidationResponse;
 import com.bms.entity.ArPayment;
 import com.bms.entity.CashDrawerMovement;
 import com.bms.entity.CashShift;
+import com.bms.entity.Customer;
 import com.bms.entity.DrawerMovementType;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Sale;
@@ -18,20 +20,30 @@ import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @Transactional
 public class ArService {
+
+    private static final Logger log = LoggerFactory.getLogger(ArService.class);
 
     @Autowired
     private SaleRepository saleRepository;
@@ -81,6 +93,78 @@ public class ArService {
                 .stream()
                 .map(this::toPaymentResponse)
                 .toList();
+    }
+
+    /**
+     * Read-only O1 reconciliation: compares each customer's stored
+     * currentBalance with the outstanding debt derived from open credit
+     * invoices — the exact same invoice source as sumOutstandingAr(). Credit
+     * held from overpayments is reported separately. Nothing is mutated;
+     * mismatches are for review, never auto-corrected.
+     */
+    @Transactional(readOnly = true)
+    public ArReconciliationResponse getReconciliation() {
+        Map<Long, BigDecimal> expectedByCustomer = new HashMap<>();
+        for (Object[] row : saleRepository.sumOutstandingArByCustomer()) {
+            expectedByCustomer.put((Long) row[0], (BigDecimal) row[1]);
+        }
+
+        List<ArReconciliationResponse.CustomerReconciliation> items = new ArrayList<>();
+        Set<Long> covered = new HashSet<>();
+        for (Customer customer : customerRepository.findByDeletedAtIsNull()) {
+            items.add(toReconciliationItem(customer, expectedByCustomer.get(customer.getId())));
+            covered.add(customer.getId());
+        }
+        // Open invoices of soft-deleted customers still count toward AR.
+        List<Long> orphanIds = expectedByCustomer.keySet().stream()
+                .filter(id -> !covered.contains(id))
+                .toList();
+        for (Customer customer : customerRepository.findAllById(orphanIds)) {
+            items.add(toReconciliationItem(customer, expectedByCustomer.get(customer.getId())));
+        }
+
+        ArReconciliationResponse response = new ArReconciliationResponse();
+        response.setCheckedAt(LocalDateTime.now());
+        response.setTotalExpectedOutstanding(saleRepository.sumOutstandingAr());
+        response.setTotalStoredBalance(items.stream()
+                .map(ArReconciliationResponse.CustomerReconciliation::getCurrentBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        response.setTotalCreditBalance(items.stream()
+                .map(ArReconciliationResponse.CustomerReconciliation::getCreditBalance)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        response.setMismatchCount((int) items.stream()
+                .filter(ArReconciliationResponse.CustomerReconciliation::isMismatch)
+                .count());
+        response.setCustomers(items);
+        return response;
+    }
+
+    /**
+     * Nightly O1 reconciliation. Runs the same comparison as the admin
+     * endpoint and logs a warning for every customer whose stored balance
+     * drifted from the invoice-derived outstanding. Read-only by design.
+     */
+    @Scheduled(cron = "0 0 1 * * *")
+    public void scheduledArReconciliation() {
+        ArReconciliationResponse report = getReconciliation();
+        for (ArReconciliationResponse.CustomerReconciliation item : report.getCustomers()) {
+            if (item.isMismatch()) {
+                log.warn("AR reconciliation mismatch for customer {} ({}): stored balance {}, "
+                                + "expected outstanding {}, difference {}, credit held {}",
+                        item.getCustomerId(), item.getCustomerName(), item.getCurrentBalance(),
+                        item.getExpectedOutstanding(), item.getDifference(), item.getCreditBalance());
+            }
+        }
+        if (report.getMismatchCount() == 0) {
+            log.info("AR reconciliation completed: {} customers checked, no mismatches (total outstanding {})",
+                    report.getCustomers().size(), report.getTotalExpectedOutstanding());
+        } else {
+            log.warn("AR reconciliation completed: {} of {} customers mismatched "
+                            + "(total outstanding {}, stored {}, credit {})",
+                    report.getMismatchCount(), report.getCustomers().size(),
+                    report.getTotalExpectedOutstanding(), report.getTotalStoredBalance(),
+                    report.getTotalCreditBalance());
+        }
     }
 
     // ---- Record payment ---------------------------------------------------
@@ -196,6 +280,9 @@ public class ArService {
             BigDecimal newBalance = customer.getCurrentBalance().subtract(amount)
                     .setScale(2, RoundingMode.HALF_UP);
             if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+                // O1: an overpayment is customer credit, never silently dropped.
+                customer.setCreditBalance(customer.getCreditBalance()
+                        .add(newBalance.negate()).setScale(2, RoundingMode.HALF_UP));
                 newBalance = BigDecimal.ZERO;
             }
             customer.setCurrentBalance(newBalance);
@@ -210,6 +297,21 @@ public class ArService {
     }
 
     // ---- Mappers ----------------------------------------------------------
+
+    private ArReconciliationResponse.CustomerReconciliation toReconciliationItem(Customer customer, BigDecimal expected) {
+        BigDecimal expectedOutstanding = expected != null ? expected : BigDecimal.ZERO;
+        BigDecimal stored = customer.getCurrentBalance();
+        ArReconciliationResponse.CustomerReconciliation item = new ArReconciliationResponse.CustomerReconciliation();
+        item.setCustomerId(customer.getId());
+        item.setCustomerCode(customer.getCustomerCode());
+        item.setCustomerName(customer.getFirstName() + " " + customer.getLastName());
+        item.setExpectedOutstanding(expectedOutstanding);
+        item.setCurrentBalance(stored);
+        item.setCreditBalance(customer.getCreditBalance());
+        item.setDifference(stored.subtract(expectedOutstanding).setScale(2, RoundingMode.HALF_UP));
+        item.setMismatch(stored.compareTo(expectedOutstanding) != 0);
+        return item;
+    }
 
     private ArOutstandingItemResponse toOutstandingItem(Sale sale) {
         ArOutstandingItemResponse response = new ArOutstandingItemResponse();

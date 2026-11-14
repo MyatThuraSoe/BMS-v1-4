@@ -26,7 +26,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     Optional<Sale> findByIdForUpdate(@Param("id") Long id);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
-    @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate DESC")
+    @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate DESC, s.id DESC")
     Page<Sale> findActiveSales(Pageable pageable);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
@@ -36,42 +36,56 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
-           "s.cashierId = :cashierId ORDER BY s.saleDate DESC")
+           "s.cashierId = :cashierId ORDER BY s.saleDate DESC, s.id DESC")
     Page<Sale> findByCashierId(@Param("cashierId") Long cashierId, Pageable pageable);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
-           "s.customer.id = :customerId ORDER BY s.saleDate DESC")
+           "s.customer.id = :customerId ORDER BY s.saleDate DESC, s.id DESC")
     Page<Sale> findByCustomerId(@Param("customerId") Long customerId, Pageable pageable);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
-           "s.saleDate BETWEEN :startDate AND :endDate ORDER BY s.saleDate DESC")
+           "s.saleDate BETWEEN :startDate AND :endDate ORDER BY s.saleDate DESC, s.id DESC")
     Page<Sale> findByDateRange(@Param("startDate") LocalDateTime startDate, 
                                @Param("endDate") LocalDateTime endDate, 
                                Pageable pageable);
     
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT s FROM Sale s WHERE s.isActive = true AND s.deletedAt IS NULL AND " +
-           "s.isVoided = false ORDER BY s.saleDate DESC")
+           "s.isVoided = false ORDER BY s.saleDate DESC, s.id DESC")
     Page<Sale> findNonVoidedSales(Pageable pageable);
 
+    // Includes voided sales so the journal can post the original event at its
+    // sale date and a dated reversal at voidedAt (P4.5/P6). Half-open bounds.
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("""
     SELECT s FROM Sale s
-    WHERE s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false
-      AND s.saleDate BETWEEN :startDate AND :endDate
-    ORDER BY s.saleDate ASC
+    WHERE s.isActive = true AND s.deletedAt IS NULL
+      AND s.saleDate >= :startDate AND s.saleDate < :endDate
+    ORDER BY s.saleDate ASC, s.id ASC
     """)
     List<Sale> findForJournal(@Param("startDate") LocalDateTime startDate,
                               @Param("endDate") LocalDateTime endDate);
+
+    // Voided sales whose reversal falls in the period, regardless of sale date.
+    @EntityGraph(attributePaths = {"items", "items.product", "customer"})
+    @Query("""
+    SELECT s FROM Sale s
+    WHERE s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = true
+      AND s.voidedAt >= :startDate AND s.voidedAt < :endDate
+    ORDER BY s.voidedAt ASC, s.id ASC
+    """)
+    List<Sale> findVoidedForJournal(@Param("startDate") LocalDateTime startDate,
+                                    @Param("endDate") LocalDateTime endDate);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("""
     SELECT s
     FROM Sale s
     WHERE s.invoiceNumber LIKE CONCAT(:prefix, '%')
-    ORDER BY s.invoiceNumber DESC
+    ORDER BY CAST(SUBSTRING(s.invoiceNumber, LENGTH(:prefix) + 1) AS long) DESC,
+             s.invoiceNumber DESC
     """)
     List<Sale> findLastInvoicesByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
 
@@ -79,7 +93,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     SELECT s.invoiceNumber
     FROM Sale s
     WHERE s.invoiceNumber LIKE CONCAT(:prefix, '%')
-    ORDER BY s.invoiceNumber DESC
+    ORDER BY CAST(SUBSTRING(s.invoiceNumber, LENGTH(:prefix) + 1) AS long) DESC,
+             s.invoiceNumber DESC
     """)
     List<String> findInvoiceNumbersByPrefix(@Param("prefix") String prefix, org.springframework.data.domain.Pageable pageable);
 
@@ -93,7 +108,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     AND (:customerId IS NULL OR s.customer.id = :customerId)
     AND (:invoice IS NULL OR LOWER(s.invoiceNumber) LIKE LOWER(CONCAT('%', :invoice, '%')))
     AND (:cashierId IS NULL OR s.cashierId = :cashierId)
-    ORDER BY s.saleDate DESC
+    ORDER BY s.saleDate DESC, s.id DESC
     """)
     Page<Sale> findFilteredSales(
         @Param("includeVoided") Boolean includeVoided,
@@ -132,10 +147,10 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     List<Sale> findByInvoiceNumberContainingIgnoreCase(String invoiceNumber, Pageable pageable);
 
-    @Query("SELECT s FROM Sale s WHERE s.cashShiftId = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
+    @Query("SELECT s FROM Sale s WHERE s.cashShiftId = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate, s.id")
     List<Sale> findByCashShiftId(@Param("shiftId") Long shiftId);
 
-    @Query("SELECT s FROM Sale s WHERE s.employeeShift.id = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate")
+    @Query("SELECT s FROM Sale s WHERE s.employeeShift.id = :shiftId AND s.isActive = true AND s.deletedAt IS NULL ORDER BY s.saleDate, s.id")
     List<Sale> findByEmployeeShiftId(@Param("shiftId") Long shiftId);
 
     @Query("""
@@ -243,7 +258,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         ORDER BY
           CASE WHEN s.dueDate IS NULL THEN 1 ELSE 0 END,
           s.dueDate ASC,
-          s.saleDate DESC
+          s.saleDate DESC,
+          s.id DESC
         """)
     Page<Sale> findOutstandingAr(@Param("keyword") String keyword, Pageable pageable);
 
@@ -261,6 +277,24 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         """)
     BigDecimal sumOutstandingAr();
 
+    // Per-customer outstanding AR for the nightly reconciliation (O1). Uses the
+    // exact same invoice filter and formula as sumOutstandingAr(), so the sum of
+    // these rows always equals the global total. Credit sales always carry a
+    // customer; the IS NOT NULL guard only keeps the group key safe.
+    @Query("""
+        SELECT s.customer.id,
+               COALESCE(SUM(s.totalAmount) - COALESCE(SUM(s.amountPaid), 0) - COALESCE(SUM(s.amountReturned), 0), 0)
+        FROM Sale s
+        WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
+          AND s.paymentStatus <> com.bms.entity.Sale.PaymentStatus.PAID
+          AND s.isVoided = false
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+          AND s.customer IS NOT NULL
+        GROUP BY s.customer.id
+        """)
+    List<Object[]> sumOutstandingArByCustomer();
+
     // Full AR history (including already-paid invoices) for a single customer.
     @EntityGraph(attributePaths = {"customer"})
     @Query("""
@@ -269,7 +303,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
           AND s.customer.id = :customerId
           AND s.isActive = true
           AND s.deletedAt IS NULL
-        ORDER BY s.saleDate DESC
+        ORDER BY s.saleDate DESC, s.id DESC
         """)
     Page<Sale> findArHistoryByCustomerId(@Param("customerId") Long customerId, Pageable pageable);
 }

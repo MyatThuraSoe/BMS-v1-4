@@ -16,9 +16,22 @@ import java.util.List;
 public interface SaleReturnRepository extends JpaRepository<SaleReturn, Long> {
     List<SaleReturn> findByReturnDateBetween(LocalDateTime startDate, LocalDateTime endDate);
 
-    List<SaleReturn> findBySaleIdOrderByReturnDateDesc(Long saleId);
+    // Half-open [startDate, endDate) returns for the GL journal (P4.5).
+    @Query("""
+        SELECT r FROM SaleReturn r
+        WHERE r.returnDate >= :startDate AND r.returnDate < :endDate
+        ORDER BY r.returnDate ASC, r.id ASC
+        """)
+    List<SaleReturn> findForJournal(@Param("startDate") LocalDateTime startDate,
+                                    @Param("endDate") LocalDateTime endDate);
 
-    List<SaleReturn> findBySaleIdInOrderByReturnDateDesc(Collection<Long> saleIds);
+    // Method names kept for existing callers; explicit queries add the id
+    // tiebreaker so same-timestamp returns always list in a stable order.
+    @Query("SELECT r FROM SaleReturn r WHERE r.sale.id = :saleId ORDER BY r.returnDate DESC, r.id DESC")
+    List<SaleReturn> findBySaleIdOrderByReturnDateDesc(@Param("saleId") Long saleId);
+
+    @Query("SELECT r FROM SaleReturn r WHERE r.sale.id IN :saleIds ORDER BY r.returnDate DESC, r.id DESC")
+    List<SaleReturn> findBySaleIdInOrderByReturnDateDesc(@Param("saleIds") Collection<Long> saleIds);
 
     @Query("""
         SELECT r FROM SaleReturn r

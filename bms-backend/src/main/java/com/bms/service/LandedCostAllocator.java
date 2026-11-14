@@ -67,45 +67,15 @@ public final class LandedCostAllocator {
      *         expense per unit), rounded to 4 decimal places.
      */
     public static Map<Long, BigDecimal> allocateUnitCosts(List<Line> lines, List<Expense> expenses) {
+        List<Map<Long, BigDecimal>> perExpense = allocateExpenseAmounts(lines, expenses);
         Map<Long, BigDecimal> allocatedByLine = new LinkedHashMap<>();
         for (Line line : lines) {
             allocatedByLine.put(line.getId(), BigDecimal.ZERO);
         }
-        if (lines.isEmpty()) {
-            return allocatedByLine;
-        }
-
-        for (Expense expense : expenses) {
-            if (expense.getAmount().compareTo(BigDecimal.ZERO) == 0) {
-                continue;
-            }
-            Map<Long, BigDecimal> weights = weightsFor(lines, expense.getMethod());
-            BigDecimal totalWeight = weights.values().stream()
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
-                // Weight metadata is missing; fall back to value allocation.
-                weights = weightsFor(lines, PurchaseExpense.AllocationMethod.VALUE);
-                totalWeight = weights.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-            }
-            if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
-                continue;
-            }
-            BigDecimal remaining = expense.getAmount();
-            int index = 0;
+        for (Map<Long, BigDecimal> shares : perExpense) {
             for (Line line : lines) {
-                BigDecimal share;
-                if (index == lines.size() - 1) {
-                    // Assign the rounding remainder to the last line so the
-                    // allocated total always equals the expense amount.
-                    share = remaining;
-                } else {
-                    share = expense.getAmount()
-                            .multiply(weights.get(line.getId()))
-                            .divide(totalWeight, 2, RoundingMode.HALF_UP);
-                    remaining = remaining.subtract(share);
-                }
-                allocatedByLine.merge(line.getId(), share, BigDecimal::add);
-                index++;
+                allocatedByLine.merge(line.getId(),
+                        shares.getOrDefault(line.getId(), BigDecimal.ZERO), BigDecimal::add);
             }
         }
 
@@ -119,6 +89,85 @@ public final class LandedCostAllocator {
                     .setScale(COST_SCALE, RoundingMode.HALF_UP));
         }
         return unitCosts;
+    }
+
+    /**
+     * Raw allocated amount of each expense per line (invoice currency, 2 dp),
+     * one map per expense in input order. The rounding remainder is assigned to
+     * the last line carrying positive weight so the allocated total always
+     * equals the expense amount. Receipt-time capitalisation builds on this.
+     */
+    public static List<Map<Long, BigDecimal>> allocateExpenseAmounts(List<Line> lines, List<Expense> expenses) {
+        List<Map<Long, BigDecimal>> result = new ArrayList<>();
+        for (Expense expense : expenses) {
+            if (lines.isEmpty() || expense.getAmount().compareTo(BigDecimal.ZERO) == 0) {
+                result.add(zeroShares(lines));
+                continue;
+            }
+            Map<Long, BigDecimal> weights = weightsFor(lines, expense.getMethod());
+            if (totalWeight(weights).compareTo(BigDecimal.ZERO) <= 0) {
+                // Weight metadata is missing; fall back to value allocation.
+                weights = weightsFor(lines, PurchaseExpense.AllocationMethod.VALUE);
+            }
+            result.add(splitByWeights(lines, weights, expense.getAmount()));
+        }
+        return result;
+    }
+
+    /**
+     * Allocates a header amount (discount or non-recoverable tax) across lines
+     * in proportion to line value, remainder on a real (positive-value) line.
+     */
+    public static Map<Long, BigDecimal> allocateByValue(List<Line> lines, BigDecimal amount) {
+        if (lines.isEmpty() || amount == null || amount.compareTo(BigDecimal.ZERO) == 0) {
+            return zeroShares(lines);
+        }
+        return splitByWeights(lines, weightsFor(lines, PurchaseExpense.AllocationMethod.VALUE), amount);
+    }
+
+    private static Map<Long, BigDecimal> zeroShares(List<Line> lines) {
+        Map<Long, BigDecimal> shares = new LinkedHashMap<>();
+        for (Line line : lines) {
+            shares.put(line.getId(), BigDecimal.ZERO);
+        }
+        return shares;
+    }
+
+    private static BigDecimal totalWeight(Map<Long, BigDecimal> weights) {
+        return weights.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private static Map<Long, BigDecimal> splitByWeights(List<Line> lines,
+                                                        Map<Long, BigDecimal> weights,
+                                                        BigDecimal amount) {
+        Map<Long, BigDecimal> shares = zeroShares(lines);
+        BigDecimal totalWeight = totalWeight(weights);
+        if (totalWeight.compareTo(BigDecimal.ZERO) <= 0) {
+            // No positive weight anywhere: park the whole amount on the last line.
+            shares.put(lines.get(lines.size() - 1).getId(), amount.setScale(2, RoundingMode.HALF_UP));
+            return shares;
+        }
+        int remainderIndex = lines.size() - 1;
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            if (weights.getOrDefault(lines.get(i).getId(), BigDecimal.ZERO).compareTo(BigDecimal.ZERO) > 0) {
+                remainderIndex = i;
+                break;
+            }
+        }
+        BigDecimal remaining = amount;
+        for (int i = 0; i < lines.size(); i++) {
+            Line line = lines.get(i);
+            BigDecimal share;
+            if (i == remainderIndex) {
+                share = remaining.setScale(2, RoundingMode.HALF_UP);
+            } else {
+                share = amount.multiply(weights.get(line.getId()))
+                        .divide(totalWeight, 2, RoundingMode.HALF_UP);
+                remaining = remaining.subtract(share);
+            }
+            shares.put(line.getId(), share);
+        }
+        return shares;
     }
 
     private static Map<Long, BigDecimal> weightsFor(List<Line> lines,
