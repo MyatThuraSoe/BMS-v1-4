@@ -28,6 +28,10 @@ public class LocationService {
     private final StockMovementRepository stockMovementRepository;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final LedgerPostingService ledgerPostingService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PeriodGuard periodGuard;
 
     public LocationService(LocationRepository locationRepository,
                            LocationStockRepository locationStockRepository,
@@ -35,7 +39,8 @@ public class LocationService {
                            ProductRepository productRepository,
                            StockMovementRepository stockMovementRepository,
                            UserRepository userRepository,
-                           AuditLogService auditLogService) {
+                           AuditLogService auditLogService,
+                           LedgerPostingService ledgerPostingService) {
         this.locationRepository = locationRepository;
         this.locationStockRepository = locationStockRepository;
         this.stockTransferRepository = stockTransferRepository;
@@ -43,6 +48,7 @@ public class LocationService {
         this.stockMovementRepository = stockMovementRepository;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.ledgerPostingService = ledgerPostingService;
     }
 
     // ------------------------------------------------------------------
@@ -298,6 +304,7 @@ public class LocationService {
     }
 
     public Map<String, Object> rescue(RescueStockRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Product product = productRepository.findByIdForUpdate(request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + request.getProductId()));
         Location from = getLocation(request.getFromLocationId());
@@ -319,7 +326,7 @@ public class LocationService {
     // ------------------------------------------------------------------
 
     public Page<StockTransfer> listTransfers(Pageable pageable) {
-        return stockTransferRepository.findAllByOrderByCreatedAtDesc(pageable);
+        return stockTransferRepository.findAllByOrderByCreatedAtDescIdDesc(pageable);
     }
 
     public StockTransfer getTransfer(Long id) {
@@ -357,6 +364,7 @@ public class LocationService {
     }
 
     public StockTransfer completeTransfer(Long id, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         StockTransfer transfer = getTransfer(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.DRAFT) {
             throw new BusinessException("Only a draft transfer can be completed");
@@ -384,6 +392,7 @@ public class LocationService {
      * TRANSIT location. It is not sellable while in transit.
      */
     public StockTransfer startTransfer(Long id, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         StockTransfer transfer = getTransfer(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.DRAFT) {
             throw new BusinessException("Only a draft transfer can be dispatched");
@@ -406,6 +415,7 @@ public class LocationService {
 
     /** IN_TRANSIT -> RECEIVED: transit stock lands at the destination. */
     public StockTransfer receiveTransfer(Long id, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         StockTransfer transfer = getTransfer(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.IN_TRANSIT) {
             throw new BusinessException("Only an in-transit transfer can be received");
@@ -494,8 +504,15 @@ public class LocationService {
             stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_OUT,
                     quantity, from.getCode(), reasonCode, movementDescription, user, totalValuation, null));
         }
-        stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_IN,
-                quantity, to.getCode(), reasonCode, movementDescription, user, totalValuation, null));
+        StockMovement inMovement = transferMovement(product, StockMovement.MovementType.TRANSFER_IN,
+                quantity, to.getCode(), reasonCode, movementDescription, user, totalValuation, null);
+        stockMovementRepository.save(inMovement);
+
+        // P1/O8: a transfer between owned locations is net-zero on owned units, value
+        // and cost; record it for the location audit trail keyed to its IN movement.
+        ledgerPostingService.postInventory(product, InventoryLedger.EventType.TRANSFER,
+                "STOCK_MOVEMENT", inMovement.getId(), "transfer", 0, unitCost, java.math.BigDecimal.ZERO,
+                to.getId(), movementDescription, LocalDateTime.now(), userId);
     }
 
     /**

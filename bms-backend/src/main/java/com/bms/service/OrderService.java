@@ -9,6 +9,10 @@ import com.bms.entity.Customer;
 import com.bms.entity.Order;
 import com.bms.entity.OrderItem;
 import com.bms.entity.Product;
+import com.bms.entity.Promotion;
+import com.bms.entity.Role;
+import com.bms.entity.ShopInfo;
+import com.bms.entity.SystemSetting;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
@@ -16,6 +20,7 @@ import com.bms.repository.CustomerRepository;
 import com.bms.repository.OrderRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.ShopInfoRepository;
+import com.bms.repository.SystemSettingRepository;
 import com.bms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -42,6 +47,15 @@ public class OrderService {
     private final SequenceService sequenceService;
     private final SaleService saleService;
     private final AuditLogService auditLogService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PeriodGuard periodGuard;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private PromotionService promotionService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private SystemSettingRepository systemSettingRepository;
 
     @Transactional(readOnly = true)
     public Page<OrderResponse> getOrders(String status, LocalDate startDate, LocalDate endDate, Long customerId, String orderNumber, Pageable pageable) {
@@ -99,8 +113,13 @@ public class OrderService {
         }
 
         BigDecimal taxRate = getShopTaxRate();
+        // O2: server-authoritative pricing, locked at creation and kept at conversion.
+        LocalDateTime pricingMoment = LocalDateTime.now();
+        List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
+        BelowCostPolicy belowCostPolicy = getBelowCostPolicy();
+        boolean belowCostAllowedForUser = belowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
+                || isManagerOrAdmin(userId);
         BigDecimal subtotal = BigDecimal.ZERO;
-        BigDecimal taxAmount = BigDecimal.ZERO;
 
         // Validate + reserve stock while building items
         Map<Long, Integer> reservedByProduct = new java.util.HashMap<>();
@@ -115,27 +134,45 @@ public class OrderService {
                         + "'. Available: " + product.getAvailableQuantity() + ", Requested: " + itemRequest.getQuantity());
             }
 
+            PricingQuote quote = promotionService.calculateBestPrice(
+                    product, itemRequest.getQuantity(), order.getCustomer(), pricingMoment, activePromotions);
+            BigDecimal effectiveUnitPrice = quote.getUnitPrice();
+            BigDecimal lineCost = product.getCostPrice();
+            if (lineCost != null && effectiveUnitPrice.compareTo(lineCost) < 0) {
+                if (belowCostPolicy == BelowCostPolicy.BLOCK) {
+                    throw new BusinessException("Product '" + product.getName()
+                            + "' is priced below cost; below-cost sales are blocked");
+                }
+                if (belowCostPolicy == BelowCostPolicy.REQUIRE_MANAGER && !belowCostAllowedForUser) {
+                    throw new BusinessException("Product '" + product.getName()
+                            + "' is priced below cost; manager approval is required");
+                }
+            }
+
             OrderItem item = new OrderItem();
             item.setOrder(order);
             item.setProduct(product);
             item.setQuantity(itemRequest.getQuantity());
-            item.setUnitPrice(product.getUnitPrice());
+            item.setUnitPrice(effectiveUnitPrice);
             item.setCostPriceAtOrder(product.getCostPrice());
-
-            BigDecimal[] pricing = calculateItemPricing(product, itemRequest.getQuantity(), taxRate);
-            item.setTotalPrice(pricing[0]);
-            item.setTaxAmount(pricing[1]);
+            BigDecimal itemTotal = effectiveUnitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
+                    .setScale(2, RoundingMode.HALF_UP);
+            item.setTotalPrice(itemTotal);
 
             order.getItems().add(item);
-            subtotal = subtotal.add(pricing[0]);
-            taxAmount = taxAmount.add(pricing[1]);
+            subtotal = subtotal.add(itemTotal);
 
             reservedByProduct.merge(product.getId(), itemRequest.getQuantity(), Integer::sum);
         }
 
+        BigDecimal discountAmount = computeShopDiscount(subtotal);
         order.setSubtotal(subtotal);
+        order.setDiscountAmount(discountAmount);
+        // P5: tax applies to the discounted line value, using the same proportional
+        // allocation rule as sales so conversion reproduces identical line taxes.
+        BigDecimal taxAmount = applyDiscountedLineTaxes(order, taxRate);
         order.setTaxAmount(taxAmount);
-        order.setTotalAmount(subtotal.add(taxAmount));
+        order.setTotalAmount(subtotal.subtract(discountAmount).add(taxAmount));
 
         Order saved = orderRepository.save(order);
 
@@ -163,6 +200,7 @@ public class OrderService {
 
     @Transactional(rollbackFor = Exception.class)
     public OrderResponse convertOrder(Long id, OrderConvertRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Order order = orderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
         if (order.getStatus() != Order.OrderStatus.PENDING) {
@@ -229,6 +267,7 @@ public class OrderService {
         );
         response.setCreatedAt(order.getCreatedAt());
         response.setSubtotal(order.getSubtotal());
+        response.setDiscountAmount(order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
         response.setTaxAmount(order.getTaxAmount());
         response.setTotalAmount(order.getTotalAmount());
         response.setStatus(order.getStatus().name());
@@ -270,12 +309,85 @@ public class OrderService {
                 .orElse(BigDecimal.ZERO);
     }
 
-    // Returns [itemTotal, itemTax], both rounded to 2dp.
-    private BigDecimal[] calculateItemPricing(Product product, Integer quantity, BigDecimal taxRate) {
-        BigDecimal itemTotal = product.getUnitPrice().multiply(new BigDecimal(quantity))
-                .setScale(2, RoundingMode.HALF_UP);
-        BigDecimal itemTax = itemTotal.multiply(taxRate.divide(BigDecimal.valueOf(100)))
-                .setScale(2, RoundingMode.HALF_UP);
-        return new BigDecimal[]{itemTotal, itemTax};
+    // Mirrors SaleService.computeDiscount; orders have no cashier-entered amount,
+    // so AMOUNT mode yields zero while FIXED/PERCENTAGE apply automatically.
+    private BigDecimal computeShopDiscount(BigDecimal subtotal) {
+        if (subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElse(null);
+        if (info == null || !Boolean.TRUE.equals(info.getDiscountEnabled())) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal discount;
+        if (info.getDiscountType() == ShopInfo.DiscountType.AMOUNT) {
+            discount = BigDecimal.ZERO;
+        } else if (info.getDiscountType() == ShopInfo.DiscountType.FIXED) {
+            discount = info.getDiscountValue() != null ? info.getDiscountValue() : BigDecimal.ZERO;
+        } else {
+            BigDecimal pct = info.getDiscountValue() != null ? info.getDiscountValue() : BigDecimal.ZERO;
+            if (pct.compareTo(BigDecimal.ZERO) <= 0) return BigDecimal.ZERO;
+            discount = subtotal.multiply(pct)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+        }
+        if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
+        if (discount.compareTo(subtotal) > 0) discount = subtotal;
+        return discount.setScale(2, RoundingMode.HALF_UP);
+    }
+
+    // Same allocation rule as SaleDiscountUtils: proportional to gross line value,
+    // remainder on the last positive line (which becomes MAX(id) once persisted).
+    private BigDecimal applyDiscountedLineTaxes(Order order, BigDecimal taxRate) {
+        List<OrderItem> items = order.getItems();
+        BigDecimal grossTotal = BigDecimal.ZERO;
+        OrderItem remainderTarget = null;
+        for (OrderItem item : items) {
+            grossTotal = grossTotal.add(item.getTotalPrice());
+            if (item.getTotalPrice().signum() > 0) remainderTarget = item;
+        }
+        BigDecimal discount = order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO;
+        if (discount.compareTo(grossTotal) > 0) discount = grossTotal;
+
+        Map<OrderItem, BigDecimal> allocations = new java.util.HashMap<>();
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (OrderItem item : items) {
+            if (item == remainderTarget) continue;
+            BigDecimal share = discount.signum() > 0 && grossTotal.signum() > 0 && item.getTotalPrice().signum() > 0
+                    ? discount.multiply(item.getTotalPrice()).divide(grossTotal, 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO;
+            allocations.put(item, share);
+            allocated = allocated.add(share);
+        }
+        if (remainderTarget != null) {
+            allocations.put(remainderTarget, discount.subtract(allocated).max(BigDecimal.ZERO));
+        }
+
+        BigDecimal headerTax = BigDecimal.ZERO;
+        for (OrderItem item : items) {
+            BigDecimal lineNet = item.getTotalPrice().subtract(allocations.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal itemTax = lineNet.multiply(taxRate)
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            item.setTaxAmount(itemTax);
+            headerTax = headerTax.add(itemTax);
+        }
+        return headerTax;
+    }
+
+    private BelowCostPolicy getBelowCostPolicy() {
+        return systemSettingRepository.findBySettingKey("shop.belowCostPolicy")
+                .map(SystemSetting::getSettingValue)
+                .map(BelowCostPolicy::fromString)
+                .orElse(BelowCostPolicy.ALLOW_WARN);
+    }
+
+    private boolean isManagerOrAdmin(Long userId) {
+        if (userId == null) {
+            return false;
+        }
+        return userRepository.findById(userId)
+                .map(u -> u.getRole() != null
+                        && (u.getRole().getName() == Role.RoleName.ROLE_ADMIN
+                            || u.getRole().getName() == Role.RoleName.ROLE_MANAGER))
+                .orElse(false);
     }
 }

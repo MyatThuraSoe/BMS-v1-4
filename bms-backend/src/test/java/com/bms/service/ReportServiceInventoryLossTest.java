@@ -5,13 +5,17 @@ import com.bms.dto.response.JournalEntryResponse;
 import com.bms.entity.GlAccount;
 import com.bms.entity.GlMapping;
 import com.bms.entity.StockMovement;
+import com.bms.repository.ArPaymentRepository;
+import com.bms.repository.CashDrawerMovementRepository;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.GlAccountRepository;
 import com.bms.repository.GlMappingRepository;
+import com.bms.repository.PurchasePaymentRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.repository.SystemSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +55,11 @@ class ReportServiceInventoryLossTest {
     @Mock private GlAccountRepository accountRepository;
     @Mock private GlMappingRepository mappingRepository;
     @Mock private PurchaseRepository purchaseRepository;
+    @Mock private ArPaymentRepository arPaymentRepository;
+    @Mock private CashDrawerMovementRepository cashDrawerMovementRepository;
+    @Mock private LedgerReadService ledgerReadService;
+    @Mock private PurchasePaymentRepository purchasePaymentRepository;
+    @Mock private SystemSettingRepository systemSettingRepository;
 
     private ReportService reportService;
     private GlService glService;
@@ -66,9 +75,17 @@ class ReportServiceInventoryLossTest {
         ReflectionTestUtils.setField(reportService, "saleReturnRepository", saleReturnRepository);
         ReflectionTestUtils.setField(reportService, "stockMovementRepository", stockMovementRepository);
         ReflectionTestUtils.setField(reportService, "inventoryLossService", inventoryLossService);
+        ReflectionTestUtils.setField(reportService, "shopTimeService", new ShopTimeService(systemSettingRepository, "UTC"));
+        ReflectionTestUtils.setField(reportService, "ledgerReadService", ledgerReadService);
+        lenient().when(ledgerReadService.isActive()).thenReturn(false);
 
         glService = new GlService(accountRepository, mappingRepository, purchaseRepository,
-                saleRepository, stockMovementRepository, inventoryLossService);
+                saleRepository, stockMovementRepository, inventoryLossService,
+                expenseRepository, arPaymentRepository, saleReturnRepository,
+                cashDrawerMovementRepository);
+        ReflectionTestUtils.setField(glService, "ledgerReadService", ledgerReadService);
+        ReflectionTestUtils.setField(glService, "purchasePaymentRepository", purchasePaymentRepository);
+        lenient().when(purchasePaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
 
         List<GlMapping> mappings = new ArrayList<>();
         for (GlMapping.EventType type : GlMapping.EventType.values()) {
@@ -83,9 +100,15 @@ class ReportServiceInventoryLossTest {
         lenient().when(mappingRepository.findAll()).thenReturn(mappings);
         lenient().when(purchaseRepository.findForJournal(any(), any())).thenReturn(List.of());
         lenient().when(saleRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(saleRepository.findVoidedForJournal(any(), any())).thenReturn(List.of());
         lenient().when(saleRepository.sumOutstandingAr()).thenReturn(BigDecimal.ZERO);
         lenient().when(expenseRepository.findFiltered(any(), any(), any())).thenReturn(List.of());
         lenient().when(saleReturnRepository.findByReturnDateBetween(any(), any())).thenReturn(List.of());
+        lenient().when(saleReturnRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(saleReturnRepository.findBySaleIdOrderByReturnDateDesc(any())).thenReturn(List.of());
+        lenient().when(arPaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(cashDrawerMovementRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(stockMovementRepository.findByReference(any(), any())).thenReturn(List.of());
         lenient().when(stockMovementRepository.findForJournal(any(), any())).thenReturn(movements);
 
         // Revenue/COGS come from the profit summary; isolate the expense path under test.

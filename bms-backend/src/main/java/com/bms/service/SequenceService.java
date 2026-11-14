@@ -25,23 +25,27 @@ public class SequenceService {
     private final InvoiceSequenceRepository invoiceSequenceRepository;
     private final PurchaseSequenceRepository purchaseSequenceRepository;
     private final OrderSequenceRepository orderSequenceRepository;
+    private final ShopTimeService shopTimeService;
 
     public SequenceService(InvoiceSequenceRepository invoiceSequenceRepository,
                            PurchaseSequenceRepository purchaseSequenceRepository,
-                           OrderSequenceRepository orderSequenceRepository) {
+                           OrderSequenceRepository orderSequenceRepository,
+                           ShopTimeService shopTimeService) {
         this.invoiceSequenceRepository = invoiceSequenceRepository;
         this.purchaseSequenceRepository = purchaseSequenceRepository;
         this.orderSequenceRepository = orderSequenceRepository;
+        this.shopTimeService = shopTimeService;
     }
 
     @Transactional
     public String nextInvoiceNumber() {
-        LocalDate today = LocalDate.now();
+        // O7: per-day sequence keys roll over at midnight in the shop timezone.
+        LocalDate today = shopTimeService.today();
         InvoiceSequence seq = lockOrCreateInvoice(today);
         int next = (seq.getLastNumber() == null ? 0 : seq.getLastNumber()) + 1;
         seq.setLastNumber(next);
         return "INV" + today.format(DateTimeFormatter.ofPattern("yyMMdd"))
-                + String.format("%03d", next);
+                + String.format("%05d", next);
     }
 
     /**
@@ -52,17 +56,19 @@ public class SequenceService {
      */
     @Transactional
     public String nextCreditInvoiceNumber() {
-        LocalDate today = LocalDate.now();
+        // O7: per-day sequence keys roll over at midnight in the shop timezone.
+        LocalDate today = shopTimeService.today();
         InvoiceSequence seq = lockOrCreateInvoice(today);
         int next = (seq.getLastNumber() == null ? 0 : seq.getLastNumber()) + 1;
         seq.setLastNumber(next);
         return "CR-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
-                + "-" + String.format("%03d", next);
+                + "-" + String.format("%05d", next);
     }
 
     @Transactional
     public String nextPurchaseNumber() {
-        LocalDate today = LocalDate.now();
+        // O7: per-day sequence keys roll over at midnight in the shop timezone.
+        LocalDate today = shopTimeService.today();
         PurchaseSequence seq = lockOrCreatePurchase(today);
         int next = (seq.getLastNumber() == null ? 0 : seq.getLastNumber()) + 1;
         seq.setLastNumber(next);
@@ -72,7 +78,8 @@ public class SequenceService {
 
     @Transactional
     public String nextOrderNumber() {
-        LocalDate today = LocalDate.now();
+        // O7: per-day sequence keys roll over at midnight in the shop timezone.
+        LocalDate today = shopTimeService.today();
         OrderSequence seq = lockOrCreateOrder(today);
         int next = (seq.getLastNumber() == null ? 0 : seq.getLastNumber()) + 1;
         seq.setLastNumber(next);

@@ -19,16 +19,16 @@ public interface CashShiftRepository extends JpaRepository<CashShift, Long> {
     
     Optional<CashShift> findByCashierIdAndStatus(Long cashierId, String status);
 
-    Optional<CashShift> findFirstByCashierIdAndStatusOrderByOpeningTimeDesc(Long cashierId, String status);
+    Optional<CashShift> findFirstByCashierIdAndStatusOrderByOpeningTimeDescIdDesc(Long cashierId, String status);
 
-    List<CashShift> findByStatusOrderByOpeningTimeAsc(String status);
+    List<CashShift> findByStatusOrderByOpeningTimeAscIdAsc(String status);
 
     List<CashShift> findByDrawerSessionIdAndStatus(Long drawerSessionId, String status);
 
-    @Query("SELECT cs FROM CashShift cs WHERE cs.status = 'OPEN' AND cs.shiftType = :shiftType ORDER BY cs.openingTime ASC")
+    @Query("SELECT cs FROM CashShift cs WHERE cs.status = 'OPEN' AND cs.shiftType = :shiftType ORDER BY cs.openingTime ASC, cs.id ASC")
     List<CashShift> findOpenByShiftType(@Param("shiftType") com.bms.entity.ShiftType shiftType);
 
-    @Query("SELECT cs FROM CashShift cs WHERE cs.status = 'OPEN' AND cs.drawerSession IS NULL AND cs.shiftType = com.bms.entity.ShiftType.CASH_DRAWER ORDER BY cs.openingTime ASC")
+    @Query("SELECT cs FROM CashShift cs WHERE cs.status = 'OPEN' AND cs.drawerSession IS NULL AND cs.shiftType = com.bms.entity.ShiftType.CASH_DRAWER ORDER BY cs.openingTime ASC, cs.id ASC")
     List<CashShift> findOpenCashShiftsWithoutDrawerSession();
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
@@ -79,7 +79,7 @@ public interface CashShiftRepository extends JpaRepository<CashShift, Long> {
            "AND (cs.closingTime IS NULL OR cs.closingTime >= :startDate) " +
            "AND (:cashierId IS NULL OR cs.cashierId = :cashierId) " +
            "AND (:shiftType IS NULL OR cs.shiftType = :shiftType) " +
-           "ORDER BY cs.openingTime ASC")
+           "ORDER BY cs.openingTime ASC, cs.id ASC")
     List<CashShift> findForReport(
         @Param("startDate") LocalDateTime startDate,
         @Param("endDate") LocalDateTime endDate,

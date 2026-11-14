@@ -1,6 +1,7 @@
 package com.bms.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.*;
 
 import java.time.LocalDate;
@@ -42,6 +43,11 @@ public class PriceList {
     @OneToMany(mappedBy = "priceList", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PriceListItem> items = new ArrayList<>();
 
+    /** P10: save-time warnings for items priced below the product's cost. Not persisted. */
+    @Transient
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<String> belowCostWarnings = new ArrayList<>();
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -72,4 +78,6 @@ public class PriceList {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public List<PriceListItem> getItems() { return items; }
     public void setItems(List<PriceListItem> items) { this.items = items; }
+    public List<String> getBelowCostWarnings() { return belowCostWarnings; }
+    public void setBelowCostWarnings(List<String> belowCostWarnings) { this.belowCostWarnings = belowCostWarnings; }
 }

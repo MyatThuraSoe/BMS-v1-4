@@ -30,8 +30,6 @@ public class PurchaseCreateRequest {
      */
     private Boolean taxRecoverable = false;
 
-    private String paymentStatus;
-
     /** ISO currency of the supplier invoice, e.g. USD. */
     private String currencyCode = "USD";
 
@@ -63,8 +61,6 @@ public class PurchaseCreateRequest {
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
     public Boolean getTaxRecoverable() { return taxRecoverable; }
     public void setTaxRecoverable(Boolean taxRecoverable) { this.taxRecoverable = taxRecoverable; }
-    public String getPaymentStatus() { return paymentStatus; }
-    public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
     public String getCurrencyCode() { return currencyCode; }
     public void setCurrencyCode(String currencyCode) { this.currencyCode = currencyCode; }
     public BigDecimal getExchangeRate() { return exchangeRate; }

@@ -60,6 +60,18 @@ public class CountSheet {
     @Column(name = "sync_key", unique = true, length = 100)
     private String syncKey;
 
+    /**
+     * O7: event timestamp supplied by the offline client (shop-zone wall
+     * clock). Null for sheets created directly on the server. submittedAt
+     * remains the guarded event date used for period assignment.
+     */
+    @Column(name = "client_submitted_at")
+    private LocalDateTime clientSubmittedAt;
+
+    /** O7: server wall-clock time when the offline sync payload was received. */
+    @Column(name = "sync_received_at")
+    private LocalDateTime syncReceivedAt;
+
     @Column(name = "variance_value", precision = 19, scale = 6)
     private BigDecimal varianceValue = BigDecimal.ZERO;
 
@@ -118,6 +130,10 @@ public class CountSheet {
     public void setNotes(String notes) { this.notes = notes; }
     public String getSyncKey() { return syncKey; }
     public void setSyncKey(String syncKey) { this.syncKey = syncKey; }
+    public LocalDateTime getClientSubmittedAt() { return clientSubmittedAt; }
+    public void setClientSubmittedAt(LocalDateTime clientSubmittedAt) { this.clientSubmittedAt = clientSubmittedAt; }
+    public LocalDateTime getSyncReceivedAt() { return syncReceivedAt; }
+    public void setSyncReceivedAt(LocalDateTime syncReceivedAt) { this.syncReceivedAt = syncReceivedAt; }
     public BigDecimal getVarianceValue() { return varianceValue != null ? varianceValue : BigDecimal.ZERO; }
     public void setVarianceValue(BigDecimal varianceValue) { this.varianceValue = varianceValue; }
     public LocalDateTime getCreatedAt() { return createdAt; }

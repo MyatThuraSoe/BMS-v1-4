@@ -85,6 +85,13 @@ export const reportService = {
     return response.data;
   },
 
+  // O3: Accounts-payable aging (grouped by supplier, base currency). Served by PurchaseController.
+  getPayablesAging: async (asOfDate) => {
+    const query = asOfDate ? `?asOfDate=${encodeURIComponent(asOfDate)}` : '';
+    const response = await apiClient.get(`/purchases/payables-aging${query}`);
+    return response.data;
+  },
+
   // §1 Dead Stock
   getDeadStock: async (daysThreshold = 30) => {
     const response = await apiClient.get(`/reports/dead-stock?daysThreshold=${daysThreshold}`);

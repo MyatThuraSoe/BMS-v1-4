@@ -18,6 +18,12 @@ public class ExpenseRequest {
     @NotNull(message = "Expense date is required")
     private LocalDate expenseDate;
 
+    /** O4: true when this cost was already capitalised into a purchase. */
+    private Boolean capitalized;
+
+    /** O4: optional link to the purchase_expenses row that capitalised it. */
+    private Long purchaseExpenseId;
+
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
 
@@ -29,4 +35,10 @@ public class ExpenseRequest {
 
     public LocalDate getExpenseDate() { return expenseDate; }
     public void setExpenseDate(LocalDate expenseDate) { this.expenseDate = expenseDate; }
+
+    public Boolean getCapitalized() { return capitalized; }
+    public void setCapitalized(Boolean capitalized) { this.capitalized = capitalized; }
+
+    public Long getPurchaseExpenseId() { return purchaseExpenseId; }
+    public void setPurchaseExpenseId(Long purchaseExpenseId) { this.purchaseExpenseId = purchaseExpenseId; }
 }

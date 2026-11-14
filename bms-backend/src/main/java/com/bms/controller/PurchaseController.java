@@ -1,12 +1,16 @@
 package com.bms.controller;
 
 import com.bms.dto.request.PurchaseCreateRequest;
+import com.bms.dto.request.PurchasePaymentRequest;
 import com.bms.dto.request.ReceivePurchaseRequest;
 import com.bms.dto.request.ReturnToVendorRequest;
 import com.bms.dto.response.ApiResponse;
+import com.bms.dto.response.PayablesAgingResponse;
+import com.bms.dto.response.PurchasePaymentResponse;
 import com.bms.dto.response.PurchaseResponse;
 import com.bms.dto.response.SupplierStatsResponse;
 import com.bms.dto.response.SupplierTopProductResponse;
+import com.bms.service.PurchasePaymentService;
 import com.bms.service.PurchaseService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,13 +18,14 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
-import com.bms.dto.request.PurchasePaymentStatusUpdateRequest;
 
+import java.time.LocalDate;
 import java.util.List;
 
 
@@ -30,6 +35,9 @@ public class PurchaseController {
 
     @Autowired
     private PurchaseService purchaseService;
+
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
 
     @Autowired
     private com.bms.service.UserService userService;
@@ -89,39 +97,34 @@ public class PurchaseController {
         );
     }
 
-    @PatchMapping("/{id}/payment-status")
+    // O3: paymentStatus is derived from recorded payments; the manual
+    // PATCH /payment-status endpoint was removed. Record payments instead.
+
+    @PostMapping("/{id}/payments")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<PurchaseResponse>> updatePaymentStatus(
-
+    public ResponseEntity<ApiResponse<PurchasePaymentResponse>> recordPayment(
             @PathVariable Long id,
+            @Valid @RequestBody PurchasePaymentRequest request,
+            Authentication authentication) {
+        Long userId = userService.findByUsername(authentication.getName()).getId();
+        PurchasePaymentResponse payment = purchasePaymentService.recordPayment(id, request, userId);
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(new ApiResponse<>(true, "Payment recorded successfully", payment));
+    }
 
-            @Valid
-            @RequestBody PurchasePaymentStatusUpdateRequest request,
+    @GetMapping("/{id}/payments")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<List<PurchasePaymentResponse>>> getPurchasePayments(@PathVariable Long id) {
+        List<PurchasePaymentResponse> payments = purchasePaymentService.getPurchasePayments(id);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Purchase payment history retrieved successfully", payments));
+    }
 
-            Authentication authentication
-    ) {
-
-        org.springframework.security.core.userdetails.UserDetails userDetails =
-                (org.springframework.security.core.userdetails.UserDetails)
-                        authentication.getPrincipal();
-
-        Long userId = userService
-                .findByUsername(userDetails.getUsername())
-                .getId();
-
-        PurchaseResponse purchase = purchaseService.updatePaymentStatus(
-                id,
-                request.getPaymentStatus(),
-                userId
-        );
-
-        return ResponseEntity.ok(
-                new ApiResponse<>(
-                        true,
-                        "Purchase payment status updated successfully",
-                        purchase
-                )
-        );
+    @GetMapping("/payables-aging")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<PayablesAgingResponse>> getPayablesAging(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOfDate) {
+        PayablesAgingResponse aging = purchasePaymentService.getPayablesAging(asOfDate);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Payables aging retrieved successfully", aging));
     }
 
     @DeleteMapping("/{id}")

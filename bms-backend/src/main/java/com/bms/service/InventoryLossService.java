@@ -27,7 +27,8 @@ public class InventoryLossService {
 
     /** Manual adjustment reason codes that represent a real operating loss. */
     private static final Set<String> LOSS_REASONS = Set.of(
-            "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE", "INTERNAL_CONSUMPTION");
+            "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE", "INTERNAL_CONSUMPTION",
+            "RETURN_WRITE_OFF");
 
     /** Count shortages are reported as shrinkage, separate from spoilage/expiry (D6). */
     public static final String SHRINKAGE = "SHRINKAGE";

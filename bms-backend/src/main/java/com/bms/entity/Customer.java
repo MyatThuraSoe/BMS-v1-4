@@ -60,6 +60,14 @@ public class Customer {
     @Column(name = "current_balance", precision = 19, scale = 2)
     private BigDecimal currentBalance = BigDecimal.ZERO;
 
+    /**
+     * Overpayments and returns that exceed the outstanding debt are kept here
+     * as customer credit instead of being silently dropped when currentBalance
+     * is floored at zero (O1).
+     */
+    @Column(name = "credit_balance", precision = 19, scale = 2)
+    private BigDecimal creditBalance = BigDecimal.ZERO;
+
     @Column(name = "is_active", nullable = false)
     private Boolean isActive = true;
 
@@ -139,6 +147,9 @@ public class Customer {
 
     public BigDecimal getCurrentBalance() { return currentBalance != null ? currentBalance : BigDecimal.ZERO; }
     public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance != null ? currentBalance : BigDecimal.ZERO; }
+
+    public BigDecimal getCreditBalance() { return creditBalance != null ? creditBalance : BigDecimal.ZERO; }
+    public void setCreditBalance(BigDecimal creditBalance) { this.creditBalance = creditBalance != null ? creditBalance : BigDecimal.ZERO; }
 
     public Boolean getIsActive() { return isActive; }
     public void setIsActive(Boolean isActive) { this.isActive = isActive; }

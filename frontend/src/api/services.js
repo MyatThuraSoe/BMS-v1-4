@@ -21,5 +21,6 @@ export * from './services/promotions';
 export * from './services/priceLists';
 export * from './services/gl';
 export * from './services/expenses';
+export * from './services/accounting';
 export * from './services/reports';
 export * from './services/backup';

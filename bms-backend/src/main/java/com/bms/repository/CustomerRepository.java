@@ -38,6 +38,10 @@ public interface CustomerRepository extends JpaRepository<Customer, Long> {
     @Query("SELECT c FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL")
     Page<Customer> findActiveCustomers(Pageable pageable);
 
+    // All non-deleted customers (active or not) for the AR reconciliation (O1):
+    // an inactive customer can still owe money or hold credit.
+    List<Customer> findByDeletedAtIsNull();
+
     @Query("SELECT c FROM Customer c WHERE c.isActive = true AND c.deletedAt IS NULL AND " +
             "(:city IS NULL OR :city = '' OR LOWER(c.city) LIKE LOWER(CONCAT('%', :city, '%'))) AND " +
             "(:keyword IS NULL OR :keyword = '' OR " +

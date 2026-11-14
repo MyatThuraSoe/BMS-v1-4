@@ -15,7 +15,7 @@ import java.util.List;
 public interface StockMovementRepository extends JpaRepository<StockMovement, Long> {
     Page<StockMovement> findByProductId(Long productId, Pageable pageable);
     
-    @Query("SELECT sm FROM StockMovement sm WHERE sm.product.id = :productId ORDER BY sm.movementDate DESC")
+    @Query("SELECT sm FROM StockMovement sm WHERE sm.product.id = :productId ORDER BY sm.movementDate DESC, sm.id DESC")
     Page<StockMovement> findByProductIdOrderByDate(@Param("productId") Long productId, Pageable pageable);
     
     @Query("SELECT sm FROM StockMovement sm WHERE sm.product.id = :productId AND sm.movementDate BETWEEN :startDate AND :endDate")
@@ -93,16 +93,25 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
         """)
     List<Object[]> findMovementsSince(@Param("from") LocalDateTime from);
 
+    // Half-open [startDate, endDate) so a movement at exactly midnight belongs to
+    // one journal day only. Includes receipts (RECEIVING), purchase reversals
+    // (PURCHASE), RTV and opening balances alongside adjustments/counts so the
+    // journal can post every valued inventory event at its own date (P4.3/P4.5).
+    // InventoryLossService filters this same source by its loss predicate, so the
+    // widened selection does not change which movements count as operating loss.
     @Query("""
         SELECT sm FROM StockMovement sm
         JOIN FETCH sm.product p
         LEFT JOIN FETCH sm.createdBy u
-        WHERE sm.movementDate BETWEEN :startDate AND :endDate
+        WHERE sm.movementDate >= :startDate AND sm.movementDate < :endDate
           AND sm.valuationAmount IS NOT NULL
           AND sm.referenceType IN (com.bms.entity.StockMovement.ReferenceType.STOCK_ADJUSTMENT,
                                    com.bms.entity.StockMovement.ReferenceType.STOCK_COUNT,
-                                   com.bms.entity.StockMovement.ReferenceType.RTV)
-        ORDER BY sm.movementDate ASC
+                                   com.bms.entity.StockMovement.ReferenceType.RTV,
+                                   com.bms.entity.StockMovement.ReferenceType.RECEIVING,
+                                   com.bms.entity.StockMovement.ReferenceType.PURCHASE,
+                                   com.bms.entity.StockMovement.ReferenceType.OPENING_BALANCE)
+        ORDER BY sm.movementDate ASC, sm.id ASC
         """)
     List<StockMovement> findForJournal(@Param("startDate") LocalDateTime startDate,
                                        @Param("endDate") LocalDateTime endDate);

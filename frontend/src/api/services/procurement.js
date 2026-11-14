@@ -55,8 +55,19 @@ export const purchaseService = {
     return response.data;
   },
 
-  updatePaymentStatus: async (id, paymentStatus) => {
-    const response = await apiClient.patch(`/purchases/${id}/payment-status`, { paymentStatus });
+  recordPayment: async (id, data) => {
+    const response = await apiClient.post(`/purchases/${id}/payments`, data);
+    return response.data;
+  },
+
+  getPayments: async (id) => {
+    const response = await apiClient.get(`/purchases/${id}/payments`);
+    return response.data;
+  },
+
+  getPayablesAging: async (asOfDate) => {
+    const query = asOfDate ? `?asOfDate=${asOfDate}` : '';
+    const response = await apiClient.get(`/purchases/payables-aging${query}`);
     return response.data;
   },
 

@@ -25,6 +25,7 @@ public class ProductPriceHistory {
         REVALUATION,
         SELLING_PRICE_EDIT,
         OPENING_BALANCE,
+        SALE_RETURN,
         LEGACY
     }
 

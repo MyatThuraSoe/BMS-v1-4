@@ -31,7 +31,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     AND (:endDate IS NULL OR o.createdAt < :endDate)
     AND (:customerId IS NULL OR o.customer.id = :customerId)
     AND (:orderNumber IS NULL OR LOWER(o.orderNumber) LIKE LOWER(CONCAT('%', :orderNumber, '%')))
-    ORDER BY o.createdAt DESC
+    ORDER BY o.createdAt DESC, o.id DESC
     """)
     Page<Order> findFilteredOrders(
         @Param("status") Order.OrderStatus status,

@@ -401,6 +401,9 @@ const Orders = () => {
               </TableContainer>
               <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
                 <Typography variant="body2">{t('subtotal')}: {formatCurrency(viewOrder.subtotal)}</Typography>
+                {Number(viewOrder.discountAmount) > 0 && (
+                  <Typography variant="body2">{t('discount')}: -{formatCurrency(viewOrder.discountAmount)}</Typography>
+                )}
                 <Typography variant="body2">{t('tax')}: {formatCurrency(viewOrder.taxAmount)}</Typography>
                 <Typography variant="h6">{t('total')}: {formatCurrency(viewOrder.totalAmount)}</Typography>
               </Box>
@@ -427,6 +430,7 @@ const Orders = () => {
         <DialogTitle>{t('new_order')}</DialogTitle>
         <DialogContent dividers>
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <Alert severity="info">{t('pricing_policy_note')}</Alert>
             <Autocomplete
               size="small"
               options={orderCustomerResults?.data?.content || []}
@@ -494,7 +498,7 @@ const Orders = () => {
               </TableContainer>
             )}
             <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5 }}>
-              <Typography variant="body2" sx={{ mr: 1 }}>{t('subtotal')}: {formatCurrency(subtotal)}</Typography>
+              <Typography variant="body2" sx={{ mr: 1 }}>{t('subtotal_estimate')}: {formatCurrency(subtotal)}</Typography>
             </Box>
             <TextField size="small" label={t('notes')} multiline rows={2} value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} />
           </Box>

@@ -21,6 +21,11 @@ import org.springframework.data.jpa.repository.Lock;
 public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     Optional<Purchase> findByPurchaseNumber(String purchaseNumber);
     boolean existsByPurchaseNumber(String purchaseNumber);
+
+    /** O3: serializes concurrent supplier payments against the same invoice. */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Purchase p WHERE p.id = :id")
+    Optional<Purchase> findByIdForUpdate(@Param("id") Long id);
     
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL ORDER BY p.purchaseDate DESC")
     Page<Purchase> findActivePurchases(Pageable pageable);

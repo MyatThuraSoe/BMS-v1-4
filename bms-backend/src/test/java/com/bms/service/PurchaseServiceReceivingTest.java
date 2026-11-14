@@ -2,13 +2,18 @@ package com.bms.service;
 
 import com.bms.dto.request.ReceivePurchaseRequest;
 import com.bms.dto.response.PurchaseResponse;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.Location;
 import com.bms.entity.Product;
 import com.bms.entity.Purchase;
 import com.bms.entity.PurchaseItem;
 import com.bms.entity.StockMovement;
+import com.bms.repository.ExpenseRepository;
+import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.PurchaseItemRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.StockMovementRepository;
@@ -22,6 +27,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -32,6 +38,7 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -61,6 +68,18 @@ class PurchaseServiceReceivingTest {
     private LocationService locationService;
     @Mock
     private PasswordEncoder passwordEncoder;
+    @Mock
+    private PeriodGuard periodGuard;
+    @Mock
+    private PurchasePaymentService purchasePaymentService;
+    @Mock
+    private ExpenseRepository expenseRepository;
+    @Mock
+    private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock
+    private ProfitLedgerRepository profitLedgerRepository;
+    @Mock
+    private LocationStockRepository locationStockRepository;
 
     @InjectMocks
     private PurchaseService purchaseService;
@@ -121,6 +140,19 @@ class PurchaseServiceReceivingTest {
         quarantine.setCode("QUARANTINE");
         quarantine.setName("Quarantine");
         quarantine.setType(Location.LocationType.QUARANTINE);
+
+        LedgerPostingService ledgerPostingService = new LedgerPostingService();
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLedgerRepository", inventoryLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "profitLedgerRepository", profitLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
+        lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);
+        lenient().when(inventoryLedgerRepository.save(any(InventoryLedger.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(purchasePaymentService.paidAmount(any())).thenReturn(BigDecimal.ZERO);
     }
 
     private void stubReceiving() {

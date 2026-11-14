@@ -553,6 +553,7 @@ const POS = () => {
             lineDiscount: fresh.lineDiscount,
             promotionName: fresh.promotionName,
             pricingSource: fresh.pricingSource,
+            belowCost: fresh.belowCost,
             stockQuantity: fresh.availableStock,
             quantity: fresh.insufficientStock
               ? Math.min(currentQty, fresh.availableStock)
@@ -560,6 +561,13 @@ const POS = () => {
           };
         })
       );
+
+      const belowCostLines = (result.items || []).filter((i) => i.belowCost);
+      if (belowCostLines.length > 0) {
+        notifyWarning(t('below_cost_warning', {
+          products: belowCostLines.map((i) => i.productName).join(', '),
+        }));
+      }
 
       if (result.valid) {
         setVerifiedTotals({

@@ -23,6 +23,7 @@ public class CustomerResponse {
     private Boolean isQuickAdd;
     private BigDecimal creditLimit;
     private BigDecimal currentBalance;
+    private BigDecimal creditBalance;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -60,6 +61,8 @@ public class CustomerResponse {
     public void setCreditLimit(BigDecimal creditLimit) { this.creditLimit = creditLimit; }
     public BigDecimal getCurrentBalance() { return currentBalance; }
     public void setCurrentBalance(BigDecimal currentBalance) { this.currentBalance = currentBalance; }
+    public BigDecimal getCreditBalance() { return creditBalance; }
+    public void setCreditBalance(BigDecimal creditBalance) { this.creditBalance = creditBalance; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }

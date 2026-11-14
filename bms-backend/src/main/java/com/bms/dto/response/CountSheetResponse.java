@@ -14,6 +14,8 @@ public class CountSheetResponse {
     private LocalDate scheduledDate;
     private LocalDateTime startedAt;
     private LocalDateTime submittedAt;
+    private LocalDateTime clientSubmittedAt;
+    private LocalDateTime syncReceivedAt;
     private LocalDateTime approvedAt;
     private String notes;
     private BigDecimal varianceValue;
@@ -36,6 +38,10 @@ public class CountSheetResponse {
     public void setStartedAt(LocalDateTime startedAt) { this.startedAt = startedAt; }
     public LocalDateTime getSubmittedAt() { return submittedAt; }
     public void setSubmittedAt(LocalDateTime submittedAt) { this.submittedAt = submittedAt; }
+    public LocalDateTime getClientSubmittedAt() { return clientSubmittedAt; }
+    public void setClientSubmittedAt(LocalDateTime clientSubmittedAt) { this.clientSubmittedAt = clientSubmittedAt; }
+    public LocalDateTime getSyncReceivedAt() { return syncReceivedAt; }
+    public void setSyncReceivedAt(LocalDateTime syncReceivedAt) { this.syncReceivedAt = syncReceivedAt; }
     public LocalDateTime getApprovedAt() { return approvedAt; }
     public void setApprovedAt(LocalDateTime approvedAt) { this.approvedAt = approvedAt; }
     public String getNotes() { return notes; }

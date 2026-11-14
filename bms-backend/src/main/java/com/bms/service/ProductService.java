@@ -57,6 +57,12 @@ public class ProductService {
     @Autowired
     private LocationService locationService;
 
+    @Autowired
+    private LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
+
     public Page<ProductResponse> getAllProducts(Pageable pageable) {
         return getAllProducts(null, null, pageable);
     }
@@ -162,6 +168,7 @@ public class ProductService {
     }
 
     public Product createProduct(ProductCreateRequest request) {
+        periodGuard.assertOpen(LocalDateTime.now());
         if (productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
@@ -182,7 +189,6 @@ public class ProductService {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setUnitPrice(request.getUnitPrice());
-        product.setCostPrice(request.getCostPrice().setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
         product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
         product.setStockQuantity(0);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
@@ -204,8 +210,16 @@ public class ProductService {
         Long userId = getCurrentUserId();
         User user = userId != null ? userRepository.findById(userId).orElse(null) : null;
         int openingQuantity = request.getStockQuantity() != null ? request.getStockQuantity() : 0;
-        BigDecimal openingValue = savedProduct.getCostPrice().multiply(BigDecimal.valueOf(openingQuantity))
+        BigDecimal openingUnitCost = request.getCostPrice().setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+        BigDecimal openingValue = openingUnitCost.multiply(BigDecimal.valueOf(openingQuantity))
                 .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+
+        // P1/O8: the opening balance is the sole writer of the new product's cost.
+        // Post before setting stock so the ledger derives from a zero owned balance.
+        ledgerPostingService.postInventory(savedProduct, InventoryLedger.EventType.OPENING,
+                "PRODUCT", savedProduct.getId(), "opening", openingQuantity, openingUnitCost,
+                openingValue, null, "Product opening balance", LocalDateTime.now(), userId);
+
         if (openingQuantity > 0) {
             // The new row remains exclusively locked by its insert until this transaction commits.
             savedProduct.setStockQuantity(openingQuantity);
@@ -331,6 +345,7 @@ public class ProductService {
      * row with source MANUAL_ADJUSTMENT, the reason and the user.
      */
     public Product adjustCost(Long id, com.bms.dto.request.CostAdjustmentRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Product product = productRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
         if (!product.getIsActive() || product.getDeletedAt() != null) {
@@ -358,13 +373,10 @@ public class ProductService {
                 .multiply(BigDecimal.valueOf(ownedUnits))
                 .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
 
-        product.setCostPrice(newCost);
-        Product saved = productRepository.save(product);
-
         User changedBy = userId != null ? userRepository.findById(userId).orElse(null) : null;
 
         StockMovement movement = new StockMovement();
-        movement.setProduct(saved);
+        movement.setProduct(product);
         movement.setMovementType(StockMovement.MovementType.REVALUATION);
         movement.setQuantity(0);
         movement.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
@@ -375,6 +387,16 @@ public class ProductService {
         movement.setCreatedBy(changedBy);
         movement.setMovementDate(LocalDateTime.now());
         stockMovementRepository.save(movement);
+
+        // P1/O8: revaluation posts a zero-qty value delta keyed to its movement; the
+        // ledger sets the new cost regardless of owned qty (sole writer of costPrice).
+        ledgerPostingService.postInventory(product, InventoryLedger.EventType.REVALUATION,
+                "STOCK_MOVEMENT", movement.getId(), "revaluation", 0, newCost, valueDelta,
+                null, reason, movement.getMovementDate(), userId);
+        ledgerPostingService.postProfit(ProfitLedger.EventType.REVALUATION, "STOCK_MOVEMENT", movement.getId(),
+                product.getId(), "revaluation", 0, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO,
+                movement.getMovementDate());
+        Product saved = productRepository.save(product);
 
         ProductPriceHistory history = new ProductPriceHistory();
         history.setProduct(saved);
@@ -499,6 +521,7 @@ public class ProductService {
     }
 
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason, String reasonCode) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
@@ -520,13 +543,11 @@ public class ProductService {
         }
 
         String oldStock = String.valueOf(product.getStockQuantity());
-        product.setStockQuantity(newQuantity);
-        productRepository.save(product);
-
         BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
         BigDecimal valuation = unitCost.multiply(BigDecimal.valueOf(quantityChange))
                 .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
 
+        User user = userRepository.findById(userId).orElse(null);
         StockMovement movement = new StockMovement();
         movement.setProduct(product);
         movement.setMovementType(quantityChange > 0 ?
@@ -539,10 +560,19 @@ public class ProductService {
         movement.setValuationAmount(valuation);
         movement.setDescription((reason != null && !reason.isBlank() ? reason : normalizedReason.replace('_', ' '))
                 + " (" + normalizedReason + ")");
-        User user = userRepository.findById(userId).orElse(null);
         movement.setCreatedBy(user);
         movement.setMovementDate(LocalDateTime.now());
         stockMovementRepository.save(movement);
+
+        // P1/O8: post the valued adjustment (keyed to its movement) before stock moves;
+        // cost is unchanged because units enter/leave at the current average.
+        ledgerPostingService.postInventory(product, InventoryLedger.EventType.ADJUSTMENT,
+                "STOCK_MOVEMENT", movement.getId(), "adjustment", quantityChange, unitCost, valuation,
+                null, movement.getDescription(), movement.getMovementDate(), userId);
+        ledgerPostingService.postOperatingLoss(movement);
+
+        product.setStockQuantity(newQuantity);
+        productRepository.save(product);
 
         auditLogService.logAction(userId, "STOCK_ADJUSTMENT",
                 "Stock adjusted for product: " + product.getName() + " by " + quantityChange
@@ -850,7 +880,10 @@ public class ProductService {
 
 
     private ProductResponse convertToResponse(Product product) {
-        ProductResponse response = new ProductResponse();
+        // P10: only ADMIN/MANAGER tokens may receive costPrice. Everyone else
+        // (cashiers, or any non-privileged/unauthenticated context) gets the
+        // cashier projection, which never serializes cost.
+        ProductResponse response = canViewCost() ? new ProductResponse() : new CashierProductResponse();
         response.setId(product.getId());
         response.setSku(product.getSku());
         response.setName(product.getName());
@@ -883,6 +916,15 @@ public class ProductService {
         response.setHasImage(product.getImageData() != null);
 
         return response;
+    }
+
+    private boolean canViewCost() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            return false;
+        }
+        return auth.getAuthorities().stream().anyMatch(a ->
+                "ROLE_ADMIN".equals(a.getAuthority()) || "ROLE_MANAGER".equals(a.getAuthority()));
     }
 
     private Long getCurrentUserId() {

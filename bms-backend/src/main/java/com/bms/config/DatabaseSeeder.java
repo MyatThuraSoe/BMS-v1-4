@@ -117,6 +117,14 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Require manager credentials when an employee joins an already-open cash drawer", "BOOLEAN"});
         defaults.put("blind_drawer_close", new String[]{"true",
                 "Hide expected cash until the counted cash amount is submitted", "BOOLEAN"});
+        defaults.put("shop.belowCostPolicy", new String[]{"ALLOW_WARN",
+                "How below-cost sale lines are handled: ALLOW_WARN, REQUIRE_MANAGER or BLOCK", "STRING"});
+        defaults.put("shop.timezone", new String[]{"UTC",
+                "Shop timezone (IANA zone id) used for day and accounting-period boundaries", "STRING"});
+        defaults.put("accounting.period.lock", new String[]{"LOCK",
+                "Internal accounting transaction lock", "STRING"});
+        defaults.put("accounting.ledger.cutover", new String[]{"",
+                "Ledger read cutover timestamp after historical reconciliation", "STRING"});
 
         for (Map.Entry<String, String[]> entry : defaults.entrySet()) {
             if (systemSettingRepository.findBySettingKey(entry.getKey()).isEmpty()) {

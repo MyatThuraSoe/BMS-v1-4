@@ -8,10 +8,13 @@ import com.bms.dto.response.CartVerifyResponse;
 import com.bms.dto.response.ReturnableItemsResponse;
 import com.bms.dto.response.SaleReturnResponse;
 import com.bms.entity.CashShift;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.Order;
 import com.bms.entity.OrderItem;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
+import com.bms.entity.ProductPriceHistory;
+import com.bms.entity.ProfitLedger;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SaleReturn;
@@ -19,13 +22,18 @@ import com.bms.entity.ShopInfo;
 import com.bms.entity.User;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.CustomerRepository;
+import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.LocationStockRepository;
+import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.ShopInfoRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.repository.SystemSettingRepository;
 import com.bms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -77,6 +85,13 @@ class SaleTaxAfterDiscountTest {
     @Mock private CashDrawerSessionService cashDrawerSessionService;
     @Mock private SalePaymentRepository salePaymentRepository;
     @Mock private SaleReturnRepository saleReturnRepository;
+    @Mock private PeriodGuard periodGuard;
+    @Mock private SystemSettingRepository systemSettingRepository;
+    @Mock private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock private ProfitLedgerRepository profitLedgerRepository;
+    @Mock private LocationStockRepository locationStockRepository;
+    @Mock private LocationService locationService;
+    @Mock private ProductPriceHistoryRepository priceHistoryRepository;
 
     private SaleService saleService;
     private SaleReturnService saleReturnService;
@@ -109,6 +124,21 @@ class SaleTaxAfterDiscountTest {
         ReflectionTestUtils.setField(saleService, "salePaymentRepository", salePaymentRepository);
         ReflectionTestUtils.setField(saleService, "saleReturnRepository", saleReturnRepository);
 
+        LedgerPostingService ledgerPostingService = new LedgerPostingService();
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLedgerRepository", inventoryLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "profitLedgerRepository", profitLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
+        ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
+        lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);
+        lenient().when(inventoryLedgerRepository.save(any(InventoryLedger.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(profitLedgerRepository.save(any(ProfitLedger.class))).thenAnswer(inv -> inv.getArgument(0));
+
         saleReturnService = new SaleReturnService();
         ReflectionTestUtils.setField(saleReturnService, "saleRepository", saleRepository);
         ReflectionTestUtils.setField(saleReturnService, "saleItemRepository", saleItemRepository);
@@ -121,6 +151,16 @@ class SaleTaxAfterDiscountTest {
         ReflectionTestUtils.setField(saleReturnService, "paymentValidationService", paymentValidationService);
         ReflectionTestUtils.setField(saleReturnService, "cashDrawerSessionService", cashDrawerSessionService);
         ReflectionTestUtils.setField(saleReturnService, "salePaymentRepository", salePaymentRepository);
+        ReflectionTestUtils.setField(saleReturnService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(saleReturnService, "ledgerPostingService", ledgerPostingService);
+        ReflectionTestUtils.setField(saleReturnService, "locationService", locationService);
+        ReflectionTestUtils.setField(saleReturnService, "priceHistoryRepository", priceHistoryRepository);
+        lenient().when(locationService.totalOwnedUnits(any(Product.class)))
+                .thenAnswer(inv -> {
+                    Product p = inv.getArgument(0);
+                    return p.getStockQuantity() != null ? p.getStockQuantity() : 0;
+                });
+        lenient().when(priceHistoryRepository.save(any(ProductPriceHistory.class))).thenAnswer(inv -> inv.getArgument(0));
 
         shopInfo = new ShopInfo();
         shopInfo.setTaxPercentage(new BigDecimal("10"));
@@ -151,6 +191,12 @@ class SaleTaxAfterDiscountTest {
                 .thenReturn(new ArrayList<>());
 
         lenient().when(promotionService.calculateBestPrice(any(Product.class), anyInt(), any(), any()))
+                .thenAnswer(inv -> {
+                    Product p = inv.getArgument(0);
+                    return new PricingQuote(p.getUnitPrice(), p.getUnitPrice(), BigDecimal.ZERO,
+                            null, null, null, null, "BASE");
+                });
+        lenient().when(promotionService.calculateBestPrice(any(Product.class), anyInt(), any(), any(), any()))
                 .thenAnswer(inv -> {
                     Product p = inv.getArgument(0);
                     return new PricingQuote(p.getUnitPrice(), p.getUnitPrice(), BigDecimal.ZERO,

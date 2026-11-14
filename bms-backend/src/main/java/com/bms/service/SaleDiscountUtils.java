@@ -72,28 +72,28 @@ public final class SaleDiscountUtils {
 
         SaleItem remainderTarget = null;
         for (SaleItem item : items) {
-            if (grossLineValue(item).signum() > 0) {
+            if (grossLineValue(item).signum() > 0
+                    && (remainderTarget == null || item.getId() == null
+                    || remainderTarget.getId() == null || item.getId() > remainderTarget.getId())) {
                 remainderTarget = item;
             }
         }
 
+        // Persisted lines use MAX(id), matching SQL even when ORM list order changes.
         BigDecimal allocated = ZERO;
         for (SaleItem item : items) {
+            if (item == remainderTarget) {
+                continue;
+            }
             BigDecimal gross = grossLineValue(item);
-            BigDecimal share;
-            if (gross.signum() <= 0) {
-                share = ZERO;
-            } else if (item == remainderTarget) {
-                share = discount.subtract(allocated).setScale(2, RoundingMode.HALF_UP);
-            } else {
-                share = discount.multiply(gross)
-                        .divide(grossTotal, 2, RoundingMode.HALF_UP);
-            }
-            if (share.signum() < 0) {
-                share = ZERO;
-            }
+            BigDecimal share = gross.signum() > 0
+                    ? discount.multiply(gross).divide(grossTotal, 2, RoundingMode.HALF_UP) : ZERO;
             allocations.put(item, share);
             allocated = allocated.add(share);
+        }
+        if (remainderTarget != null) {
+            allocations.put(remainderTarget, discount.subtract(allocated)
+                    .max(ZERO).setScale(2, RoundingMode.HALF_UP));
         }
         return allocations;
     }
@@ -137,6 +137,12 @@ public final class SaleDiscountUtils {
 
     public static BigDecimal netItemRevenue(Sale sale, SaleItem item, int quantitySold) {
         return netItemRevenue(item, discountForItem(sale, item), quantitySold);
+    }
+
+    public static BigDecimal taxForQuantity(SaleItem item, int quantity) {
+        if (quantity <= 0 || item.getQuantity() <= 0) return ZERO;
+        return money(item.getTaxAmount()).multiply(BigDecimal.valueOf(quantity))
+                .divide(BigDecimal.valueOf(item.getQuantity()), 2, RoundingMode.HALF_UP);
     }
 
     /** Net revenue of all non-refunded units of a sale (discount applied). */

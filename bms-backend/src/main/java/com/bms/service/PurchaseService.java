@@ -68,6 +68,15 @@ public class PurchaseService {
     @Autowired
     private PasswordEncoder passwordEncoder;
 
+    @Autowired
+    private LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private PurchasePaymentService purchasePaymentService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
+
     public Page<PurchaseResponse> getAllPurchases(Pageable pageable) {
         return purchaseRepository.findActivePurchases(pageable).map(this::mapToResponse);
     }
@@ -97,6 +106,7 @@ public class PurchaseService {
     }
 
     public PurchaseResponse createPurchase(PurchaseCreateRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDate.parse(request.getPurchaseDate(), DateTimeFormatter.ISO_LOCAL_DATE));
         Supplier supplier = null;
         if (request.getSupplierId() != null) {
             supplier = supplierRepository.findById(request.getSupplierId())
@@ -144,6 +154,7 @@ public class PurchaseService {
             savedPurchase.setReceivingStatus(Purchase.ReceivingStatus.ORDERED);
             purchaseRepository.save(savedPurchase);
         }
+        purchasePaymentService.refreshPaymentStatus(savedPurchase);
 
         auditLogService.logAction(userId, "PURCHASE_CREATE",
                 "Purchase created: " + savedPurchase.getPurchaseNumber(),
@@ -182,7 +193,7 @@ public class PurchaseService {
         purchase.setDiscountAmount(discountAmount);
         purchase.setTaxAmount(taxAmount);
         purchase.setTotalAmount(totalAmount.setScale(2, RoundingMode.HALF_UP));
-        purchase.setPaymentStatus(resolvePaymentStatus(request.getPaymentStatus()));
+        // O3: paymentStatus is derived from recorded payments, never hand-set.
     }
 
     private void applyExpenses(Purchase purchase, List<PurchaseCreateRequest.ExpenseRequest> requests) {
@@ -337,7 +348,10 @@ public class PurchaseService {
             varianceExpense.setExpenseDate(LocalDate.now());
             varianceExpense.setCreatedBy(userId);
             expenseRepository.save(varianceExpense);
+            ledgerPostingService.postExpense(varianceExpense);
         }
+        // O3: the payable changed with the closed totals; re-derive the status.
+        purchasePaymentService.refreshPaymentStatus(purchase);
     }
 
     /** Scales a header discount/tax to the received value, never above the header amount. */
@@ -405,6 +419,7 @@ public class PurchaseService {
     }
 
     public PurchaseResponse receivePurchase(Long purchaseId, ReceivePurchaseRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
@@ -515,12 +530,20 @@ public class PurchaseService {
         // receipt (shop + warehouse + quarantine + transit), not shop alone.
         // The added quantity is every unit received, including quarantined
         // ones, because the business paid for them.
-        int ownedBefore = locationService.totalOwnedUnits(product);
         BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
-        BigDecimal newWeightedCost = CostCalculationUtils.calculateWeightedAverageCost(
-                oldCostPrice, ownedBefore, unitCost, received);
         BigDecimal sellableValuation = valuation.multiply(BigDecimal.valueOf(sellable))
                 .divide(BigDecimal.valueOf(received), CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+
+        // P1/O8: post the valued receipt BEFORE mutating stock so the ledger derives
+        // the new weighted average from the true pre-receipt owned balance. This is
+        // now the sole writer of product.costPrice.
+        InventoryLedger posting = ledgerPostingService.postInventory(
+                product, InventoryLedger.EventType.RECEIPT, "PURCHASE", purchase.getId(),
+                item.getId() + ":" + before, received, unitCost, valuation,
+                destination != null ? destination.getId() : null,
+                "Received " + received + " unit(s) from purchase " + purchase.getPurchaseNumber(),
+                LocalDateTime.now(), userId);
+        BigDecimal newWeightedCost = posting.getUnitCostAfter();
 
         if (sellable > 0) {
             if (destination.getType() == Location.LocationType.SHOP) {
@@ -543,7 +566,6 @@ public class PurchaseService {
                     valuation.subtract(sellableValuation), user);
         }
 
-        product.setCostPrice(newWeightedCost);
         productRepository.save(product);
 
         if (oldCostPrice.compareTo(newWeightedCost) != 0) {
@@ -609,6 +631,7 @@ public class PurchaseService {
     // ------------------------------------------------------------------
 
     public PurchaseResponse returnToVendor(Long purchaseId, ReturnToVendorRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
@@ -640,6 +663,18 @@ public class PurchaseService {
             int ownedBefore = locationService.totalOwnedUnits(product);
             BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
 
+            // P1/O8: post the valued RTV BEFORE removing stock; sole writer of cost.
+            // Removed units leave at this line's own landed base cost, averaged over
+            // ALL owned units, with the C8 negative-value guard raising an alert.
+            InventoryLedger posting = ledgerPostingService.postInventory(
+                    product, InventoryLedger.EventType.RTV, "PURCHASE_RTV", purchase.getId(),
+                    item.getId() + ":" + item.getReturnedQuantity(), -entry.getQuantity(),
+                    item.getBaseUnitCost(),
+                    item.getBaseUnitCost().multiply(BigDecimal.valueOf(entry.getQuantity())).negate(),
+                    null, request.getReason(), LocalDateTime.now(), userId,
+                    message -> recordCostReconciliationAlert(userId, product, purchase, message));
+            BigDecimal newCostPrice = posting.getUnitCostAfter();
+
             // Draw only from quarantine stock that THIS purchase's receipt put
             // there; never from another PO's quarantined goods.
             int remaining = entry.getQuantity();
@@ -662,12 +697,7 @@ public class PurchaseService {
                         "RTV from shop floor", item, user);
             }
 
-            // Revalue: the returned units leave at this line's own landed cost,
-            // averaged over ALL owned units (shop + every location bucket).
-            BigDecimal newCostPrice = CostCalculationUtils.calculateWeightedAverageCostAfterRemoval(
-                    oldCostPrice, ownedBefore, item.getBaseUnitCost(), entry.getQuantity(),
-                    message -> recordCostReconciliationAlert(userId, product, purchase, message));
-            product.setCostPrice(newCostPrice);
+            // Stock removed above; cost already revalued by the ledger posting.
             productRepository.save(product);
 
             BigDecimal credit = rtvCreditAmount(purchase, item, entry.getQuantity());
@@ -698,6 +728,7 @@ public class PurchaseService {
 
         // D1: supplier credit reduces what is owed on this purchase.
         purchase.setReturnedAmount(purchase.getReturnedAmount().add(totalCredit));
+        purchasePaymentService.refreshPaymentStatus(purchase);
         purchaseRepository.save(purchase);
 
         auditLogService.logAction(userId, "PURCHASE_RTV",
@@ -740,23 +771,21 @@ public class PurchaseService {
     }
 
     /**
-     * Supplier credit for returned units (D1): the line's landed base cost.
-     * Recoverable tax is credited pro-rata on top; non-recoverable tax (D2) is
-     * already capitalised into the landed cost, so adding it again would double
-     * count.
+     * Supplier credit for returned units (D1), in INVOICE currency so it is
+     * consistent with totalAmount (O3): the line's invoice unit cost plus the
+     * pro-rata share of the invoice tax (by line value). The inventory side of
+     * the RTV still leaves at the landed base cost; only the payable credit is
+     * invoice-currency. Freight is not refunded by the supplier and stays
+     * payable.
      */
     private BigDecimal rtvCreditAmount(Purchase purchase, PurchaseItem item, int quantity) {
-        BigDecimal credit = item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity));
-        if (purchase.isTaxRecoverable()) {
-            BigDecimal tax = purchase.getTaxAmount();
-            if (tax != null && tax.signum() > 0) {
-                int ordered = purchase.getItems().stream()
-                        .mapToInt(i -> i.getQuantity() != null ? i.getQuantity() : 0).sum();
-                if (ordered > 0) {
-                    credit = credit.add(tax.multiply(BigDecimal.valueOf(quantity))
-                            .divide(BigDecimal.valueOf(ordered), 2, RoundingMode.HALF_UP));
-                }
-            }
+        BigDecimal lineValue = item.getUnitCost().multiply(BigDecimal.valueOf(quantity));
+        BigDecimal credit = lineValue;
+        BigDecimal tax = purchase.getTaxAmount();
+        BigDecimal subtotal = purchase.getSubtotal();
+        if (tax != null && tax.signum() > 0 && subtotal != null && subtotal.signum() > 0) {
+            credit = credit.add(tax.multiply(lineValue)
+                    .divide(subtotal, 2, RoundingMode.HALF_UP));
         }
         return credit.setScale(2, RoundingMode.HALF_UP);
     }
@@ -803,8 +832,18 @@ public class PurchaseService {
         }
 
         BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
-        int ownedBefore = locationService.totalOwnedUnits(product);
         User user = userRepository.findById(userId).orElse(null);
+
+        // P1/O8: post the valued reversal BEFORE removing stock; sole writer of cost.
+        // Removed units are valued at their own landed base cost over ALL owned units,
+        // with the C8 negative-value guard raising a reconciliation alert.
+        InventoryLedger posting = ledgerPostingService.postInventory(
+                product, InventoryLedger.EventType.ADJUSTMENT, "PURCHASE_REVERSAL", purchase.getId(),
+                item.getId() + ":" + quantity, -quantity, item.getBaseUnitCost(),
+                item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity)).negate(),
+                null, "Purchase " + operation, LocalDateTime.now(), userId,
+                message -> recordCostReconciliationAlert(userId, product, purchase, message));
+        BigDecimal newCostPrice = posting.getUnitCostAfter();
 
         // Where did this line's receipt put the goods? Reverse in place.
         List<String> receiptLocations = stockMovementRepository
@@ -859,10 +898,7 @@ public class PurchaseService {
                             + " unit(s) that must be reversed (already sold)");
         }
 
-        BigDecimal newCostPrice = CostCalculationUtils.calculateWeightedAverageCostAfterRemoval(
-                oldCostPrice, ownedBefore, item.getBaseUnitCost(), quantity,
-                message -> recordCostReconciliationAlert(userId, product, purchase, message));
-        product.setCostPrice(newCostPrice);
+        // Stock removed above; cost already revalued by the ledger posting.
         productRepository.save(product);
 
         if (oldCostPrice.compareTo(newCostPrice) != 0) {
@@ -916,39 +952,8 @@ public class PurchaseService {
         return sequenceService.nextPurchaseNumber();
     }
 
-    private com.bms.entity.Purchase.PaymentStatus resolvePaymentStatus(String paymentStatus) {
-        if (paymentStatus == null || paymentStatus.isBlank()) {
-            return com.bms.entity.Purchase.PaymentStatus.PENDING;
-        }
-        try {
-            return com.bms.entity.Purchase.PaymentStatus.valueOf(paymentStatus.toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new BusinessException("Invalid payment status. Allowed values: PENDING, PARTIAL, PAID");
-        }
-    }
-
-    public PurchaseResponse updatePaymentStatus(Long purchaseId, String paymentStatus, Long userId) {
-        Purchase purchase = purchaseRepository.findById(purchaseId)
-                .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
-        if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
-            throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
-        }
-
-        String oldStatus = purchase.getPaymentStatus().name();
-        try {
-            purchase.setPaymentStatus(Purchase.PaymentStatus.valueOf(paymentStatus.toUpperCase()));
-        } catch (IllegalArgumentException ex) {
-            throw new BusinessException("Invalid payment status. Allowed values: PENDING, PARTIAL, PAID");
-        }
-
-        Purchase savedPurchase = purchaseRepository.save(purchase);
-        auditLogService.logAction(userId, "PURCHASE_PAYMENT_STATUS_UPDATE",
-                "Updated payment status for purchase: " + savedPurchase.getPurchaseNumber(),
-                "Purchase", savedPurchase.getId(), oldStatus, savedPurchase.getPaymentStatus().name());
-        return mapToResponse(savedPurchase);
-    }
-
     public void deletePurchase(Long id, Long userId) {
+        periodGuard.assertOpen(LocalDateTime.now());
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + id));
 
@@ -977,8 +982,10 @@ public class PurchaseService {
     }
 
     public PurchaseResponse updatePurchase(Long purchaseId, PurchaseCreateRequest request, Long userId) {
+        periodGuard.assertOpen(LocalDate.parse(request.getPurchaseDate(), DateTimeFormatter.ISO_LOCAL_DATE));
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
+        periodGuard.assertOpen(purchase.getPurchaseDate());
 
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
@@ -1041,6 +1048,7 @@ public class PurchaseService {
             savedPurchase.setReceivingStatus(Purchase.ReceivingStatus.ORDERED);
             purchaseRepository.save(savedPurchase);
         }
+        purchasePaymentService.refreshPaymentStatus(savedPurchase);
 
         auditLogService.logAction(userId, "PURCHASE_UPDATE",
                 "Purchase updated: " + savedPurchase.getPurchaseNumber(),
@@ -1077,7 +1085,13 @@ public class PurchaseService {
         response.setVarianceAmount(purchase.getVarianceAmount());
         response.setReturnedAmount(purchase.getReturnedAmount());
         response.setPayableAmount(purchase.getPayableAmount());
-        response.setPaymentStatus(purchase.getPaymentStatus().name());
+        // O3: status / paid / outstanding are always derived from recorded
+        // payments and returned goods, never from a hand-set value.
+        BigDecimal paidAmount = purchasePaymentService.paidAmount(purchase.getId());
+        BigDecimal payable = purchase.getPayableAmount();
+        response.setPaidAmount(paidAmount);
+        response.setOutstandingAmount(payable.subtract(paidAmount).max(BigDecimal.ZERO));
+        response.setPaymentStatus(PurchasePaymentService.deriveStatus(payable, paidAmount).name());
         response.setReceivingStatus(purchase.getReceivingStatus().name());
         response.setCurrencyCode(purchase.getCurrencyCode());
         response.setExchangeRate(purchase.getExchangeRate());

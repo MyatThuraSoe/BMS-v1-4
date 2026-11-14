@@ -6,10 +6,15 @@ import com.bms.entity.GlMapping;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.StockMovement;
+import com.bms.repository.ArPaymentRepository;
+import com.bms.repository.CashDrawerMovementRepository;
+import com.bms.repository.ExpenseRepository;
 import com.bms.repository.GlAccountRepository;
 import com.bms.repository.GlMappingRepository;
+import com.bms.repository.PurchasePaymentRepository;
 import com.bms.repository.PurchaseRepository;
 import com.bms.repository.SaleRepository;
+import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -44,6 +50,12 @@ class GlServiceJournalBalanceTest {
     @Mock private PurchaseRepository purchaseRepository;
     @Mock private SaleRepository saleRepository;
     @Mock private StockMovementRepository stockMovementRepository;
+    @Mock private ExpenseRepository expenseRepository;
+    @Mock private ArPaymentRepository arPaymentRepository;
+    @Mock private SaleReturnRepository saleReturnRepository;
+    @Mock private CashDrawerMovementRepository cashDrawerMovementRepository;
+    @Mock private LedgerReadService ledgerReadService;
+    @Mock private PurchasePaymentRepository purchasePaymentRepository;
 
     private GlService glService;
     private final List<Sale> journalSales = new ArrayList<>();
@@ -52,7 +64,13 @@ class GlServiceJournalBalanceTest {
     void setUp() {
         glService = new GlService(accountRepository, mappingRepository,
                 purchaseRepository, saleRepository, stockMovementRepository,
-                new InventoryLossService(stockMovementRepository));
+                new InventoryLossService(stockMovementRepository),
+                expenseRepository, arPaymentRepository, saleReturnRepository,
+                cashDrawerMovementRepository);
+        ReflectionTestUtils.setField(glService, "ledgerReadService", ledgerReadService);
+        ReflectionTestUtils.setField(glService, "purchasePaymentRepository", purchasePaymentRepository);
+        lenient().when(ledgerReadService.isActive()).thenReturn(false);
+        lenient().when(purchasePaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
 
         List<GlMapping> mappings = new ArrayList<>();
         for (GlMapping.EventType type : GlMapping.EventType.values()) {
@@ -67,7 +85,14 @@ class GlServiceJournalBalanceTest {
         lenient().when(mappingRepository.findAll()).thenReturn(mappings);
         lenient().when(purchaseRepository.findForJournal(any(), any())).thenReturn(List.of());
         lenient().when(stockMovementRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(stockMovementRepository.findByReference(any(), any())).thenReturn(List.of());
         lenient().when(saleRepository.findForJournal(any(), any())).thenReturn(journalSales);
+        lenient().when(saleRepository.findVoidedForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(saleReturnRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(saleReturnRepository.findBySaleIdOrderByReturnDateDesc(any())).thenReturn(List.of());
+        lenient().when(arPaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(expenseRepository.findFiltered(any(), any(), any())).thenReturn(List.of());
+        lenient().when(cashDrawerMovementRepository.findForJournal(any(), any())).thenReturn(List.of());
     }
 
     /** Builds a sale whose stored values follow the corrected P5 semantics. */
@@ -211,6 +236,100 @@ class GlServiceJournalBalanceTest {
             assertEquals(0, built.getTotalAmount().compareTo(eventDebit(entries, "CASH")),
                     "cash debit must equal invoice total for " + built.getInvoiceNumber());
         }
+    }
+
+    @Test
+    void p42_refundedUnitsAreExcludedFromCogsWithoutLosingPrecision() {
+        Sale sale = sale("INV-RETURNED", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        SaleItem item = sale.getItems().get(0);
+        item.setQuantity(3);
+        item.setQuantityRefunded(1);
+        item.setCostPriceAtSale(new BigDecimal("0.337835"));
+
+        List<JournalEntryResponse> entries = entriesFor(sale.getInvoiceNumber());
+
+        assertMoney("0.675670", eventDebit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("0.675670", eventCredit(entries, "INVENTORY"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void p43_purchaseReversalReducesPayableRatherThanOperatingExpense() {
+        journalMovement(StockMovement.ReferenceType.PURCHASE, StockMovement.MovementType.OUT, "-50.00");
+
+        List<JournalEntryResponse> entries = glService.journal(LocalDate.now(), LocalDate.now());
+
+        assertMoney("50.00", eventDebit(entries, "ACCOUNTS_PAYABLE"));
+        assertMoney("50.00", eventCredit(entries, "INVENTORY"));
+        assertMoney("0.00", eventDebit(entries, "OPERATING_EXPENSE"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void p44_rtvReducesPayableRatherThanOperatingExpense() {
+        journalMovement(StockMovement.ReferenceType.RTV, StockMovement.MovementType.OUT, "-300.00");
+
+        List<JournalEntryResponse> entries = glService.journal(LocalDate.now(), LocalDate.now());
+
+        assertMoney("300.00", eventDebit(entries, "ACCOUNTS_PAYABLE"));
+        assertMoney("300.00", eventCredit(entries, "INVENTORY"));
+        assertMoney("0.00", eventDebit(entries, "OPERATING_EXPENSE"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void p45_receiptUsesItsDatedValuationNotTheWholePurchaseTotal() {
+        StockMovement receipt = journalMovement(StockMovement.ReferenceType.RECEIVING,
+                StockMovement.MovementType.IN, "630.123456");
+        receipt.setMovementDate(LocalDate.now().atTime(15, 30));
+
+        List<JournalEntryResponse> entries = glService.journal(LocalDate.now(), LocalDate.now());
+
+        assertMoney("630.123456", eventDebit(entries, "INVENTORY"));
+        assertMoney("630.123456", eventCredit(entries, "ACCOUNTS_PAYABLE"));
+        assertMoney("0", eventCredit(entries, "OPERATING_EXPENSE"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+        entries.forEach(entry -> assertEquals(receipt.getMovementDate().toLocalDate(), entry.getDate()));
+    }
+
+    @Test
+    void p45_revaluationDoesNotBecomeAnOperatingLoss() {
+        journalMovement(StockMovement.ReferenceType.STOCK_ADJUSTMENT,
+                StockMovement.MovementType.REVALUATION, "-500.00");
+
+        List<JournalEntryResponse> entries = glService.journal(LocalDate.now(), LocalDate.now());
+
+        assertMoney("500.00", eventDebit(entries, "INVENTORY_REVALUATION"));
+        assertMoney("500.00", eventCredit(entries, "INVENTORY"));
+        assertMoney("0", eventDebit(entries, "OPERATING_EXPENSE"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void p4_missingMappingFailsInsteadOfReturningAnUnbalancedJournal() {
+        sale("INV-MISSING", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        GlAccount account = new GlAccount();
+        account.setCode("1000");
+        account.setName("Cash");
+        GlMapping mapping = new GlMapping();
+        mapping.setEventType(GlMapping.EventType.CASH);
+        mapping.setAccount(account);
+        lenient().when(mappingRepository.findAll()).thenReturn(List.of(mapping));
+
+        org.junit.jupiter.api.Assertions.assertThrows(com.bms.exception.BusinessException.class,
+                () -> glService.journal(LocalDate.now(), LocalDate.now()));
+    }
+
+    private StockMovement journalMovement(StockMovement.ReferenceType reference,
+                                          StockMovement.MovementType type, String valuation) {
+        StockMovement movement = new StockMovement();
+        movement.setId(600L);
+        movement.setReferenceType(reference);
+        movement.setMovementType(type);
+        movement.setValuationAmount(new BigDecimal(valuation));
+        movement.setMovementDate(LocalDateTime.now());
+        lenient().when(stockMovementRepository.findForJournal(any(), any())).thenReturn(List.of(movement));
+        return movement;
     }
 
     /** P3 acceptance: write off 12 expired units @ 10 -> GL expense 120, balanced. */

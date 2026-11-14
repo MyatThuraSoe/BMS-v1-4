@@ -3,14 +3,19 @@ package com.bms.service;
 import com.bms.dto.request.CostAdjustmentRequest;
 import com.bms.dto.request.ProductCreateRequest;
 import com.bms.dto.request.ProductUpdateRequest;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.Product;
 import com.bms.entity.ProductPriceHistory;
+import com.bms.entity.ProfitLedger;
 import com.bms.entity.StockMovement;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.repository.CategoryRepository;
+import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.ProductRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.PurchaseItemRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.StockMovementRepository;
@@ -57,6 +62,10 @@ class ProductServiceCostAdjustmentTest {
     @Mock private SaleItemRepository saleItemRepository;
     @Mock private ProductPriceHistoryRepository priceHistoryRepository;
     @Mock private LocationService locationService;
+    @Mock private PeriodGuard periodGuard;
+    @Mock private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock private ProfitLedgerRepository profitLedgerRepository;
+    @Mock private LocationStockRepository locationStockRepository;
 
     private ProductService productService;
     private Product product;
@@ -73,6 +82,21 @@ class ProductServiceCostAdjustmentTest {
         ReflectionTestUtils.setField(productService, "saleItemRepository", saleItemRepository);
         ReflectionTestUtils.setField(productService, "priceHistoryRepository", priceHistoryRepository);
         ReflectionTestUtils.setField(productService, "locationService", locationService);
+
+        LedgerPostingService ledgerPostingService = new LedgerPostingService();
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLedgerRepository", inventoryLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "profitLedgerRepository", profitLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLossService", new InventoryLossService(stockMovementRepository));
+        ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(productService, "ledgerPostingService", ledgerPostingService);
+        ReflectionTestUtils.setField(productService, "periodGuard", periodGuard);
+        lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
+                any(), any(), any(), any(), any())).thenReturn(Optional.empty());
+        lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);
+        lenient().when(inventoryLedgerRepository.save(any(InventoryLedger.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(profitLedgerRepository.save(any(ProfitLedger.class))).thenAnswer(inv -> inv.getArgument(0));
 
         product = new Product();
         product.setId(1L);

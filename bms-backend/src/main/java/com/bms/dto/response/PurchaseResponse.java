@@ -20,6 +20,8 @@ public class PurchaseResponse {
     private BigDecimal varianceAmount;
     private BigDecimal returnedAmount;
     private BigDecimal payableAmount;
+    private BigDecimal paidAmount;
+    private BigDecimal outstandingAmount;
     private String paymentStatus;
     private String receivingStatus;
     private String currencyCode;
@@ -61,6 +63,10 @@ public class PurchaseResponse {
     public void setReturnedAmount(BigDecimal returnedAmount) { this.returnedAmount = returnedAmount; }
     public BigDecimal getPayableAmount() { return payableAmount; }
     public void setPayableAmount(BigDecimal payableAmount) { this.payableAmount = payableAmount; }
+    public BigDecimal getPaidAmount() { return paidAmount; }
+    public void setPaidAmount(BigDecimal paidAmount) { this.paidAmount = paidAmount; }
+    public BigDecimal getOutstandingAmount() { return outstandingAmount; }
+    public void setOutstandingAmount(BigDecimal outstandingAmount) { this.outstandingAmount = outstandingAmount; }
     public String getPaymentStatus() { return paymentStatus; }
     public void setPaymentStatus(String paymentStatus) { this.paymentStatus = paymentStatus; }
     public String getReceivingStatus() { return receivingStatus; }

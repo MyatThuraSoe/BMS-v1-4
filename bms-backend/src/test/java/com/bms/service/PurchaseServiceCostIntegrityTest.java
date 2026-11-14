@@ -7,6 +7,7 @@ import com.bms.dto.request.StockTransferRequest;
 import com.bms.entity.Location;
 import com.bms.entity.LocationStock;
 import com.bms.entity.Expense;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.Product;
 import com.bms.entity.ProductPriceHistory;
 import com.bms.entity.Purchase;
@@ -17,6 +18,8 @@ import com.bms.exception.BusinessException;
 import com.bms.repository.LocationRepository;
 import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ExpenseRepository;
+import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.ProductPriceHistoryRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.PurchaseItemRepository;
@@ -89,6 +92,16 @@ class PurchaseServiceCostIntegrityTest {
     private StockTransferRepository stockTransferRepository;
     @Mock
     private ExpenseRepository expenseRepository;
+    @Mock
+    private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock
+    private ProfitLedgerRepository profitLedgerRepository;
+    @Mock
+    private PeriodGuard periodGuard;
+    @Mock
+    private PurchasePaymentService purchasePaymentService;
+
+    private final List<InventoryLedger> inventoryLedgerRows = new ArrayList<>();
 
     private PurchaseService purchaseService;
     private LocationService locationService;
@@ -116,9 +129,18 @@ class PurchaseServiceCostIntegrityTest {
         quarantine = location(3L, "QUARANTINE", Location.LocationType.QUARANTINE);
         transit = location(4L, "TRANSIT", Location.LocationType.TRANSIT);
 
+        LedgerPostingService ledgerPostingService = new LedgerPostingService();
+        ReflectionTestUtils.setField(ledgerPostingService, "inventoryLedgerRepository", inventoryLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "profitLedgerRepository", profitLedgerRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
+        ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        stubInventoryLedger();
+
         LocationService locationService = new LocationService(locationRepository,
                 locationStockRepository, stockTransferRepository, productRepository,
-                stockMovementRepository, userRepository, auditLogService);
+                stockMovementRepository, userRepository, auditLogService, ledgerPostingService);
+        ReflectionTestUtils.setField(locationService, "periodGuard", periodGuard);
         this.locationService = locationService;
 
         purchaseService = new PurchaseService();
@@ -134,6 +156,10 @@ class PurchaseServiceCostIntegrityTest {
         ReflectionTestUtils.setField(purchaseService, "locationService", locationService);
         ReflectionTestUtils.setField(purchaseService, "passwordEncoder", passwordEncoder);
         ReflectionTestUtils.setField(purchaseService, "expenseRepository", expenseRepository);
+        ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
+        ReflectionTestUtils.setField(purchaseService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(purchaseService, "purchasePaymentService", purchasePaymentService);
+        lenient().when(purchasePaymentService.paidAmount(anyLong())).thenReturn(BigDecimal.ZERO);
 
         lenient().when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> {
             Expense expense = inv.getArgument(0);
@@ -253,6 +279,26 @@ class PurchaseServiceCostIntegrityTest {
                                     && location.equalsIgnoreCase(m.getLocation()))
                             .toList();
                 });
+    }
+
+    private void stubInventoryLedger() {
+        lenient().when(inventoryLedgerRepository.save(any(InventoryLedger.class))).thenAnswer(inv -> {
+            InventoryLedger row = inv.getArgument(0);
+            inventoryLedgerRows.add(row);
+            return row;
+        });
+        lenient().when(inventoryLedgerRepository.existsByProductId(anyLong()))
+                .thenAnswer(inv -> inventoryLedgerRows.stream()
+                        .anyMatch(r -> inv.getArgument(0).equals(r.getProductId())));
+        lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
+                anyString(), anyLong(), any(), anyLong(), anyString()))
+                .thenAnswer(inv -> inventoryLedgerRows.stream()
+                        .filter(r -> inv.getArgument(0).equals(r.getSourceType())
+                                && inv.getArgument(1).equals(r.getSourceId())
+                                && inv.getArgument(2) == r.getEventType()
+                                && inv.getArgument(3).equals(r.getProductId())
+                                && inv.getArgument(4).equals(r.getLineKey()))
+                        .findFirst());
     }
 
     private void stubProducts() {

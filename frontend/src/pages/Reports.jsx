@@ -15,7 +15,7 @@ import SalesHeatmap from '../components/SalesHeatmap';
 
 const toDateStr = (date) => toLocalDateString(date);
 
-const ReportTypes = ['daily', 'inventory', 'cashier', 'trend', 'products', 'deadstock', 'ltv', 'salesTiming', 'retention', 'employeeShifts', 'drawerSessions', 'endOfDay'];
+const ReportTypes = ['daily', 'inventory', 'cashier', 'trend', 'products', 'deadstock', 'ltv', 'salesTiming', 'retention', 'employeeShifts', 'drawerSessions', 'endOfDay', 'payablesAging'];
 
 const Reports = () => {
   const { t } = useTranslation('reports');
@@ -106,6 +106,12 @@ const Reports = () => {
     enabled: reportType === 'endOfDay',
   });
 
+  const { data: payablesAgingData, isLoading: payablesAgingLoading } = useQuery({
+    queryKey: ['payables-aging', dateRange.start],
+    queryFn: () => reportService.getPayablesAging(dateRange.start),
+    enabled: reportType === 'payablesAging',
+  });
+
   const dailySales = dailyData?.data || {};
   const inventory = inventoryData?.data || {};
   const cashierRaw = cashierData?.data || [];
@@ -123,6 +129,9 @@ const Reports = () => {
   const endOfDayBusiness = endOfDay.businessSummary || {};
   const endOfDayDrawer = endOfDay.cashDrawer || {};
   const endOfDayExceptions = endOfDay.exceptions || [];
+  const payablesAging = payablesAgingData?.data || {};
+  const payablesAgingRows = payablesAging.suppliers || [];
+  const payablesAgingTotals = payablesAging.totals;
 
   // Sort cashier table
   const cashierRows = useMemo(() => {
@@ -162,7 +171,7 @@ const Reports = () => {
   const spinner = <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress /></Box>;
 
   const showRange = ['cashier', 'products', 'salesTiming', 'employeeShifts', 'drawerSessions'].includes(reportType);
-  const showSingleDate = ['daily', 'endOfDay'].includes(reportType);
+  const showSingleDate = ['daily', 'endOfDay', 'payablesAging'].includes(reportType);
   const showTrendDays = reportType === 'trend';
   const showThreshold = reportType === 'deadstock';
 
@@ -1102,6 +1111,11 @@ const Reports = () => {
 
           {!endOfDayLoading && (
             <>
+              {endOfDay.truncated && (
+                <Alert severity="warning" sx={{ mb: 3 }}>
+                  {t('end_of_day_truncated', { rowCount: endOfDay.rowCount })}
+                </Alert>
+              )}
               <Paper sx={{ p: 3, mb: 3 }}>
                 <Typography variant="h6" gutterBottom>{t('payments_by_method')}</Typography>
                 {(endOfDay.paymentMethods || []).length === 0 ? (
@@ -1195,6 +1209,75 @@ const Reports = () => {
             </>
           )}
         </Box>
+      )}
+
+      {reportType === 'payablesAging' && (
+        <Paper sx={{ p: 3 }}>
+          <Stack direction={{ xs: 'column', sm: 'row' }} justifyContent="space-between" alignItems={{ sm: 'center' }} spacing={1} sx={{ mb: 2 }}>
+            <Box>
+              <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>{t('payables_aging_title')}</Typography>
+              <Typography variant="body2" color="text.secondary">{t('payables_aging_description', { date: formatDate(dateRange.start) })}</Typography>
+            </Box>
+            {payablesAgingRows.length > 0 && (
+              <Button size="small" startIcon={<Download />} onClick={() => exportCsv(
+                'payables-aging-' + dateRange.start,
+                payablesAgingRows.map((r) => ({
+                  supplier: r.supplierName,
+                  current: r.current,
+                  days1To30: r.days1To30,
+                  days31To60: r.days31To60,
+                  days61To90: r.days61To90,
+                  days90Plus: r.days90Plus,
+                  totalOutstanding: r.totalOutstanding,
+                })),
+                [t('supplier'), t('aging_current'), t('aging_1_30'), t('aging_31_60'), t('aging_61_90'), t('aging_90_plus'), t('aging_total')],
+              )}>{t('export_csv')}</Button>
+            )}
+          </Stack>
+          {payablesAgingLoading ? spinner : payablesAgingRows.length === 0 ? (
+            <Alert severity="info">{t('no_payables')}</Alert>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead>
+                  <TableRow>
+                    <TableCell>{t('supplier')}</TableCell>
+                    <TableCell align="right">{t('aging_current')}</TableCell>
+                    <TableCell align="right">{t('aging_1_30')}</TableCell>
+                    <TableCell align="right">{t('aging_31_60')}</TableCell>
+                    <TableCell align="right">{t('aging_61_90')}</TableCell>
+                    <TableCell align="right">{t('aging_90_plus')}</TableCell>
+                    <TableCell align="right">{t('aging_total')}</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {payablesAgingRows.map((r) => (
+                    <TableRow key={r.supplierId ?? r.supplierName}>
+                      <TableCell>{r.supplierName}</TableCell>
+                      <TableCell align="right">{formatCurrency(r.current)}</TableCell>
+                      <TableCell align="right">{formatCurrency(r.days1To30)}</TableCell>
+                      <TableCell align="right">{formatCurrency(r.days31To60)}</TableCell>
+                      <TableCell align="right">{formatCurrency(r.days61To90)}</TableCell>
+                      <TableCell align="right">{formatCurrency(r.days90Plus)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(r.totalOutstanding)}</TableCell>
+                    </TableRow>
+                  ))}
+                  {payablesAgingTotals && (
+                    <TableRow sx={{ bgcolor: 'action.hover' }}>
+                      <TableCell sx={{ fontWeight: 700 }}>{t('aging_total')}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.current)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.days1To30)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.days31To60)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.days61To90)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.days90Plus)}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(payablesAgingTotals.totalOutstanding)}</TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Paper>
       )}
     </Box>
   );

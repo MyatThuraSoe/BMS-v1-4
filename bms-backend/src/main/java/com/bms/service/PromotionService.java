@@ -17,9 +17,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -134,6 +135,69 @@ public class PromotionService {
         if (promotion.getType() == Promotion.PromotionType.TIERED && promotion.getTiers().isEmpty()) {
             throw new BusinessException("Tiered promotions require at least one tier");
         }
+
+        populateBelowCostWarnings(promotion);
+    }
+
+    /**
+     * P10: warn (do not block) when this promotion would price any affected
+     * product below its cost. Evaluated at a representative quantity: the BOGO
+     * group size, the deepest tier, or the promotion's minimum quantity.
+     */
+    private void populateBelowCostWarnings(Promotion promotion) {
+        List<Product> affected;
+        switch (promotion.getScope()) {
+            case PRODUCT:
+                affected = promotion.getProduct() != null
+                        ? List.of(promotion.getProduct()) : List.of();
+                break;
+            case CATEGORY:
+                Long categoryId = promotion.getCategory() != null ? promotion.getCategory().getId() : null;
+                affected = productRepository.findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc().stream()
+                        .filter(p -> p.getCategory() != null && p.getCategory().getId().equals(categoryId))
+                        .collect(Collectors.toList());
+                break;
+            case ALL:
+            default:
+                affected = productRepository.findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc();
+                break;
+        }
+
+        int quantity = representativeQuantity(promotion);
+        List<String> warnings = new ArrayList<>();
+        for (Product product : affected) {
+            BigDecimal cost = product.getCostPrice();
+            if (cost == null || cost.compareTo(BigDecimal.ZERO) <= 0) {
+                continue;
+            }
+            BigDecimal original = product.getUnitPrice() != null ? product.getUnitPrice() : BigDecimal.ZERO;
+            BigDecimal effective = priceForPromotion(promotion, original, quantity);
+            if (effective != null && effective.compareTo(cost) < 0) {
+                warnings.add(String.format("%s: promotional price %s is below cost %s",
+                        product.getName(),
+                        effective.setScale(2, RoundingMode.HALF_UP),
+                        cost.setScale(2, RoundingMode.HALF_UP)));
+            }
+        }
+        promotion.setBelowCostWarnings(warnings);
+    }
+
+    private int representativeQuantity(Promotion promotion) {
+        if (promotion.getType() == Promotion.PromotionType.BOGO) {
+            int buy = promotion.getBuyQuantity() != null ? promotion.getBuyQuantity() : 0;
+            int get = promotion.getGetQuantity() != null ? promotion.getGetQuantity() : 0;
+            return Math.max(1, buy + get);
+        }
+        if (promotion.getType() == Promotion.PromotionType.TIERED) {
+            int max = promotion.getMinQuantity();
+            for (PromotionTier tier : promotion.getTiers()) {
+                if (tier.getMinQuantity() != null && tier.getMinQuantity() > max) {
+                    max = tier.getMinQuantity();
+                }
+            }
+            return Math.max(1, max);
+        }
+        return Math.max(1, promotion.getMinQuantity());
     }
 
     private Promotion.PromotionType parseType(String type) {
@@ -155,6 +219,12 @@ public class PromotionService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public List<Promotion> getActivePromotions(LocalDateTime at) {
+        LocalDateTime moment = at != null ? at : LocalDateTime.now();
+        return promotionRepository.findActiveAt(moment);
+    }
+
     /**
      * Returns the cheapest applicable price for one cart line. Promotions and
      * customer price lists both compete; the lowest unit price wins (ties go to
@@ -163,12 +233,20 @@ public class PromotionService {
     @Transactional(readOnly = true)
     public PricingQuote calculateBestPrice(Product product, int quantity,
                                            Customer customer, LocalDateTime at) {
+        LocalDateTime moment = at != null ? at : LocalDateTime.now();
+        return calculateBestPrice(product, quantity, customer, moment, getActivePromotions(moment));
+    }
+
+    @Transactional(readOnly = true)
+    public PricingQuote calculateBestPrice(Product product, int quantity,
+                                           Customer customer, LocalDateTime at,
+                                           List<Promotion> activePromotions) {
         BigDecimal original = product.getUnitPrice() != null
                 ? product.getUnitPrice() : BigDecimal.ZERO;
         LocalDateTime moment = at != null ? at : LocalDateTime.now();
 
         BigDecimal priceListPrice = priceListService.resolveCustomerPrice(
-                customer, product, LocalDate.now());
+                customer, product, moment.toLocalDate());
         Long priceListId = null;
         String priceListName = null;
         if (customer != null && customer.getPriceList() != null) {
@@ -177,7 +255,7 @@ public class PromotionService {
         }
 
         PromotionCandidate best = null;
-        for (Promotion promotion : promotionRepository.findActiveAt(moment)) {
+        for (Promotion promotion : activePromotions) {
             if (!appliesTo(promotion, product)) {
                 continue;
             }

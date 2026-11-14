@@ -1,6 +1,7 @@
 package com.bms.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -80,6 +81,11 @@ public class Promotion {
     @OneToMany(mappedBy = "promotion", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<PromotionTier> tiers = new ArrayList<>();
 
+    /** P10: save-time warnings for products this promotion would price below cost. Not persisted. */
+    @Transient
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    private List<String> belowCostWarnings = new ArrayList<>();
+
     public enum PromotionType {
         PERCENT_DISCOUNT, FIXED_DISCOUNT, BOGO, TIERED, FLASH_SALE
     }
@@ -138,4 +144,6 @@ public class Promotion {
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public List<PromotionTier> getTiers() { return tiers; }
     public void setTiers(List<PromotionTier> tiers) { this.tiers = tiers; }
+    public List<String> getBelowCostWarnings() { return belowCostWarnings; }
+    public void setBelowCostWarnings(List<String> belowCostWarnings) { this.belowCostWarnings = belowCostWarnings; }
 }

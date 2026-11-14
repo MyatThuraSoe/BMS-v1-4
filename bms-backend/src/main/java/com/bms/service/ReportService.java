@@ -40,7 +40,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
@@ -51,9 +50,12 @@ import java.util.stream.Collectors;
 public class ReportService {
 
     /**
-     * Upper bound for in-memory report queries. Reports load full result sets
-     * (not paged for the UI), so this guards memory while still comfortably
-     * covering real-world monthly volumes without silently dropping rows.
+     * P7: aggregate reports (profit, trends, daily/monthly, product/category,
+     * cashier, timing) now run as SQL aggregations so totals are exact at any
+     * volume. Only getEndOfDayReport still loads a bounded page because it needs
+     * the full entity graph for per-sale exception checks; it reports the cap
+     * through the {@code truncated} / {@code rowCount} fields so the UI can warn
+     * instead of silently dropping rows.
      */
     private static final int REPORT_MAX_ROWS = 50_000;
 
@@ -68,6 +70,9 @@ public class ReportService {
 
     @Autowired
     private InventoryLossService inventoryLossService;
+
+    @Autowired
+    private LedgerReadService ledgerReadService;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -93,79 +98,55 @@ public class ReportService {
     @Autowired
     private CashDrawerSessionService cashDrawerSessionService;
 
+    @Autowired
+    private ShopTimeService shopTimeService;
+
     // Daily sales report
     public Map<String, Object> getDailySalesReport(LocalDate date) {
-        LocalDateTime startOfDay = date.atStartOfDay();
-        LocalDateTime endOfDay = date.plusDays(1).atStartOfDay();
+        LocalDateTime startOfDay = shopTimeService.startOfDay(date);
+        LocalDateTime endOfDay = shopTimeService.endOfDayExclusive(date);
 
-        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
-        Page<Sale> salesPage = saleRepository.findByDateRange(startOfDay, endOfDay, pageable);
-        List<Sale> sales = salesPage.getContent();
+        String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
+                + "COALESCE(MAX(p.sku), '') AS sku, SUM(l.qty_sold) AS quantity_sold, "
+                + "SUM(l.line_revenue) AS revenue, SUM(l.prorated_tax) AS tax, SUM(l.line_cogs) AS cost "
+                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startOfDay, endOfDay);
 
         BigDecimal totalRevenue = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
-        int totalTransactions = 0;
         long totalItemsSold = 0;
-        Map<Long, BigDecimal> productRevenue = new HashMap<>();
-        Map<Long, Integer> productQuantities = new HashMap<>();
-        Map<Long, BigDecimal> productTax = new HashMap<>();
-        Map<Long, BigDecimal> productCost = new HashMap<>();
-        Map<Long, Product> productCache = new HashMap<>();
-
-        for (Sale sale : sales) {
-            if (Boolean.TRUE.equals(sale.getIsVoided())) {
-                continue;
-            }
-            totalTransactions++;
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) {
-                    continue;
-                }
-                Product product = item.getProduct();
-                productCache.putIfAbsent(product.getId(), product);
-                productQuantities.merge(product.getId(), quantitySold, Integer::sum);
-                BigDecimal revenue = SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
-                totalRevenue = totalRevenue.add(revenue);
-                productRevenue.merge(product.getId(), revenue, BigDecimal::add);
-                BigDecimal tax = prorateTax(item, quantitySold);
-                productTax.merge(product.getId(), tax, BigDecimal::add);
-                if (item.getCostPriceAtSale() != null) {
-                    BigDecimal cost = item.getCostPriceAtSale().multiply(BigDecimal.valueOf(quantitySold));
-                    productCost.merge(product.getId(), cost, BigDecimal::add);
-                    totalCost = totalCost.add(cost);
-                }
-                totalItemsSold += quantitySold;
-            }
-        }
-
         List<Map<String, Object>> itemSales = new ArrayList<>();
-        for (Map.Entry<Long, Integer> entry : productQuantities.entrySet()) {
-            Long productId = entry.getKey();
-            int quantitySold = entry.getValue();
-            BigDecimal revenue = productRevenue.getOrDefault(productId, BigDecimal.ZERO);
-            BigDecimal cost = productCost.getOrDefault(productId, BigDecimal.ZERO);
+        for (Map<String, Object> row : rows) {
+            int quantitySold = ((Number) row.get("quantity_sold")).intValue();
+            BigDecimal revenue = toBigDecimal(row.get("revenue"));
+            BigDecimal cost = toBigDecimal(row.get("cost"));
+            totalRevenue = totalRevenue.add(revenue);
+            totalCost = totalCost.add(cost);
+            totalItemsSold += quantitySold;
             BigDecimal unitPrice = quantitySold > 0
                     ? revenue.divide(BigDecimal.valueOf(quantitySold), 2, RoundingMode.HALF_UP)
                     : BigDecimal.ZERO;
-            Product product = productCache.get(productId);
-            Map<String, Object> row = new HashMap<>();
-            row.put("productId", productId);
-            row.put("productName", product != null ? product.getName() : "");
-            row.put("sku", product != null ? product.getSku() : "");
-            row.put("quantitySold", quantitySold);
-            row.put("unitPrice", unitPrice);
-            row.put("taxAmount", productTax.getOrDefault(productId, BigDecimal.ZERO));
-            row.put("totalPrice", revenue);
-            row.put("costAmount", cost);
-            row.put("profit", revenue.subtract(cost));
-            itemSales.add(row);
+            Map<String, Object> item = new HashMap<>();
+            item.put("productId", ((Number) row.get("product_id")).longValue());
+            item.put("productName", row.get("product_name"));
+            item.put("sku", row.get("sku"));
+            item.put("quantitySold", quantitySold);
+            item.put("unitPrice", unitPrice);
+            item.put("taxAmount", toBigDecimal(row.get("tax")));
+            item.put("totalPrice", revenue);
+            item.put("costAmount", cost);
+            item.put("profit", revenue.subtract(cost));
+            itemSales.add(item);
         }
         itemSales.sort(Comparator.comparing((Map<String, Object> r) ->
                 ((Number) r.get("totalPrice")).longValue()).reversed());
+
+        Long transactions = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
+                        + "AND s.is_voided = false AND s.sale_date >= ? AND s.sale_date < ?",
+                Long.class, startOfDay, endOfDay);
+        int totalTransactions = transactions != null ? transactions.intValue() : 0;
 
         Map<String, Object> report = new HashMap<>();
         report.put("date", date);
@@ -184,23 +165,18 @@ public class ReportService {
     public Map<String, Object> getMonthlySalesReport(int year, int month) {
         LocalDate startDate = LocalDate.of(year, month, 1);
         LocalDate endDate = startDate.plusMonths(1).minusDays(1);
-        
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
 
-        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
-        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
-        List<Sale> sales = salesPage.getContent();
-        
-        BigDecimal totalRevenue = BigDecimal.ZERO;
-        int totalTransactions = 0;
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        for (Sale sale : sales) {
-            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
-                totalRevenue = totalRevenue.add(calculateNetSaleRevenue(sale));
-                totalTransactions++;
-            }
-        }
+        String sql = "SELECT COALESCE(SUM(t.sale_revenue), 0), COUNT(*) FROM ("
+                + perSaleRevenueSql() + ") t";
+        BigDecimal[] totals = jdbcTemplate.queryForObject(sql,
+                (rs, rowNum) -> new BigDecimal[]{
+                        toBigDecimal(rs.getObject(1)), BigDecimal.valueOf(rs.getLong(2))},
+                startDateTime, endDateTime);
+        BigDecimal totalRevenue = totals != null ? totals[0] : BigDecimal.ZERO;
+        int totalTransactions = totals != null ? totals[1].intValue() : 0;
 
         Map<String, Object> report = new HashMap<>();
         report.put("year", year);
@@ -214,47 +190,26 @@ public class ReportService {
 
     // Product performance report
     public List<Map<String, Object>> getProductPerformanceReport(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
-        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
-        List<Sale> sales = salesPage.getContent();
-        
-        Map<Long, Map<String, Object>> productStats = new HashMap<>();
+        String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
+                + "SUM(l.qty_sold) AS quantity_sold, SUM(l.line_revenue) AS revenue "
+                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
-        for (Sale sale : sales) {
-            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
-                var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-                for (var item : sale.getItems()) {
-                    int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                    if (quantitySold <= 0) {
-                        continue;
-                    }
-                    Long productId = item.getProduct().getId();
-                    
-                    productStats.computeIfAbsent(productId, k -> {
-                        Map<String, Object> stats = new HashMap<>();
-                        stats.put("productId", productId);
-                        stats.put("productName", item.getProduct().getName());
-                        stats.put("totalQuantitySold", 0);
-                        stats.put("totalRevenue", BigDecimal.ZERO);
-                        return stats;
-                    });
-                    
-                    Map<String, Object> stats = productStats.get(productId);
-                    stats.put("totalQuantitySold", (Integer) stats.get("totalQuantitySold") + quantitySold);
-                    stats.put("totalRevenue", ((BigDecimal) stats.get("totalRevenue")).add(
-                            SaleDiscountUtils.netItemRevenue(item,
-                                    discountAllocations.getOrDefault(item, BigDecimal.ZERO),
-                                    quantitySold)));
-                }
-            }
+        List<Map<String, Object>> report = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("productId", ((Number) row.get("product_id")).longValue());
+            stats.put("productName", row.get("product_name"));
+            stats.put("totalQuantitySold", ((Number) row.get("quantity_sold")).intValue());
+            stats.put("totalRevenue", toBigDecimal(row.get("revenue")));
+            report.add(stats);
         }
-
-        List<Map<String, Object>> report = new ArrayList<>(productStats.values());
         report.sort((a, b) -> ((BigDecimal) b.get("totalRevenue")).compareTo((BigDecimal) a.get("totalRevenue")));
-        
+
         return report;
     }
 
@@ -272,93 +227,65 @@ public class ReportService {
     // Â§6 Cashier performance â€” fixed: accumulate ALL items/sales first, then compute averages
     // -----------------------------------------------------------------------
     public List<Map<String, Object>> getCashierPerformanceReport(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
-        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
-        List<Sale> sales = salesPage.getContent();
-        
-        Map<Long, Map<String, Object>> cashierStats = new HashMap<>();
+        String sql = "SELECT t.cashier_id, SUM(t.sale_revenue) AS total_sales, "
+                + "COUNT(*) AS tx_count, SUM(t.items_sold) AS item_count "
+                + "FROM (" + perSaleRevenueSql() + ") t GROUP BY t.cashier_id";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
-        for (Sale sale : sales) {
-            if (!Boolean.TRUE.equals(sale.getIsVoided())) {
-                Long cashierId = sale.getCashierId();
-
-                cashierStats.computeIfAbsent(cashierId, k -> {
-                    Map<String, Object> stats = new HashMap<>();
-                    stats.put("cashierId", cashierId);
-                    stats.put("totalSales", BigDecimal.ZERO);
-                    stats.put("transactionCount", 0);
-                    stats.put("totalItems", 0);
-                    return stats;
-                });
-
-                Map<String, Object> stats = cashierStats.get(cashierId);
-                // Accumulate totals first â€” averages computed after the loop
-                stats.put("totalSales", ((BigDecimal) stats.get("totalSales")).add(calculateNetSaleRevenue(sale)));
-                stats.put("transactionCount", (Integer) stats.get("transactionCount") + 1);
-
-                int itemCount = sale.getItems().stream()
-                        .mapToInt(item -> effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded()))
-                        .sum();
-                stats.put("totalItems", (Integer) stats.get("totalItems") + itemCount);
-            }
-        }
-
-        // Compute fairness-adjusted averages after the loop (so denominator is the full count)
-        for (Map<String, Object> stats : cashierStats.values()) {
-            int txCount = (Integer) stats.get("transactionCount");
+        List<Map<String, Object>> report = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> stats = new HashMap<>();
+            stats.put("cashierId", ((Number) row.get("cashier_id")).longValue());
+            BigDecimal totalSales = toBigDecimal(row.get("total_sales"));
+            int txCount = ((Number) row.get("tx_count")).intValue();
+            int totalItems = ((Number) row.get("item_count")).intValue();
+            stats.put("totalSales", totalSales);
+            stats.put("transactionCount", txCount);
+            stats.put("totalItems", totalItems);
             if (txCount > 0) {
                 stats.put("averageTransactionValue",
-                        ((BigDecimal) stats.get("totalSales")).divide(BigDecimal.valueOf(txCount), 2, RoundingMode.HALF_UP));
-                stats.put("averageItemsPerSale",
-                        (double) (Integer) stats.get("totalItems") / txCount);
+                        totalSales.divide(BigDecimal.valueOf(txCount), 2, RoundingMode.HALF_UP));
+                stats.put("averageItemsPerSale", (double) totalItems / txCount);
             } else {
                 stats.put("averageTransactionValue", BigDecimal.ZERO);
                 stats.put("averageItemsPerSale", 0.0);
             }
+            report.add(stats);
         }
-
-        List<Map<String, Object>> report = new ArrayList<>(cashierStats.values());
         report.sort((a, b) -> ((BigDecimal) b.get("totalSales")).compareTo((BigDecimal) a.get("totalSales")));
-        
+
         return report;
     }
 
     public List<DailySalesTrendDto> getSalesTrend(int days) {
-        LocalDate endDate = LocalDate.now();
+        LocalDate endDate = shopTimeService.today();
         LocalDate startDate = endDate.minusDays(Math.max(days, 1) - 1);
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
-
-        Pageable pageable = PageRequest.of(0, REPORT_MAX_ROWS);
-        Page<Sale> salesPage = saleRepository.findByDateRange(startDateTime, endDateTime, pageable);
-        List<Sale> sales = salesPage.getContent();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
         Map<LocalDate, DailySalesTrendDto> trendByDate = new LinkedHashMap<>();
         for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
             trendByDate.put(date, new DailySalesTrendDto(date, BigDecimal.ZERO, 0));
         }
 
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) {
-                continue;
-            }
-            LocalDate saleDate = sale.getSaleDate().toLocalDate();
-            if (!trendByDate.containsKey(saleDate)) {
-                continue;
-            }
+        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        jdbcTemplate.query(sql, rs -> {
+            LocalDate saleDate = toLocalDateTime(rs.getObject("sale_date")).toLocalDate();
             DailySalesTrendDto dto = trendByDate.get(saleDate);
-            dto.setTotalSales(dto.getTotalSales().add(calculateNetSaleRevenue(sale)));
-            dto.setTransactionCount(dto.getTransactionCount() + 1);
-        }
+            if (dto != null) {
+                dto.setTotalSales(dto.getTotalSales().add(toBigDecimal(rs.getObject("sale_revenue"))));
+                dto.setTransactionCount(dto.getTransactionCount() + 1);
+            }
+        }, startDateTime, endDateTime);
 
         return new ArrayList<>(trendByDate.values());
     }
 
     public List<Map<String, Object>> getTopProducts(String period, int limit, String compareMode) {
-        LocalDate endDate = LocalDate.now();
+        LocalDate endDate = shopTimeService.today();
         LocalDate startDate = resolveStartDate(period, endDate);
         LocalDate[] compareRange = resolveComparisonRange(period, compareMode, startDate, endDate);
 
@@ -399,29 +326,27 @@ public class ReportService {
     }
 
         public List<Map<String, Object>> getTopCategories(String period, String compareMode) {
-        LocalDate endDate = LocalDate.now();
+        LocalDate endDate = shopTimeService.today();
         LocalDate startDate = resolveStartDate(period, endDate);
         LocalDate[] compareRange = resolveComparisonRange(period, compareMode, startDate, endDate);
 
         // 1. Get current period data (and capture category names)
         Map<Long, String> categoryNames = new HashMap<>();
         Map<Long, BigDecimal> currentRevenueMap = new HashMap<>();
-        
-        List<Sale> currentSales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
-        for (Sale sale : currentSales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) continue;
-                Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
-                String categoryName = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getName() : "Uncategorized";
-                
-                categoryNames.put(categoryId, categoryName);
-                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
-                currentRevenueMap.merge(categoryId, itemRevenue, BigDecimal::add);
-            }
+
+        String currentSql = "SELECT COALESCE(c.id, -1) AS category_id, "
+                + "COALESCE(MAX(c.name), 'Uncategorized') AS category_name, "
+                + "SUM(l.line_revenue) AS revenue "
+                + "FROM (" + lineRevenueSql() + ") l "
+                + "LEFT JOIN products p ON p.id = l.product_id "
+                + "LEFT JOIN categories c ON c.id = p.category_id "
+                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+        List<Map<String, Object>> currentRows = jdbcTemplate.queryForList(currentSql,
+                shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
+        for (Map<String, Object> row : currentRows) {
+            Long categoryId = ((Number) row.get("category_id")).longValue();
+            categoryNames.put(categoryId, (String) row.get("category_name"));
+            currentRevenueMap.put(categoryId, toBigDecimal(row.get("revenue")));
         }
 
         // 2. Get previous period data using the reusable helper
@@ -462,31 +387,34 @@ public class ReportService {
         if (categoryIds == null || categoryIds.size() < 2) {
             return List.of();
         }
-        Set<Long> wanted = new HashSet<>(categoryIds);
-        LocalDate endDate = LocalDate.now();
+        LocalDate endDate = shopTimeService.today();
         LocalDate startDate = resolveStartDate(period, endDate);
 
-        List<Sale> sales = saleRepository.findByDateRange(
-                startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(),
-                PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        StringBuilder placeholders = new StringBuilder();
+        List<Object> params = new ArrayList<>();
+        params.add(shopTimeService.startOfDay(startDate));
+        params.add(shopTimeService.endOfDayExclusive(endDate));
+        for (int i = 0; i < categoryIds.size(); i++) {
+            placeholders.append(i == 0 ? "?" : ",?");
+            params.add(categoryIds.get(i));
+        }
+        String sql = "SELECT l.sale_id, l.sale_date, COALESCE(c.id, -1) AS category_id, "
+                + "SUM(l.line_revenue) AS revenue "
+                + "FROM (" + lineRevenueSql() + ") l "
+                + "LEFT JOIN products p ON p.id = l.product_id "
+                + "LEFT JOIN categories c ON c.id = p.category_id "
+                + "WHERE l.qty_sold > 0 AND COALESCE(c.id, -1) IN (" + placeholders + ") "
+                + "GROUP BY l.sale_id, l.sale_date, COALESCE(c.id, -1)";
 
         // day -> (categoryId -> revenue)
         Map<LocalDate, Map<Long, BigDecimal>> daily = new TreeMap<>();
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            LocalDate day = sale.getSaleDate().toLocalDate();
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) continue;
-                Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
-                if (!wanted.contains(categoryId)) continue;
-                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
-                daily.computeIfAbsent(day, k -> new HashMap<>())
-                        .merge(categoryId, itemRevenue, BigDecimal::add);
-            }
-        }
+        jdbcTemplate.query(sql, rs -> {
+            LocalDate day = toLocalDateTime(rs.getObject("sale_date")).toLocalDate();
+            Long categoryId = ((Number) rs.getObject("category_id")).longValue();
+            BigDecimal revenue = toBigDecimal(rs.getObject("revenue"));
+            daily.computeIfAbsent(day, k -> new HashMap<>())
+                    .merge(categoryId, revenue, BigDecimal::add);
+        }, params.toArray());
 
         List<Map<String, Object>> result = new ArrayList<>();
         for (Map.Entry<LocalDate, Map<Long, BigDecimal>> dayEntry : daily.entrySet()) {
@@ -501,27 +429,33 @@ public class ReportService {
     }
 
     public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
-        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        if (!ledgerReadService.isActive()) return getLegacyProfitSummary(startDate, endDate);
+        BigDecimal[] totals = ledgerReadService.totals(shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
+        BigDecimal grossProfit = totals[0].subtract(totals[1]);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("revenue", totals[0]);
+        summary.put("cogs", totals[1]);
+        summary.put("grossProfit", grossProfit);
+        summary.put("grossMarginPercent", totals[0].signum() > 0
+                ? grossProfit.multiply(BigDecimal.valueOf(100)).divide(totals[0], 2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO);
+        summary.put("outstandingAr", saleRepository.sumOutstandingAr());
+        return summary;
+    }
 
-        BigDecimal revenue = BigDecimal.ZERO;
-        BigDecimal cogs = BigDecimal.ZERO;
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) {
-                continue;
-            }
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) {
-                    continue;
-                }
-                revenue = revenue.add(SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold));
-                cogs = cogs.add(CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(), quantitySold));
-            }
-        }
+    Map<String, Object> getLegacyProfitSummary(LocalDate startDate, LocalDate endDate) {
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
+
+        // P7: aggregate in SQL so any volume reports exactly — no row cap.
+        String sql = "SELECT COALESCE(SUM(l.line_revenue), 0), COALESCE(SUM(l.line_cogs), 0) FROM ("
+                + lineRevenueSql() + ") l";
+        BigDecimal[] totals = jdbcTemplate.queryForObject(sql,
+                (rs, rowNum) -> new BigDecimal[]{
+                        toBigDecimal(rs.getObject(1)), toBigDecimal(rs.getObject(2))},
+                startDateTime, endDateTime);
+        BigDecimal revenue = totals != null ? totals[0] : BigDecimal.ZERO;
+        BigDecimal cogs = totals != null ? totals[1] : BigDecimal.ZERO;
 
         BigDecimal grossProfit = revenue.subtract(cogs);
         BigDecimal grossMarginPercent = revenue.compareTo(BigDecimal.ZERO) > 0
@@ -538,57 +472,65 @@ public class ReportService {
     }
 
     public List<Map<String, Object>> getProfitTrend(String period, int points) {
-        LocalDate today = LocalDate.now();
+        LocalDate today = shopTimeService.today();
         String normalizedPeriod = period != null ? period.toUpperCase(Locale.ROOT) : "MONTH";
         int safePoints = Math.max(points, 1);
-        List<Map<String, Object>> trend = new ArrayList<>();
 
+        LocalDate[] bucketStarts = new LocalDate[safePoints];
+        LocalDate[] bucketEnds = new LocalDate[safePoints];
+        String[] labels = new String[safePoints];
         for (int i = safePoints - 1; i >= 0; i--) {
-            LocalDate bucketStart;
-            LocalDate bucketEnd;
-            String label;
-
             if ("WEEK".equals(normalizedPeriod)) {
-                bucketEnd = today.minusWeeks(i);
-                bucketStart = bucketEnd.minusDays(6);
-                label = bucketStart + " - " + bucketEnd;
+                bucketEnds[i] = today.minusWeeks(i);
+                bucketStarts[i] = bucketEnds[i].minusDays(6);
+                labels[i] = bucketStarts[i] + " - " + bucketEnds[i];
             } else if ("YEAR".equals(normalizedPeriod)) {
                 int year = today.getYear() - i;
-                bucketStart = LocalDate.of(year, 1, 1);
-                bucketEnd = LocalDate.of(year, 12, 31);
-                label = String.valueOf(year);
+                bucketStarts[i] = LocalDate.of(year, 1, 1);
+                bucketEnds[i] = LocalDate.of(year, 12, 31);
+                labels[i] = String.valueOf(year);
             } else {
                 YearMonth yearMonth = YearMonth.from(today).minusMonths(i);
-                bucketStart = yearMonth.atDay(1);
-                bucketEnd = yearMonth.atEndOfMonth();
-                label = yearMonth.toString();
+                bucketStarts[i] = yearMonth.atDay(1);
+                bucketEnds[i] = yearMonth.atEndOfMonth();
+                labels[i] = yearMonth.toString();
             }
+        }
 
-            LocalDateTime startDateTime = bucketStart.atStartOfDay();
-            LocalDateTime endDateTime = bucketEnd.plusDays(1).atStartOfDay();
-            List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
-            BigDecimal revenue = BigDecimal.ZERO;
-            BigDecimal cogs = BigDecimal.ZERO;
-            for (Sale sale : sales) {
-                if (sale.getIsVoided() != null && sale.getIsVoided()) {
-                    continue;
-                }
-                var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-                for (var item : sale.getItems()) {
-                    int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                    if (quantitySold <= 0) {
-                        continue;
-                    }
-                    revenue = revenue.add(SaleDiscountUtils.netItemRevenue(
-                            item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold));
-                    cogs = cogs.add(CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(), quantitySold));
+        BigDecimal[] revenues = new BigDecimal[safePoints];
+        BigDecimal[] cogs = new BigDecimal[safePoints];
+        Arrays.fill(revenues, BigDecimal.ZERO);
+        Arrays.fill(cogs, BigDecimal.ZERO);
+
+        // P7: ONE grouped query over the whole range, bucketed in memory —
+        // never one query per bucket, never a capped entity-graph load.
+        LocalDateTime rangeStart = shopTimeService.startOfDay(bucketStarts[safePoints - 1]);
+        LocalDateTime rangeEnd = shopTimeService.endOfDayExclusive(bucketEnds[0]);
+        String sql = ledgerReadService.isActive()
+                ? "SELECT occurred_at AS sale_date, SUM(net_revenue) AS revenue, SUM(cogs) AS cogs FROM profit_ledger "
+                    + "WHERE occurred_at >= ? AND occurred_at < ? GROUP BY occurred_at"
+                : "SELECT t.sale_id, t.sale_date, SUM(t.line_revenue) AS revenue, SUM(t.line_cogs) AS cogs FROM ("
+                    + lineRevenueSql() + ") t GROUP BY t.sale_id, t.sale_date";
+        jdbcTemplate.query(sql, rs -> {
+            LocalDate day = toLocalDateTime(rs.getObject("sale_date")).toLocalDate();
+            BigDecimal revenue = toBigDecimal(rs.getObject("revenue"));
+            BigDecimal cogsValue = toBigDecimal(rs.getObject("cogs"));
+            for (int i = 0; i < safePoints; i++) {
+                if (!day.isBefore(bucketStarts[i]) && !day.isAfter(bucketEnds[i])) {
+                    revenues[i] = revenues[i].add(revenue);
+                    cogs[i] = cogs[i].add(cogsValue);
+                    break;
                 }
             }
+        }, rangeStart, rangeEnd);
+
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (int i = safePoints - 1; i >= 0; i--) {
             Map<String, Object> point = new LinkedHashMap<>();
-            point.put("periodLabel", label);
-            point.put("revenue", revenue);
-            point.put("cogs", cogs);
-            point.put("grossProfit", revenue.subtract(cogs));
+            point.put("periodLabel", labels[i]);
+            point.put("revenue", revenues[i]);
+            point.put("cogs", cogs[i]);
+            point.put("grossProfit", revenues[i].subtract(cogs[i]));
             trend.add(point);
         }
         return trend;
@@ -605,13 +547,16 @@ public class ReportService {
     // -----------------------------------------------------------------------
     public AccountingSummaryResponse getAccountingSummary(LocalDate startDate, LocalDate endDate) {
         Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        BigDecimal totalExpenses = BigDecimal.ZERO;
-        Map<String, BigDecimal> byCategory = new LinkedHashMap<>();
-        for (Expense expense : expenseRepository.findFiltered(null, startDate, endDate)) {
-            if (expense.getDeletedAt() != null) {
+        boolean ledgerActive = ledgerReadService.isActive();
+        Map<String, BigDecimal> byCategory = ledgerActive
+                ? ledgerReadService.expensesByCategory(startDateTime, endDateTime, false) : new LinkedHashMap<>();
+        BigDecimal totalExpenses = byCategory.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Expense expense : ledgerActive ? List.<Expense>of() : expenseRepository.findFiltered(null, startDate, endDate)) {
+            // O4: capitalized costs live on the purchase (inventory/freight), not operating P&L.
+            if (expense.getDeletedAt() != null || expense.isCapitalized()) {
                 continue;
             }
             totalExpenses = totalExpenses.add(expense.getAmount());
@@ -621,7 +566,9 @@ public class ReportService {
 
         // P3: operating inventory losses (write-offs, damage, theft, count shrinkage)
         // are expenses too. Same shared source the GL journal reads, so I4 holds.
-        Map<String, BigDecimal> inventoryLosses = inventoryLossService.lossesByReason(startDateTime, endDateTime);
+        Map<String, BigDecimal> inventoryLosses = ledgerActive
+                ? ledgerReadService.expensesByCategory(startDateTime, endDateTime, true)
+                : inventoryLossService.lossesByReason(startDateTime, endDateTime);
         BigDecimal totalInventoryLoss = BigDecimal.ZERO;
         List<AccountingSummaryResponse.ExpenseCategorySummary> lossSummaries = new ArrayList<>();
         for (Map.Entry<String, BigDecimal> lossEntry : inventoryLosses.entrySet()) {
@@ -633,6 +580,7 @@ public class ReportService {
             lossSummaries.add(lossSummary);
         }
         totalExpenses = totalExpenses.add(totalInventoryLoss);
+        if (ledgerActive) totalExpenses = ledgerReadService.totals(startDateTime, endDateTime)[2];
 
         // ONE revenue definition across every report: tax-EXCLUSIVE and already
         // net of returns, identical to the Daily Sales report and Profit summary.
@@ -683,7 +631,7 @@ public class ReportService {
         if (prevIncome != null && prevIncome.compareTo(BigDecimal.ZERO) != 0) {
             BigDecimal incomeChange = totalIncome.subtract(prevIncome)
                     .multiply(BigDecimal.valueOf(100))
-                    .divide(prevIncome, 1, RoundingMode.HALF_UP);
+                    .divide(prevIncome.abs(), 1, RoundingMode.HALF_UP);
             response.setIncomeChangePercent(incomeChange);
         } else {
             response.setIncomeChangePercent(null);
@@ -691,9 +639,10 @@ public class ReportService {
 
         BigDecimal currentNetProfit = response.getNetProfit();
         if (prevNetProfit != null && prevNetProfit.compareTo(BigDecimal.ZERO) != 0) {
+            // Divide by |prior| so improving from a loss reads as a positive change.
             BigDecimal profitChange = currentNetProfit.subtract(prevNetProfit)
                     .multiply(BigDecimal.valueOf(100))
-                    .divide(prevNetProfit, 1, RoundingMode.HALF_UP);
+                    .divide(prevNetProfit.abs(), 1, RoundingMode.HALF_UP);
             response.setProfitChangePercent(profitChange);
         } else {
             response.setProfitChangePercent(null);
@@ -704,8 +653,8 @@ public class ReportService {
 
     /** Lightweight summary for previous-period comparison â€” no previous-period recursion. */
     private AccountingSummaryResponse computeRawSummary(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
         // Same tax-exclusive, net-of-returns definition as the current period so
         // income / profit change percentages compare like-for-like.
@@ -718,12 +667,18 @@ public class ReportService {
             totalRefunds = totalRefunds.add(saleReturn.getTotalReturnAmount() != null ? saleReturn.getTotalReturnAmount() : BigDecimal.ZERO);
         }
 
-        BigDecimal totalExpenses = BigDecimal.ZERO;
-        for (Expense expense : expenseRepository.findFiltered(null, startDate, endDate)) {
-            if (expense.getDeletedAt() != null) continue;
-            totalExpenses = totalExpenses.add(expense.getAmount());
+        BigDecimal totalExpenses;
+        if (ledgerReadService.isActive()) {
+            totalExpenses = ledgerReadService.totals(startDateTime, endDateTime)[2];
+        } else {
+            totalExpenses = BigDecimal.ZERO;
+            for (Expense expense : expenseRepository.findFiltered(null, startDate, endDate)) {
+                // O4: capitalized costs are excluded from operating P&L.
+                if (expense.getDeletedAt() != null || expense.isCapitalized()) continue;
+                totalExpenses = totalExpenses.add(expense.getAmount());
+            }
+            totalExpenses = totalExpenses.add(inventoryLossService.totalLosses(startDateTime, endDateTime));
         }
-        totalExpenses = totalExpenses.add(inventoryLossService.totalLosses(startDateTime, endDateTime));
 
         BigDecimal grossProfit = totalIncome.subtract(totalCogs);
         BigDecimal netProfit = grossProfit.subtract(totalExpenses);
@@ -792,9 +747,9 @@ public class ReportService {
     // Â§1 Dead Stock / Slow-Moving Inventory
     // -----------------------------------------------------------------------
     public List<DeadStockDto> getDeadStock(int daysThreshold) {
-        LocalDateTime cutoffDate = LocalDate.now().minusDays(daysThreshold).atStartOfDay();
+        LocalDateTime cutoffDate = shopTimeService.startOfDay(shopTimeService.today().minusDays(daysThreshold));
         List<Object[]> rows = productRepository.findDeadStock(cutoffDate);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = shopTimeService.now();
 
         List<DeadStockDto> result = new ArrayList<>();
         for (Object[] row : rows) {
@@ -823,28 +778,25 @@ public class ReportService {
     // Â§2 Sales Timing Heatmap
     // -----------------------------------------------------------------------
     public List<SalesTimingDto> getSalesTiming(LocalDate startDate, LocalDate endDate) {
-        LocalDateTime startDateTime = startDate.atStartOfDay();
-        LocalDateTime endDateTime = endDate.plusDays(1).atStartOfDay();
-
-        List<Sale> sales = saleRepository.findByDateRange(startDateTime, endDateTime, PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
+        LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
         // Key: dayOfWeek (1=Mon..7=Sun) + hourOfDay
         Map<String, SalesTimingDto> map = new LinkedHashMap<>();
 
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            if (sale.getSaleDate() == null) continue;
-
-            int dayOfWeek = sale.getSaleDate().getDayOfWeek().getValue(); // 1=Mon..7=Sun
-            int hourOfDay = sale.getSaleDate().getHour();
+        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        jdbcTemplate.query(sql, rs -> {
+            LocalDateTime saleDate = toLocalDateTime(rs.getObject("sale_date"));
+            int dayOfWeek = saleDate.getDayOfWeek().getValue(); // 1=Mon..7=Sun
+            int hourOfDay = saleDate.getHour();
             String key = dayOfWeek + "_" + hourOfDay;
 
-            BigDecimal revenue = calculateNetSaleRevenue(sale);
+            BigDecimal revenue = toBigDecimal(rs.getObject("sale_revenue"));
             map.computeIfAbsent(key, k -> new SalesTimingDto(dayOfWeek, hourOfDay, 0L, BigDecimal.ZERO));
             SalesTimingDto dto = map.get(key);
             dto.setTransactionCount(dto.getTransactionCount() + 1);
             dto.setTotalRevenue(dto.getTotalRevenue().add(revenue));
-        }
+        }, startDateTime, endDateTime);
 
         return new ArrayList<>(map.values());
     }
@@ -897,13 +849,13 @@ public class ReportService {
     }
 
     public CustomerRetentionDto getCustomerRetention() {
-        YearMonth thisMonth = YearMonth.now();
+        YearMonth thisMonth = YearMonth.now(shopTimeService.zone());
         YearMonth lastMonth = thisMonth.minusMonths(1);
 
-        LocalDateTime lastMonthStart = lastMonth.atDay(1).atStartOfDay();
-        LocalDateTime lastMonthEnd = thisMonth.atDay(1).atStartOfDay();
-        LocalDateTime thisMonthStart = thisMonth.atDay(1).atStartOfDay();
-        LocalDateTime thisMonthEnd = thisMonth.atEndOfMonth().plusDays(1).atStartOfDay();
+        LocalDateTime lastMonthStart = shopTimeService.startOfDay(lastMonth.atDay(1));
+        LocalDateTime lastMonthEnd = shopTimeService.startOfDay(thisMonth.atDay(1));
+        LocalDateTime thisMonthStart = shopTimeService.startOfDay(thisMonth.atDay(1));
+        LocalDateTime thisMonthEnd = shopTimeService.endOfDayExclusive(thisMonth.atEndOfMonth());
 
         List<Long> lastMonthIds = saleRepository.findDistinctCustomerIdsInRange(lastMonthStart, lastMonthEnd);
         List<Long> thisMonthIds = saleRepository.findDistinctCustomerIdsInRange(thisMonthStart, thisMonthEnd);
@@ -995,19 +947,6 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Shared helpers
-    // -----------------------------------------------------------------------
-    private int effectiveSoldQuantity(Integer quantity, Integer quantityRefunded) {
-        int sold = quantity != null ? quantity : 0;
-        int refunded = quantityRefunded != null ? quantityRefunded : 0;
-        return Math.max(0, sold - refunded);
-    }
-
-    private BigDecimal calculateNetSaleRevenue(Sale sale) {
-        return SaleDiscountUtils.netSaleRevenue(sale);
-    }
-
-    // -----------------------------------------------------------------------
     // Employee shift / cash drawer / end-of-day reports
     // -----------------------------------------------------------------------
 
@@ -1018,14 +957,14 @@ public class ReportService {
      */
     public Map<String, Object> getEmployeeShiftReport(LocalDate startDate, LocalDate endDate,
                                                       Long cashierId, String shiftType) {
-        LocalDate from = startDate != null ? startDate : LocalDate.now();
+        LocalDate from = startDate != null ? startDate : shopTimeService.today();
         LocalDate to = endDate != null ? endDate : from;
         if (to.isBefore(from)) {
             throw new IllegalArgumentException("endDate must not be before startDate");
         }
 
         List<CashShiftResponse> shifts = cashShiftService.getShiftReport(
-                from.atStartOfDay(), to.atTime(LocalTime.MAX), cashierId, shiftType);
+                shopTimeService.startOfDay(from), shopTimeService.endOfDayInclusive(to), cashierId, shiftType);
 
         BigDecimal grossSales = BigDecimal.ZERO;
         BigDecimal discounts = BigDecimal.ZERO;
@@ -1080,14 +1019,14 @@ public class ReportService {
      * and excludes wallet, card and bank revenue.
      */
     public Map<String, Object> getDrawerSessionReport(LocalDate startDate, LocalDate endDate) {
-        LocalDate from = startDate != null ? startDate : LocalDate.now();
+        LocalDate from = startDate != null ? startDate : shopTimeService.today();
         LocalDate to = endDate != null ? endDate : from;
         if (to.isBefore(from)) {
             throw new IllegalArgumentException("endDate must not be before startDate");
         }
 
         List<CashDrawerSession> sessions = cashDrawerSessionRepository.findForReport(
-                from.atStartOfDay(), to.atTime(LocalTime.MAX));
+                shopTimeService.startOfDay(from), shopTimeService.endOfDayInclusive(to));
         List<DrawerSessionResponse> rows = sessions.stream()
                 .map(session -> cashDrawerSessionService.toResponse(session, false, true))
                 .toList();
@@ -1144,12 +1083,13 @@ public class ReportService {
      * revenue can never be mistaken for cash that should be in the drawer.
      */
     public Map<String, Object> getEndOfDayReport(LocalDate date) {
-        LocalDate day = date != null ? date : LocalDate.now();
-        LocalDateTime start = day.atStartOfDay();
-        LocalDateTime end = day.atTime(LocalTime.MAX);
+        LocalDate day = date != null ? date : shopTimeService.today();
+        LocalDateTime start = shopTimeService.startOfDay(day);
+        LocalDateTime end = shopTimeService.endOfDayInclusive(day);
 
-        List<Sale> sales = saleRepository.findByDateRange(start, end,
-                PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        Page<Sale> salesPage = saleRepository.findByDateRange(start, end,
+                PageRequest.of(0, REPORT_MAX_ROWS));
+        List<Sale> sales = salesPage.getContent();
         List<Long> saleIds = sales.stream()
                 .map(Sale::getId)
                 .filter(Objects::nonNull)
@@ -1353,7 +1293,11 @@ public class ReportService {
 
         Map<String, Object> report = new LinkedHashMap<>();
         report.put("date", day);
-        report.put("generatedAt", LocalDateTime.now());
+        report.put("generatedAt", shopTimeService.now());
+        // P7: this report still loads sale entities for the exception checks;
+        // if the cap ever bites, say so instead of truncating silently.
+        report.put("truncated", salesPage.getTotalElements() > REPORT_MAX_ROWS);
+        report.put("rowCount", sales.size());
         report.put("businessSummary", business);
         report.put("paymentMethods", paymentMethods);
         report.put("cashDrawer", drawerReport);
@@ -1375,20 +1319,6 @@ public class ReportService {
     }
 
     /**
-     * Tax for the non-refunded units of a line. The stored tax covers the full
-     * quantity, so partially refunded lines must not keep reporting all of it.
-     */
-    private BigDecimal prorateTax(SaleItem item, int quantitySold) {
-        BigDecimal tax = item.getTaxAmount() != null ? item.getTaxAmount() : BigDecimal.ZERO;
-        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
-        if (quantity <= 0 || quantitySold >= quantity) {
-            return tax;
-        }
-        return tax.multiply(BigDecimal.valueOf(quantitySold))
-                .divide(BigDecimal.valueOf(quantity), 2, RoundingMode.HALF_UP);
-    }
-
-    /**
      * sqlite-jdbc returns SUM()/aggregate columns whose inputs are all integer
      * as Integer/Long (no DECIMAL affinity), whereas MySQL returned BigDecimal.
      * Convert whatever JDBC hands back to a precise BigDecimal.
@@ -1406,7 +1336,111 @@ public class ReportService {
         return new BigDecimal(value.toString());
     }
 
-        private LocalDate resolveStartDate(String period, LocalDate endDate) {
+    /**
+     * P7: per-line revenue/COGS aggregation in SQL, mirroring
+     * SaleDiscountUtils.allocateDiscounts + netItemRevenue and
+     * CostCalculationUtils.calculateCogs exactly (proportional discount
+     * shares rounded HALF_UP to 2dp, remainder on the last positive line,
+     * revenue prorated over non-refunded units). Two ? params: start, end
+     * (half-open). Window functions keep this one pass over the lines.
+     */
+    private String lineRevenueSql() {
+        return """
+            SELECT z.*,
+                CASE WHEN z.qty_sold > 0 AND z.qty > 0
+                     THEN ROUND((CASE WHEN z.gross_line - z.alloc_share < 0 THEN 0
+                                      ELSE z.gross_line - z.alloc_share END)
+                          * z.qty_sold / CAST(z.qty AS DECIMAL(19,6)), 2)
+                     ELSE 0 END AS line_revenue,
+                CASE WHEN z.qty_sold > 0
+                     THEN ROUND(z.cost_at_sale * z.qty_sold, 6) ELSE 0 END AS line_cogs,
+                CASE WHEN z.qty > 0 AND z.qty_refunded > 0
+                     THEN ROUND((CASE WHEN z.gross_line - z.alloc_share < 0 THEN 0
+                                      ELSE z.gross_line - z.alloc_share END)
+                          * (CASE WHEN z.qty_refunded > z.qty THEN z.qty ELSE z.qty_refunded END)
+                          / CAST(z.qty AS DECIMAL(19,6)), 2)
+                     ELSE 0 END AS refunded_revenue_line,
+                CASE WHEN z.qty <= 0 OR z.qty_sold >= z.qty THEN z.line_tax
+                     ELSE ROUND(z.line_tax * z.qty_sold / CAST(z.qty AS DECIMAL(19,6)), 2) END AS prorated_tax
+            FROM (
+                SELECT x.*,
+                    CASE
+                        WHEN x.eff_discount <= 0 OR x.gross_total <= 0 THEN 0
+                        WHEN x.gross_line <= 0 THEN 0
+                        WHEN x.item_id = x.remainder_item_id THEN
+                            CASE WHEN x.eff_discount - x.other_shares < 0 THEN 0
+                                 ELSE x.eff_discount - x.other_shares END
+                        ELSE ROUND(x.eff_discount * x.gross_line / CAST(x.gross_total AS DECIMAL(19,6)), 2)
+                    END AS alloc_share
+                FROM (
+                    SELECT b.*,
+                        SUM(CASE WHEN b.item_id <> b.remainder_item_id AND b.gross_line > 0 AND b.eff_discount > 0
+                                 THEN ROUND(b.eff_discount * b.gross_line / CAST(b.gross_total AS DECIMAL(19,6)), 2)
+                                 ELSE 0 END) OVER (PARTITION BY b.sale_id) AS other_shares
+                    FROM (
+                        SELECT a.*,
+                            CASE WHEN a.sale_discount > 0 AND a.gross_total > 0
+                                 THEN CASE WHEN a.sale_discount > a.gross_total THEN a.gross_total
+                                           ELSE a.sale_discount END
+                                 ELSE 0 END AS eff_discount
+                        FROM (
+                            SELECT si.id AS item_id, si.sale_id AS sale_id, s.sale_date AS sale_date,
+                                s.cashier_id AS cashier_id, si.product_id AS product_id,
+                                COALESCE(si.quantity, 0) AS qty,
+                                CASE WHEN COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) < 0 THEN 0
+                                     ELSE COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) END AS qty_sold,
+                                COALESCE(si.quantity_refunded, 0) AS qty_refunded,
+                                ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) AS gross_line,
+                                COALESCE(si.cost_price_at_sale, 0) AS cost_at_sale,
+                                COALESCE(si.tax_amount, 0) AS line_tax,
+                                COALESCE(s.discount_amount, 0) AS sale_discount,
+                                SUM(ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2))
+                                    OVER (PARTITION BY si.sale_id) AS gross_total,
+                                MAX(CASE WHEN ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) > 0
+                                         THEN si.id END) OVER (PARTITION BY si.sale_id) AS remainder_item_id
+                            FROM sale_items si
+                            JOIN sales s ON s.id = si.sale_id
+                            WHERE s.is_active = true AND s.deleted_at IS NULL AND s.is_voided = false
+                              AND s.sale_date >= ? AND s.sale_date < ?
+                        ) a
+                    ) b
+                ) x
+            ) z
+            """;
+    }
+
+    /**
+     * Per-sale netSaleRevenue in SQL: gross minus the capped sale discount
+     * minus the discounted value of already-refunded units, floored at zero.
+     * One row per sale; two ? params (start, end) inside lineRevenueSql().
+     */
+    private String perSaleRevenueSql() {
+        return "SELECT t.sale_id, t.sale_date, t.cashier_id, "
+                + "CASE WHEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) > 0 "
+                + "THEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) "
+                + "ELSE 0 END AS sale_revenue, "
+                + "SUM(t.qty_sold) AS items_sold "
+                + "FROM (" + lineRevenueSql() + ") t "
+                + "GROUP BY t.sale_id, t.sale_date, t.cashier_id";
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime;
+        }
+        if (value instanceof java.sql.Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        if (value instanceof java.time.OffsetDateTime offsetDateTime) {
+            return offsetDateTime.toLocalDateTime();
+        }
+        if (value instanceof String text) {
+            return LocalDateTime.parse(text.trim().replace(' ', 'T'));
+        }
+        throw new IllegalStateException("Unexpected timestamp value: " + value);
+    }
+
+    private LocalDate resolveStartDate(String period, LocalDate endDate) {
         return switch (period != null ? period.toUpperCase(Locale.ROOT) : "MONTH") {
             case "WEEK" -> endDate.minusWeeks(1);
             case "YEAR" -> endDate.minusYears(1);
@@ -1424,37 +1458,30 @@ public class ReportService {
     }
 
     private Map<Long, BigDecimal> computeProductRevenue(LocalDate startDate, LocalDate endDate) {
-        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        String sql = "SELECT l.product_id, SUM(l.line_revenue) AS revenue FROM ("
+                + lineRevenueSql() + ") l WHERE l.qty_sold > 0 GROUP BY l.product_id";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
+                shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) continue;
-                Long productId = item.getProduct().getId();
-                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
-                revenueByProduct.merge(productId, itemRevenue, BigDecimal::add);
-            }
+        for (Map<String, Object> row : rows) {
+            revenueByProduct.put(((Number) row.get("product_id")).longValue(),
+                    toBigDecimal(row.get("revenue")));
         }
         return revenueByProduct;
     }
 
     private Map<Long, BigDecimal> computeCategoryRevenue(LocalDate startDate, LocalDate endDate) {
-        List<Sale> sales = saleRepository.findByDateRange(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay(), PageRequest.of(0, REPORT_MAX_ROWS)).getContent();
+        String sql = "SELECT COALESCE(c.id, -1) AS category_id, SUM(l.line_revenue) AS revenue FROM ("
+                + lineRevenueSql() + ") l "
+                + "LEFT JOIN products p ON p.id = l.product_id "
+                + "LEFT JOIN categories c ON c.id = p.category_id "
+                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
+                shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByCategory = new HashMap<>();
-        for (Sale sale : sales) {
-            if (sale.getIsVoided() != null && sale.getIsVoided()) continue;
-            var discountAllocations = SaleDiscountUtils.allocateDiscounts(sale);
-            for (var item : sale.getItems()) {
-                int quantitySold = effectiveSoldQuantity(item.getQuantity(), item.getQuantityRefunded());
-                if (quantitySold <= 0) continue;
-                Long categoryId = item.getProduct().getCategory() != null ? item.getProduct().getCategory().getId() : -1L;
-                BigDecimal itemRevenue = SaleDiscountUtils.netItemRevenue(
-                        item, discountAllocations.getOrDefault(item, BigDecimal.ZERO), quantitySold);
-                revenueByCategory.merge(categoryId, itemRevenue, BigDecimal::add);
-            }
+        for (Map<String, Object> row : rows) {
+            revenueByCategory.put(((Number) row.get("category_id")).longValue(),
+                    toBigDecimal(row.get("revenue")));
         }
         return revenueByCategory;
     }

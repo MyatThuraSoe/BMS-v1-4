@@ -4,6 +4,7 @@ import com.bms.dto.request.ArPaymentRequest;
 import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.ArOutstandingItemResponse;
 import com.bms.dto.response.ArPaymentResponse;
+import com.bms.dto.response.ArReconciliationResponse;
 import com.bms.service.ArService;
 import com.bms.service.UserService;
 import jakarta.validation.Valid;
@@ -55,6 +56,16 @@ public class ArController {
             @PathVariable Long invoiceId) {
         List<ArPaymentResponse> result = arService.getInvoicePayments(invoiceId);
         return ResponseEntity.ok(new ApiResponse<>(true, "Invoice payment history retrieved successfully", result));
+    }
+
+    /**
+     * Read-only O1 reconciliation: stored customer balances versus the
+     * invoice-derived outstanding AR. ADMIN/MANAGER only (class-level guard).
+     */
+    @GetMapping("/reconciliation")
+    public ResponseEntity<ApiResponse<ArReconciliationResponse>> getReconciliation() {
+        ArReconciliationResponse result = arService.getReconciliation();
+        return ResponseEntity.ok(new ApiResponse<>(true, "AR reconciliation retrieved successfully", result));
     }
 
     @PostMapping("/{invoiceId}/payment")

@@ -35,6 +35,8 @@ class LocationServiceTotalOwnedUnitsTest {
     private UserRepository userRepository;
     @Mock
     private AuditLogService auditLogService;
+    @Mock
+    private LedgerPostingService ledgerPostingService;
 
     private LocationService locationService;
 
@@ -42,7 +44,7 @@ class LocationServiceTotalOwnedUnitsTest {
     void setUp() {
         locationService = new LocationService(locationRepository, locationStockRepository,
                 stockTransferRepository, productRepository, stockMovementRepository,
-                userRepository, auditLogService);
+                userRepository, auditLogService, ledgerPostingService);
     }
 
     @Test
