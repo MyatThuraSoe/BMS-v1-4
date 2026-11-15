@@ -1,9 +1,11 @@
 package com.bms.service;
 
+import com.bms.entity.ArPayment;
 import com.bms.entity.CashDrawer;
 import com.bms.entity.CashDrawerMovement;
 import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
+import com.bms.entity.Customer;
 import com.bms.entity.DrawerMovementType;
 import com.bms.entity.DrawerSessionStatus;
 import com.bms.entity.PaymentMethod;
@@ -16,6 +18,7 @@ import com.bms.entity.SalePayment;
 import com.bms.entity.ShiftType;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
+import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.ProductRepository;
@@ -81,6 +84,7 @@ class SaleServiceVoidCashTrailTest {
     @Mock private CashDrawerSessionService cashDrawerSessionService;
     @Mock private SalePaymentRepository salePaymentRepository;
     @Mock private SaleReturnRepository saleReturnRepository;
+    @Mock private ArPaymentRepository arPaymentRepository;
     @Mock private PeriodGuard periodGuard;
     @Mock private LedgerPostingService ledgerPostingService;
     @Mock private SystemSettingRepository systemSettingRepository;
@@ -116,6 +120,7 @@ class SaleServiceVoidCashTrailTest {
         ReflectionTestUtils.setField(saleService, "cashDrawerSessionService", cashDrawerSessionService);
         ReflectionTestUtils.setField(saleService, "salePaymentRepository", salePaymentRepository);
         ReflectionTestUtils.setField(saleService, "saleReturnRepository", saleReturnRepository);
+        ReflectionTestUtils.setField(saleService, "arPaymentRepository", arPaymentRepository);
         ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
@@ -193,6 +198,7 @@ class SaleServiceVoidCashTrailTest {
         lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L))
                 .thenReturn(List.of(cashPayment));
         lenient().when(saleReturnRepository.sumCashRefundedBySaleId(100L)).thenReturn(null);
+        lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(100L)).thenReturn(List.of());
         lenient().when(saleItemRepository.findByIdForUpdate(1000L)).thenReturn(Optional.of(saleItem));
         lenient().when(productRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(product));
         lenient().when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -331,5 +337,43 @@ class SaleServiceVoidCashTrailTest {
                 eq(new BigDecimal("-100.00")), eq("SALE"), eq(100L),
                 any(), any(), anyString());
         assertEquals(PaymentStatus.REFUNDED, cashPayment.getPaymentStatus());
+    }
+
+    @Test
+    void voidCreditSaleConvertsNonCashArPaymentsToCustomerCredit() {
+        sale.setSaleType(Sale.SaleType.CREDIT);
+        sale.setPaymentStatus(Sale.PaymentStatus.PARTIAL);
+        sale.setAmountPaid(new BigDecimal("80.00"));
+        sale.setTotalAmount(new BigDecimal("100.00"));
+        sale.setSubtotal(new BigDecimal("100.00"));
+        sale.setTaxAmount(BigDecimal.ZERO);
+
+        Customer customer = new Customer();
+        customer.setId(7L);
+        customer.setCustomerCode("CUST-7");
+        customer.setFirstName("Alice");
+        customer.setLastName("Customer");
+        customer.setCurrentBalance(new BigDecimal("80.00"));
+        customer.setCreditBalance(BigDecimal.ZERO);
+        sale.setCustomer(customer);
+
+        ArPayment arPayment = new ArPayment();
+        arPayment.setId(11L);
+        arPayment.setInvoice(sale);
+        arPayment.setAmount(new BigDecimal("80.00"));
+        arPayment.setPaymentMethod(PaymentMethod.CARD);
+        arPayment.setPaymentDate(LocalDateTime.now().minusHours(1));
+        arPayment.setReversedAt(null);
+
+        lenient().when(saleRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(sale));
+        lenient().when(customerRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(customer));
+        lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(100L))
+                .thenReturn(List.of(arPayment));
+
+        saleService.voidSale(100L, 1L, "Credit sale reversed");
+
+        assertNotNull(arPayment.getReversedAt());
+        assertEquals(0, customer.getCreditBalance().compareTo(new BigDecimal("80.00")));
+        assertEquals(0, customer.getCurrentBalance().compareTo(new BigDecimal("0.00")));
     }
 }

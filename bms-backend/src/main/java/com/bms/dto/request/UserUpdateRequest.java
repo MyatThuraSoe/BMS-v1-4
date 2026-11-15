@@ -32,12 +32,22 @@ public class UserUpdateRequest {
     /** Optional — omitted means "leave unchanged". */
     private Boolean isActive;
 
+    private Boolean closeOpenShifts;
+
     public Boolean getIsActive() {
         return isActive;
     }
 
     public void setIsActive(Boolean isActive) {
         this.isActive = isActive;
+    }
+
+    public Boolean getCloseOpenShifts() {
+        return closeOpenShifts;
+    }
+
+    public void setCloseOpenShifts(Boolean closeOpenShifts) {
+        this.closeOpenShifts = closeOpenShifts;
     }
 
     // Getters

@@ -135,10 +135,26 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Maximum accepted counted quantity per offline stock-count item", "INTEGER"});
         defaults.put("shop.cashVarianceTolerance", new String[]{"10.00",
                 "Allowed cash drawer variance in the shop currency", "DECIMAL"});
+        defaults.put("shop.discount.maxPercentCashier", new String[]{"10.00",
+                "Maximum header discount percentage a cashier may apply without manager approval", "DECIMAL"});
+        defaults.put("shop.discount.maxPercentManager", new String[]{"100.00",
+                "Maximum header discount percentage a manager may apply", "DECIMAL"});
+        defaults.put("shop.order.reservationHours", new String[]{"0",
+                "Hours a pending order can keep reserved stock before automatic expiry; 0 disables expiry", "INTEGER"});
         defaults.put("accounting.period.lock", new String[]{"LOCK",
                 "Internal accounting transaction lock", "STRING"});
+        defaults.put("accounting.period.minDaysAfterMonthEnd", new String[]{"0",
+                "Grace days after month end before an accounting period can be closed", "INTEGER"});
+        defaults.put("accounting.period.requireNoOpenDrawers", new String[]{"true",
+                "Refuse to close a month while a drawer session for that month remains open", "BOOLEAN"});
+        defaults.put("accounting.period.requireSequentialClose", new String[]{"true",
+                "Close accounting periods in sequence and refuse to skip earlier months", "BOOLEAN"});
         defaults.put("accounting.ledger.cutover", new String[]{"",
                 "Ledger read cutover timestamp after historical reconciliation", "STRING"});
+        defaults.put("shop.customer.allowWriteOff", new String[]{"false",
+                "Allow admin write-off flow for customer debt before deletion", "BOOLEAN"});
+        defaults.put("auth.token.requireVersionClaim", new String[]{"false",
+                "Reject JWTs that do not carry the token version claim", "BOOLEAN"});
 
         for (Map.Entry<String, String[]> entry : defaults.entrySet()) {
             if (systemSettingRepository.findBySettingKey(entry.getKey()).isEmpty()) {

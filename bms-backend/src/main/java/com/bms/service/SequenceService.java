@@ -1,10 +1,13 @@
 package com.bms.service;
 
+import com.bms.entity.CustomerSequence;
 import com.bms.entity.InvoiceSequence;
 import com.bms.entity.OrderSequence;
 import com.bms.entity.PurchaseSequence;
 import com.bms.entity.TransferSequence;
 import com.bms.exception.BusinessException;
+import com.bms.repository.CustomerSequenceRepository;
+import com.bms.repository.CustomerRepository;
 import com.bms.repository.InvoiceSequenceRepository;
 import com.bms.repository.OrderSequenceRepository;
 import com.bms.repository.PurchaseSequenceRepository;
@@ -28,6 +31,8 @@ public class SequenceService {
     private final PurchaseSequenceRepository purchaseSequenceRepository;
     private final OrderSequenceRepository orderSequenceRepository;
     private final TransferSequenceRepository transferSequenceRepository;
+    private final CustomerSequenceRepository customerSequenceRepository;
+    private final CustomerRepository customerRepository;
     private final ShopTimeService shopTimeService;
 
     public SequenceService(InvoiceSequenceRepository invoiceSequenceRepository,
@@ -35,10 +40,23 @@ public class SequenceService {
                            OrderSequenceRepository orderSequenceRepository,
                            TransferSequenceRepository transferSequenceRepository,
                            ShopTimeService shopTimeService) {
+        this(invoiceSequenceRepository, purchaseSequenceRepository, orderSequenceRepository,
+                transferSequenceRepository, null, null, shopTimeService);
+    }
+
+    public SequenceService(InvoiceSequenceRepository invoiceSequenceRepository,
+                           PurchaseSequenceRepository purchaseSequenceRepository,
+                           OrderSequenceRepository orderSequenceRepository,
+                           TransferSequenceRepository transferSequenceRepository,
+                           CustomerSequenceRepository customerSequenceRepository,
+                           CustomerRepository customerRepository,
+                           ShopTimeService shopTimeService) {
         this.invoiceSequenceRepository = invoiceSequenceRepository;
         this.purchaseSequenceRepository = purchaseSequenceRepository;
         this.orderSequenceRepository = orderSequenceRepository;
         this.transferSequenceRepository = transferSequenceRepository;
+        this.customerSequenceRepository = customerSequenceRepository;
+        this.customerRepository = customerRepository;
         this.shopTimeService = shopTimeService;
     }
 
@@ -111,6 +129,43 @@ public class SequenceService {
         sequence.setLastNumber(next);
         return "TR-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
                 + "-" + String.format("%04d", next);
+    }
+
+    @Transactional
+    public String nextCustomerNumber() {
+        if (customerSequenceRepository == null || customerRepository == null) {
+            throw new BusinessException("Customer sequence support is not configured");
+        }
+        LocalDate today = shopTimeService.today();
+        CustomerSequence sequence = customerSequenceRepository.findByDateForUpdate(today)
+                .orElseGet(() -> {
+                    try {
+                        CustomerSequence fresh = new CustomerSequence();
+                        fresh.setSequenceDate(today);
+                        fresh.setLastNumber(seedCustomerNumber(today));
+                        return customerSequenceRepository.saveAndFlush(fresh);
+                    } catch (DataIntegrityViolationException ex) {
+                        return customerSequenceRepository.findByDateForUpdate(today)
+                                .orElseThrow(() -> new BusinessException("Failed to acquire customer sequence"));
+                    }
+                });
+        int next = (sequence.getLastNumber() == null ? 0 : sequence.getLastNumber()) + 1;
+        sequence.setLastNumber(next);
+        return "CUST-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-" + String.format("%04d", next);
+    }
+
+    private int seedCustomerNumber(LocalDate today) {
+        String prefix = "CUST-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
+        return customerRepository.findByDeletedAtIsNull().stream()
+                .map(com.bms.entity.Customer::getCustomerCode)
+                .filter(code -> code != null && code.startsWith(prefix))
+                .map(code -> code.replaceFirst("#.*$", ""))
+                .filter(code -> code.matches("CUST-\\d{8}-\\d+"))
+                .map(code -> code.substring(code.lastIndexOf('-') + 1))
+                .filter(part -> part.matches("\\d+"))
+                .mapToInt(Integer::parseInt)
+                .max()
+                .orElse(0);
     }
 
     private InvoiceSequence lockOrCreateInvoice(LocalDate today) {

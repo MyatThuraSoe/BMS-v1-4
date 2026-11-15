@@ -264,6 +264,14 @@ public class GlService {
                     add(entries, accounts, date, reference, "Ledger settlement", row.getSettlementAccount(),
                             settlement.max(BigDecimal.ZERO), settlement.negate().max(BigDecimal.ZERO));
                 }
+                if (row.getSettlementAccount() == GlMapping.EventType.REFUND_LIABILITY) {
+                    BigDecimal debt = row.getSettlementAr() != null ? row.getSettlementAr().abs() : BigDecimal.ZERO;
+                    BigDecimal refund = (revenue.add(tax)).abs().subtract(debt).max(BigDecimal.ZERO);
+                    if (refund.signum() > 0) {
+                        add(entries, accounts, date, reference, "Ledger settlement",
+                                GlMapping.EventType.REFUND_LIABILITY, BigDecimal.ZERO, refund);
+                    }
+                }
                 add(entries, accounts, date, reference, "Ledger net sales revenue", GlMapping.EventType.SALES_REVENUE,
                         revenue.negate().max(BigDecimal.ZERO), revenue.max(BigDecimal.ZERO));
                 add(entries, accounts, date, reference, "Ledger sales tax", GlMapping.EventType.SALES_TAX_PAYABLE,
@@ -484,16 +492,32 @@ public class GlService {
             Sale sale = ret.getSale();
             BigDecimal taxShare = proportionalTax(gross, money(sale.getTaxAmount()), money(sale.getTotalAmount()));
             BigDecimal net = gross.subtract(taxShare);
+            BigDecimal debtReduction = BigDecimal.ZERO;
+            BigDecimal refundDue = gross;
+            BigDecimal debtReductionAmount = money(ret.getDebtReductionAmount());
+            BigDecimal refundAmount = money(ret.getRefundAmount());
+            if (debtReductionAmount.signum() > 0 || refundAmount.signum() > 0) {
+                debtReduction = debtReductionAmount;
+                refundDue = refundAmount;
+            }
             LocalDate date = ret.getReturnDate().toLocalDate();
             String reference = "RET-" + ret.getId();
-            GlMapping.EventType credit = refundTender(ret.getRefundMethod());
+
             add(entries, accounts, date, reference, "Sales return",
                     GlMapping.EventType.SALES_REVENUE, net, BigDecimal.ZERO);
             if (taxShare.signum() > 0) {
                 add(entries, accounts, date, reference, "Sales return tax",
                         GlMapping.EventType.SALES_TAX_PAYABLE, taxShare, BigDecimal.ZERO);
             }
-            add(entries, accounts, date, reference, "Sales return refund", credit, BigDecimal.ZERO, gross);
+            if (debtReduction.signum() > 0) {
+                add(entries, accounts, date, reference, "Sales return debt reduction",
+                        GlMapping.EventType.ACCOUNTS_RECEIVABLE, BigDecimal.ZERO, debtReduction);
+            }
+            if (refundDue.signum() > 0) {
+                GlMapping.EventType credit = refundTender(ret.getRefundMethod());
+                add(entries, accounts, date, reference, "Sales return refund", credit,
+                        BigDecimal.ZERO, refundDue);
+            }
         }
     }
 

@@ -44,6 +44,12 @@ public class StockMovement {
 
     @Column(name = "source_transfer_id")
     private Long sourceTransferId;
+
+    @Column(name = "source_sale_id")
+    private Long sourceSaleId;
+
+    @Column(name = "source_return_id")
+    private Long sourceReturnId;
     
     @Column(length = 1000)
     private String description;
@@ -109,6 +115,12 @@ public class StockMovement {
     public void setPurchaseItemId(Long purchaseItemId) { this.purchaseItemId = purchaseItemId; }
     public Long getSourceTransferId() { return sourceTransferId; }
     public void setSourceTransferId(Long sourceTransferId) { this.sourceTransferId = sourceTransferId; }
+
+    public Long getSourceSaleId() { return sourceSaleId; }
+    public void setSourceSaleId(Long sourceSaleId) { this.sourceSaleId = sourceSaleId; }
+
+    public Long getSourceReturnId() { return sourceReturnId; }
+    public void setSourceReturnId(Long sourceReturnId) { this.sourceReturnId = sourceReturnId; }
     
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

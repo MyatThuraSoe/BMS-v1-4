@@ -35,6 +35,12 @@ public class SaleReturn {
     @Column(name = "total_return_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal totalReturnAmount;
 
+    @Column(name = "debt_reduction_amount", precision = 10, scale = 2)
+    private BigDecimal debtReductionAmount = BigDecimal.ZERO;
+
+    @Column(name = "refund_amount", precision = 10, scale = 2)
+    private BigDecimal refundAmount = BigDecimal.ZERO;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "refund_method", nullable = false, length = 30,
             columnDefinition = "varchar(30) not null default 'CASH'")
@@ -78,6 +84,12 @@ public class SaleReturn {
 
     public BigDecimal getTotalReturnAmount() { return totalReturnAmount; }
     public void setTotalReturnAmount(BigDecimal totalReturnAmount) { this.totalReturnAmount = totalReturnAmount; }
+
+    public BigDecimal getDebtReductionAmount() { return debtReductionAmount != null ? debtReductionAmount : BigDecimal.ZERO; }
+    public void setDebtReductionAmount(BigDecimal debtReductionAmount) { this.debtReductionAmount = debtReductionAmount != null ? debtReductionAmount : BigDecimal.ZERO; }
+
+    public BigDecimal getRefundAmount() { return refundAmount != null ? refundAmount : BigDecimal.ZERO; }
+    public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount != null ? refundAmount : BigDecimal.ZERO; }
 
     public PaymentMethod getRefundMethod() {
         return refundMethod != null ? refundMethod : PaymentMethod.CASH;

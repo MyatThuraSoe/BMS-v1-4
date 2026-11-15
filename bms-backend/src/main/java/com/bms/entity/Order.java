@@ -45,6 +45,12 @@ public class Order {
     @Column(name = "discount_amount", precision = 10, scale = 2)
     private BigDecimal discountAmount = BigDecimal.ZERO;
 
+    @Column(name = "promotion_discount", precision = 10, scale = 2)
+    private BigDecimal promotionDiscount = BigDecimal.ZERO;
+
+    @Column(name = "price_list_discount", precision = 10, scale = 2)
+    private BigDecimal priceListDiscount = BigDecimal.ZERO;
+
     @Column(name = "tax_amount", nullable = false, precision = 10, scale = 2)
     private BigDecimal taxAmount = BigDecimal.ZERO;
 
@@ -128,6 +134,12 @@ public class Order {
 
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+
+    public BigDecimal getPromotionDiscount() { return promotionDiscount != null ? promotionDiscount : BigDecimal.ZERO; }
+    public void setPromotionDiscount(BigDecimal promotionDiscount) { this.promotionDiscount = promotionDiscount; }
+
+    public BigDecimal getPriceListDiscount() { return priceListDiscount != null ? priceListDiscount : BigDecimal.ZERO; }
+    public void setPriceListDiscount(BigDecimal priceListDiscount) { this.priceListDiscount = priceListDiscount; }
 
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }

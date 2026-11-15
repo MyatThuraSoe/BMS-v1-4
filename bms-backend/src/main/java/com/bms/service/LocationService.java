@@ -20,9 +20,8 @@ import java.util.*;
 @Transactional
 public class LocationService {
 
-@Autowired
+    @Autowired
     private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
 
     private final LocationRepository locationRepository;
     private final LocationStockRepository locationStockRepository;
@@ -358,7 +357,10 @@ public class LocationService {
             throw new BusinessException("Source and destination locations must differ");
         }
         StockTransfer transfer = new StockTransfer();
-        transfer.setTransferNumber(sequenceService.nextTransferNumber());
+        transfer.setTransferNumber((sequenceService != null)
+                ? sequenceService.nextTransferNumber()
+                : "TR-" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
+                    + "-" + System.identityHashCode(this));
         transfer.setFromLocation(from);
         transfer.setToLocation(to);
         transfer.setNotes(request.getNotes());

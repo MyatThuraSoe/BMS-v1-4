@@ -13,6 +13,8 @@ public class SaleReturnResponse {
     private LocalDateTime returnDate;
     private String reason;
     private BigDecimal totalReturnAmount;
+    private BigDecimal debtReductionAmount;
+    private BigDecimal refundAmount;
     private String refundMethod;
     private Long employeeShiftId;
     private Long drawerMovementId;
@@ -34,6 +36,10 @@ public class SaleReturnResponse {
     public void setReason(String reason) { this.reason = reason; }
     public BigDecimal getTotalReturnAmount() { return totalReturnAmount; }
     public void setTotalReturnAmount(BigDecimal totalReturnAmount) { this.totalReturnAmount = totalReturnAmount; }
+    public BigDecimal getDebtReductionAmount() { return debtReductionAmount; }
+    public void setDebtReductionAmount(BigDecimal debtReductionAmount) { this.debtReductionAmount = debtReductionAmount; }
+    public BigDecimal getRefundAmount() { return refundAmount; }
+    public void setRefundAmount(BigDecimal refundAmount) { this.refundAmount = refundAmount; }
     public String getRefundMethod() { return refundMethod; }
     public void setRefundMethod(String refundMethod) { this.refundMethod = refundMethod; }
     public Long getEmployeeShiftId() { return employeeShiftId; }

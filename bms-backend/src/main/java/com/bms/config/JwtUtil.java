@@ -54,11 +54,22 @@ public class JwtUtil {
     }
 
     public String generateToken(String username) {
-        Map<String, Object> claims = new HashMap<>();
-        return createToken(claims, username);
+        return createToken(username, null);
     }
 
-    private String createToken(Map<String, Object> claims, String subject) {
+    public String generateToken(UserDetails userDetails) {
+        Integer tokenVersion = null;
+        if (userDetails instanceof com.bms.entity.User user) {
+            tokenVersion = user.getTokenVersion() == null ? 0 : user.getTokenVersion();
+        }
+        return createToken(userDetails.getUsername(), tokenVersion);
+    }
+
+    private String createToken(String subject, Integer tokenVersion) {
+        Map<String, Object> claims = new HashMap<>();
+        if (tokenVersion != null) {
+            claims.put("tv", tokenVersion);
+        }
         return Jwts.builder()
                 .setClaims(claims)
                 .setSubject(subject)
@@ -70,7 +81,17 @@ public class JwtUtil {
 
     public Boolean validateToken(String token, UserDetails userDetails) {
         final String username = extractUsername(token);
-        return (username.equals(userDetails.getUsername()) && !isTokenExpired(token));
+        if (username == null || !username.equals(userDetails.getUsername()) || isTokenExpired(token)) {
+            return false;
+        }
+        if (userDetails instanceof com.bms.entity.User user) {
+            Integer claimVersion = extractClaim(token, claims -> claims.get("tv", Integer.class));
+            Integer userVersion = user.getTokenVersion() == null ? 0 : user.getTokenVersion();
+            if (claimVersion != null && !claimVersion.equals(userVersion)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private Key getSignKey() {

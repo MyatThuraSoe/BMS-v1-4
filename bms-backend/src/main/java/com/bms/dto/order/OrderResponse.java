@@ -14,6 +14,8 @@ public class OrderResponse {
     private LocalDateTime createdAt;
     private BigDecimal subtotal;
     private BigDecimal discountAmount;
+    private BigDecimal promotionDiscount;
+    private BigDecimal priceListDiscount;
     private BigDecimal taxAmount;
     private BigDecimal totalAmount;
     private String status;
@@ -43,6 +45,10 @@ public class OrderResponse {
     public void setSubtotal(BigDecimal subtotal) { this.subtotal = subtotal; }
     public BigDecimal getDiscountAmount() { return discountAmount; }
     public void setDiscountAmount(BigDecimal discountAmount) { this.discountAmount = discountAmount; }
+    public BigDecimal getPromotionDiscount() { return promotionDiscount; }
+    public void setPromotionDiscount(BigDecimal promotionDiscount) { this.promotionDiscount = promotionDiscount; }
+    public BigDecimal getPriceListDiscount() { return priceListDiscount; }
+    public void setPriceListDiscount(BigDecimal priceListDiscount) { this.priceListDiscount = priceListDiscount; }
     public BigDecimal getTaxAmount() { return taxAmount; }
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
     public BigDecimal getTotalAmount() { return totalAmount; }

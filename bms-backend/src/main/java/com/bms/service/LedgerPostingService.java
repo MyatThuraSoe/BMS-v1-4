@@ -236,7 +236,6 @@ public class LedgerPostingService {
         Sale sale = saleReturn.getSale();
         int before = item.getQuantity() - alreadyReturned;
         int after = before - quantity;
-        // Cumulative rounding makes repeated partial returns reverse the original cents exactly.
         BigDecimal revenue = SaleDiscountUtils.netItemRevenue(sale, item, after)
                 .subtract(SaleDiscountUtils.netItemRevenue(sale, item, before));
         BigDecimal cogs = lineCogs(item, after).subtract(lineCogs(item, before));
@@ -245,7 +244,8 @@ public class LedgerPostingService {
                 BigDecimal.ZERO, saleReturn.getReturnDate());
         BigDecimal tax = SaleDiscountUtils.taxForQuantity(item, after)
                 .subtract(SaleDiscountUtils.taxForQuantity(item, before));
-        snapshotRefundSettlement(row, tax, saleReturn.getRefundMethod(), "RET-" + saleReturn.getId());
+        snapshotRefundSettlement(row, tax, saleReturn.getRefundMethod(), "RET-" + saleReturn.getId(),
+                saleReturn.getDebtReductionAmount(), saleReturn.getRefundAmount());
     }
 
     public void postVoidProfit(Sale sale, SaleItem item, int remaining, LocalDateTime voidedAt) {
@@ -311,11 +311,36 @@ public class LedgerPostingService {
         }
     }
 
-    private void snapshotRefundSettlement(ProfitLedger row, BigDecimal tax, PaymentMethod method, String reference) {
+    private void snapshotRefundSettlement(ProfitLedger row, BigDecimal tax, PaymentMethod method, String reference,
+                                        BigDecimal debtReduction, BigDecimal refundAmount) {
         if (row == null) return;
         row.setTaxAmount(scaleMoney(tax));
         row.setReference(reference);
-        setSettlementAmount(row, refundSettlementAccount(method), row.getNetRevenue().add(row.getTaxAmount()));
+
+        BigDecimal debt = debtReduction != null ? scaleMoney(debtReduction) : BigDecimal.ZERO;
+        BigDecimal refund = refundAmount != null ? scaleMoney(refundAmount) : BigDecimal.ZERO;
+
+        row.setSettlementCash(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementClearing(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementAr(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementAccount(null);
+
+        if (debt.signum() > 0) {
+            row.setSettlementAr(debt.negate());
+        }
+        if (refund.signum() > 0) {
+            if (method == PaymentMethod.CASH) {
+                row.setSettlementCash(refund);
+            } else if (method == PaymentMethod.STORE_CREDIT) {
+                row.setSettlementAccount(GlMapping.EventType.REFUND_LIABILITY);
+            } else if (method == PaymentMethod.CREDIT) {
+                row.setSettlementAccount(GlMapping.EventType.ACCOUNTS_RECEIVABLE);
+            } else {
+                row.setSettlementClearing(refund);
+            }
+        } else if (debt.signum() > 0) {
+            row.setSettlementAccount(GlMapping.EventType.ACCOUNTS_RECEIVABLE);
+        }
     }
 
     private void setSettlementAmount(ProfitLedger row, GlMapping.EventType account, BigDecimal amount) {

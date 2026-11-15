@@ -14,12 +14,20 @@ import java.util.List;
 @Table(name = "users", indexes = {
     @Index(name = "idx_user_username", columnList = "username"),
     @Index(name = "idx_user_email", columnList = "email"),
+    @Index(name = "idx_user_username_normalized", columnList = "username_normalized"),
+    @Index(name = "idx_user_email_normalized", columnList = "email_normalized"),
     @Index(name = "idx_user_is_active", columnList = "is_active")
 })
 public class User implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(name = "username_normalized")
+    private String usernameNormalized;
+
+    @Column(name = "email_normalized")
+    private String emailNormalized;
     
     @Column(nullable = false, unique = true)
     private String username;
@@ -53,6 +61,9 @@ public class User implements UserDetails {
     @Column(name = "preferred_language", nullable = false)
     private String preferredLanguage = "en";
 
+    @Column(name = "token_version", nullable = false)
+    private Integer tokenVersion = 0;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
     
@@ -79,9 +90,15 @@ public class User implements UserDetails {
     
     public String getUsername() { return username; }
     public void setUsername(String username) { this.username = username; }
+
+    public String getUsernameNormalized() { return usernameNormalized; }
+    public void setUsernameNormalized(String usernameNormalized) { this.usernameNormalized = usernameNormalized; }
     
     public String getEmail() { return email; }
     public void setEmail(String email) { this.email = email; }
+
+    public String getEmailNormalized() { return emailNormalized; }
+    public void setEmailNormalized(String emailNormalized) { this.emailNormalized = emailNormalized; }
     
     public String getPassword() { return password; }
     public void setPassword(String password) { this.password = password; }
@@ -107,6 +124,9 @@ public class User implements UserDetails {
     public String getPreferredLanguage() { return preferredLanguage; }
     public void setPreferredLanguage(String preferredLanguage) { this.preferredLanguage = preferredLanguage; }
     
+    public Integer getTokenVersion() { return tokenVersion; }
+    public void setTokenVersion(Integer tokenVersion) { this.tokenVersion = tokenVersion; }
+
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
     

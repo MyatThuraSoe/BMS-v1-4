@@ -25,6 +25,7 @@ import com.bms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,8 +41,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class OrderService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    @Autowired
+    private ShopTimeService shopTimeService;
 
 
     private final OrderRepository orderRepository;
@@ -159,6 +160,10 @@ public class OrderService {
             item.setProduct(product);
             item.setQuantity(itemRequest.getQuantity());
             item.setUnitPrice(effectiveUnitPrice);
+            item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
+            item.setLineDiscount(quote.getLineDiscount());
+            item.setPromotionId(quote.getPromotionId());
+            item.setPromotionName(quote.getPromotionName());
             item.setCostPriceAtOrder(product.getCostPrice());
             BigDecimal itemTotal = effectiveUnitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
                     .setScale(2, RoundingMode.HALF_UP);

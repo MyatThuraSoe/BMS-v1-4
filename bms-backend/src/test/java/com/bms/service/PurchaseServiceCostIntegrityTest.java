@@ -350,6 +350,19 @@ class PurchaseServiceCostIntegrityTest {
         });
         lenient().when(stockTransferRepository.findById(anyLong()))
                 .thenAnswer(inv -> Optional.ofNullable(transfers.get(inv.getArgument(0))));
+        lenient().when(stockTransferRepository.findByIdForUpdate(anyLong()))
+                .thenAnswer(inv -> Optional.ofNullable(transfers.get(inv.getArgument(0))));
+        lenient().when(stockTransferRepository.transitionStatus(anyLong(), any(), any()))
+                .thenAnswer(inv -> {
+                    StockTransfer transfer = transfers.get(inv.getArgument(0));
+                    StockTransfer.TransferStatus expected = inv.getArgument(1);
+                    StockTransfer.TransferStatus next = inv.getArgument(2);
+                    if (transfer != null && transfer.getStatus() == expected) {
+                        transfer.setStatus(next);
+                        return 1;
+                    }
+                    return 0;
+                });
     }
 
     private LocationService locationServiceForTest() {
@@ -748,6 +761,21 @@ class PurchaseServiceCostIntegrityTest {
         // All 10 must come from shop; PO-2's quarantine stays intact.
         assertEquals(10, bucketQuantity(quarantine), "PO-2 quarantine must not be drained");
         assertEquals(0, product.getStockQuantity());
+    }
+
+    @Test
+    void c2_returnToVendorDrawsFromWarehouseBeforeShop() {
+        product(5, "10.00");
+
+        Purchase po = doCreate(10, "10.00", false);
+        receive(po, po.getItems().get(0), 10, 0, backroom);
+        assertEquals(5, product.getStockQuantity());
+        assertEquals(10, bucketQuantity(backroom));
+
+        returnToVendor(po, po.getItems().get(0), 4);
+
+        assertEquals(6, bucketQuantity(backroom), "warehouse receipt for this PO must be drained before the shop floor");
+        assertEquals(5, product.getStockQuantity(), "shop stock from other receipts must stay untouched");
     }
 
     @Test
