@@ -55,6 +55,10 @@ import java.util.stream.Collectors;
 @Transactional
 public class CashShiftService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private CashShiftRepository cashShiftRepository;
 
@@ -85,6 +89,9 @@ public class CashShiftService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private SystemSettingService systemSettingService;
+
     // ------------------------------------------------------------------
     // Opening
     // ------------------------------------------------------------------
@@ -102,7 +109,7 @@ public class CashShiftService {
         CashShift shift = new CashShift();
         shift.setCashierId(cashierId);
         shift.setShiftType(shiftType);
-        shift.setOpeningTime(LocalDateTime.now());
+        shift.setOpeningTime(shopTimeService.now());
         shift.setStatus("OPEN");
         shift.setForceClosed(false);
 
@@ -233,9 +240,9 @@ public class CashShiftService {
     public Page<CashShiftResponse> getShiftHistory(Long cashierId, LocalDate startDate, LocalDate endDate,
                                                    Pageable pageable) {
         LocalDateTime startDateTime = startDate != null
-                ? startDate.atStartOfDay() : LocalDate.now().minusMonths(1).atStartOfDay();
+                ? startDate.atStartOfDay() : shopTimeService.today().minusMonths(1).atStartOfDay();
         LocalDateTime endDateTime = endDate != null
-                ? endDate.atTime(LocalTime.MAX) : LocalDateTime.now();
+                ? endDate.atTime(LocalTime.MAX) : shopTimeService.now();
 
         Page<CashShift> shifts;
         if (cashierId != null) {
@@ -346,7 +353,7 @@ public class CashShiftService {
             }
         }
 
-        LocalDateTime closingTime = LocalDateTime.now();
+        LocalDateTime closingTime = shopTimeService.now();
         String note = request.resolvedNote();
 
         // Non-cash shifts close with no counted cash, expected cash or variance.
@@ -443,7 +450,9 @@ public class CashShiftService {
                 "Cash shift closed. Expected: " + shift.getExpectedAmount()
                         + ", Counted: " + shift.getClosingAmount()
                         + ", Variance: " + shift.getVariance()
-                        + CashVarianceUtil.describeVariance(shift.getVariance(), shift.getExpectedAmount()),
+                        + CashVarianceUtil.describeVariance(shift.getVariance(), shift.getExpectedAmount(),
+                        systemSettingService.cashVarianceTolerance())
+                        + " (tolerance " + systemSettingService.cashVarianceTolerance() + ")",
                 "CashShift", shiftId, null, null);
         return getShiftById(saved.getId());
     }
@@ -477,7 +486,7 @@ public class CashShiftService {
         response.setNotes(shift.getNotes());
         response.setForceClosed(Boolean.TRUE.equals(shift.getForceClosed()));
         response.setForceCloseReason(shift.getForceCloseReason());
-        response.setVarianceTolerance(CashVarianceUtil.DEFAULT_TOLERANCE);
+        response.setVarianceTolerance(systemSettingService.cashVarianceTolerance());
         response.setCashAllowed(false);
         response.setCanJoinDrawer(false);
         response.setExpectedCashHidden(false);
@@ -550,7 +559,8 @@ public class CashShiftService {
         } else {
             response.setVariance(shift.getVariance());
             response.setVarianceExceedsTolerance(shift.getVariance() != null
-                    && CashVarianceUtil.exceedsTolerance(shift.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE));
+                    && CashVarianceUtil.exceedsTolerance(shift.getVariance(),
+                    systemSettingService.cashVarianceTolerance()));
         }
         return response;
     }
@@ -631,7 +641,7 @@ public class CashShiftService {
 
         response.setVarianceExceedsTolerance(response.getVariance() != null
                 && CashVarianceUtil.exceedsTolerance(
-                response.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE));
+                response.getVariance(), systemSettingService.cashVarianceTolerance()));
     }
 
     public boolean isManagerOrAdmin(User user) {

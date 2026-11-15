@@ -11,6 +11,8 @@ export const inventoryService = {
         quantityChange: adjustment.quantityChange,
         reasonCode: adjustment.reasonCode || 'COUNT_CORRECTION',
         reason: adjustment.reason,
+        overrideReserved: Boolean(adjustment.overrideReserved),
+        overrideReason: adjustment.overrideReason,
       }
     );
     return response.data;

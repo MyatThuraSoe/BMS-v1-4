@@ -15,6 +15,8 @@ public class ExpenseResponse {
     private LocalDate expenseDate;
     private Long createdBy;
     private LocalDateTime createdAt;
+    private Long updatedBy;
+    private LocalDateTime updatedAt;
     private Boolean hasReceiptImage;
     private Boolean capitalized;
     private Long purchaseExpenseId;
@@ -30,6 +32,8 @@ public class ExpenseResponse {
         response.setExpenseDate(expense.getExpenseDate());
         response.setCreatedBy(expense.getCreatedBy());
         response.setCreatedAt(expense.getCreatedAt());
+        response.setUpdatedBy(expense.getUpdatedBy());
+        response.setUpdatedAt(expense.getUpdatedAt());
         response.setHasReceiptImage(expense.getReceiptImage() != null);
         response.setCapitalized(expense.isCapitalized());
         response.setPurchaseExpenseId(expense.getPurchaseExpenseId());
@@ -50,6 +54,10 @@ public class ExpenseResponse {
     public void setCreatedBy(Long createdBy) { this.createdBy = createdBy; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
+    public Long getUpdatedBy() { return updatedBy; }
+    public void setUpdatedBy(Long updatedBy) { this.updatedBy = updatedBy; }
+    public LocalDateTime getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
     public Boolean getHasReceiptImage() { return hasReceiptImage; }
     public void setHasReceiptImage(Boolean hasReceiptImage) { this.hasReceiptImage = hasReceiptImage; }
     public Boolean getCapitalized() { return capitalized; }

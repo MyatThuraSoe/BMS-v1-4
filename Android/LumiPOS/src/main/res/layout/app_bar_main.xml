@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.coordinatorlayout.widget.CoordinatorLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <com.google.android.material.appbar.AppBarLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:theme="@style/ThemeOverlay.MaterialComponents.Dark.ActionBar">
+
+        <com.google.android.material.appbar.MaterialToolbar
+            android:id="@+id/toolbar"
+            android:layout_width="match_parent"
+            android:layout_height="?attr/actionBarSize"
+            app:navigationContentDescription="@string/navigation_drawer_open"
+            app:title="LumiPOS" />
+
+    </com.google.android.material.appbar.AppBarLayout>
+
+    <!--
+        This MUST be a NavHostFragment. A plain FragmentContainerView is only a fragment
+        container: it hosts fragments but has no NavController attached, so
+        findNavController(R.id.fragment_container) throws
+        "Activity ... does not have a NavController set on ...".
+
+        android:name  -> FragmentContainerView instantiates a NavHostFragment for this id
+        app:navGraph  -> inflates res/navigation/mobile_navigation.xml into that host
+        app:defaultNavHost -> makes it the host that intercepts the system Back button
+    -->
+    <androidx.fragment.app.FragmentContainerView
+        android:id="@+id/fragment_container"
+        android:name="androidx.navigation.fragment.NavHostFragment"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        app:defaultNavHost="true"
+        app:layout_behavior="@string/appbar_scrolling_view_behavior"
+        app:navGraph="@navigation/mobile_navigation" />
+
+</androidx.coordinatorlayout.widget.CoordinatorLayout>

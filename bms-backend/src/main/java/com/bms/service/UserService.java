@@ -24,6 +24,9 @@ import java.util.List;
 @Transactional
 public class UserService implements UserDetailsService {
 
+    @Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final SaleRepository saleRepository;
@@ -160,7 +163,7 @@ public class UserService implements UserDetailsService {
         // Free the unique username/email values so a new account can reuse them after this soft delete.
         user.setUsername(com.bms.util.SoftDeleteKeys.release(user.getUsername(), user.getId(), 255));
         user.setEmail(com.bms.util.SoftDeleteKeys.release(user.getEmail(), user.getId(), 255));
-        user.setDeletedAt(java.time.LocalDateTime.now());
+        user.setDeletedAt(shopTimeService.now());
         user.setIsActive(false);
         userRepository.save(user);
         
@@ -222,7 +225,7 @@ public class UserService implements UserDetailsService {
         userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        LocalDateTime todayStart = LocalDate.now().atStartOfDay();
+        LocalDateTime todayStart = shopTimeService.today().atStartOfDay();
         SaleRepository.CashierStats allTime = saleRepository.findCashierStats(userId);
         SaleRepository.CashierStats today = saleRepository.findCashierStatsSince(userId, todayStart);
 

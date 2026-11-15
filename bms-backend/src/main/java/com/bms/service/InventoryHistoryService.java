@@ -20,6 +20,7 @@ import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -37,6 +38,10 @@ import java.util.Set;
 @Service
 @Transactional(readOnly = true)
 public class InventoryHistoryService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
     private final InventoryLedgerRepository ledgerRepository;
     private final StockMovementRepository movementRepository;
     private final SaleRepository saleRepository;
@@ -103,7 +108,7 @@ public class InventoryHistoryService {
     private Map<String, Object> result(History history) {
         return Map.of("reconciled", history.issues().isEmpty() && history.pending().isEmpty(),
                 "products", history.products(), "issues", history.issues(), "missingPostings", history.pending().size(),
-                "readOnly", true, "correctionReason", "RECONCILIATION-" + java.time.LocalDate.now(),
+                "readOnly", true, "correctionReason", "RECONCILIATION-" + shopTimeService.today(),
                 "roundingTolerance", "Value tolerance is 0.0000005 times the sum of replayed owned balances, minimum 0.000001. Historical sale costs are never rewritten.");
     }
 

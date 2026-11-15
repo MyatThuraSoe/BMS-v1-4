@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="primary">#2B6E4F</color>
+    <color name="primary_dark">#1E4D38</color>
+    <color name="primary_light">#4A8B6B</color>
+    <color name="primary_variant">#1E4D38</color>
+
+    <color name="secondary">#B8862E</color>
+    <color name="secondary_dark">#966D24</color>
+    <color name="secondary_light">#D4A34A</color>
+    <color name="secondary_variant">#966D24</color>
+
+    <color name="error">#B23A2E</color>
+    <color name="error_dark">#8E2E24</color>
+    <color name="error_light">#D45A4E</color>
+
+    <color name="background">#FFFFFF</color>
+    <color name="surface">#FFFFFF</color>
+    <color name="surface_variant">#F1F3EF</color>
+
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#FFFFFF</color>
+    <color name="on_error">#FFFFFF</color>
+    <color name="on_background">#1C2620</color>
+    <color name="on_surface">#1C2620</color>
+    <color name="on_surface_variant">#4A5448</color>
+
+    <color name="text_primary">#1C2620</color>
+    <color name="text_secondary">#5A6458</color>
+    <color name="text_hint">#8A9488</color>
+    <color name="text_disabled">#B8C0B6</color>
+
+    <color name="divider">#D0D6CE</color>
+    <color name="outline">#9AA498</color>
+    <color name="outline_variant">#C4CCC2</color>
+
+    <color name="status_paid">#2B6E4F</color>
+    <color name="status_void">#B23A2E</color>
+    <color name="status_partial">#D4882E</color>
+    <color name="status_pending">#B8862E</color>
+
+    <color name="card_background">#FFFFFF</color>
+    <color name="card_background_alt">#F7F9F6</color>
+
+    <color name="nav_selected">#E8F5EE</color>
+    <color name="nav_unselected">#FFFFFF</color>
+
+    <color name="receipt_background">#FDFDFC</color>
+    <color name="receipt_border">#D0D6CE</color>
+
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+    <color name="transparent">#00000000</color>
+</resources>

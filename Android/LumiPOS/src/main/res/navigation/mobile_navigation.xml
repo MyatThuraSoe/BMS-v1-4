@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/lumipos_nav"
+    app:startDestination="@id/dashboardFragment">
+
+    <fragment
+        android:id="@+id/dashboardFragment"
+        android:name="com.example.lumipos.ui.dashboard.DashboardFragment"
+        android:label="Dashboard"
+        tools:layout="@layout/fragment_dashboard" />
+
+    <fragment
+        android:id="@+id/posFragment"
+        android:name="com.example.lumipos.ui.pos.POSFragment"
+        android:label="Point of Sale"
+        tools:layout="@layout/fragment_pos" />
+
+    <fragment
+        android:id="@+id/productsFragment"
+        android:name="com.example.lumipos.ui.products.ProductsFragment"
+        android:label="Products"
+        tools:layout="@layout/fragment_products" />
+
+    <fragment
+        android:id="@+id/productFormFragment"
+        android:name="com.example.lumipos.ui.products.ProductFormFragment"
+        android:label="Product Form"
+        tools:layout="@layout/fragment_product_form">
+        <argument
+            android:name="productId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/categoriesFragment"
+        android:name="com.example.lumipos.ui.categories.CategoriesFragment"
+        android:label="Categories"
+        tools:layout="@layout/fragment_categories" />
+
+    <fragment
+        android:id="@+id/categoryFormFragment"
+        android:name="com.example.lumipos.ui.categories.CategoryFormFragment"
+        android:label="Category Form"
+        tools:layout="@layout/fragment_category_form">
+        <argument
+            android:name="categoryId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/customersFragment"
+        android:name="com.example.lumipos.ui.customers.CustomersFragment"
+        android:label="Customers"
+        tools:layout="@layout/fragment_customers" />
+
+    <fragment
+        android:id="@+id/customerFormFragment"
+        android:name="com.example.lumipos.ui.customers.CustomerFormFragment"
+        android:label="Customer Form"
+        tools:layout="@layout/fragment_customer_form">
+        <argument
+            android:name="customerId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/suppliersFragment"
+        android:name="com.example.lumipos.ui.suppliers.SuppliersFragment"
+        android:label="Suppliers"
+        tools:layout="@layout/fragment_suppliers" />
+
+    <fragment
+        android:id="@+id/supplierFormFragment"
+        android:name="com.example.lumipos.ui.suppliers.SupplierFormFragment"
+        android:label="Supplier Form"
+        tools:layout="@layout/fragment_supplier_form">
+        <argument
+            android:name="supplierId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/salesFragment"
+        android:name="com.example.lumipos.ui.sales.SalesFragment"
+        android:label="Sales"
+        tools:layout="@layout/fragment_sales" />
+
+    <fragment
+        android:id="@+id/returnsFragment"
+        android:name="com.example.lumipos.ui.returns.ReturnsFragment"
+        android:label="Returns"
+        tools:layout="@layout/fragment_returns" />
+
+    <fragment
+        android:id="@+id/promotionsFragment"
+        android:name="com.example.lumipos.ui.promotions.PromotionsFragment"
+        android:label="Promotions"
+        tools:layout="@layout/fragment_promotions" />
+
+    <fragment
+        android:id="@+id/returnFormFragment"
+        android:name="com.example.lumipos.ui.returns.ReturnFormFragment"
+        android:label="Return Form"
+        tools:layout="@layout/fragment_return_form">
+        <argument
+            android:name="saleId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/saleDetailFragment"
+        android:name="com.example.lumipos.ui.sales.SaleDetailFragment"
+        android:label="Sale Details"
+        tools:layout="@layout/fragment_sale_detail">
+        <argument
+            android:name="saleId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/cashShiftFragment"
+        android:name="com.example.lumipos.ui.shift.CashShiftFragment"
+        android:label="Cash Shift"
+        tools:layout="@layout/fragment_cash_shift" />
+
+    <fragment
+        android:id="@+id/ordersFragment"
+        android:name="com.example.lumipos.ui.orders.OrdersFragment"
+        android:label="Orders"
+        tools:layout="@layout/fragment_orders" />
+
+    <fragment
+        android:id="@+id/accountsReceivableFragment"
+        android:name="com.example.lumipos.ui.ar.AccountsReceivableFragment"
+        android:label="Accounts Receivable"
+        tools:layout="@layout/fragment_accounts_receivable" />
+
+    <fragment
+        android:id="@+id/inventoryFragment"
+        android:name="com.example.lumipos.ui.inventory.InventoryFragment"
+        android:label="Inventory"
+        tools:layout="@layout/fragment_inventory" />
+
+    <fragment
+        android:id="@+id/stockAdjustmentFragment"
+        android:name="com.example.lumipos.ui.inventory.StockAdjustmentFragment"
+        android:label="Stock Adjustment"
+        tools:layout="@layout/fragment_stock_adjustment" />
+
+    <fragment
+        android:id="@+id/purchasesFragment"
+        android:name="com.example.lumipos.ui.purchases.PurchasesFragment"
+        android:label="Purchases"
+        tools:layout="@layout/fragment_purchases" />
+
+    <fragment
+        android:id="@+id/purchaseFormFragment"
+        android:name="com.example.lumipos.ui.purchases.PurchaseFormFragment"
+        android:label="New Purchase"
+        tools:layout="@layout/fragment_purchase_form" />
+
+    <fragment
+        android:id="@+id/expensesFragment"
+        android:name="com.example.lumipos.ui.expenses.ExpensesFragment"
+        android:label="Expenses"
+        tools:layout="@layout/fragment_expenses" />
+
+    <fragment
+        android:id="@+id/expenseFormFragment"
+        android:name="com.example.lumipos.ui.expenses.ExpenseFormFragment"
+        android:label="Expense Form"
+        tools:layout="@layout/fragment_expense_form">
+        <argument
+            android:name="expenseId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/reportsFragment"
+        android:name="com.example.lumipos.ui.reports.ReportsFragment"
+        android:label="Reports"
+        tools:layout="@layout/fragment_reports" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.example.lumipos.ui.settings.SettingsFragment"
+        android:label="Settings"
+        tools:layout="@layout/fragment_settings" />
+
+    <fragment
+        android:id="@+id/auditLogFragment"
+        android:name="com.example.lumipos.ui.audit.AuditLogFragment"
+        android:label="@string/title_audit_logs"
+        tools:layout="@layout/fragment_audit_log" />
+
+    <fragment
+        android:id="@+id/shopInfoFragment"
+        android:name="com.example.lumipos.ui.shopinfo.ShopInfoFragment"
+        android:label="Shop Information"
+        tools:layout="@layout/fragment_shop_info" />
+
+    <fragment
+        android:id="@+id/receiptCustomizationFragment"
+        android:name="com.example.lumipos.ui.receipt.ReceiptCustomizationFragment"
+        android:label="Receipt Customization"
+        tools:layout="@layout/fragment_receipt_customization" />
+
+    <fragment
+        android:id="@+id/receiptPreviewFragment"
+        android:name="com.example.lumipos.ui.receipt.ReceiptPreviewFragment"
+        android:label="Receipt Preview"
+        tools:layout="@layout/fragment_receipt_preview">
+        <argument
+            android:name="saleId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/stockTakesFragment"
+        android:name="com.example.lumipos.ui.stocktake.StockTakesFragment"
+        android:label="Stock Take"
+        tools:layout="@layout/fragment_stock_takes" />
+
+    <fragment
+        android:id="@+id/stockTakeFormFragment"
+        android:name="com.example.lumipos.ui.stocktake.StockTakeFormFragment"
+        android:label="Stock Count"
+        tools:layout="@layout/fragment_stock_take_form">
+        <argument
+            android:name="takeId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/stockTransfersFragment"
+        android:name="com.example.lumipos.ui.transfers.StockTransfersFragment"
+        android:label="Stock Transfers"
+        tools:layout="@layout/fragment_stock_transfers" />
+
+    <fragment
+        android:id="@+id/stockTransferFormFragment"
+        android:name="com.example.lumipos.ui.transfers.StockTransferFormFragment"
+        android:label="Transfer"
+        tools:layout="@layout/fragment_stock_transfer_form">
+        <argument
+            android:name="transferId"
+            android:defaultValue="-1L"
+            app:argType="long" />
+    </fragment>
+
+</navigation>

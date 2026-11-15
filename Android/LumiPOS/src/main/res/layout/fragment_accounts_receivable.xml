@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Accounts receivable list.
+
+  The search box was a raw framework EditText with `@android:drawable/edit_text` as its background
+  and a hard-coded hint, so it did not match the outlined fields every other screen uses. It now
+  uses the shared style and the ported `ic_search` rather than the holo `ic_menu_search`.
+  `et_search` is still the EditText's id, so the existing findViewById<EditText> keeps working.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_search"
+        style="@style/Widget.LumiPOS.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:hint="@string/hint_search_invoice_customer"
+        app:startIconDrawable="@drawable/ic_search">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_outstanding"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:clipToPadding="false"
+        android:paddingBottom="8dp" />
+
+</LinearLayout>

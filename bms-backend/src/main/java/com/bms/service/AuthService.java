@@ -28,6 +28,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class AuthService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private static final int MAX_FAILED_ATTEMPTS = 5;

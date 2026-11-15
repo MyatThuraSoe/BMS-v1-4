@@ -13,6 +13,7 @@ import com.bms.repository.ProductRepository;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -26,6 +27,10 @@ import java.util.Set;
 @Service
 @Transactional
 public class PriceListService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final PriceListRepository priceListRepository;
     private final PriceListItemRepository priceListItemRepository;
@@ -135,7 +140,7 @@ public class PriceListService {
         if (!Boolean.TRUE.equals(list.getIsActive())) {
             return null;
         }
-        LocalDate date = today != null ? today : LocalDate.now();
+        LocalDate date = today != null ? today : shopTimeService.today();
         if (list.getValidFrom() != null && date.isBefore(list.getValidFrom())) {
             return null;
         }

@@ -49,6 +49,9 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class ReportService {
 
+    @Autowired
+    private SystemSettingService systemSettingService;
+
     /**
      * P7: aggregate reports (profit, trends, daily/monthly, product/category,
      * cashier, timing) now run as SQL aggregations so totals are exact at any
@@ -224,7 +227,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§6 Cashier performance â€” fixed: accumulate ALL items/sales first, then compute averages
+    // Section 6: cashier performance. Accumulate all items and sales before computing averages.
     // -----------------------------------------------------------------------
     public List<Map<String, Object>> getCashierPerformanceReport(LocalDate startDate, LocalDate endDate) {
         LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
@@ -543,7 +546,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§5 Period-over-Period Comparison â€” populates previous period fields
+    // Section 5: period-over-period comparison; populates previous-period fields.
     // -----------------------------------------------------------------------
     public AccountingSummaryResponse getAccountingSummary(LocalDate startDate, LocalDate endDate) {
         Map<String, Object> profitSummary = getProfitSummary(startDate, endDate);
@@ -744,7 +747,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§1 Dead Stock / Slow-Moving Inventory
+    // Section 1: dead stock and slow-moving inventory.
     // -----------------------------------------------------------------------
     public List<DeadStockDto> getDeadStock(int daysThreshold) {
         LocalDateTime cutoffDate = shopTimeService.startOfDay(shopTimeService.today().minusDays(daysThreshold));
@@ -775,7 +778,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§2 Sales Timing Heatmap
+    // Section 2: sales timing heatmap.
     // -----------------------------------------------------------------------
     public List<SalesTimingDto> getSalesTiming(LocalDate startDate, LocalDate endDate) {
         LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
@@ -802,7 +805,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§4 Basket Analysis â€” Frequently Bought Together
+    // Section 4: basket analysis and frequently bought together.
     // -----------------------------------------------------------------------
     public List<BasketAffinityDto> getFrequentlyBoughtWith(Long productId, int limit) {
         Pageable pageable = PageRequest.of(0, limit);
@@ -819,7 +822,7 @@ public class ReportService {
     }
 
     // -----------------------------------------------------------------------
-    // Â§3 Customer Retention & Lifetime Value
+    // Section 3: customer retention and lifetime value.
     // -----------------------------------------------------------------------
     public List<CustomerLtvDto> getCustomerLifetimeValue() {
         List<Object[]> rows = saleRepository.findCustomerLtvData();
@@ -1219,7 +1222,8 @@ public class ReportService {
                         "CashShift", shift.getId()));
             }
             if (shift.getVariance() != null
-                    && CashVarianceUtil.exceedsTolerance(shift.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE)) {
+                    && CashVarianceUtil.exceedsTolerance(shift.getVariance(),
+                    systemSettingService.cashVarianceTolerance())) {
                 exceptions.add(exception("CASH_VARIANCE", "WARNING",
                         "Employee shift #" + shift.getId() + " has a cash variance of "
                                 + shift.getVariance() + ".",
@@ -1246,7 +1250,8 @@ public class ReportService {
                         "CashDrawerSession", drawer.getId()));
             }
             if (drawer.getVariance() != null
-                    && CashVarianceUtil.exceedsTolerance(drawer.getVariance(), CashVarianceUtil.DEFAULT_TOLERANCE)) {
+                    && CashVarianceUtil.exceedsTolerance(drawer.getVariance(),
+                    systemSettingService.cashVarianceTolerance())) {
                 exceptions.add(exception("DRAWER_VARIANCE", "WARNING",
                         "Drawer session #" + drawer.getId() + " variance is "
                                 + drawer.getVariance() + ".",

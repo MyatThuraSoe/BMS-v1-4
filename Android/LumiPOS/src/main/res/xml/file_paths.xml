@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Paths exposed through FileProvider so a database backup can be handed to another app (share
+  sheet, Drive, email) without ever exposing the app's private storage.
+
+  Only the dedicated cache/backups directory is shared. The live database in /data/data/<pkg>/
+  databases/ is deliberately NOT listed: it is written to constantly and sharing it directly
+  would let a receiving app hold a file descriptor on the app's real data.
+-->
+<paths>
+    <cache-path
+        name="backups"
+        path="backups/" />
+</paths>

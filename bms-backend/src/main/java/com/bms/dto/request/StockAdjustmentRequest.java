@@ -20,6 +20,10 @@ public class StockAdjustmentRequest {
     /** Free-text note shown on the movement ledger. */
     private String reason;
 
+    private boolean overrideReserved;
+
+    private String overrideReason;
+
     public Long getProductId() { return productId; }
     public void setProductId(Long productId) { this.productId = productId; }
     public Integer getQuantityChange() { return quantityChange; }
@@ -28,4 +32,8 @@ public class StockAdjustmentRequest {
     public void setReasonCode(String reasonCode) { this.reasonCode = reasonCode; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public boolean isOverrideReserved() { return overrideReserved; }
+    public void setOverrideReserved(boolean overrideReserved) { this.overrideReserved = overrideReserved; }
+    public String getOverrideReason() { return overrideReason; }
+    public void setOverrideReason(String overrideReason) { this.overrideReason = overrideReason; }
 }

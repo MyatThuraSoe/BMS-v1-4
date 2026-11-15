@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Body of the "record payment" dialog. Deliberately has NO confirm button: the
+  AlertDialog supplies its own positive/negative buttons, and an in-body button
+  that nothing wires up just looks broken when tapped.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- Filled at runtime from the invoice; the layout must not hard-code a currency. -->
+    <TextView
+        android:id="@+id/tv_balance_display"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp" />
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_payment_amount"
+        style="@style/Widget.LumiPOS.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="12dp"
+        android:hint="@string/hint_enter_amount"
+        app:prefixText="@string/currency_symbol">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_payment_amount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="numberDecimal" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <com.google.android.material.textfield.TextInputLayout
+        style="@style/Widget.LumiPOS.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:hint="@string/hint_notes">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_payment_notes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:inputType="textMultiLine"
+            android:minLines="2" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+</LinearLayout>

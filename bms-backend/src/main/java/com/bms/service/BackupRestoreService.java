@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import javax.sql.DataSource;
 import java.io.File;
@@ -51,6 +52,10 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Service
 public class BackupRestoreService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private static final Logger log = LoggerFactory.getLogger(BackupRestoreService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -184,7 +189,7 @@ public class BackupRestoreService {
 
             update(jobId, 60, "Uploading snapshot to Google Drive...");
             String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
-            String name = "LumiPOS_DB_" + java.time.LocalDateTime.now()
+            String name = "LumiPOS_DB_" + shopTimeService.now()
                     .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss")) + ".db";
             googleDriveService.uploadFile(snapshot.toFile(), "application/x-sqlite3", folderId, name);
 

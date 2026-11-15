@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Status chip background, shared by sales, orders, invoices, shifts and stock rows.
+
+  This used to be a colour *selector* keyed on android:state_selected / android:state_checked.
+  A plain TextView never enters either state, so the selector always fell through to its default
+  item and every chip in the app came out the same orange - PAID, VOIDED, OVERDUE and Open alike.
+  It is now a neutral rounded shape that callers tint via Extensions.applyStatusTint(status).
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/status_partial" />
+    <corners android:radius="10dp" />
+</shape>

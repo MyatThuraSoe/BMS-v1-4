@@ -3,6 +3,7 @@ package com.bms.service;
 import com.bms.entity.StockMovement;
 import com.bms.repository.StockMovementRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -17,18 +18,23 @@ import java.util.Set;
  * damage, theft, internal consumption and physical count shortages (D6 shrinkage).
  * Both the P&L (ReportService.getAccountingSummary) and the GL journal (GlService)
  * read from here so inventory-loss expense agrees between them (I4).
- *
- * RTV and revaluations are NOT operating losses and are excluded; neutral
- * count corrections (COUNT_CORRECTION) are not losses either.
  */
 @Service
 @Transactional(readOnly = true)
 public class InventoryLossService {
 
-    /** Manual adjustment reason codes that represent a real operating loss. */
-    private static final Set<String> LOSS_REASONS = Set.of(
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
+    /** Shared count/manual adjustment reasons, kept in sync across both workflows. */
+    public static final List<String> ADJUSTMENT_REASONS = List.of(
             "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE", "INTERNAL_CONSUMPTION",
-            "RETURN_WRITE_OFF");
+            "COUNT_CORRECTION", "DAMAGED", "THEFT", "EXPIRED", "MISCOUNT",
+            "SUPPLIER_ERROR", "RECALL", "OTHER", "RETURN_WRITE_OFF");
+
+    public static final Set<String> POSITIVE_ADJUSTMENT_REASONS =
+            Set.of("COUNT_CORRECTION", "SUPPLIER_ERROR");
 
     /** Count shortages are reported as shrinkage, separate from spoilage/expiry (D6). */
     public static final String SHRINKAGE = "SHRINKAGE";
@@ -53,9 +59,7 @@ public class InventoryLossService {
             return true; // physical count shortage -> shrinkage (D6)
         }
         if (referenceType == StockMovement.ReferenceType.STOCK_ADJUSTMENT) {
-            String reason = movement.getReasonCode() != null
-                    ? movement.getReasonCode().trim().toUpperCase() : "";
-            return LOSS_REASONS.contains(reason);
+            return movement.getMovementType() == StockMovement.MovementType.ADJUSTMENT_OUT;
         }
         return false; // RTV, PURCHASE, SALE, TRANSFER ... are not operating losses
     }
@@ -65,8 +69,9 @@ public class InventoryLossService {
         if (movement.getReferenceType() == StockMovement.ReferenceType.STOCK_COUNT) {
             return SHRINKAGE;
         }
-        return movement.getReasonCode() != null
+        String reason = movement.getReasonCode() != null
                 ? movement.getReasonCode().trim().toUpperCase() : "OTHER";
+        return "COUNT_CORRECTION".equals(reason) ? SHRINKAGE : reason;
     }
 
     public List<StockMovement> findOperatingLosses(LocalDateTime start, LocalDateTime end) {

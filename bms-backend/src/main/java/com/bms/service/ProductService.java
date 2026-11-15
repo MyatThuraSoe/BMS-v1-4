@@ -17,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -29,6 +30,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 @Service
 @Transactional
 public class ProductService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     @Autowired
     private ProductRepository productRepository;
@@ -168,7 +173,7 @@ public class ProductService {
     }
 
     public Product createProduct(ProductCreateRequest request) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         if (productRepository.existsBySkuIgnoreCase(request.getSku())) {
             throw new BusinessException("Product with SKU '" + request.getSku() + "' already exists");
         }
@@ -218,7 +223,7 @@ public class ProductService {
         // Post before setting stock so the ledger derives from a zero owned balance.
         ledgerPostingService.postInventory(savedProduct, InventoryLedger.EventType.OPENING,
                 "PRODUCT", savedProduct.getId(), "opening", openingQuantity, openingUnitCost,
-                openingValue, null, "Product opening balance", LocalDateTime.now(), userId);
+                openingValue, null, "Product opening balance", shopTimeService.now(), userId);
 
         if (openingQuantity > 0) {
             // The new row remains exclusively locked by its insert until this transaction commits.
@@ -236,7 +241,7 @@ public class ProductService {
             movement.setValuationAmount(openingValue);
             movement.setDescription("Product opening balance");
             movement.setCreatedBy(user);
-            movement.setMovementDate(LocalDateTime.now());
+            movement.setMovementDate(shopTimeService.now());
             stockMovementRepository.save(movement);
         }
         ProductPriceHistory history = new ProductPriceHistory();
@@ -345,7 +350,7 @@ public class ProductService {
      * row with source MANUAL_ADJUSTMENT, the reason and the user.
      */
     public Product adjustCost(Long id, com.bms.dto.request.CostAdjustmentRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Product product = productRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
         if (!product.getIsActive() || product.getDeletedAt() != null) {
@@ -385,7 +390,7 @@ public class ProductService {
         movement.setValuationAmount(valueDelta);
         movement.setDescription("Cost revaluation " + oldCost + " -> " + newCost + ": " + reason);
         movement.setCreatedBy(changedBy);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         stockMovementRepository.save(movement);
 
         // P1/O8: revaluation posts a zero-qty value delta keyed to its movement; the
@@ -441,7 +446,7 @@ public class ProductService {
         // Free the unique SKU so a new product can reuse it after this soft delete.
         product.setSku(com.bms.util.SoftDeleteKeys.release(product.getSku(), product.getId(), 255));
         product.setBarcode(com.bms.util.SoftDeleteKeys.release(product.getBarcode(), product.getId(), 255));
-        product.setDeletedAt(LocalDateTime.now());
+        product.setDeletedAt(shopTimeService.now());
         product.setIsActive(false);
         productRepository.save(product);
 
@@ -517,11 +522,16 @@ public class ProductService {
 
     @Transactional
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason) {
-        adjustStock(userId, productId, quantityChange, reason, "COUNT_CORRECTION");
+        adjustStock(userId, productId, quantityChange, reason, null);
     }
 
     public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason, String reasonCode) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        adjustStock(userId, productId, quantityChange, reason, reasonCode, false, null);
+    }
+
+    public void adjustStock(Long userId, Long productId, Integer quantityChange, String reason, String reasonCode,
+                            boolean overrideReserved, String overrideReason) {
+        periodGuard.assertOpen(shopTimeService.now());
         Product product = productRepository.findByIdForUpdate(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
@@ -533,13 +543,25 @@ public class ProductService {
             throw new BusinessException("Cannot reduce stock below zero. Current stock: " +
                     product.getStockQuantity() + ", requested change: " + quantityChange);
         }
+        if (quantityChange < 0) {
+            locationService.assertCanReduceShopStock(product, newQuantity,
+                    overrideReserved, overrideReason, userId);
+        }
 
-        List<String> allowedReasons = List.of(
-                "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE",
-                "INTERNAL_CONSUMPTION", "COUNT_CORRECTION");
         String normalizedReason = reasonCode != null ? reasonCode.trim().toUpperCase() : null;
-        if (normalizedReason == null || !allowedReasons.contains(normalizedReason)) {
-            throw new BusinessException("A valid reason code is required: " + String.join(", ", allowedReasons));
+        if (quantityChange < 0 && (normalizedReason == null || normalizedReason.isBlank())) {
+            throw new BusinessException("A reason code is required");
+        }
+        if (normalizedReason == null || normalizedReason.isBlank()) {
+            normalizedReason = "COUNT_CORRECTION";
+        }
+        if (!InventoryLossService.ADJUSTMENT_REASONS.contains(normalizedReason)) {
+            throw new BusinessException("A valid reason code is required: "
+                    + String.join(", ", InventoryLossService.ADJUSTMENT_REASONS));
+        }
+        if (quantityChange > 0
+                && !InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(normalizedReason)) {
+            throw new BusinessException("Positive adjustments require COUNT_CORRECTION or SUPPLIER_ERROR");
         }
 
         String oldStock = String.valueOf(product.getStockQuantity());
@@ -561,7 +583,7 @@ public class ProductService {
         movement.setDescription((reason != null && !reason.isBlank() ? reason : normalizedReason.replace('_', ' '))
                 + " (" + normalizedReason + ")");
         movement.setCreatedBy(user);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         stockMovementRepository.save(movement);
 
         // P1/O8: post the valued adjustment (keyed to its movement) before stock moves;
@@ -569,7 +591,11 @@ public class ProductService {
         ledgerPostingService.postInventory(product, InventoryLedger.EventType.ADJUSTMENT,
                 "STOCK_MOVEMENT", movement.getId(), "adjustment", quantityChange, unitCost, valuation,
                 null, movement.getDescription(), movement.getMovementDate(), userId);
-        ledgerPostingService.postOperatingLoss(movement);
+        if (quantityChange < 0) {
+            ledgerPostingService.postOperatingLoss(movement);
+        } else {
+            ledgerPostingService.postInventoryGain(movement);
+        }
 
         product.setStockQuantity(newQuantity);
         productRepository.save(product);
@@ -738,9 +764,9 @@ public class ProductService {
         productRepository.findById(productId)
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
 
-        java.time.LocalDate today = java.time.LocalDate.now();
-        java.time.LocalDateTime fromDateTime;
-        java.time.LocalDate fromDate;
+        LocalDate today = shopTimeService.today();
+        LocalDateTime fromDateTime;
+        LocalDate fromDate;
         switch (period) {
             case "7d":
                 fromDate = today.minusDays(6);

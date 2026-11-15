@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="12dp">
+
+        <TextView
+            android:id="@+id/tv_dialog_subtotal"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tv_dialog_tax"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tv_dialog_total"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="4dp"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:text="@string/label_payment_type"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <RadioGroup
+            android:id="@+id/rg_payment_type"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <RadioButton
+                android:id="@+id/rb_pay_cash"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:checked="true"
+                android:text="@string/payment_cash" />
+
+            <RadioButton
+                android:id="@+id/rb_pay_credit"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/payment_credit" />
+
+            <RadioButton
+                android:id="@+id/rb_pay_split"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="@string/payment_split" />
+
+        </RadioGroup>
+
+        <!-- Cash path -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_cash_received"
+            style="@style/Widget.LumiPOS.TextInputLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/hint_cash_received">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_cash_received"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberDecimal"
+                android:textSize="16sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <TextView
+            android:id="@+id/tv_change"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingTop="8dp"
+            android:textColor="@color/primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- Credit path -->
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_due_date"
+            style="@style/Widget.LumiPOS.TextInputLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/hint_due_date"
+            android:visibility="gone"
+            app:endIconMode="custom"
+            app:endIconDrawable="@drawable/ic_date_range"
+            app:endIconContentDescription="@string/btn_pick_date">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_due_date"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:clickable="true"
+                android:cursorVisible="false"
+                android:focusable="false"
+                android:inputType="none"
+                android:textSize="16sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:id="@+id/til_deposit"
+            style="@style/Widget.LumiPOS.TextInputLayout"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:hint="@string/hint_deposit"
+            android:visibility="gone">
+
+            <com.google.android.material.textfield.TextInputEditText
+                android:id="@+id/et_deposit"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="numberDecimal"
+                android:textSize="16sp" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!--
+          Credit standing for the selected customer. Populated by POSFragment when the credit
+          path is chosen; hidden for cash sales. Previously the dialog gave the cashier no
+          indication of how much credit the customer had left.
+        -->
+        <TextView
+            android:id="@+id/tv_credit_status"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:padding="8dp"
+            android:background="@drawable/bg_status_chip"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!--
+          Split tender. A single bill can be settled with several methods at once: the cashier
+          picks a method, enters an amount and taps Add; each entry is listed and the running
+          remaining balance is recalculated. Confirm is only enabled once the total is covered.
+        -->
+        <LinearLayout
+            android:id="@+id/ll_split_section"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:orientation="horizontal"
+                android:gravity="center_vertical">
+
+                <Spinner
+                    android:id="@+id/sp_split_method"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    style="@style/Widget.LumiPOS.TextInputLayout"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="8dp"
+                    android:hint="@string/hint_split_amount">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_split_amount"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="numberDecimal"
+                        android:textSize="16sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_add_split_payment"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/btn_add_payment" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/ll_split_payments"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:orientation="vertical" />
+
+            <TextView
+                android:id="@+id/tv_split_remaining"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="8dp"
+                android:textColor="@color/primary"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/ll_store_credit"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView
+                android:id="@+id/tv_store_credit_available"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_use_store_credit"
+                    style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:minWidth="0dp"
+                    android:text="@string/btn_use_store_credit" />
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_clear_store_credit"
+                    style="@style/Widget.MaterialComponents.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:text="@string/btn_clear_store_credit"
+                    android:visibility="gone" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tv_store_credit_applied"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingTop="4dp"
+                android:textColor="@color/primary"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:visibility="gone" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</ScrollView>

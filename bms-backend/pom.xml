@@ -19,6 +19,7 @@
     <description>Business Management System Backend</description>
 
     <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <java.version>17</java.version>
         <lombok.version>1.18.34</lombok.version>
         <poi.version>5.2.5</poi.version>

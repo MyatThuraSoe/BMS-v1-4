@@ -81,6 +81,24 @@ const PeriodControl = () => {
           <Typography variant="caption">{t('missing_postings')}: {result.missingPostings}</Typography>
         )}
       </Stack>
+      {result.settlementReconciliation && (
+        <Box sx={{ mt: 1 }}>
+          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
+            <Typography variant="caption">{t('settlement_reconciliation')}</Typography>
+            <Chip size="small" color={result.settlementReconciliation.reconciled ? 'success' : 'error'}
+              label={result.settlementReconciliation.reconciled ? t('reconciled') : t('not_reconciled')} />
+            <Typography variant="caption">
+              {t('settlement_expected')}: {formatCurrency(result.settlementReconciliation.expected || 0)}
+              {' / '}{t('settlement_actual')}: {formatCurrency(result.settlementReconciliation.actual || 0)}
+            </Typography>
+            {Object.entries(result.settlementReconciliation.byAccount || {}).map(([account, amount]) => (
+              <Typography key={account} variant="caption">
+                {account}: {formatCurrency(amount)}
+              </Typography>
+            ))}
+          </Stack>
+        </Box>
+      )}
       {(result.issues || []).length > 0 && (
         <Alert severity="warning" sx={{ mt: 1 }}>
           {(result.issues || []).slice(0, 10).map((issue, i) => (

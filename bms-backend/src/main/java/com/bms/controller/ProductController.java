@@ -219,11 +219,14 @@ public class ProductController {
             @PathVariable Long id,
             @RequestParam Integer quantityChange,
             @RequestParam String reason,
+            @RequestParam(defaultValue = "false") boolean overrideReserved,
+            @RequestParam(required = false) String overrideReason,
             Authentication authentication) {
         org.springframework.security.core.userdetails.UserDetails userDetails = 
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
-        productService.adjustStock(userId, id, quantityChange, reason);
+        productService.adjustStock(userId, id, quantityChange, reason, null,
+                overrideReserved, overrideReason);
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock adjusted successfully", null));
     }
 

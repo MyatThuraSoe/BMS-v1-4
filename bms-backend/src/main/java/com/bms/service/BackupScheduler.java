@@ -4,6 +4,7 @@ import com.bms.entity.BackupSetting;
 import com.bms.repository.BackupSettingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -17,6 +18,10 @@ import java.time.LocalDateTime;
  */
 @Component
 public class BackupScheduler {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private static final Logger log = LoggerFactory.getLogger(BackupScheduler.class);
 
@@ -40,7 +45,7 @@ public class BackupScheduler {
                 return;
             }
             LocalDateTime next = setting.getNextBackupDate();
-            if (next == null || LocalDateTime.now().isBefore(next)) {
+            if (next == null || shopTimeService.now().isBefore(next)) {
                 return;
             }
             log.info("Scheduled backup is due — running Google Drive backup");

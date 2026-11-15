@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="TextAppearance.LumiPOS.Toolbar" parent="TextAppearance.MaterialComponents.Headline6">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
+    <style name="TextAppearance.LumiPOS.Headline" parent="TextAppearance.MaterialComponents.Headline6">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="Widget.LumiPOS.TextView.Headline" parent="TextAppearance.MaterialComponents.Headline6">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="Widget.LumiPOS.TextView.Tabular" parent="TextAppearance.MaterialComponents.Body1">
+        <item name="android:fontFeatureSettings">tnum</item>
+    </style>
+
+    <style name="Widget.LumiPOS.TextView.Price" parent="TextAppearance.MaterialComponents.Body1">
+        <item name="android:fontFeatureSettings">tnum</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">@color/secondary</item>
+    </style>
+
+</resources>

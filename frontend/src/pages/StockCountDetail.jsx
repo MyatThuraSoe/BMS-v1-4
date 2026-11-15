@@ -120,6 +120,7 @@ const StockCountDetail = () => {
   if (!sheet) return <Alert severity="error">Count sheet not found.</Alert>;
 
   const editable = sheet.status === 'IN_PROGRESS';
+  const reviewerView = ['PENDING_REVIEW', 'APPROVED'].includes(sheet.status);
   const allCounted = (sheet.items || []).every((item) => counts[item.id] !== '' && counts[item.id] != null);
 
   return (
@@ -182,9 +183,10 @@ const StockCountDetail = () => {
               <TableRow>
                 <TableCell>Product</TableCell>
                 <TableCell>SKU / Bin</TableCell>
-                {!blind && <TableCell align="right">Expected</TableCell>}
+                {!blind && <TableCell align="right">{reviewerView ? 'System at start' : 'Expected'}</TableCell>}
+                {!blind && reviewerView && <TableCell align="right">Live now</TableCell>}
                 <TableCell align="right" sx={{ width: 140 }}>Counted</TableCell>
-                {!blind && <TableCell align="right">Variance</TableCell>}
+                {!blind && <TableCell align="right">{reviewerView ? 'Variance now' : 'Variance'}</TableCell>}
                 <TableCell sx={{ minWidth: 190 }}>Reason code</TableCell>
                 <TableCell>Note</TableCell>
               </TableRow>
@@ -192,13 +194,15 @@ const StockCountDetail = () => {
             <TableBody>
               {(sheet.items || []).map((item) => {
                 const counted = counts[item.id];
+                const liveQuantity = item.liveQuantityAtApply;
                 const variance = !blind && counted !== '' && counted != null
-                  ? Number(counted) - Number(item.systemQuantity) : null;
+                  ? Number(counted) - Number(reviewerView ? liveQuantity : item.systemQuantity) : null;
                 return (
                   <TableRow key={item.id}>
                     <TableCell>{item.productName}</TableCell>
                     <TableCell>{item.sku}{item.binLocation ? ` / ${item.binLocation}` : ''}</TableCell>
                     {!blind && <TableCell align="right">{item.systemQuantity}</TableCell>}
+                    {!blind && reviewerView && <TableCell align="right">{liveQuantity ?? '—'}</TableCell>}
                     <TableCell align="right">
                       {editable ? (
                         <TextField
@@ -212,7 +216,9 @@ const StockCountDetail = () => {
                     </TableCell>
                     {!blind && (
                       <TableCell align="right" sx={{ color: variance ? (variance > 0 ? 'success.main' : 'error.main') : 'text.secondary' }}>
-                        {variance == null ? '—' : (variance > 0 ? '+' : '') + variance}
+                        {reviewerView && item.varianceAtApply != null
+                          ? (item.varianceAtApply > 0 ? '+' : '') + item.varianceAtApply
+                          : variance == null ? '—' : (variance > 0 ? '+' : '') + variance}
                       </TableCell>
                     )}
                     <TableCell>

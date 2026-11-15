@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="utf-8"?>
+<com.google.android.material.card.MaterialCardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_margin="24dp"
+    app:cardCornerRadius="@dimen/dialog_radius"
+    app:cardElevation="4dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Order detail"
+            android:textStyle="bold"
+            android:textAppearance="@style/TextAppearance.MaterialComponents.Headline6" />
+
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:fillViewport="true">
+
+            <com.google.android.material.card.MaterialCardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                app:cardCornerRadius="@dimen/card_radius"
+                app:cardElevation="0dp"
+                app:strokeWidth="1dp"
+                app:strokeColor="@color/divider"
+                app:cardBackgroundColor="@color/card_background_alt">
+
+                <TextView
+                    android:id="@+id/tv_order_info"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:padding="12dp"
+                    android:textColor="@color/text_primary"
+                    android:textSize="13sp" />
+
+            </com.google.android.material.card.MaterialCardView>
+
+        </ScrollView>
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rv_order_items"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="@dimen/margin_small"
+            android:nestedScrollingEnabled="false"
+            tools:listitem="@layout/item_sale_item" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_convert_order"
+                style="@style/Widget.LumiPOS.Button"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginEnd="4dp"
+                android:text="Convert to Sale"
+                android:textSize="13sp"
+                app:backgroundTint="@color/primary"
+                app:cornerRadius="8dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btn_cancel_order"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="4dp"
+                android:text="Cancel Order"
+                android:textSize="13sp"
+                android:textColor="@color/error"
+                app:backgroundTint="@android:color/transparent"
+                app:cornerRadius="8dp"
+                app:strokeColor="@color/error"
+                app:strokeWidth="1dp" />
+
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btn_close"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="@string/btn_close"
+            android:textColor="@color/text_secondary" />
+
+    </LinearLayout>
+
+</com.google.android.material.card.MaterialCardView>

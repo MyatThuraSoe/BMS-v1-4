@@ -121,6 +121,20 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "How below-cost sale lines are handled: ALLOW_WARN, REQUIRE_MANAGER or BLOCK", "STRING"});
         defaults.put("shop.timezone", new String[]{"UTC",
                 "Shop timezone (IANA zone id) used for day and accounting-period boundaries", "STRING"});
+        defaults.put("stockCountAutoApproveThreshold", new String[]{"2",
+                "Maximum absolute unit variance per line for stock-count auto-approval", "INTEGER"});
+        defaults.put("stockCountAutoApproveLineValue", new String[]{"20.00",
+                "Maximum absolute valuation per stock-count line eligible for auto-approval", "DECIMAL"});
+        defaults.put("stockCountAutoApproveSheetValue", new String[]{"100.00",
+                "Maximum absolute valuation total eligible for stock-count auto-approval", "DECIMAL"});
+        defaults.put("stockCountAutoApproveMaxLines", new String[]{"50",
+                "Maximum non-zero variance lines eligible for stock-count auto-approval", "INTEGER"});
+        defaults.put("stockCount.sync.maxBackdateDays", new String[]{"7",
+                "Maximum offline stock-count age eligible for automatic approval", "INTEGER"});
+        defaults.put("stockCount.maxCountedQuantity", new String[]{"1000000",
+                "Maximum accepted counted quantity per offline stock-count item", "INTEGER"});
+        defaults.put("shop.cashVarianceTolerance", new String[]{"10.00",
+                "Allowed cash drawer variance in the shop currency", "DECIMAL"});
         defaults.put("accounting.period.lock", new String[]{"LOCK",
                 "Internal accounting transaction lock", "STRING"});
         defaults.put("accounting.ledger.cutover", new String[]{"",

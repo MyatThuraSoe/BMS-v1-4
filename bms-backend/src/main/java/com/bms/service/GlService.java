@@ -8,6 +8,7 @@ import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.*;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -24,6 +25,10 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class GlService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final GlAccountRepository accountRepository;
     private final GlMappingRepository mappingRepository;
@@ -203,8 +208,8 @@ public class GlService {
 
     @Transactional(readOnly = true)
     public List<JournalEntryResponse> journal(LocalDate from, LocalDate to) {
-        LocalDate start = from != null ? from : LocalDate.now().withDayOfMonth(1);
-        LocalDate end = to != null ? to : LocalDate.now();
+        LocalDate start = from != null ? from : shopTimeService.today().withDayOfMonth(1);
+        LocalDate end = to != null ? to : shopTimeService.today();
         if (end.isBefore(start)) {
             throw new BusinessException("Journal end date cannot be before its start date");
         }
@@ -239,7 +244,7 @@ public class GlService {
                             LocalDateTime start, LocalDateTime end) {
         List<ProfitLedger> profitRows = profitLedgerRepository
                 .findByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAscIdAsc(start, end);
-        java.util.Set<Long> lossMovements = new java.util.HashSet<>();
+        java.util.Set<Long> profitPostedMovements = new java.util.HashSet<>();
         for (ProfitLedger row : profitRows) {
             LocalDate date = row.getOccurredAt().toLocalDate();
             String reference = row.getReference() != null ? row.getReference() : row.getSourceType() + "-" + row.getSourceId();
@@ -248,12 +253,17 @@ public class GlService {
             if (row.getEventType() == ProfitLedger.EventType.SALE
                     || row.getEventType() == ProfitLedger.EventType.RETURN
                     || row.getEventType() == ProfitLedger.EventType.VOID) {
-                if (row.getSettlementAccount() == null) {
-                    throw new BusinessException("Missing ledger settlement snapshot for " + reference);
+                if (row.getSettlementCash() != null || row.getSettlementClearing() != null
+                        || row.getSettlementAr() != null) {
+                    addSettlementSplit(entries, accounts, date, reference, row);
+                } else {
+                    if (row.getSettlementAccount() == null) {
+                        throw new BusinessException("Missing ledger settlement snapshot for " + reference);
+                    }
+                    BigDecimal settlement = revenue.add(tax);
+                    add(entries, accounts, date, reference, "Ledger settlement", row.getSettlementAccount(),
+                            settlement.max(BigDecimal.ZERO), settlement.negate().max(BigDecimal.ZERO));
                 }
-                BigDecimal settlement = revenue.add(tax);
-                add(entries, accounts, date, reference, "Ledger settlement", row.getSettlementAccount(),
-                        settlement.max(BigDecimal.ZERO), settlement.negate().max(BigDecimal.ZERO));
                 add(entries, accounts, date, reference, "Ledger net sales revenue", GlMapping.EventType.SALES_REVENUE,
                         revenue.negate().max(BigDecimal.ZERO), revenue.max(BigDecimal.ZERO));
                 add(entries, accounts, date, reference, "Ledger sales tax", GlMapping.EventType.SALES_TAX_PAYABLE,
@@ -263,7 +273,12 @@ public class GlService {
             } else if (row.getEventType() == ProfitLedger.EventType.WRITE_OFF) {
                 addSignedPair(entries, accounts, date, reference, "Ledger inventory loss", GlMapping.EventType.OPERATING_EXPENSE,
                         GlMapping.EventType.INVENTORY, row.getExpense());
-                if (row.getSourceType().equals("STOCK_MOVEMENT")) lossMovements.add(row.getSourceId());
+                if (row.getSourceType().equals("STOCK_MOVEMENT")) profitPostedMovements.add(row.getSourceId());
+            } else if (row.getEventType() == ProfitLedger.EventType.INVENTORY_GAIN) {
+                addPair(entries, accounts, date, reference, "Ledger inventory gain",
+                        GlMapping.EventType.INVENTORY, GlMapping.EventType.INVENTORY_ADJUSTMENT,
+                        row.getExpense().abs());
+                if (row.getSourceType().equals("STOCK_MOVEMENT")) profitPostedMovements.add(row.getSourceId());
             } else if (row.getEventType() == ProfitLedger.EventType.EXPENSE
                     || row.getEventType() == ProfitLedger.EventType.PURCHASE_VARIANCE) {
                 addSignedPair(entries, accounts, date, reference, "Ledger operating expense", GlMapping.EventType.OPERATING_EXPENSE,
@@ -275,7 +290,8 @@ public class GlService {
             InventoryLedger.EventType type = row.getEventType();
             if (type == InventoryLedger.EventType.SALE || type == InventoryLedger.EventType.RETURN
                     || type == InventoryLedger.EventType.VOID || type == InventoryLedger.EventType.TRANSFER) continue;
-            if (row.getSourceType().equals("STOCK_MOVEMENT") && lossMovements.contains(row.getSourceId())) continue;
+            if (row.getSourceType().equals("STOCK_MOVEMENT")
+                    && profitPostedMovements.contains(row.getSourceId())) continue;
             GlMapping.EventType offset = GlMapping.EventType.INVENTORY_ADJUSTMENT;
             if (type == InventoryLedger.EventType.RECEIPT || type == InventoryLedger.EventType.RTV
                     || row.getSourceType().equals("PURCHASE_REVERSAL")) offset = GlMapping.EventType.ACCOUNTS_PAYABLE;
@@ -284,6 +300,25 @@ public class GlService {
                     row.getReason() != null ? row.getReason() : type.name(),
                     GlMapping.EventType.INVENTORY, offset, row.getValueDelta());
         }
+    }
+
+    private void addSettlementSplit(List<JournalEntryResponse> entries,
+                                    Map<GlMapping.EventType, GlAccount> accounts,
+                                    LocalDate date, String reference, ProfitLedger row) {
+        addSignedSettlement(entries, accounts, date, reference, GlMapping.EventType.CASH, row.getSettlementCash());
+        addSignedSettlement(entries, accounts, date, reference, GlMapping.EventType.TENDER_CLEARING,
+                row.getSettlementClearing());
+        addSignedSettlement(entries, accounts, date, reference, GlMapping.EventType.ACCOUNTS_RECEIVABLE,
+                row.getSettlementAr());
+    }
+
+    private void addSignedSettlement(List<JournalEntryResponse> entries,
+                                     Map<GlMapping.EventType, GlAccount> accounts,
+                                     LocalDate date, String reference, GlMapping.EventType account,
+                                     BigDecimal amount) {
+        BigDecimal value = money(amount);
+        add(entries, accounts, date, reference, "Ledger settlement", account,
+                value.max(BigDecimal.ZERO), value.negate().max(BigDecimal.ZERO));
     }
 
     private void addSignedPair(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
@@ -338,8 +373,6 @@ public class GlService {
 
     private void postSaleOriginal(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
                                   Sale sale) {
-        GlMapping.EventType debitAccount = sale.getSaleType() == Sale.SaleType.CREDIT
-                ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.CASH;
         BigDecimal total = money(sale.getTotalAmount());
         // Promotion / price-list discounts are already netted out of the stored
         // line prices (subtotal); only the header discount is an extra debit.
@@ -349,7 +382,7 @@ public class GlService {
         String reference = sale.getInvoiceNumber();
         LocalDate date = sale.getSaleDate().toLocalDate();
 
-        add(entries, accounts, date, reference, "Sale total", debitAccount, total, BigDecimal.ZERO);
+        postTenderSplit(entries, accounts, date, reference, sale, total, "Sale settlement");
         if (discount.signum() > 0) {
             add(entries, accounts, date, reference, "Sale discounts",
                     GlMapping.EventType.SALES_DISCOUNT, discount, BigDecimal.ZERO);
@@ -388,13 +421,12 @@ public class GlService {
         BigDecimal voidTax = tax.subtract(returnedTax);
         BigDecimal voidRevenue = revenue.subtract(returnedNet);
 
-        GlMapping.EventType tender = sale.getSaleType() == Sale.SaleType.CREDIT
-                ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.CASH;
-        add(entries, accounts, date, reference, "Void reversal", tender, BigDecimal.ZERO, voidTender);
+        postTenderSplit(entries, accounts, date, reference, sale, voidTender.negate(), "Void reversal");
         if (discount.signum() > 0) {
             add(entries, accounts, date, reference, "Void reversal discounts",
                     GlMapping.EventType.SALES_DISCOUNT, BigDecimal.ZERO, discount);
         }
+
         add(entries, accounts, date, reference, "Void reversal revenue",
                 GlMapping.EventType.SALES_REVENUE, voidRevenue, BigDecimal.ZERO);
         if (voidTax.signum() > 0) {
@@ -405,6 +437,36 @@ public class GlService {
         if (cogs.signum() > 0) {
             addPair(entries, accounts, date, reference, "Void reversal COGS",
                     GlMapping.EventType.INVENTORY, GlMapping.EventType.COST_OF_GOODS_SOLD, cogs);
+        }
+    }
+
+    private void postTenderSplit(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
+                                 LocalDate date, String reference, Sale sale, BigDecimal signedAmount,
+                                 String description) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        BigDecimal paidTotal = payments.stream().map(SalePayment::getAmount).filter(java.util.Objects::nonNull)
+                .map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (payments.isEmpty() || paidTotal.signum() == 0) {
+            GlMapping.EventType fallback = sale.getSaleType() == Sale.SaleType.CREDIT
+                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE
+                    : GlMapping.EventType.CASH;
+            add(entries, accounts, date, reference, description, fallback,
+                    signedAmount.max(BigDecimal.ZERO), signedAmount.negate().max(BigDecimal.ZERO));
+            return;
+        }
+        BigDecimal remaining = signedAmount;
+        for (int i = 0; i < payments.size(); i++) {
+            SalePayment payment = payments.get(i);
+            BigDecimal part = i == payments.size() - 1 ? remaining
+                    : signedAmount.multiply(money(payment.getAmount()).abs())
+                    .divide(paidTotal, 2, RoundingMode.HALF_UP);
+            remaining = remaining.subtract(part);
+            GlMapping.EventType account = payment.getPaymentMethod() == PaymentMethod.CASH
+                    ? GlMapping.EventType.CASH
+                    : payment.getPaymentMethod() == PaymentMethod.CREDIT
+                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.TENDER_CLEARING;
+            add(entries, accounts, date, reference, description, account,
+                    part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
         }
     }
 

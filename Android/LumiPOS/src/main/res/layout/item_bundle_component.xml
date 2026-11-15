@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <TextView
+        android:id="@+id/tv_component_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp"
+        tools:text="Component name"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <TextView
+        android:id="@+id/tv_component_qty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginEnd="12dp"
+        android:textColor="@color/text_secondary"
+        android:textSize="15sp"
+        tools:text="x2"
+        xmlns:tools="http://schemas.android.com/tools" />
+
+    <ImageButton
+        android:id="@+id/btn_remove_component"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="@string/btn_delete"
+        android:src="@android:drawable/ic_menu_close_clear_cancel" />
+
+</LinearLayout>

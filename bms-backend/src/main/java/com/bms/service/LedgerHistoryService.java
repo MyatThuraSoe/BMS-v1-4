@@ -17,6 +17,7 @@ import com.bms.repository.StockMovementRepository;
 import org.springframework.data.domain.Sort;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -34,6 +35,10 @@ import java.util.TreeSet;
 @Service
 @Transactional
 public class LedgerHistoryService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final SaleRepository saleRepository;
     private final SaleReturnRepository saleReturnRepository;
@@ -129,6 +134,8 @@ public class LedgerHistoryService {
         List<Map<String, Object>> issues = new ArrayList<>(history.issues());
         validatePostings(history, issues);
         boolean reconciled = issues.isEmpty();
+        Map<String, SettlementTotals> settlements = settlementTotalsByPeriod();
+        SettlementTotals settlementSummary = new SettlementTotals();
         for (String period : periods) {
             YearMonth month = YearMonth.parse(period);
             if ((first != null && month.isBefore(first)) || (last != null && month.isAfter(last))) continue;
@@ -156,11 +163,75 @@ public class LedgerHistoryService {
             row.put("difference", amounts(subtract(ledger, legacy)));
             row.put("explainedDifference", amounts(subtract(source, legacy)));
             row.put("unexplainedDifference", amounts(unexplained));
+            SettlementTotals settlement = settlements.getOrDefault(period, new SettlementTotals());
+            settlementSummary.add(settlement);
+            row.put("settlementExpected", settlement.expected);
+            row.put("settlementActual", settlement.actual());
+            row.put("settlementDifference", settlement.actual().subtract(settlement.expected));
+            row.put("settlementByAccount", settlement.accounts);
+            row.put("settlementReconciled", settlement.reconciled());
+            if (!settlement.reconciled()) {
+                reconciled = false;
+            }
             rows.add(row);
         }
         return Map.of("reconciled", reconciled, "months", rows, "issues", issues,
+                "settlementReconciliation", settlementSummary.toMap(),
                 "timingExplanations", history.explanations(),
                 "precisionExplanation", "Profit rows round COGS and losses to 4 decimals; legacy values retain 6 decimals.");
+    }
+
+    private Map<String, SettlementTotals> settlementTotalsByPeriod() {
+        Map<String, SettlementTotals> result = new LinkedHashMap<>();
+        for (ProfitLedger row : profitLedgerRepository.findAll()) {
+            if (row.getEventType() != ProfitLedger.EventType.SALE
+                    && row.getEventType() != ProfitLedger.EventType.RETURN
+                    && row.getEventType() != ProfitLedger.EventType.VOID) {
+                continue;
+            }
+            SettlementTotals totals = result.computeIfAbsent(row.getPeriod(), key -> new SettlementTotals());
+            totals.expected = totals.expected.add(money(row.getNetRevenue()).add(money(row.getTaxAmount())));
+            if (row.getSettlementCash() != null || row.getSettlementClearing() != null
+                    || row.getSettlementAr() != null) {
+                totals.addAccount("CASH", row.getSettlementCash());
+                totals.addAccount("TENDER_CLEARING", row.getSettlementClearing());
+                totals.addAccount("ACCOUNTS_RECEIVABLE", row.getSettlementAr());
+            } else if (row.getSettlementAccount() != null) {
+                totals.addAccount(row.getSettlementAccount().name(),
+                        money(row.getNetRevenue()).add(money(row.getTaxAmount())));
+            }
+        }
+        return result;
+    }
+
+    private static final class SettlementTotals {
+        private BigDecimal expected = BigDecimal.ZERO;
+        private final Map<String, BigDecimal> accounts = new LinkedHashMap<>();
+
+        private void addAccount(String account, BigDecimal amount) {
+            if (amount != null && amount.signum() != 0) {
+                accounts.merge(account, amount, BigDecimal::add);
+            }
+        }
+
+        private BigDecimal actual() {
+            return accounts.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        }
+
+        private boolean reconciled() {
+            return expected.compareTo(actual()) == 0;
+        }
+
+        private void add(SettlementTotals other) {
+            expected = expected.add(other.expected);
+            other.accounts.forEach((account, amount) -> accounts.merge(account, amount, BigDecimal::add));
+        }
+
+        private Map<String, Object> toMap() {
+            return Map.of("expected", expected, "actual", actual(),
+                    "difference", actual().subtract(expected), "byAccount", accounts,
+                    "reconciled", reconciled());
+        }
     }
 
     private void validatePostings(History history, List<Map<String, Object>> issues) {
@@ -186,9 +257,17 @@ public class LedgerHistoryService {
             }
             if (event.type() == ProfitLedger.EventType.SALE || event.type() == ProfitLedger.EventType.RETURN
                     || event.type() == ProfitLedger.EventType.VOID) {
+                boolean hasSettlementSplit = row.getSettlementCash() != null
+                        || row.getSettlementClearing() != null || row.getSettlementAr() != null;
+                BigDecimal settlementTotal = hasSettlementSplit
+                        ? money(row.getSettlementCash()).add(money(row.getSettlementClearing()))
+                                .add(money(row.getSettlementAr()))
+                        : money(row.getNetRevenue()).add(money(row.getTaxAmount()));
+                boolean tenderMismatch = hasSettlementSplit
+                        ? settlementTotal.compareTo(money(event.revenue()).add(money(event.tax()))) != 0
+                        : row.getSettlementAccount() != event.tender();
                 if (row.getTaxAmount() == null || row.getTaxAmount().compareTo(money(event.tax())) != 0
-                        || row.getSettlementAccount() != event.tender()
-                        || !java.util.Objects.equals(row.getReference(), event.reference())) {
+                        || tenderMismatch || !java.util.Objects.equals(row.getReference(), event.reference())) {
                     issue(issues, event.source(), event.sourceId(), "Missing or inconsistent immutable journal snapshot: " + event.key());
                 }
             }

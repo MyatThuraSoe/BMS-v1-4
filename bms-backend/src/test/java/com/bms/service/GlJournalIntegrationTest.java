@@ -81,6 +81,7 @@ class GlJournalIntegrationTest {
     // ReportService injects these but the profit/accounting summaries never use them.
     @MockBean private CashShiftService cashShiftService;
     @MockBean private CashDrawerSessionService cashDrawerSessionService;
+    @MockBean private SystemSettingService systemSettingService;
 
     private static final LocalDate START = LocalDate.of(2026, 11, 1);
     private static final LocalDate END = LocalDate.of(2026, 11, 30);

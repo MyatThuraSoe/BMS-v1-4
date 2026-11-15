@@ -7,6 +7,7 @@ import com.bms.entity.Product;
 import com.bms.entity.StockMovement;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.repository.StockTransferRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -26,11 +27,18 @@ import java.util.Map;
 @Service
 public class InventoryService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private ProductRepository productRepository;
 
     @Autowired
     private StockMovementRepository stockMovementRepository;
+
+    @Autowired
+    private StockTransferRepository stockTransferRepository;
 
     // -----------------------------------------------------------------------
     // Summary — headline counts, stock valuation, category breakdown,
@@ -119,7 +127,7 @@ public class InventoryService {
     @Transactional(readOnly = true)
     public MovementStatsResponse getMovementStats(int days) {
         int window = Math.min(Math.max(days, 1), 365);
-        LocalDateTime from = LocalDate.now().minusDays(window - 1L).atStartOfDay();
+        LocalDateTime from = shopTimeService.today().minusDays(window - 1L).atStartOfDay();
 
         MovementStatsResponse stats = new MovementStatsResponse();
         stats.setDays(window);
@@ -204,6 +212,10 @@ public class InventoryService {
         response.setQuantity(sm.getQuantity());
         response.setReferenceType(sm.getReferenceType() != null ? sm.getReferenceType().name() : null);
         response.setReferenceId(sm.getReferenceId());
+        if (sm.getSourceTransferId() != null) {
+            stockTransferRepository.findById(sm.getSourceTransferId())
+                    .ifPresent(transfer -> response.setTransferNumber(transfer.getTransferNumber()));
+        }
         response.setDescription(sm.getDescription());
         response.setCreatedByName(sm.getCreatedBy() != null ? sm.getCreatedBy().getUsername() : null);
         response.setMovementDate(sm.getMovementDate());

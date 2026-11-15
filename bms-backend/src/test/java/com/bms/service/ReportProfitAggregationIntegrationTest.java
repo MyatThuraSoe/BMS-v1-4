@@ -48,6 +48,7 @@ class ReportProfitAggregationIntegrationTest {
     // ReportService injects these but the profit/accounting summaries never use them.
     @MockBean private CashShiftService cashShiftService;
     @MockBean private CashDrawerSessionService cashDrawerSessionService;
+    @MockBean private SystemSettingService systemSettingService;
 
     private static final int BULK_SALES = 60_000;
     private static final BigDecimal PRICE = new BigDecimal("100.00");

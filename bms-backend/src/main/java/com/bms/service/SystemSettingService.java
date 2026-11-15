@@ -13,17 +13,47 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.math.BigDecimal;
 import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class SystemSettingService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private SystemSettingRepository systemSettingRepository;
 
     @Autowired
     private AuditLogService auditLogService;
+
+    private volatile BigDecimal cachedCashVarianceTolerance;
+    private volatile long cashVarianceToleranceCachedAt;
+
+    public BigDecimal cashVarianceTolerance() {
+        long now = System.currentTimeMillis();
+        BigDecimal cached = cachedCashVarianceTolerance;
+        if (cached != null && now - cashVarianceToleranceCachedAt < 60_000L) {
+            return cached;
+        }
+        synchronized (this) {
+            now = System.currentTimeMillis();
+            if (cachedCashVarianceTolerance == null || now - cashVarianceToleranceCachedAt >= 60_000L) {
+                BigDecimal value = systemSettingRepository.findBySettingKey("shop.cashVarianceTolerance")
+                        .map(setting -> new BigDecimal(setting.getSettingValue()))
+                        .orElse(new BigDecimal("10.00"));
+                if (value.signum() < 0) {
+                    throw new BusinessException("Cash variance tolerance cannot be negative");
+                }
+                cachedCashVarianceTolerance = value;
+                cashVarianceToleranceCachedAt = now;
+            }
+            return cachedCashVarianceTolerance;
+        }
+    }
 
     @Cacheable(cacheNames = "systemSettings")
     public List<SystemSettingResponse> getAllSettings() {
@@ -47,6 +77,7 @@ public class SystemSettingService {
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse createSetting(SystemSettingRequest request, Long userId) {
         assertEditable(request.getSettingKey());
+        validateValue(request.getSettingKey(), request.getSettingValue());
         if (systemSettingRepository.existsBySettingKey(request.getSettingKey())) {
             throw new BusinessException("Setting with key '" + request.getSettingKey() + "' already exists");
         }
@@ -59,6 +90,7 @@ public class SystemSettingService {
         setting.setIsPublic(request.getIsPublic() != null ? request.getIsPublic() : false);
 
         SystemSetting savedSetting = systemSettingRepository.save(setting);
+        invalidateToleranceCache();
 
         auditLogService.logAction(userId, "SETTING_CREATE", 
             "System setting created: " + savedSetting.getSettingKey(), 
@@ -70,6 +102,7 @@ public class SystemSettingService {
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSetting(Long id, SystemSettingRequest request, Long userId) {
         assertEditable(request.getSettingKey());
+        validateValue(request.getSettingKey(), request.getSettingValue());
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));
 
@@ -88,6 +121,7 @@ public class SystemSettingService {
         setting.setIsPublic(request.getIsPublic() != null ? request.getIsPublic() : false);
 
         SystemSetting updatedSetting = systemSettingRepository.save(setting);
+        invalidateToleranceCache();
 
         auditLogService.logAction(userId, "SETTING_UPDATE", 
             "System setting updated: " + updatedSetting.getSettingKey(), 
@@ -98,6 +132,7 @@ public class SystemSettingService {
 
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSettingByKey(String key, String settingValue, Long userId) {
+        validateValue(key, settingValue);
         SystemSetting setting = systemSettingRepository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
 
@@ -107,6 +142,7 @@ public class SystemSettingService {
         setting.setSettingValue(settingValue);
 
         SystemSetting updatedSetting = systemSettingRepository.save(setting);
+        invalidateToleranceCache();
 
         auditLogService.logAction(userId, "SETTING_UPDATE",
             "System setting updated: " + updatedSetting.getSettingKey(),
@@ -122,6 +158,7 @@ public class SystemSettingService {
 
         assertEditable(setting.getSettingKey());
         systemSettingRepository.delete(setting);
+        invalidateToleranceCache();
 
         auditLogService.logAction(userId, "SETTING_DELETE", 
             "System setting deleted: " + setting.getSettingKey(), 
@@ -138,6 +175,36 @@ public class SystemSettingService {
         if (key != null && key.startsWith("accounting.")) {
             throw new BusinessException("Internal accounting settings cannot be edited through this endpoint");
         }
+    }
+
+    private void validateValue(String key, String value) {
+        if (key == null || value == null) return;
+        if ("shop.cashVarianceTolerance".equals(key)
+                || "stockCountAutoApproveLineValue".equals(key)
+                || "stockCountAutoApproveSheetValue".equals(key)
+                || "stockCountAutoApproveThreshold".equals(key)) {
+            try {
+                if (new BigDecimal(value).signum() < 0) {
+                    throw new BusinessException("Setting value cannot be negative");
+                }
+            } catch (NumberFormatException ex) {
+                throw new BusinessException("Setting value must be a valid amount");
+            }
+        }
+        if ("stockCountAutoApproveMaxLines".equals(key)) {
+            try {
+                if (Integer.parseInt(value) < 0) {
+                    throw new BusinessException("Maximum count lines cannot be negative");
+                }
+            } catch (NumberFormatException ex) {
+                throw new BusinessException("Maximum count lines must be a whole number");
+            }
+        }
+    }
+
+    private void invalidateToleranceCache() {
+        cachedCashVarianceTolerance = null;
+        cashVarianceToleranceCachedAt = 0;
     }
 
     private SystemSettingResponse convertToResponse(SystemSetting setting) {

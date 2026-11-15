@@ -4,11 +4,16 @@ import com.bms.entity.ReceiptCustomization;
 import com.bms.repository.ReceiptCustomizationRepository;
 import jakarta.transaction.Transactional;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Optional;
 
 @Service
 public class ReceiptCustomizationService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final ReceiptCustomizationRepository receiptCustomizationRepository;
 

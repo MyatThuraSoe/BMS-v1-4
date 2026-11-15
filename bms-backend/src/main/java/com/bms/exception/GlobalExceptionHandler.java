@@ -65,6 +65,16 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
+    @ExceptionHandler(UnprocessableEntityException.class)
+    public ResponseEntity<ErrorResponse> handleUnprocessableEntity(UnprocessableEntityException ex) {
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.UNPROCESSABLE_ENTITY.value(),
+            resolve(ex.getMessage()),
+            LocalDateTime.now()
+        );
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(error);
+    }
+
     @ExceptionHandler(InsufficientCreditException.class)
     public ResponseEntity<ErrorResponse> handleInsufficientCredit(InsufficientCreditException ex) {
         ErrorResponse error = new ErrorResponse(

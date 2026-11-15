@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="6dp">
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical"
+        android:paddingEnd="8dp">
+
+        <TextView
+            android:id="@+id/tv_item_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_item_price"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFeatureSettings="tnum"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/tv_item_discount"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFeatureSettings="tnum"
+            android:textColor="@color/error"
+            android:textSize="11sp"
+            android:visibility="gone" />
+
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/btn_decrease"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Decrease quantity"
+        android:src="@android:drawable/btn_minus"
+        android:scaleType="centerInside"
+        android:padding="4dp" />
+
+    <EditText
+        android:id="@+id/et_qty"
+        android:layout_width="40dp"
+        android:layout_height="36dp"
+        android:layout_marginHorizontal="2dp"
+        android:background="@drawable/bg_stat_card"
+        android:gravity="center"
+        android:inputType="number"
+        android:maxLines="1"
+        android:padding="2dp"
+        android:textSize="13sp" />
+
+    <ImageButton
+        android:id="@+id/btn_increase"
+        android:layout_width="32dp"
+        android:layout_height="32dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Increase quantity"
+        android:src="@android:drawable/btn_plus"
+        android:scaleType="centerInside"
+        android:padding="4dp" />
+
+    <TextView
+        android:id="@+id/tv_line_total"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="end"
+        android:fontFeatureSettings="tnum"
+        android:textColor="@color/text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:paddingHorizontal="8dp" />
+
+    <ImageButton
+        android:id="@+id/btn_remove"
+        android:layout_width="28dp"
+        android:layout_height="28dp"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Remove item"
+        android:src="@drawable/ic_delete"
+        android:scaleType="centerInside"
+        android:padding="2dp" />
+
+</LinearLayout>

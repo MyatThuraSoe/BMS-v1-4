@@ -23,6 +23,10 @@ import java.util.stream.Collectors;
 @Transactional
 public class SupplierService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private SupplierRepository supplierRepository;
 
@@ -132,7 +136,7 @@ public class SupplierService {
         // Free the unique name/email values so a new supplier can reuse them after this soft delete.
         supplier.setName(com.bms.util.SoftDeleteKeys.release(supplier.getName(), supplier.getId(), 255));
         supplier.setEmail(com.bms.util.SoftDeleteKeys.release(supplier.getEmail(), supplier.getId(), 255));
-        supplier.setDeletedAt(LocalDateTime.now());
+        supplier.setDeletedAt(shopTimeService.now());
         supplier.setIsActive(false);
         supplierRepository.save(supplier);
 

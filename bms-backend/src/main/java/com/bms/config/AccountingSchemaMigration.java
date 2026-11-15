@@ -62,6 +62,16 @@ public class AccountingSchemaMigration implements ApplicationRunner {
         ensureNullableColumn(dialect, "expenses", "purchase_expense_id", "BIGINT");
         ensureNullableColumn(dialect, "count_sheets", "client_submitted_at", "TIMESTAMP");
         ensureNullableColumn(dialect, "count_sheets", "sync_received_at", "TIMESTAMP");
+        ensureNullableColumn(dialect, "count_sheet_items", "live_quantity_at_apply", "INT");
+        ensureNullableColumn(dialect, "count_sheet_items", "variance_at_apply", "INT");
+        ensureNullableColumn(dialect, "count_sheet_items", "client_system_quantity", "INT");
+        ensureNullableColumn(dialect, "profit_ledger", "settlement_cash", "DECIMAL(19,4)");
+        ensureNullableColumn(dialect, "profit_ledger", "settlement_clearing", "DECIMAL(19,4)");
+        ensureNullableColumn(dialect, "profit_ledger", "settlement_ar", "DECIMAL(19,4)");
+        ensureNullableColumn(dialect, "expenses", "updated_by", "BIGINT");
+        ensureNullableColumn(dialect, "expenses", "updated_at", "TIMESTAMP");
+        ensureNullableColumn(dialect, "stock_movements", "source_transfer_id", "BIGINT");
+        ensureUniqueIndex(dialect, "uq_count_sheets_sync_key", "count_sheets", "sync_key");
     }
 
     private void createLedgerTables(Dialect dialect) {
@@ -210,5 +220,39 @@ public class AccountingSchemaMigration implements ApplicationRunner {
                 dialect == Dialect.H2 ? table.toUpperCase(Locale.ROOT) : table,
                 dialect == Dialect.H2 ? column.toUpperCase(Locale.ROOT) : column);
         return count != null && count > 0;
+    }
+
+    private void ensureUniqueIndex(Dialect dialect, String indexName, String table, String column) {
+        boolean exists;
+        if (dialect == Dialect.SQLITE) {
+            List<Map<String, Object>> indexes = jdbcTemplate.queryForList("PRAGMA index_list(" + table + ")");
+            exists = indexes.stream().anyMatch(index ->
+                    indexName.equalsIgnoreCase(String.valueOf(index.get("name"))));
+        } else {
+            String tableClause = dialect == Dialect.H2
+                    ? "TABLE_SCHEMA = CURRENT_SCHEMA() AND UPPER(TABLE_NAME) = ? AND UPPER(INDEX_NAME) = ?"
+                    : "TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?";
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM INFORMATION_SCHEMA."
+                            + (dialect == Dialect.H2 ? "INDEXES" : "STATISTICS")
+                            + " WHERE " + tableClause,
+                    Integer.class,
+                    dialect == Dialect.H2 ? table.toUpperCase(Locale.ROOT) : table,
+                    dialect == Dialect.H2 ? indexName.toUpperCase(Locale.ROOT) : indexName);
+            exists = count != null && count > 0;
+        }
+        if (exists) return;
+        Integer duplicates = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM (SELECT " + column + " FROM "
+                + table + " WHERE " + column + " IS NOT NULL GROUP BY " + column
+                + " HAVING COUNT(*) > 1) duplicate_values", Integer.class);
+        if (duplicates != null && duplicates > 0) {
+            throw new IllegalStateException("Cannot enforce unique stock-count sync keys: duplicate values exist");
+        }
+        if (dialect == Dialect.MYSQL) {
+            jdbcTemplate.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + " (" + column + ")");
+        } else {
+            jdbcTemplate.execute("CREATE UNIQUE INDEX IF NOT EXISTS " + indexName
+                    + " ON " + table + " (" + column + ")");
+        }
     }
 }

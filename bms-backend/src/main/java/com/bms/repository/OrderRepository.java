@@ -45,4 +45,12 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @EntityGraph(attributePaths = {"items", "items.product", "customer"})
     @Query("SELECT o FROM Order o WHERE o.id = :id")
     Optional<Order> findByIdWithItems(@Param("id") Long id);
+
+    @EntityGraph(attributePaths = {"items", "items.product"})
+    @Query("SELECT DISTINCT o FROM Order o JOIN o.items i "
+            + "WHERE o.status = :status AND o.isActive = true "
+            + "AND o.deletedAt IS NULL AND i.product.id = :productId")
+    java.util.List<Order> findPendingOrdersForProduct(
+            @Param("productId") Long productId,
+            @Param("status") Order.OrderStatus status);
 }

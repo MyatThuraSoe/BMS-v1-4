@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Product picker for stock adjustment. Has NO in-body Cancel button: the AlertDialog supplies
+  its own, and the one that used to live here was wired to nothing, so tapping it did nothing
+  while a second, working Cancel sat underneath it.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <com.google.android.material.textfield.TextInputLayout
+        android:id="@+id/til_search"
+        style="@style/Widget.LumiPOS.TextInputLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="@string/search_products">
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/et_search"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1" />
+
+    </com.google.android.material.textfield.TextInputLayout>
+
+    <!--
+      No android:maxHeight here: RecyclerView does not honour it (it is an ImageView/TextView
+      attribute), so it silently did nothing. A wrap_content list is capped by the dialog window
+      and scrolls once it exceeds it.
+    -->
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/rv_products"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/tv_no_products"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingTop="16dp"
+        android:paddingBottom="8dp"
+        android:text="@string/msg_no_products_found"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp"
+        android:visibility="gone" />
+
+</LinearLayout>

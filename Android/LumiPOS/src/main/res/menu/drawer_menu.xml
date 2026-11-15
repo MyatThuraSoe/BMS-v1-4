@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:showIn="navigation_view">
+
+    <!-- Overview -->
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/dashboardFragment"
+            android:icon="@drawable/ic_dashboard"
+            android:title="@string/title_dashboard" />
+    </group>
+
+    <!-- Sales -->
+    <group android:id="@+id/group_sales" android:checkableBehavior="single">
+        <item
+            android:id="@+id/posFragment"
+            android:icon="@drawable/ic_pos"
+            android:title="@string/title_pos" />
+        <item
+            android:id="@+id/ordersFragment"
+            android:icon="@drawable/ic_orders"
+            android:title="@string/title_orders" />
+        <item
+            android:id="@+id/salesFragment"
+            android:icon="@drawable/ic_sales"
+            android:title="@string/title_sales" />
+        <item
+            android:id="@+id/returnsFragment"
+            android:icon="@drawable/ic_sales"
+            android:title="@string/title_returns" />
+        <item
+            android:id="@+id/promotionsFragment"
+            android:icon="@drawable/ic_sales"
+            android:title="@string/title_promotions" />
+        <item
+            android:id="@+id/cashShiftFragment"
+            android:icon="@drawable/ic_cash_shift"
+            android:title="@string/title_cash_shift" />
+        <item
+            android:id="@+id/accountsReceivableFragment"
+            android:icon="@drawable/ic_accounts"
+            android:title="@string/title_accounts_receivable" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:title="" />
+    </group>
+
+    <!-- Catalog -->
+    <group android:id="@+id/group_catalog" android:checkableBehavior="single">
+        <item
+            android:id="@+id/inventoryFragment"
+            android:icon="@drawable/ic_inventory"
+            android:title="@string/title_inventory" />
+        <item
+            android:id="@+id/productsFragment"
+            android:icon="@drawable/ic_products"
+            android:title="@string/title_products" />
+        <item
+            android:id="@+id/categoriesFragment"
+            android:icon="@drawable/ic_categories"
+            android:title="@string/title_categories" />
+        <item
+            android:id="@+id/stockTakesFragment"
+            android:icon="@drawable/ic_inventory_box"
+            android:title="@string/title_stock_takes" />
+        <item
+            android:id="@+id/stockTransfersFragment"
+            android:icon="@drawable/ic_inventory"
+            android:title="@string/title_stock_transfers" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:title="" />
+    </group>
+
+    <!-- Procurement -->
+    <group android:id="@+id/group_procurement" android:checkableBehavior="single">
+        <item
+            android:id="@+id/purchasesFragment"
+            android:icon="@drawable/ic_purchases"
+            android:title="@string/title_purchases" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:title="" />
+    </group>
+
+    <!-- People -->
+    <group android:id="@+id/group_people" android:checkableBehavior="single">
+        <item
+            android:id="@+id/customersFragment"
+            android:icon="@drawable/ic_customers"
+            android:title="@string/title_customers" />
+        <item
+            android:id="@+id/suppliersFragment"
+            android:icon="@drawable/ic_suppliers"
+            android:title="@string/title_suppliers" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:title="" />
+    </group>
+
+    <!-- Insights -->
+    <group android:id="@+id/group_insights" android:checkableBehavior="single">
+        <item
+            android:id="@+id/reportsFragment"
+            android:icon="@drawable/ic_reports"
+            android:title="@string/title_reports" />
+        <item
+            android:id="@+id/expensesFragment"
+            android:icon="@drawable/ic_trending_down"
+            android:title="@string/title_expenses" />
+    </group>
+
+    <group android:checkableBehavior="none">
+        <item android:title="" />
+    </group>
+
+    <!-- Administration -->
+    <group android:id="@+id/group_administration" android:checkableBehavior="single">
+        <item
+            android:id="@+id/settingsFragment"
+            android:icon="@drawable/ic_settings"
+            android:title="@string/title_settings" />
+        <item
+            android:id="@+id/shopInfoFragment"
+            android:icon="@drawable/ic_shop"
+            android:title="@string/title_shop_info" />
+        <item
+            android:id="@+id/receiptCustomizationFragment"
+            android:icon="@drawable/ic_receipt"
+            android:title="@string/title_receipt_customization" />
+        <item
+            android:id="@+id/auditLogFragment"
+            android:icon="@drawable/ic_orders"
+            android:title="@string/title_audit_logs" />
+    </group>
+
+</menu>

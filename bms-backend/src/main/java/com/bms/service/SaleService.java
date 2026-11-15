@@ -81,6 +81,9 @@ public class SaleService {
     private SaleReturnRepository saleReturnRepository;
 
     @Autowired
+    private ArPaymentRepository arPaymentRepository;
+
+    @Autowired
     private SystemSettingRepository systemSettingRepository;
 
     @Autowired
@@ -88,6 +91,9 @@ public class SaleService {
 
     @Autowired
     private PeriodGuard periodGuard;
+
+    @Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -101,7 +107,7 @@ public class SaleService {
     }
 
     public Page<Sale> getFilteredSales(String range, LocalDate startDate, LocalDate endDate, Long customerId, String invoice, Long cashierId, Boolean includeVoided, Pageable pageable) {
-        LocalDate now = LocalDate.now();
+        LocalDate now = shopTimeService.today();
         if (range != null) {
             switch (range) {
                 case "TODAY":
@@ -121,7 +127,8 @@ public class SaleService {
                     break;
                 case "QUARTER":
                 case "quarter":
-                    startDate = now.minusMonths(3);
+                    int quarterStartMonth = ((now.getMonthValue() - 1) / 3) * 3 + 1;
+                    startDate = LocalDate.of(now.getYear(), quarterStartMonth, 1);
                     endDate = now;
                     break;
                 case "YEAR":
@@ -169,7 +176,7 @@ public class SaleService {
 
     @Transactional(rollbackFor = Exception.class)
     public SaleResponse createSale(SaleCreateRequest request, Long cashierId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException("Sale must have at least one item");
         }
@@ -192,7 +199,7 @@ public class SaleService {
         Sale sale = new Sale();
         sale.setInvoiceNumber(invoiceNumber);
         sale.setCashierId(cashierId);
-        sale.setSaleDate(LocalDateTime.now());
+        sale.setSaleDate(shopTimeService.now());
         sale.setPaymentMethod(Sale.PaymentMethod.CASH);
         sale.setSaleType(saleType);
         sale.setPaymentStatus(saleType == Sale.SaleType.CREDIT
@@ -237,14 +244,23 @@ public class SaleService {
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
 
-        // First pass: validate all stock availability (lock product rows)
+        Map<Long, Integer> requestedByProduct = new HashMap<>();
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findById(itemRequest.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+            if (itemRequest.getQuantity() <= 0) {
+                throw new BusinessException("Quantity must be positive");
+            }
+            requestedByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
+        }
 
-            if (product.getAvailableQuantity() < itemRequest.getQuantity()) {
+        // First pass: validate all stock availability (lock product rows)
+        for (Map.Entry<Long, Integer> entry : requestedByProduct.entrySet()) {
+            Product product = productRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+
+            int available = product.getAvailableQuantity();
+            if (available < entry.getValue()) {
                 throw new BusinessException("Insufficient stock for product '" + product.getName() +
-                    "'. Available: " + product.getAvailableQuantity() + ", Requested: " + itemRequest.getQuantity());
+                    "'. Available: " + available + ", Requested: " + entry.getValue());
             }
         }
 
@@ -456,7 +472,7 @@ public class SaleService {
             movement.setDescription("Stock deducted from sale: " + sale.getInvoiceNumber());
             User user = userRepository.findById(userId).orElse(null);
             movement.setCreatedBy(user);
-            movement.setMovementDate(LocalDateTime.now());
+            movement.setMovementDate(shopTimeService.now());
             stockMovementRepository.save(movement);
         }
     }
@@ -473,7 +489,7 @@ public class SaleService {
     public com.bms.dto.response.SaleResponse createSaleFromOrder(Order order, String paymentMethod,
                                                                   BigDecimal amountPaid, LocalDate dueDate,
                                                                   Long cashierId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         String method = paymentMethod != null ? paymentMethod.trim().toUpperCase() : "CASH";
         boolean isCredit = "CREDIT".equals(method);
         com.bms.entity.PaymentMethod entityMethod;
@@ -500,7 +516,7 @@ public class SaleService {
         Sale sale = new Sale();
         sale.setInvoiceNumber(invoiceNumber);
         sale.setCashierId(cashierId);
-        sale.setSaleDate(LocalDateTime.now());
+        sale.setSaleDate(shopTimeService.now());
         sale.setPaymentMethod(isCredit ? Sale.PaymentMethod.CREDIT : legacyPaymentMethod(entityMethod));
         sale.setSaleType(isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
         sale.setPaymentStatus(isCredit ? Sale.PaymentStatus.UNPAID : Sale.PaymentStatus.PAID);
@@ -640,7 +656,7 @@ public class SaleService {
             movement.setDescription("Stock deducted from sale (order conversion): " + savedSale.getInvoiceNumber());
             User user = userRepository.findById(cashierId).orElse(null);
             movement.setCreatedBy(user);
-            movement.setMovementDate(LocalDateTime.now());
+            movement.setMovementDate(shopTimeService.now());
             stockMovementRepository.save(movement);
         }
 
@@ -652,9 +668,10 @@ public class SaleService {
     }
 
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
-        periodGuard.assertOpen(LocalDateTime.now());
-        Sale sale = saleRepository.findById(saleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
+        periodGuard.assertOpen(shopTimeService.now());
+        Sale sale = saleRepository.findByIdForUpdate(saleId)
+                .orElseGet(() -> saleRepository.findById(saleId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
 
         if (sale.getIsVoided()) {
             throw new BusinessException("Sale is already voided");
@@ -668,11 +685,13 @@ public class SaleService {
 
         // D5: managers may only void within 24 hours of the sale; admins may
         // void later, and the reason above is mandatory for every void.
-        if (voidingUser.getRole() != null
-                && voidingUser.getRole().getName() == Role.RoleName.ROLE_MANAGER
-                && sale.getSaleDate() != null
-                && sale.getSaleDate().isBefore(LocalDateTime.now().minusHours(24))) {
-            throw new BusinessException("Voids older than 24 hours require an administrator");
+        Role.RoleName roleName = voidingUser.getRole() != null ? voidingUser.getRole().getName() : null;
+        boolean nonAdminVoid = !Role.RoleName.ROLE_ADMIN.equals(roleName);
+        if (nonAdminVoid && sale.getSaleDate() != null) {
+            LocalDateTime cutoff = shopTimeService.now().minusHours(24);
+            if (!sale.getSaleDate().isAfter(cutoff)) {
+                throw new BusinessException("Voids older than 24 hours require an administrator");
+            }
         }
 
         String oldValues = sale.toString();
@@ -681,13 +700,21 @@ public class SaleService {
         // drawer rejects the whole void instead of silently flipping isVoided.
         List<SalePayment> salePayments = salePaymentRepository
                 .findBySaleIdOrderByPaidAtAsc(sale.getId());
+        List<ArPayment> arPayments = arPaymentRepository != null
+                ? arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(sale.getId())
+                : java.util.Collections.emptyList();
+
         BigDecimal cashPaid = salePayments.stream()
                 .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
                 .map(SalePayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal arCashPaid = arPayments.stream()
+                .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
+                .map(ArPayment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cashAlreadyRefunded = safeSum(
                 saleReturnRepository.sumCashRefundedBySaleId(sale.getId()));
-        BigDecimal cashToReturn = cashPaid.subtract(cashAlreadyRefunded);
+        BigDecimal cashToReturn = cashPaid.add(arCashPaid).subtract(cashAlreadyRefunded);
 
         CashShift voidShift = sale.getEmployeeShift();
         CashDrawerSession originalSession = voidShift != null ? voidShift.getDrawerSession() : null;
@@ -714,9 +741,16 @@ public class SaleService {
         sale.setIsVoided(true);
         sale.setVoidedReason(reason);
         sale.setVoidedBy(userId);
-        sale.setVoidedAt(LocalDateTime.now());
+        sale.setVoidedAt(shopTimeService.now());
 
         Sale updatedSale = saleRepository.save(sale);
+
+        for (SalePayment payment : salePayments) {
+            payment.setPaymentStatus(payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CREDIT
+                    ? PaymentStatus.CANCELLED
+                    : PaymentStatus.REFUNDED);
+            salePaymentRepository.save(payment);
+        }
 
         if (reversalSession != null) {
             if (lateVoid) {
@@ -750,10 +784,6 @@ public class SaleService {
                         voidingUser,
                         voidShift,
                         "Cash reversed for voided sale " + sale.getInvoiceNumber());
-            }
-            for (SalePayment payment : salePayments) {
-                payment.setPaymentStatus(PaymentStatus.REFUNDED);
-                salePaymentRepository.save(payment);
             }
         }
 
@@ -798,7 +828,7 @@ public class SaleService {
             movement.setDescription("Stock restored from voided sale: " + sale.getInvoiceNumber() +
                     (alreadyRefunded > 0 ? " (" + alreadyRefunded + " already restored via prior refund)" : ""));
             movement.setCreatedBy(user);
-            movement.setMovementDate(LocalDateTime.now());
+            movement.setMovementDate(shopTimeService.now());
             stockMovementRepository.save(movement);
         }
 
@@ -820,6 +850,7 @@ public class SaleService {
         if (sale.getCustomer() == null) {
             return;
         }
+
         // Returns on an unpaid/partial credit invoice have already lowered the
         // customer's balance by their return amounts. Only void-reverse what is
         // still genuinely outstanding for THIS invoice, otherwise a fully
@@ -834,6 +865,7 @@ public class SaleService {
         BigDecimal outstanding = sale.getTotalAmount().subtract(paid)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         BigDecimal toReverse = outstanding.subtract(alreadyReversedByReturns)
+                .max(BigDecimal.ZERO)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         if (toReverse.compareTo(BigDecimal.ZERO) <= 0) {
             return;
@@ -856,7 +888,7 @@ public class SaleService {
             throw new BusinessException("Years must be at least 1");
         }
 
-        LocalDateTime cutoff = LocalDate.now().minusYears(years).atStartOfDay();
+        LocalDateTime cutoff = shopTimeService.today().minusYears(years).atStartOfDay();
         List<Long> saleIds = entityManager.createQuery("""
                 SELECT s.id
                 FROM Sale s
@@ -883,6 +915,13 @@ public class SaleService {
         entityManager.createQuery("""
                 DELETE FROM SaleReturn r
                 WHERE r.sale.id IN :saleIds
+                """)
+            .setParameter("saleIds", saleIds)
+            .executeUpdate();
+
+        entityManager.createQuery("""
+                DELETE FROM SalePayment sp
+                WHERE sp.sale.id IN :saleIds
                 """)
             .setParameter("saleIds", saleIds)
             .executeUpdate();
@@ -1059,7 +1098,7 @@ public class SaleService {
                             "Customer not found: " + request.getCustomerId()))
                 : null;
         BigDecimal taxRate = getShopTaxRate();
-        LocalDateTime pricingMoment = LocalDateTime.now();
+        LocalDateTime pricingMoment = shopTimeService.now();
         List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
 
         for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
@@ -1233,7 +1272,7 @@ public class SaleService {
     }
 
     public CustomerStatsResponse getCustomerStats(Long customerId) {
-        java.time.LocalDateTime now = java.time.LocalDateTime.now();
+        java.time.LocalDateTime now = shopTimeService.now();
         java.time.LocalDateTime startOfWeek = now.with(java.time.DayOfWeek.MONDAY).toLocalDate().atStartOfDay();
         java.time.LocalDateTime startOfMonth = now.withDayOfMonth(1).toLocalDate().atStartOfDay();
         java.time.LocalDateTime startOfYear = now.withDayOfYear(1).toLocalDate().atStartOfDay();

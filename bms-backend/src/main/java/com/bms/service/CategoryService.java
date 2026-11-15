@@ -11,6 +11,7 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -23,6 +24,10 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class CategoryService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final CategoryRepository categoryRepository;
 
@@ -107,7 +112,7 @@ public class CategoryService {
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
         
         category.setIsActive(false);
-        category.setDeletedAt(LocalDateTime.now());
+        category.setDeletedAt(shopTimeService.now());
         categoryRepository.save(category);
     }
 

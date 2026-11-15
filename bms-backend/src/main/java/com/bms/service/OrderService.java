@@ -26,6 +26,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -38,6 +39,10 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class OrderService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
@@ -114,7 +119,7 @@ public class OrderService {
 
         BigDecimal taxRate = getShopTaxRate();
         // O2: server-authoritative pricing, locked at creation and kept at conversion.
-        LocalDateTime pricingMoment = LocalDateTime.now();
+        LocalDateTime pricingMoment = shopTimeService.now();
         List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
         BelowCostPolicy belowCostPolicy = getBelowCostPolicy();
         boolean belowCostAllowedForUser = belowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
@@ -200,7 +205,7 @@ public class OrderService {
 
     @Transactional(rollbackFor = Exception.class)
     public OrderResponse convertOrder(Long id, OrderConvertRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Order order = orderRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + id));
         if (order.getStatus() != Order.OrderStatus.PENDING) {
@@ -214,7 +219,7 @@ public class OrderService {
 
         order.setStatus(Order.OrderStatus.CONVERTED);
         order.setConvertedSaleId(sale.getId());
-        order.setConvertedAt(LocalDateTime.now());
+        order.setConvertedAt(shopTimeService.now());
         Order saved = orderRepository.save(order);
 
         auditLogService.logAction(userId, "ORDER_CONVERT",
@@ -242,7 +247,7 @@ public class OrderService {
 
         String oldValues = order.toString();
         order.setStatus(Order.OrderStatus.CANCELLED);
-        order.setCancelledAt(LocalDateTime.now());
+        order.setCancelledAt(shopTimeService.now());
         order.setCancelledBy(userId);
         order.setCancelReason(request != null ? request.getReason() : null);
         Order saved = orderRepository.save(order);

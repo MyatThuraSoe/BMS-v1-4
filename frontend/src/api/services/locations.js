@@ -58,8 +58,10 @@ export const locationService = {
     return response.data;
   },
 
-  startTransfer: async (id) => {
-    const response = await apiClient.post(`/locations/transfers/${id}/start`);
+  startTransfer: async (id, overrideReserved = false, reason = '') => {
+    const params = new URLSearchParams({ overrideReserved: String(overrideReserved) });
+    if (reason) params.append('reason', reason);
+    const response = await apiClient.post(`/locations/transfers/${id}/start?${params.toString()}`);
     return response.data;
   },
 
@@ -68,13 +70,20 @@ export const locationService = {
     return response.data;
   },
 
-  completeTransfer: async (id) => {
-    const response = await apiClient.post(`/locations/transfers/${id}/complete`);
+  completeTransfer: async (id, overrideReserved = false, reason = '') => {
+    const params = new URLSearchParams({ overrideReserved: String(overrideReserved) });
+    if (reason) params.append('reason', reason);
+    const response = await apiClient.post(`/locations/transfers/${id}/complete?${params.toString()}`);
     return response.data;
   },
 
   cancelTransfer: async (id) => {
     const response = await apiClient.post(`/locations/transfers/${id}/cancel`);
+    return response.data;
+  },
+
+  cancelInTransit: async (id) => {
+    const response = await apiClient.post(`/locations/transfers/${id}/cancel-in-transit`);
     return response.data;
   },
 };

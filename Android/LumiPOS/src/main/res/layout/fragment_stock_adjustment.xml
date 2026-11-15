@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Stock adjustment.
+
+  The product field is a picker: it opens a search dialog rather than filtering in place, so it is
+  non-focusable and carries a dropdown end icon. It previously looked like an ordinary text field,
+  and the RecyclerView that used to back inline filtering (`rv_product_results`) is gone - it was
+  permanently `gone`, never given an adapter, and the dialog replaced it.
+-->
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:orientation="vertical">
+
+        <com.google.android.material.card.MaterialCardView
+            style="@style/Widget.LumiPOS.CardView"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_margin="12dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_product_search"
+                    style="@style/Widget.LumiPOS.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="@string/hint_select_product"
+                    app:endIconMode="custom"
+                    app:endIconDrawable="@drawable/ic_arrow_drop_down"
+                    app:endIconContentDescription="@string/hint_select_product">
+                    <!--
+                      `endIconMode="dropdown_menu"` is NOT valid here: Material's
+                      DropdownMenuEndIconDelegate casts its child to AutoCompleteTextView in
+                      onEditTextAttached, which EndCompoundLayout calls straight from its
+                      constructor. A TextInputEditText child therefore threw
+                      "EditText needs to be an AutoCompleteTextView if an Exposed Dropdown Menu is
+                      being used." while the layout was being inflated - a crash on opening this
+                      screen, invisible to the compiler. The field opens a picker dialog rather
+                      than a real dropdown, so `custom` with the arrow glyph is the correct mode
+                      (same as the due-date field in dialog_checkout.xml).
+                    -->
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_product_search"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:cursorVisible="false"
+                        android:focusable="false"
+                        android:inputType="none"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <RadioGroup
+                    android:id="@+id/rg_adjustment_type"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <RadioButton
+                        android:id="@+id/rb_add_stock"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:checked="true"
+                        android:text="@string/add_stock" />
+
+                    <RadioButton
+                        android:id="@+id/rb_remove_stock"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/remove_stock" />
+
+                </RadioGroup>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_qty"
+                    style="@style/Widget.LumiPOS.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/qty_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_qty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="number"
+                        android:maxLines="1" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/til_reason"
+                    style="@style/Widget.LumiPOS.TextInputLayout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:hint="@string/reason_hint">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/et_reason"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textMultiLine"
+                        android:maxLines="4"
+                        android:minLines="2" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btn_confirm_adjustment"
+                    style="@style/Widget.LumiPOS.Button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/confirm" />
+
+            </LinearLayout>
+
+        </com.google.android.material.card.MaterialCardView>
+
+    </LinearLayout>
+
+</ScrollView>

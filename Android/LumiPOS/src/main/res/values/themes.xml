@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.LumiPOS" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/secondary</item>
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorSecondaryVariant">@color/secondary_variant</item>
+        <item name="colorError">@color/error</item>
+
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorOnSecondary">@color/on_secondary</item>
+        <item name="colorOnError">@color/on_error</item>
+        <item name="android:colorBackgroundFloating">@color/surface</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_variant</item>
+
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+
+        <item name="android:divider">@color/divider</item>
+
+        <item name="titleTextAppearance">@style/TextAppearance.LumiPOS.Toolbar</item>
+
+        <!-- Hard-lock the app to light: blocks MIUI/HyperOS Force Dark auto-inversion. -->
+        <item name="android:forceDarkAllowed">false</item>
+
+        <item name="bottomNavigationStyle">@style/Widget.LumiPOS.BottomNavigation</item>
+    </style>
+
+    <style name="Theme.LumiPOS.NoActionBar" parent="Theme.MaterialComponents.Light.NoActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/secondary</item>
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorSecondaryVariant">@color/secondary_variant</item>
+        <item name="colorError">@color/error</item>
+
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorSurfaceVariant">@color/surface_variant</item>
+
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorOnSecondary">@color/on_secondary</item>
+        <item name="colorOnError">@color/on_error</item>
+        <item name="android:colorBackgroundFloating">@color/surface</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+        <item name="colorOnSurfaceVariant">@color/on_surface_variant</item>
+
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:navigationBarColor">@color/surface</item>
+
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+
+        <item name="titleTextAppearance">@style/TextAppearance.LumiPOS.Toolbar</item>
+
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <style name="Theme.LumiPOS.DarkActionBar" parent="Theme.MaterialComponents.Light.DarkActionBar">
+        <item name="colorPrimary">@color/primary</item>
+        <item name="colorPrimaryDark">@color/primary_dark</item>
+        <item name="colorAccent">@color/secondary</item>
+        <item name="colorSecondary">@color/secondary</item>
+        <item name="colorError">@color/error</item>
+
+        <item name="android:colorBackground">@color/background</item>
+        <item name="android:windowBackground">@color/background</item>
+        <item name="colorSurface">@color/surface</item>
+
+        <item name="colorOnPrimary">@color/on_primary</item>
+        <item name="colorOnSecondary">@color/on_secondary</item>
+        <item name="colorOnError">@color/on_error</item>
+        <item name="colorOnSurface">@color/on_surface</item>
+
+        <item name="android:statusBarColor">@color/primary_dark</item>
+        <item name="android:forceDarkAllowed">false</item>
+    </style>
+
+    <style name="Widget.LumiPOS.BottomNavigation" parent="Widget.MaterialComponents.BottomNavigationView.Colored">
+        <item name="backgroundTint">@color/surface</item>
+        <item name="itemIconTint">@color/nav_item_color</item>
+        <item name="itemTextColor">@color/nav_item_color</item>
+        <item name="itemRippleColor">@color/nav_selected</item>
+    </style>
+
+    <style name="Widget.LumiPOS.CardView" parent="Widget.MaterialComponents.CardView">
+        <item name="cardCornerRadius">@dimen/card_radius</item>
+        <item name="cardElevation">2dp</item>
+        <!--
+          Zero, deliberately. This was @dimen/padding_medium, which stacked on top of the
+          android:padding every card's inner LinearLayout already sets and produced 32dp of inset.
+          Cards here control their own padding.
+        -->
+        <item name="contentPadding">0dp</item>
+        <item name="cardBackgroundColor">@color/card_background</item>
+        <!-- Subtle outline so white cards stay visible on the white background. -->
+        <item name="strokeColor">@color/outline_variant</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <style name="Widget.LumiPOS.CardView.Flat">
+        <item name="cardElevation">0dp</item>
+    </style>
+
+    <style name="Widget.LumiPOS.Button" parent="Widget.MaterialComponents.Button">
+        <item name="backgroundTint">@color/primary</item>
+        <item name="android:textColor">@color/on_primary</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <style name="Widget.LumiPOS.Button.Outline" parent="Widget.MaterialComponents.Button.OutlinedButton">
+        <item name="strokeColor">@color/primary</item>
+        <item name="android:textColor">@color/primary</item>
+        <item name="cornerRadius">8dp</item>
+    </style>
+
+    <style name="Widget.LumiPOS.TextInputLayout" parent="Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+        <item name="boxStrokeColor">@color/primary</item>
+        <item name="hintTextColor">@color/primary</item>
+    </style>
+</resources>

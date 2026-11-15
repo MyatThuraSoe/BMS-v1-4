@@ -24,8 +24,8 @@ import static org.mockito.Mockito.lenient;
 /**
  * P3: the shared classifier that decides which stock movements are operating
  * inventory losses. Both the P&L and the GL journal read it, so the two must
- * agree (I4). Count shortages are shrinkage (D6); RTV, revaluations, neutral
- * count corrections and positive gains are NOT operating losses.
+ * agree (I4). Count shortages and negative manual corrections are shrinkage;
+ * RTV, revaluations and positive gains are NOT operating losses.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -93,10 +93,11 @@ class InventoryLossServiceTest {
     }
 
     @Test
-    void p3_neutralCountCorrectionIsNotLoss() {
+    void f18_negativeCountCorrectionIsShrinkageLoss() {
         StockMovement m = movement(StockMovement.MovementType.ADJUSTMENT_OUT,
                 StockMovement.ReferenceType.STOCK_ADJUSTMENT, "COUNT_CORRECTION", "-5.00");
-        assertFalse(service.isOperatingLoss(m));
+        assertTrue(service.isOperatingLoss(m));
+        assertEquals(InventoryLossService.SHRINKAGE, service.lossCategory(m));
     }
 
     @Test
@@ -114,7 +115,7 @@ class InventoryLossServiceTest {
     }
 
     @Test
-    void p3_lossesByReasonAggregatesAndExcludesNonLosses() {
+    void f18_lossesByReasonAggregatesNegativeCountCorrection() {
         List<StockMovement> movements = List.of(
                 movement(StockMovement.MovementType.ADJUSTMENT_OUT,
                         StockMovement.ReferenceType.STOCK_ADJUSTMENT, "SPOILAGE_EXPIRY", "-120.00"),
@@ -138,8 +139,8 @@ class InventoryLossServiceTest {
         assertEquals(3, byReason.size());
         assertEquals(0, new BigDecimal("120.00").compareTo(byReason.get("SPOILAGE_EXPIRY")));
         assertEquals(0, new BigDecimal("30.00").compareTo(byReason.get("THEFT_SHRINKAGE")));
-        assertEquals(0, new BigDecimal("45.00").compareTo(byReason.get(InventoryLossService.SHRINKAGE)));
-        assertEquals(0, new BigDecimal("195.00").compareTo(service.totalLosses(
+        assertEquals(0, new BigDecimal("50.00").compareTo(byReason.get(InventoryLossService.SHRINKAGE)));
+        assertEquals(0, new BigDecimal("200.00").compareTo(service.totalLosses(
                 LocalDateTime.now().minusDays(30), LocalDateTime.now())));
     }
 }

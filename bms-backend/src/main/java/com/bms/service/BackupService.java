@@ -7,6 +7,7 @@ import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.FileOutputStream;
@@ -23,6 +24,10 @@ import java.util.stream.Collectors;
 
 @Service
 public class BackupService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -408,13 +413,13 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             setting.setBackupStatus("FAILED");
             String message = friendlyError(e);
             setting.setLastErrorMessage(message);
-            setting.setLastBackupAttempt(LocalDateTime.now());
+            setting.setLastBackupAttempt(shopTimeService.now());
             if (isRevokedToken(e)) {
                 setting.setEnabled(false);
                 setting.setNextBackupDate(null);
                 setting.setLastErrorMessage("Google access was revoked or expired. Reconnect Google Drive in Settings — automatic backups are paused.");
             } else {
-                setting.setNextBackupDate(LocalDateTime.now().plusHours(1));
+                setting.setNextBackupDate(shopTimeService.now().plusHours(1));
             }
             backupSettingRepository.save(setting);
             throw e;
@@ -453,7 +458,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
 
         // 1. Restorable JSON backup (same format the Replace Everything restore
         //    accepts), not the spreadsheet that couldn't be imported back.
-        String dateStr = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        String dateStr = shopTimeService.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
         String fileName = "LumiPOS_Backup_" + dateStr + ".json";
 
         Path tempFile = Files.createTempFile("lumipos_backup_", ".json");
@@ -469,11 +474,11 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             String driveLink = googleDriveService.uploadFile(tempFile.toFile(), mimeType, folderId, fileName);
 
             // 4. Record the outcome so the UI can show a real status.
-            setting.setLastBackupDate(LocalDateTime.now());
-            setting.setLastBackupAttempt(LocalDateTime.now());
+            setting.setLastBackupDate(shopTimeService.now());
+            setting.setLastBackupAttempt(shopTimeService.now());
             setting.setBackupStatus("SUCCESS");
             setting.setLastErrorMessage(null);
-            setting.setNextBackupDate(calculateNextBackupDate(setting, LocalDateTime.now()));
+            setting.setNextBackupDate(calculateNextBackupDate(setting, shopTimeService.now()));
             backupSettingRepository.save(setting);
 
             return driveLink;

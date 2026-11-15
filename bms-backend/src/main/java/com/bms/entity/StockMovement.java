@@ -41,6 +41,9 @@ public class StockMovement {
      */
     @Column(name = "purchase_item_id")
     private Long purchaseItemId;
+
+    @Column(name = "source_transfer_id")
+    private Long sourceTransferId;
     
     @Column(length = 1000)
     private String description;
@@ -72,7 +75,7 @@ public class StockMovement {
     }
     
     public enum ReferenceType {
-        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN, STOCK_COUNT, TRANSFER, RECEIVING, RTV, OPENING_BALANCE
+        PURCHASE, SALE, STOCK_ADJUSTMENT, RETURN, STOCK_COUNT, TRANSFER, RECEIVING, RTV, OPENING_BALANCE, RESCUE
     }
     
     @PrePersist
@@ -104,6 +107,8 @@ public class StockMovement {
 
     public Long getPurchaseItemId() { return purchaseItemId; }
     public void setPurchaseItemId(Long purchaseItemId) { this.purchaseItemId = purchaseItemId; }
+    public Long getSourceTransferId() { return sourceTransferId; }
+    public void setSourceTransferId(Long sourceTransferId) { this.sourceTransferId = sourceTransferId; }
     
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

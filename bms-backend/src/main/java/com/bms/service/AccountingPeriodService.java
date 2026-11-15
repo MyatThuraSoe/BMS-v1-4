@@ -6,6 +6,7 @@ import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.PeriodCloseRepository;
 import com.bms.repository.SystemSettingRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -17,6 +18,10 @@ import java.util.Map;
 @Service
 @Transactional
 public class AccountingPeriodService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final PeriodGuard periodGuard;
     private final PeriodCloseRepository periodCloseRepository;
@@ -55,7 +60,7 @@ public class AccountingPeriodService {
         var setting = systemSettingRepository.findBySettingKey(LedgerReadService.CUTOVER_KEY)
                 .orElseThrow(() -> new BusinessException("Ledger cutover setting is not initialized"));
         if (!readService.isActive()) {
-            setting.setSettingValue(LocalDateTime.now().toString());
+            setting.setSettingValue(shopTimeService.now().toString());
             systemSettingRepository.save(setting);
             auditLogService.logAction(userId, "LEDGER_READ_CUTOVER", "Reports switched to reconciled accounting ledgers",
                     "SystemSetting", setting.getId(), null, setting.getSettingValue());
@@ -80,7 +85,7 @@ public class AccountingPeriodService {
         BigDecimal[] totals = readService.totals(month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());
         PeriodClose close = new PeriodClose();
         close.setPeriod(month.toString());
-        close.setClosedAt(LocalDateTime.now());
+        close.setClosedAt(shopTimeService.now());
         close.setClosedBy(userId);
         close.setFrozenRevenue(totals[0]);
         close.setFrozenCogs(totals[1]);

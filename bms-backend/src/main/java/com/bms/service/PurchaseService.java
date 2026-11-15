@@ -77,6 +77,9 @@ public class PurchaseService {
     @Autowired
     private PeriodGuard periodGuard;
 
+    @Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
     public Page<PurchaseResponse> getAllPurchases(Pageable pageable) {
         return purchaseRepository.findActivePurchases(pageable).map(this::mapToResponse);
     }
@@ -176,6 +179,9 @@ public class PurchaseService {
                 ? request.getDiscountAmount() : BigDecimal.ZERO;
         if (discountAmount.compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException("Discount amount cannot be negative");
+        }
+        if (discountAmount.compareTo(subtotal) > 0) {
+            throw new BusinessException("Discount amount cannot exceed subtotal");
         }
         BigDecimal taxAmount = request.getTaxAmount() != null
                 ? request.getTaxAmount() : BigDecimal.ZERO;
@@ -345,7 +351,7 @@ public class PurchaseService {
             varianceExpense.setDescription("Unabsorbed landed cost on purchase "
                     + purchase.getPurchaseNumber());
             varianceExpense.setAmount(variance);
-            varianceExpense.setExpenseDate(LocalDate.now());
+            varianceExpense.setExpenseDate(shopTimeService.today());
             varianceExpense.setCreatedBy(userId);
             expenseRepository.save(varianceExpense);
             ledgerPostingService.postExpense(varianceExpense);
@@ -413,13 +419,13 @@ public class PurchaseService {
             receiveUnits(purchase, item, quantity, 0, shop, userId, null);
         }
         purchase.setReceivingStatus(Purchase.ReceivingStatus.RECEIVED);
-        purchase.setReceivedAt(LocalDateTime.now());
+        purchase.setReceivedAt(shopTimeService.now());
         purchase.setReceivedBy(userId);
         purchaseRepository.save(purchase);
     }
 
     public PurchaseResponse receivePurchase(Long purchaseId, ReceivePurchaseRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
@@ -431,8 +437,12 @@ public class PurchaseService {
 
         Map<Long, PurchaseItem> itemsById = purchase.getItems().stream()
                 .collect(Collectors.toMap(PurchaseItem::getId, item -> item));
+        Set<Long> seen = new HashSet<>();
         boolean overShipment = false;
         for (ReceivePurchaseRequest.ReceiveItem entry : request.getItems()) {
+            if (!seen.add(entry.getPurchaseItemId())) {
+                throw new BusinessException("Duplicate purchase item in receive request: " + entry.getPurchaseItemId());
+            }
             PurchaseItem item = itemsById.get(entry.getPurchaseItemId());
             if (item == null) {
                 throw new BusinessException("Purchase item " + entry.getPurchaseItemId()
@@ -486,7 +496,7 @@ public class PurchaseService {
         } else {
             purchase.setReceivingStatus(Purchase.ReceivingStatus.PARTIAL);
         }
-        purchase.setReceivedAt(LocalDateTime.now());
+        purchase.setReceivedAt(shopTimeService.now());
         purchase.setReceivedBy(userId);
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
             purchase.setNotes((purchase.getNotes() != null ? purchase.getNotes() + "\n" : "")
@@ -542,7 +552,7 @@ public class PurchaseService {
                 item.getId() + ":" + before, received, unitCost, valuation,
                 destination != null ? destination.getId() : null,
                 "Received " + received + " unit(s) from purchase " + purchase.getPurchaseNumber(),
-                LocalDateTime.now(), userId);
+                shopTimeService.now(), userId);
         BigDecimal newWeightedCost = posting.getUnitCostAfter();
 
         if (sellable > 0) {
@@ -606,7 +616,7 @@ public class PurchaseService {
         movement.setLocation(location);
         movement.setValuationAmount(valuation);
         movement.setCreatedBy(user);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         stockMovementRepository.save(movement);
     }
 
@@ -631,7 +641,7 @@ public class PurchaseService {
     // ------------------------------------------------------------------
 
     public PurchaseResponse returnToVendor(Long purchaseId, ReturnToVendorRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Purchase purchase = purchaseRepository.findById(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
@@ -671,7 +681,7 @@ public class PurchaseService {
                     item.getId() + ":" + item.getReturnedQuantity(), -entry.getQuantity(),
                     item.getBaseUnitCost(),
                     item.getBaseUnitCost().multiply(BigDecimal.valueOf(entry.getQuantity())).negate(),
-                    null, request.getReason(), LocalDateTime.now(), userId,
+                    null, request.getReason(), shopTimeService.now(), userId,
                     message -> recordCostReconciliationAlert(userId, product, purchase, message));
             BigDecimal newCostPrice = posting.getUnitCostAfter();
 
@@ -692,7 +702,8 @@ public class PurchaseService {
                     throw new BusinessException("Only " + current + " sellable unit(s) of "
                             + product.getName() + " are available to return");
                 }
-                locationService.removeShopStock(product, remaining);
+                locationService.removeShopStock(product, remaining, request.isOverrideReserved(),
+                        request.getReason(), userId);
                 recordReturnMovement(purchase, product, remaining, shop.getCode(),
                         "RTV from shop floor", item, user);
             }
@@ -806,7 +817,7 @@ public class PurchaseService {
                 .multiply(BigDecimal.valueOf(quantity)).negate()
                 .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
         movement.setCreatedBy(user);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         stockMovementRepository.save(movement);
     }
 
@@ -841,7 +852,7 @@ public class PurchaseService {
                 product, InventoryLedger.EventType.ADJUSTMENT, "PURCHASE_REVERSAL", purchase.getId(),
                 item.getId() + ":" + quantity, -quantity, item.getBaseUnitCost(),
                 item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity)).negate(),
-                null, "Purchase " + operation, LocalDateTime.now(), userId,
+                null, "Purchase " + operation, shopTimeService.now(), userId,
                 message -> recordCostReconciliationAlert(userId, product, purchase, message));
         BigDecimal newCostPrice = posting.getUnitCostAfter();
 
@@ -944,7 +955,7 @@ public class PurchaseService {
         movement.setValuationAmount(item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity))
                 .negate().setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
         movement.setCreatedBy(user);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         stockMovementRepository.save(movement);
     }
 
@@ -953,7 +964,7 @@ public class PurchaseService {
     }
 
     public void deletePurchase(Long id, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Purchase purchase = purchaseRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + id));
 
@@ -972,7 +983,7 @@ public class PurchaseService {
             }
         }
 
-        purchase.setDeletedAt(LocalDateTime.now());
+        purchase.setDeletedAt(shopTimeService.now());
         purchase.setIsActive(false);
         purchaseRepository.save(purchase);
 
@@ -991,6 +1002,9 @@ public class PurchaseService {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
         }
         assertNotPartiallyReceived(purchase, "edit");
+        if (purchase.getItems().stream().anyMatch(item -> item.getReturnedQuantity() > 0)) {
+            throw new BusinessException("Cannot edit a purchase that has returned goods. Create a new purchase or adjustment.");
+        }
 
         Supplier supplier = null;
         if (request.getSupplierId() != null) {
@@ -1141,7 +1155,7 @@ public class PurchaseService {
     }
 
     public SupplierStatsResponse getSupplierStats(Long supplierId) {
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = shopTimeService.now();
         LocalDateTime startOfWeek = now.with(java.time.DayOfWeek.MONDAY).toLocalDate().atStartOfDay();
         LocalDateTime startOfMonth = now.withDayOfMonth(1).toLocalDate().atStartOfDay();
         LocalDateTime startOfYear = now.withDayOfYear(1).toLocalDate().atStartOfDay();
