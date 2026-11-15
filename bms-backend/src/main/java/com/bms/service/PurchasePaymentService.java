@@ -45,6 +45,10 @@ import java.util.Map;
 @Transactional
 public class PurchasePaymentService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private PurchaseRepository purchaseRepository;
 
@@ -113,7 +117,7 @@ public class PurchasePaymentService {
      */
     @Transactional(readOnly = true)
     public PayablesAgingResponse getPayablesAging(LocalDate asOfDate) {
-        LocalDate asOf = asOfDate != null ? asOfDate : LocalDate.now();
+        LocalDate asOf = asOfDate != null ? asOfDate : shopTimeService.today();
         List<Purchase> purchases = purchaseRepository.findActivePurchases(Pageable.unpaged()).getContent();
 
         Map<Long, BigDecimal> paidByPurchase = new HashMap<>();
@@ -207,12 +211,12 @@ public class PurchasePaymentService {
                     + outstanding.setScale(2, RoundingMode.HALF_UP));
         }
 
-        LocalDate paymentDay = request.getPaymentDate() != null ? request.getPaymentDate() : LocalDate.now();
-        if (paymentDay.isAfter(LocalDate.now())) {
+        LocalDate paymentDay = request.getPaymentDate() != null ? request.getPaymentDate() : shopTimeService.today();
+        if (paymentDay.isAfter(shopTimeService.today())) {
             throw new BusinessException("Payment date cannot be in the future");
         }
         LocalDateTime paymentDate = request.getPaymentDate() != null
-                ? paymentDay.atStartOfDay() : LocalDateTime.now();
+                ? paymentDay.atStartOfDay() : shopTimeService.now();
         periodGuard.assertOpen(paymentDate);
 
         User recordedBy = userRepository.findById(userId)

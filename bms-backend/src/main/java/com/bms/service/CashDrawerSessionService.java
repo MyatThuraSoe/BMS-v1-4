@@ -50,6 +50,10 @@ import java.util.stream.Collectors;
 @Transactional
 public class CashDrawerSessionService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     public static final String SETTING_ALLOW_SHARED = "allow_shared_cash_drawer";
     public static final String SETTING_REQUIRE_APPROVAL = "require_manager_approval_shared_drawer";
     public static final String SETTING_BLIND_CLOSE = "blind_drawer_close";
@@ -74,6 +78,9 @@ public class CashDrawerSessionService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private SystemSettingService systemSettingService;
 
     // ------------------------------------------------------------------
     // Drawer configuration
@@ -169,7 +176,7 @@ public class CashDrawerSessionService {
         CashDrawerSession session = new CashDrawerSession();
         session.setDrawer(locked);
         session.setOpenedBy(openedBy);
-        session.setOpenedAt(LocalDateTime.now());
+        session.setOpenedAt(shopTimeService.now());
         session.setStatus(DrawerSessionStatus.OPEN);
         session.setOpeningFloat(nullSafe(openingFloat));
         session.setBlindClose(isBlindCloseEnabled());
@@ -224,8 +231,8 @@ public class CashDrawerSessionService {
     @Transactional(readOnly = true)
     public Page<DrawerSessionResponse> getSessionHistory(LocalDateTime start, LocalDateTime end,
                                                          Pageable pageable) {
-        LocalDateTime from = start != null ? start : LocalDateTime.now().minusMonths(1);
-        LocalDateTime to = end != null ? end : LocalDateTime.now();
+        LocalDateTime from = start != null ? start : shopTimeService.now().minusMonths(1);
+        LocalDateTime to = end != null ? end : shopTimeService.now();
         return cashDrawerSessionRepository.findByDateRange(from, to, pageable)
                 .map(session -> toResponse(session, false, true));
     }
@@ -275,12 +282,13 @@ public class CashDrawerSessionService {
         BigDecimal counted = nullSafe(request.getCountedCash());
         BigDecimal variance = CashVarianceUtil.variance(counted, expected);
 
-        if (!managerOrAdmin && CashVarianceUtil.exceedsTolerance(variance, CashVarianceUtil.DEFAULT_TOLERANCE)) {
+        BigDecimal tolerance = systemSettingService.cashVarianceTolerance();
+        if (!managerOrAdmin && CashVarianceUtil.exceedsTolerance(variance, tolerance)) {
             throw new BusinessException(
                     "Drawer variance exceeds the allowed tolerance. Manager approval is required to close.");
         }
 
-        LocalDateTime closedAt = LocalDateTime.now();
+        LocalDateTime closedAt = shopTimeService.now();
         session.setStatus(DrawerSessionStatus.CLOSED);
         session.setClosedAt(closedAt);
         session.setClosedBy(closer);
@@ -323,7 +331,8 @@ public class CashDrawerSessionService {
         auditLogService.logAction(userId, "DRAWER_CLOSE",
                 "Drawer closed. Expected: " + expected + ", Counted: " + counted
                         + ", Variance: " + variance
-                        + CashVarianceUtil.describeVariance(variance, expected),
+                        + CashVarianceUtil.describeVariance(variance, expected, tolerance)
+                        + " (tolerance " + tolerance + ")",
                 "CashDrawerSession", sessionId, null, null);
 
         return toResponse(session, true, true);

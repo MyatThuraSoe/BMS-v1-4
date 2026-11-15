@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Box,
   Typography,
@@ -8,6 +8,7 @@ import {
   Switch,
   FormControlLabel,
   Stack,
+  TextField,
 } from '@mui/material';
 import { Backup as BackupIcon, DeleteSweep as DeleteSweepIcon } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -37,11 +38,19 @@ const CASH_DRAWER_SETTINGS = [
   },
 ];
 
+const COUNT_AUTO_APPROVE_SETTINGS = [
+  { key: 'stockCountAutoApproveLineValue', labelKey: 'count_auto_approve_line_value', helpKey: 'count_auto_approve_line_value_help', step: '0.01' },
+  { key: 'stockCountAutoApproveSheetValue', labelKey: 'count_auto_approve_sheet_value', helpKey: 'count_auto_approve_sheet_value_help', step: '0.01' },
+  { key: 'stockCountAutoApproveMaxLines', labelKey: 'count_auto_approve_max_lines', helpKey: 'count_auto_approve_max_lines_help', step: '1' },
+];
+
 const Settings = () => {
   const { t } = useTranslation(['settings', 'common']);
   const { isAdmin } = useAuth();
   const [backupLoading, setBackupLoading] = useState(false);
   const [deleteOldSalesLoading, setDeleteOldSalesLoading] = useState(false);
+  const [cashVarianceTolerance, setCashVarianceTolerance] = useState('');
+  const [countAutoApproveValues, setCountAutoApproveValues] = useState({});
   const queryClient = useQueryClient();
 
   const { data: settingsData } = useQuery({
@@ -55,9 +64,30 @@ const Settings = () => {
     return String(setting?.settingValue ?? '').toLowerCase() === 'true';
   };
 
+  const cashToleranceSetting = (settingsData?.data || [])
+    .find((row) => row.settingKey === 'shop.cashVarianceTolerance');
+  useEffect(() => {
+    if (cashToleranceSetting && cashVarianceTolerance === '') {
+      setCashVarianceTolerance(cashToleranceSetting.settingValue);
+    }
+  }, [cashToleranceSetting, cashVarianceTolerance]);
+
+  useEffect(() => {
+    const values = {};
+    COUNT_AUTO_APPROVE_SETTINGS.forEach(({ key }) => {
+      const setting = (settingsData?.data || []).find((row) => row.settingKey === key);
+      if (setting && countAutoApproveValues[key] === undefined) {
+        values[key] = setting.settingValue;
+      }
+    });
+    if (Object.keys(values).length) {
+      setCountAutoApproveValues((current) => ({ ...current, ...values }));
+    }
+  }, [settingsData, countAutoApproveValues]);
+
   const updateSettingMutation = useMutation({
     mutationFn: ({ key, value }) => systemSettingService.update(key, {
-      settingValue: value ? 'true' : 'false',
+      settingValue: String(value),
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['system-settings'] });
@@ -185,6 +215,67 @@ const Settings = () => {
                 </Typography>
               </Box>
             ))}
+            <TextField
+              label={t('cash_variance_tolerance')}
+              type="number"
+              size="small"
+              value={cashVarianceTolerance}
+              onChange={(e) => setCashVarianceTolerance(e.target.value)}
+              onBlur={() => {
+                const value = Number(cashVarianceTolerance);
+                if (Number.isFinite(value) && value >= 0
+                    && String(value) !== String(cashToleranceSetting?.settingValue ?? '10.00')) {
+                  updateSettingMutation.mutate({
+                    key: 'shop.cashVarianceTolerance',
+                    value: cashVarianceTolerance,
+                  });
+                }
+              }}
+              inputProps={{ min: 0, step: '0.01' }}
+              helperText={t('cash_variance_tolerance_help')}
+              disabled={updateSettingMutation.isPending}
+            />
+          </Stack>
+        </Paper>
+      )}
+
+      {isAdmin() && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            {t('stock_count_auto_approval')}
+          </Typography>
+          <Stack spacing={1.5}>
+            {COUNT_AUTO_APPROVE_SETTINGS.map((setting) => {
+              const stored = (settingsData?.data || [])
+                .find((row) => row.settingKey === setting.key)?.settingValue;
+              return (
+                <TextField
+                  key={setting.key}
+                  label={t(setting.labelKey)}
+                  type="number"
+                  size="small"
+                  value={countAutoApproveValues[setting.key] ?? ''}
+                  onChange={(e) => setCountAutoApproveValues((current) => ({
+                    ...current,
+                    [setting.key]: e.target.value,
+                  }))}
+                  onBlur={() => {
+                    const value = Number(countAutoApproveValues[setting.key]);
+                    if (Number.isFinite(value) && value >= 0
+                        && (setting.step !== '1' || Number.isInteger(value))
+                        && String(value) !== String(stored ?? '')) {
+                      updateSettingMutation.mutate({
+                        key: setting.key,
+                        value: countAutoApproveValues[setting.key],
+                      });
+                    }
+                  }}
+                  inputProps={{ min: 0, step: setting.step }}
+                  helperText={t(setting.helpKey)}
+                  disabled={updateSettingMutation.isPending}
+                />
+              );
+            })}
           </Stack>
         </Paper>
       )}

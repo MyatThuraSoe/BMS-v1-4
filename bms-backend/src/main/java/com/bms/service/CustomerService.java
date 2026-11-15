@@ -24,6 +24,10 @@ import java.util.stream.Collectors;
 @Transactional
 public class CustomerService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private CustomerRepository customerRepository;
 
@@ -145,7 +149,7 @@ public class CustomerService {
         // Free the unique customer code so it can be reused after this soft delete
         // (phone/email checks already ignore soft-deleted customers).
         customer.setCustomerCode(com.bms.util.SoftDeleteKeys.release(customer.getCustomerCode(), customer.getId(), 255));
-        customer.setDeletedAt(LocalDateTime.now());
+        customer.setDeletedAt(shopTimeService.now());
         customer.setIsActive(false);
         customerRepository.save(customer);
 
@@ -156,7 +160,7 @@ public class CustomerService {
 
     private String generateCustomerCode() {
         String prefix = "CUST-";
-        String datePart = LocalDateTime.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        String datePart = shopTimeService.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
         
         Optional<Customer> lastCustomerOpt = customerRepository.findAll(
             org.springframework.data.domain.PageRequest.of(0, 1, org.springframework.data.domain.Sort.by("customerCode").descending())

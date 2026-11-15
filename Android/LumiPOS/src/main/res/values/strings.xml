@@ -1,0 +1,773 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LumiPOS</string>
+
+    <!-- Screen Titles -->
+    <string name="title_pos">Point of Sale</string>
+    <string name="title_dashboard">Dashboard</string>
+    <string name="title_products">Products</string>
+    <string name="title_categories">Categories</string>
+    <string name="title_customers">Customers</string>
+    <string name="walk_in_customer">Walk-in customer</string>
+    <!-- %1$s = customer name, %2$s = amount currently owed, %3$s = credit limit -->
+    <string name="format_customer_credit">%1$s\nOwing %2$s of %3$s</string>
+    <string name="btn_change">Change</string>
+    <string name="title_suppliers">Suppliers</string>
+    <string name="title_sales">Sales</string>
+    <string name="title_inventory">Inventory</string>
+    <string name="title_purchases">Purchases</string>
+    <string name="title_orders">Orders</string>
+    <string name="title_reports">Reports</string>
+    <string name="title_settings">Settings</string>
+    <string name="title_shop_info">Shop Information</string>
+    <string name="title_cash_shift">Cash Shift</string>
+    <string name="title_about">About</string>
+    <string name="title_accounts_receivable">Accounts Receivable</string>
+    <string name="title_stock_adjustment">Stock Adjustment</string>
+    <string name="title_receipt_customization">Receipt Customization</string>
+    <string name="title_returns">Returns</string>
+
+    <!-- Returns & Refunds -->
+    <string name="returns_title">Returns &amp; Refunds</string>
+    <string name="btn_new_return">New Return</string>
+    <string name="btn_return_items">Return Selected Items</string>
+    <string name="label_return_invoice">Invoice</string>
+    <string name="label_return_qty">Return qty</string>
+    <string name="label_restock">Restock</string>
+    <string name="label_refund_method">Refund method</string>
+    <string name="label_refund_total">Refund total</string>
+    <string name="hint_return_reason">Reason for return</string>
+    <string name="hint_invoice_number">Invoice number</string>
+    <string name="hint_return_qty">Qty</string>
+    <string name="msg_return_qty_max">Return quantity cannot exceed what was sold (%1$d).</string>
+    <string name="msg_sale_already_returned">Everything on this invoice has already been returned.</string>
+    <string name="msg_return_done">Return processed.</string>
+    <string name="msg_no_returns">No returns recorded yet.</string>
+    <string name="msg_return_reason_required">Enter a reason for the return.</string>
+    <string name="msg_return_select_items">Select at least one item to return.</string>
+    <string name="msg_return_sale_not_found">No sale found for that invoice number.</string>
+    <string name="format_return_qty">Sold %1$d  |  Returned %2$d</string>
+    <string name="format_return_header">%1$s  -  %2$s</string>
+    <string name="format_return_item_qty">%1$d x %2$s</string>
+
+    <!-- Discount Engine -->
+    <string name="title_promotions">Promotions</string>
+    <string name="title_new_promotion">New Promotion</string>
+    <string name="title_edit_promotion">Edit Promotion</string>
+    <string name="format_line_discount">Discount: -%1$s</string>
+    <string name="hint_line_discount">Line discount</string>
+    <string name="dialog_line_discount">Discount for %1$s</string>
+    <string name="msg_no_promotions">No promotions configured.</string>
+    <string name="btn_add_promotion">Add Promotion</string>
+    <string name="promo_name">Name</string>
+    <string name="promo_type">Type</string>
+    <string name="promo_scope">Applies to</string>
+    <string name="promo_value">Value</string>
+    <string name="promo_active">Active</string>
+    <string name="promo_type_percent">Percent off</string>
+    <string name="promo_type_amount">Amount off</string>
+    <string name="promo_type_bogo">Buy X get Y free</string>
+    <string name="promo_type_quantity">Quantity price</string>
+    <string name="promo_scope_all">All products</string>
+    <string name="hint_promo_name">Promotion name</string>
+    <string name="hint_promo_value">Value</string>
+    <string name="hint_promo_buy_qty">Buy qty</string>
+    <string name="hint_promo_get_qty">Free qty</string>
+    <string name="hint_promo_bundle_qty">Bundle qty</string>
+    <string name="hint_promo_bundle_price">Bundle price</string>
+    <string name="msg_promo_name_required">Enter a promotion name.</string>
+    <string name="msg_promo_product_required">Choose a product for this promotion.</string>
+    <string name="promo_delete_confirm">Delete this promotion?</string>
+
+    <!-- Navigation Drawer -->
+    <string name="nav_overview">Overview</string>
+    <string name="nav_sales">Sales</string>
+    <string name="nav_catalog">Catalog</string>
+    <string name="nav_procurement">Procurement</string>
+    <string name="nav_people">People</string>
+    <string name="nav_insights">Insights</string>
+    <string name="nav_administration">Administration</string>
+    <string name="nav_header_subtitle">Point of Sale System</string>
+
+    <!-- Button Labels -->
+    <string name="btn_add">Add</string>
+    <string name="btn_edit">Edit</string>
+    <string name="btn_delete">Delete</string>
+    <string name="btn_save">Save</string>
+    <string name="btn_cancel">Cancel</string>
+    <string name="btn_confirm">Confirm</string>
+    <string name="btn_search">Search</string>
+    <string name="btn_filter">Filter</string>
+    <string name="btn_clear">Clear</string>
+    <string name="btn_recall">Recall</string>
+    <string name="btn_close">Close</string>
+    <string name="btn_back">Back</string>
+    <string name="btn_next">Next</string>
+    <string name="btn_done">Done</string>
+    <string name="btn_refresh">Refresh</string>
+    <string name="btn_print">Print</string>
+    <string name="btn_checkout">Checkout</string>
+    <string name="btn_pay">Pay</string>
+    <string name="btn_void">Void</string>
+    <string name="btn_apply">Apply</string>
+    <string name="btn_send">Send</string>
+    <string name="btn_export">Export</string>
+    <string name="btn_login">Log In</string>
+    <string name="btn_logout">Log Out</string>
+    <string name="btn_register">Register</string>
+    <string name="btn_forgot_password">Forgot Password?</string>
+    <string name="btn_select_all">Select All</string>
+    <string name="btn_deselect_all">Deselect All</string>
+    <string name="btn_open_shift">Open Shift</string>
+    <string name="btn_close_shift">Close Shift</string>
+    <string name="btn_view_details">View Details</string>
+    <string name="btn_add_to_cart">Add to Cart</string>
+    <string name="btn_hold_order">Hold Order</string>
+    <string name="btn_recall_order">Recall Order</string>
+    <string name="btn_new_product">New Product</string>
+    <string name="btn_new_customer">New Customer</string>
+    <string name="btn_new_supplier">New Supplier</string>
+    <string name="btn_new_category">New Category</string>
+    <string name="btn_adjust_stock">Adjust Stock</string>
+    <string name="btn_receive_stock">Receive Stock</string>
+    <string name="btn_create_order">Create Order</string>
+
+    <!-- Dialog Titles -->
+    <string name="dialog_confirm_delete">Confirm Delete</string>
+    <string name="dialog_confirm_void">Confirm Void</string>
+    <string name="dialog_confirm_close_shift">Close Shift?</string>
+    <string name="dialog_confirm_open_shift">Open Shift?</string>
+    <string name="dialog_confirm_logout">Log Out?</string>
+    <string name="dialog_error">Error</string>
+    <string name="dialog_success">Success</string>
+    <string name="dialog_warning">Warning</string>
+    <string name="dialog_info">Information</string>
+    <string name="dialog_processing">Processingâ€¦</string>
+    <string name="dialog_no_results">No Results</string>
+    <string name="dialog_confirm_payment">Confirm Payment</string>
+    <string name="dialog_select_payment_method">Select Payment Method</string>
+    <string name="dialog_stock_adjustment">Stock Adjustment</string>
+
+    <!-- Dialog Messages -->
+    <string name="msg_confirm_delete_item">Are you sure you want to delete this item? This action cannot be undone.</string>
+    <string name="msg_confirm_void_sale">Are you sure you want to void this sale?</string>
+    <string name="msg_confirm_close_shift">Are you sure you want to close the current cash shift?</string>
+    <string name="msg_confirm_logout">Are you sure you want to log out?</string>
+    <string name="msg_save_success">Item saved successfully.</string>
+    <string name="msg_delete_success">Item deleted successfully.</string>
+    <string name="msg_error_occurred">An error occurred. Please try again.</string>
+    <string name="msg_no_items_found">No items found.</string>
+    <string name="msg_required_field">This field is required.</string>
+    <string name="msg_invalid_email">Please enter a valid email address.</string>
+    <string name="msg_invalid_phone">Please enter a valid phone number.</string>
+    <string name="msg_invalid_price">Please enter a valid price.</string>
+    <string name="msg_cart_empty">Cart is empty.</string>
+    <string name="msg_no_movements">No stock movements match your search or filter.</string>
+    <string name="search_movements">Search product, SKU or note</string>
+    <string name="filter_all_types">All types</string>
+    <string name="filter_movement_type">Filter by movement type</string>
+    <string name="movement_type_in">Stock In</string>
+    <string name="movement_type_out">Stock Out</string>
+    <string name="movement_type_adjustment_in">Adjustment In</string>
+    <string name="movement_type_adjustment_out">Adjustment Out</string>
+    <string name="msg_payment_successful">Payment successful!</string>
+    <string name="msg_payment_failed">Payment failed. Please try again.</string>
+    <string name="msg_insufficient_stock">Insufficient stock available.</string>
+    <string name="msg_shift_opened">Cash shift opened successfully.</string>
+    <string name="msg_shift_closed">Cash shift closed successfully.</string>
+    <string name="btn_safe_drop">Safe drop</string>
+    <string name="label_safe_drop_amount">Amount</string>
+    <string name="label_reason">Reason</string>
+    <string name="msg_safe_drop_recorded">Safe drop recorded</string>
+    <string name="format_safe_drops_total">Total moved to safe this shift: %1$s</string>
+    <string name="msg_blind_close_hint">Count the cash in the drawer and enter the total below. The expected amount and any variance are hidden for a blind close-out.</string>
+    <string name="msg_enter_amount">Enter a valid amount</string>
+    <string name="msg_enter_closing_amount">Enter the cash you physically counted</string>
+    <string name="msg_enter_opening_amount">Enter a valid opening amount.</string>
+    <string name="msg_failed_load_image">Could not load that image.</string>
+    <string name="label_shift_open">OPEN</string>
+    <!-- %1$s is a formatted date-time -->
+    <string name="format_opened_at">Opened %1$s</string>
+    <string name="label_cash_sales">Cash Sales</string>
+    <string name="label_expected_drawer">Expected Drawer</string>
+    <string name="msg_order_placed">Order placed successfully.</string>
+    <string name="msg_stock_adjusted">Stock adjusted successfully.</string>
+
+    <!-- Form Labels -->
+    <string name="label_name">Name</string>
+    <string name="label_description">Description</string>
+    <string name="label_price">Price</string>
+    <string name="label_cost">Cost</string>
+    <string name="label_wholesale_price">Wholesale price</string>
+    <string name="label_vip_price">VIP price</string>
+    <string name="label_quantity">Quantity</string>
+    <string name="label_stock">Stock</string>
+    <string name="label_sku">SKU</string>
+    <string name="label_barcode">Barcode</string>
+    <string name="label_category">Category</string>
+    <string name="label_supplier">Supplier</string>
+    <string name="label_customer">Customer</string>
+    <string name="text_is_bundle">Composite / bundle product (stock comes from components)</string>
+    <string name="label_bundle_components">Bundle components</string>
+    <string name="label_batch_number">Batch / Lot</string>
+    <string name="label_expiry_date">Expiry date</string>
+    <string name="msg_expired_product">Warning: %1$s expired on %2$s</string>
+    <string name="msg_expiring_product">Note: %1$s expires on %2$s</string>
+    <string name="btn_add_component">Add component</string>
+    <string name="msg_no_components">No components yet</string>
+    <string name="msg_component_required">Add at least one component</string>
+    <string name="msg_component_qty_invalid">Quantity must be at least 1</string>
+    <string name="label_email">Email</string>
+    <string name="label_phone">Phone</string>
+    <string name="label_address">Address</string>
+    <string name="label_city">City</string>
+    <string name="label_state">State</string>
+    <string name="label_zip">ZIP Code</string>
+    <string name="label_country">Country</string>
+    <string name="label_tax_rate">Tax Rate</string>
+    <string name="label_discount">Discount</string>
+    <string name="label_subtotal">Subtotal</string>
+    <string name="label_total">Total</string>
+    <string name="label_tax">Tax</string>
+    <string name="label_grand_total">Grand Total</string>
+    <string name="label_amount_paid">Amount Paid</string>
+    <string name="label_change">Change</string>
+    <string name="label_balance">Balance</string>
+    <string name="label_payment_method">Payment Method</string>
+    <string name="label_cash">Cash</string>
+    <string name="label_card">Card</string>
+    <string name="label_transfer">Transfer</string>
+    <string name="label_mobile_payment">Mobile Payment</string>
+    <string name="label_date">Date</string>
+    <string name="label_time">Time</string>
+    <string name="label_from_date">From Date</string>
+    <string name="label_to_date">To Date</string>
+    <string name="label_status">Status</string>
+    <string name="label_notes">Notes</string>
+    <string name="label_reference">Reference</string>
+    <string name="label_unit">Unit</string>
+    <string name="label_unit_price">Unit Price</string>
+    <string name="label_total_price">Total Price</string>
+    <string name="label_opening_balance">Opening Balance</string>
+    <string name="label_closing_balance">Closing Balance</string>
+    <string name="label_expected_balance">Expected Balance</string>
+    <string name="label_actual_balance">Actual Balance</string>
+    <string name="label_variance">Variance</string>
+    <string name="label_total_sales">Total Sales</string>
+    <string name="label_total_received">Total Received</string>
+    <string name="label_total_pending">Total Pending</string>
+    <string name="label_search_products">Search productsâ€¦</string>
+    <string name="label_search_customers">Search customersâ€¦</string>
+    <string name="label_select_category">Select Category</string>
+    <string name="label_select_supplier">Select Supplier</string>
+    <string name="label_select_customer">Select Customer</string>
+    <string name="label_shop_name">Shop Name</string>
+    <string name="label_shop_address">Shop Address</string>
+    <string name="label_shop_phone">Shop Phone</string>
+    <string name="label_shop_email">Shop Email</string>
+    <string name="label_currency">Currency</string>
+    <string name="label_tax_name">Tax Name</string>
+    <string name="label_receipt_header">Receipt Header</string>
+    <string name="label_receipt_footer">Receipt Footer</string>
+    <string name="label_opening_cash">Opening Cash</string>
+
+    <!-- Stat card labels. item_stat_card ships tv_stat_label EMPTY, so every screen that
+         includes it must set the label itself or the card renders as a bare number. -->
+    <string name="label_today_sales">Today\'s Sales</string>
+    <string name="label_transactions">Transactions</string>
+    <string name="label_month_sales">This Month</string>
+    <string name="label_low_stock">Low Stock</string>
+    <string name="label_total_products">Total Products</string>
+    <string name="label_inventory_value">Inventory Value</string>
+    <string name="label_out_of_stock">Out of Stock</string>
+    <string name="label_month_transactions">This Month\'s Orders</string>
+    <string name="label_pending_orders">Pending Orders</string>
+    <string name="label_expiring_soon">Expiring (30d)</string>
+    <string name="label_expired">Expired</string>
+    <string name="title_stock_takes">Stock Take</string>
+    <string name="btn_new_stock_take">New stock count</string>
+    <string name="btn_complete_count">Complete count</string>
+    <string name="label_counted">Counted</string>
+    <string name="format_system_qty">System: %1$d</string>
+    <string name="format_variance">Variance: %1$+d</string>
+    <string name="msg_no_stock_takes">No stock counts yet</string>
+    <string name="msg_confirm_complete_count">Apply counted quantities to stock?</string>
+    <string name="msg_stock_take_completed">Stock count completed</string>
+    <string name="status_in_progress">In progress</string>
+    <string name="status_completed">Completed</string>
+    <string name="title_stock_transfers">Stock Transfers</string>
+    <string name="btn_new_transfer">New transfer</string>
+    <string name="btn_save_draft">Save draft</string>
+    <string name="btn_send_transfer">Send transfer</string>
+    <string name="btn_receive_transfer">Receive transfer</string>
+    <string name="btn_cancel_transfer">Cancel transfer</string>
+    <string name="label_from_location">From location</string>
+    <string name="label_to_location">To location</string>
+    <string name="label_transfer_lines">Items</string>
+    <string name="msg_no_transfers">No transfers yet</string>
+    <string name="msg_transfer_required">Enter both locations and add at least one item</string>
+    <string name="msg_transfer_created">Transfer saved as draft</string>
+    <string name="msg_transfer_sent">Transfer sent</string>
+    <string name="msg_transfer_received">Transfer received</string>
+    <string name="msg_transfer_cancelled">Transfer cancelled</string>
+    <string name="msg_confirm_send_transfer">Send this transfer? Stock will be deducted now.</string>
+    <string name="msg_confirm_receive_transfer">Receive this transfer? Stock will be added now.</string>
+    <string name="btn_use_store_credit">Use store credit</string>
+    <string name="btn_clear_store_credit">Clear credit</string>
+    <string name="format_store_credit_available">Store credit: %1$s</string>
+    <string name="format_store_credit_applied">Credit applied: %1$s</string>
+    <string name="format_loyalty_points">%1$d pts</string>
+    <string name="label_loyalty_points">Loyalty points</string>
+    <string name="label_store_credit">Store credit</string>
+    <string name="btn_add_credit">Add credit</string>
+    <string name="btn_redeem_points">Redeem points</string>
+    <string name="title_loyalty">Loyalty &amp; credit</string>
+    <string name="msg_no_loyalty_transactions">No loyalty activity yet</string>
+    <string name="loyalty_enabled">Enable loyalty points</string>
+    <string name="label_points_per_unit">Points per 1 spent</string>
+    <string name="label_redeem_value">Credit per point</string>
+    <string name="msg_loyalty_saved">Loyalty settings saved</string>
+    <string name="settings_loyalty_desc">Customers earn points on every sale and can pay with the store credit they build up.</string>
+
+    <!-- Dashboard sections -->
+    <string name="label_sales_trend">Sales Trend</string>
+    <string name="label_recent_sales">Recent Sales</string>
+    <string name="label_low_stock_items">Low Stock Items</string>
+    <string name="msg_no_recent_sales">No sales recorded yet.</string>
+    <string name="msg_no_low_stock">Every product is above its reorder level.</string>
+
+    <!-- Menu Items -->
+    <string name="menu_settings">Settings</string>
+    <string name="menu_profile">Profile</string>
+    <string name="menu_help">Help</string>
+    <string name="menu_about">About</string>
+    <string name="menu_logout">Logout</string>
+
+    <!-- Hint Texts -->
+    <string name="hint_search">Searchâ€¦</string>
+    <string name="hint_name">Enter name</string>
+    <string name="hint_description">Enter description</string>
+    <string name="hint_price">Enter price</string>
+    <string name="hint_quantity">Enter quantity</string>
+    <string name="hint_email">Enter email</string>
+    <string name="hint_phone">Enter phone number</string>
+    <string name="hint_address">Enter address</string>
+    <string name="hint_notes">Enter notes</string>
+    <string name="hint_enter_amount">Enter amount</string>
+    <string name="hint_barcode">Scan or enter barcode</string>
+
+    <string name="checkout_title">Checkout</string>
+    <string name="label_payment_type">Payment</string>
+    <string name="payment_cash">Cash</string>
+    <string name="payment_credit">Credit (pay later)</string>
+    <string name="payment_split">Split</string>
+    <string name="payment_card">Card</string>
+    <string name="payment_store_credit">Store credit</string>
+    <string name="hint_split_amount">Amount</string>
+    <string name="btn_add_payment">Add</string>
+    <string name="label_split_remaining">Remaining</string>
+    <string name="msg_split_incomplete">Split payments do not cover the total yet.</string>
+    <string name="msg_no_split_payments">Add at least one payment before confirming.</string>
+    <string name="format_split_line">%1$s: %2$s</string>
+    <string name="hint_cash_received">Cash received</string>
+    <string name="hint_due_date">Due date</string>
+    <string name="hint_deposit">Deposit received (optional)</string>
+    <string name="btn_pick_date">Pick date</string>
+    <string name="msg_choose_due_date">Choose a due date for this credit sale.</string>
+    <string name="msg_insufficient_cash">Insufficient cash received.</string>
+    <string name="msg_credit_needs_customer">Credit sales need a customer. Pick one first.</string>
+    <!-- %1$s = credit limit, %2$s = amount already owed, %3$s = total owed if this sale goes through -->
+    <string name="msg_credit_limit_exceeded">Credit limit exceeded. Limit %1$s, already owing %2$s, this sale would bring it to %3$s.</string>
+    <string name="label_credit_limit">Credit limit</string>
+    <string name="label_credit_owed">Owing</string>
+    <string name="label_credit_available">Available credit</string>
+    <string name="msg_no_credit_limit">No credit limit set for this customer.</string>
+    <string name="btn_confirm_sale">Confirm Sale</string>
+    <string name="label_cart">Cart</string>
+    <string name="msg_clear_cart_confirm">Remove all items from the cart?</string>
+    <string name="btn_save_order">Save Order</string>
+    <string name="label_order">Order</string>
+    <string name="label_items">Items</string>
+    <string name="label_created">Created</string>
+    <string name="msg_order_converted">Order converted to sale</string>
+    <string name="msg_order_saved">Order saved. Convert it from the Orders screen.</string>
+    <string name="msg_order_needs_items">Add items to the cart first.</string>
+    <!-- %1$s is the tax percentage, e.g. "Tax (5%)" -->
+    <string name="format_tax_percent">Tax (%1$s%%)</string>
+    <string name="sale_complete_title">Sale Complete</string>
+    <string name="sale_credit_recorded">Added to Accounts Receivable</string>
+    <string name="label_amount_due">Amount due</string>
+    <string name="label_due_on">Due</string>
+
+    <!-- Accounts Receivable / payment recording -->
+    <string name="title_record_payment">Record Payment</string>
+    <string name="btn_record_payment">Record Payment</string>
+    <string name="label_invoice">Invoice</string>
+    <string name="msg_payment_recorded">Payment recorded</string>
+    <string name="msg_invalid_payment_amount">Enter a valid amount (max %1$s)</string>
+    <string name="label_payment_history">Payment History</string>
+    <string name="msg_no_payments">No payments recorded yet.</string>
+    <string name="msg_no_products_found">No products match that search.</string>
+    <string name="label_in_stock">In Stock</string>
+    <string name="format_units">%1$d units</string>
+    <string name="format_value">Value: %1$s</string>
+
+    <!-- Reports -->
+    <string name="label_revenue">Revenue</string>
+    <string name="label_items_sold">Items Sold</string>
+    <string name="label_avg_sale">Avg Sale</string>
+    <string name="report_daily_title">Daily Sales Report</string>
+    <string name="report_tab_daily">Daily</string>
+    <string name="report_tab_trend">Trend</string>
+    <string name="report_tab_top">Top Products</string>
+    <string name="report_tab_tax">Tax</string>
+    <string name="report_tax_title">Tax liability (VAT/GST)</string>
+    <string name="label_input_tax">Input tax (VAT/GST)</string>
+    <string name="label_output_tax">Output tax (collected on sales)</string>
+    <string name="label_input_tax_purchases">Input tax (purchases)</string>
+    <string name="label_input_tax_expenses">Input tax (expenses)</string>
+    <string name="label_input_tax_total">Input tax (total)</string>
+    <string name="label_tax_payable">Net tax payable</string>
+    <string name="btn_export_csv">Export CSV</string>
+    <string name="msg_tax_report_not_ready">Tax figures are still loading</string>
+    <string name="report_tab_reorder">Reorder</string>
+    <string name="report_tab_dead">Dead stock</string>
+    <string name="report_reorder_title">Reorder suggestions (next 30 days)</string>
+    <string name="report_dead_stock_title">Dead stock (no sales in 90 days)</string>
+    <string name="msg_no_reorder_suggestions">Nothing is running low based on recent sales</string>
+    <string name="msg_no_dead_stock">No dead stock - everything is moving</string>
+    <string name="msg_never_sold">never sold</string>
+    <string name="format_reorder_subtitle">%1$d in stock · sells %2$.1f/day · reorder %3$d</string>
+    <string name="format_reorder_low_stock">%1$d in stock · reorder %2$d</string>
+    <string name="format_dead_stock_subtitle">%1$d in stock · %2$s tied up · last sold %3$s</string>
+    <string name="report_sales_trend">Sales Trend (7 Days)</string>
+    <string name="report_top_products">Top Selling Products</string>
+    <string name="report_sales_in_range">Sales in range</string>
+    <string name="report_no_sales">No sales in this range.</string>
+    <string name="report_no_top_products">No products sold in this range.</string>
+    <string name="hint_start_date">Start Date</string>
+    <string name="hint_end_date">End Date</string>
+
+    <!-- Spinner / Tab Labels -->
+    <string name="tab_all">All</string>
+    <string name="tab_active">Active</string>
+    <string name="tab_inactive">Inactive</string>
+    <string name="tab_paid">Paid</string>
+    <string name="tab_pending">Pending</string>
+    <string name="tab_voided">Voided</string>
+    <string name="tab_today">Today</string>
+    <string name="tab_week">This Week</string>
+    <string name="tab_month">This Month</string>
+    <string name="tab_year">This Year</string>
+    <string name="tab_custom">Custom</string>
+    <string name="tab_converted">Converted</string>
+    <string name="tab_cancelled">Cancelled</string>
+
+    <!-- Misc -->
+    <!-- Fallback only: the real symbol comes from ShopInfo via CurrencyFormatter and is
+         applied to TextInputLayout prefixes at runtime. Keep this in sync with the
+         ShopInfo default ("Ks") so a not-yet-loaded dialog never shows a foreign sign. -->
+    <string name="currency_symbol">Ks</string>
+    <string name="no_data">No data available</string>
+    <string name="loading">Loadingâ€¦</string>
+    <string name="retry">Retry</string>
+    <string name="ok">OK</string>
+    <string name="yes">Yes</string>
+    <string name="no">No</string>
+    <string name="quantity_label">%d items</string>
+    <string name="price_format">%1$s%2$.2f</string>
+    <string name="date_format">MMM dd, yyyy</string>
+    <string name="datetime_format">MMM dd, yyyy HH:mm</string>
+    <string name="receipt_no">Receipt #%s</string>
+    <string name="version_label">Version %s</string>
+
+    <!-- Extra / Layout-Referenced Strings -->
+    <string name="cancel">Cancel</string>
+    <string name="confirm">Confirm</string>
+    <string name="action_settings">Settings</string>
+    <string name="nav_header_title">LumiPOS</string>
+    <string name="image_description">Image</string>
+    <string name="appbar_scrolling_view_behavior">com.google.android.material.appbar.AppBarLayout$ScrollingViewBehavior</string>
+    <string name="add_product_hint">Search for a productâ€¦</string>
+    <string name="add_stock">Add Stock</string>
+    <string name="remove_stock">Remove Stock</string>
+    <string name="qty_hint">Quantity</string>
+    <string name="reason_hint">Reason</string>
+    <string name="remove_item">Remove item</string>
+    <string name="search_product_hint">Search productsâ€¦</string>
+    <string name="search_products">Search productsâ€¦</string>
+    <string name="search_suppliers">Search suppliersâ€¦</string>
+    <string name="select_product">Select Product</string>
+    <string name="select_supplier">Select Supplier</string>
+    <string name="supplier_hint">Select supplier</string>
+    <string name="navigation_drawer_open">Open navigation drawer</string>
+    <string name="navigation_drawer_close">Close navigation drawer</string>
+
+    <!-- Receipt customization screen. -->
+    <string name="receipt_preview_title">Preview</string>
+    <string name="receipt_settings_title">Settings</string>
+    <string name="receipt_preview_note">Live preview using sample data. Every switch below changes this preview and the printed receipt.</string>
+    <string name="label_header_text">Header Text</string>
+    <string name="label_footer_text">Footer Text</string>
+    <string name="label_main_message">Main Message</string>
+    <string name="label_paper_size">Paper Size</string>
+    <string name="label_font_size">Font Size</string>
+    <string name="label_header_align">Header Align</string>
+    <string name="label_divider_style">Divider Style</string>
+    <string name="sw_show_logo">Show Logo</string>
+    <string name="sw_show_shop_name">Show Shop Name</string>
+    <string name="sw_show_address">Show Address</string>
+    <string name="sw_show_phone">Show Phone</string>
+    <string name="sw_show_qr">Show QR Code</string>
+    <string name="sw_show_credit_info">Show Credit Info</string>
+    <string name="sw_show_tax">Show Tax</string>
+    <string name="sw_show_discount">Show Discount</string>
+    <string name="sw_bold_shop_name">Bold Shop Name</string>
+    <string name="msg_receipt_settings_saved">Receipt settings saved</string>
+
+    <!-- Settings hub. -->
+    <string name="settings_shop_info_title">Shop Information</string>
+    <string name="settings_shop_info_desc">Manage your shop details, logo, and contact information.</string>
+    <string name="btn_go_shop_info">Go to Shop Info</string>
+    <string name="settings_receipt_title">Receipt Customization</string>
+    <string name="settings_receipt_desc">Customize your receipt header, footer, font size, and paper size.</string>
+    <string name="btn_customize_receipt">Customize Receipt</string>
+    <string name="settings_backup_title">Data Backup</string>
+    <string name="settings_backup_desc">Save a copy of your database so you can keep it off-device or restore it later.</string>
+    <string name="btn_download_backup">Download Backup</string>
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_app">LumiPOS Offline</string>
+    <string name="format_about_version">Version %1$s | Android</string>
+    <string name="title_share_backup">Share backup</string>
+    <string name="msg_backup_ready">Backup created - choose where to send it</string>
+    <string name="msg_backup_failed">Backup failed: %1$s</string>
+    <string name="msg_backup_unavailable">Could not read the database file</string>
+
+    <!-- Stock adjustment. The product field is a picker, not a text filter, so it gets its own
+         hint rather than reusing search_product_hint (which the POS search box still uses). -->
+    <string name="hint_select_product">Tap to select a product</string>
+
+    <!-- Sale detail. -->
+    <string name="format_customer_label">Customer: %1$s</string>
+    <string name="format_cashier_label">Cashier: %1$s</string>
+    <string name="status_voided">VOIDED</string>
+    <string name="msg_sale_not_found">Sale not found</string>
+    <string name="msg_sale_already_voided">This sale is already voided</string>
+    <string name="hint_void_reason">Reason for voiding</string>
+    <string name="msg_void_reason_required">Enter a reason for voiding</string>
+    <string name="msg_void_invoice_confirm">Void invoice %1$s?\n\nStock will be returned to inventory. This cannot be undone.</string>
+    <string name="msg_sale_voided">Sale voided and stock returned</string>
+    <string name="msg_void_failed">Could not void the sale</string>
+
+    <!-- Shared row labels. -->
+    <string name="label_shift_closed">CLOSED</string>
+    <string name="format_items">%1$d items</string>
+    <string name="format_closed_at"> Â· closed %1$s</string>
+    <string name="format_product_meta">%1$s Â· %2$s Â· Stock: %3$d</string>
+    <string name="format_paid_amount">Paid: %1$s</string>
+    <string name="status_refunded">REFUNDED</string>
+
+    <!-- Categories. -->
+    <string name="msg_category_name_required">Category name is required</string>
+    <string name="msg_category_saved">Category saved</string>
+    <string name="msg_category_deleted">Category deleted</string>
+    <string name="msg_delete_category_confirm">Delete category %1$s?</string>
+    <!--
+      Product.categoryId has no foreign key to categories, so deleting one leaves those products
+      pointing at a row that no longer exists. Warn with the real count instead of deleting blind.
+    -->
+    <string name="msg_delete_category_in_use">Products using this category: %1$d</string>
+    <string name="msg_delete_category_in_use_hint">They will keep their saved category name, but will no longer be linked to a category.</string>
+
+    <!-- Purchase entry. -->
+    <string name="msg_purchase_add_product">Add at least one product</string>
+    <string name="msg_purchase_select_supplier">Select a supplier</string>
+    <string name="msg_purchase_saved">Purchase saved</string>
+    <string name="msg_no_suppliers">No suppliers yet. Add a supplier first.</string>
+    <string name="hint_unit_price">Unit price</string>
+    <string name="format_add_product_title">Add %1$s</string>
+    <string name="msg_invalid_qty_price">Enter a valid quantity and price</string>
+    <string name="msg_product_added">Product added</string>
+    <string name="format_total_amount">Total: %1$s</string>
+
+    <!-- Shared form / list messages. These were inline literals in the fragments. -->
+    <string name="msg_customer_required">First name, last name and phone are required</string>
+    <string name="msg_customer_saved">Customer saved</string>
+    <string name="label_customer_tier">Price tier</string>
+    <string name="msg_customer_deleted">Customer deleted</string>
+    <string name="msg_delete_customer_confirm">Delete customer %1$s?</string>
+    <string name="msg_supplier_required">Supplier name and phone are required</string>
+    <string name="msg_supplier_saved">Supplier saved</string>
+    <string name="msg_supplier_deleted">Supplier deleted</string>
+    <string name="msg_delete_supplier_confirm">Delete supplier %1$s?</string>
+    <string name="msg_product_required">Name, SKU and price are required</string>
+    <string name="msg_product_saved">Product saved</string>
+    <string name="msg_product_deleted">Product deleted</string>
+    <string name="msg_delete_product_confirm">Delete %1$s? This cannot be undone.</string>
+    <string name="msg_shop_name_required">Shop name is required</string>
+    <string name="msg_shop_info_saved">Shop info saved</string>
+    <string name="msg_select_product_first">Select a product first</string>
+    <string name="msg_enter_valid_quantity">Enter a valid quantity</string>
+    <string name="msg_reason_required">Reason is required</string>
+    <string name="msg_choose_adjustment_type">Choose Add or Remove</string>
+    <string name="msg_cancel_order_title">Cancel Order</string>
+    <string name="msg_order_cancelled">Order cancelled</string>
+    <string name="msg_payment_status_title">Payment Status for %1$s</string>
+    <string name="msg_payment_status_updated">Payment status updated</string>
+    <string name="msg_failed_load_receipt">Failed to load receipt: %1$s</string>
+    <string name="msg_nothing_to_print">Nothing to print</string>
+
+    <!-- Accounts receivable. -->
+    <string name="btn_details">Details</string>
+    <string name="hint_search_invoice_customer">Search invoice or customer</string>
+    <string name="format_due_date">Due: %1$s</string>
+    <string name="format_balance_amount">Balance: %1$s</string>
+    <string name="status_overdue">OVERDUE</string>
+
+    <!--
+      Expenses. The data layer (entity / DAO / repository) existed from the start but had no UI at
+      all, so the whole feature was unreachable. Categories mirror the web app's
+      Expense.ExpenseCategory enum - see ExpenseCategories.kt.
+    -->
+    <string name="title_expenses">Expenses</string>
+    <string name="title_expense_form">Expense</string>
+    <string name="btn_new_expense">New Expense</string>
+    <string name="expense_untitled">(no description)</string>
+    <string name="format_expense_meta">%1$s Â· %2$s</string>
+    <string name="label_expense_description">Description</string>
+    <string name="label_expense_amount">Amount</string>
+    <string name="label_expense_category">Category</string>
+    <string name="label_expense_date">Date</string>
+    <string name="label_expense_receipt">Receipt photo</string>
+    <string name="hint_expense_description">What was this for?</string>
+    <string name="hint_expense_amount">0.00</string>
+    <string name="btn_pick_receipt">Attach receipt</string>
+    <string name="btn_remove_receipt">Remove receipt</string>
+    <string name="msg_receipt_unreadable">Could not read that image. Pick another one.</string>
+    <string name="msg_expense_saved">Expense saved</string>
+    <string name="msg_expense_deleted">Expense deleted</string>
+    <string name="msg_delete_expense_confirm">Delete expense \"%1$s\"?</string>
+    <string name="msg_expense_description_required">Enter a description</string>
+    <string name="msg_expense_amount_required">Enter an amount greater than zero</string>
+    <string name="label_total_expenses">Total</string>
+    <string name="msg_no_expenses">No expenses match this filter.</string>
+    <string name="label_all_categories">All categories</string>
+    <string name="period_this_month">This month</string>
+    <string name="period_this_year">This year</string>
+    <string name="period_all_time">All time</string>
+    <string name="expense_cat_rent">Rent</string>
+    <string name="expense_cat_utilities">Utilities</string>
+    <string name="expense_cat_travel">Travel</string>
+    <string name="expense_cat_taxes">Taxes</string>
+    <string name="expense_cat_salary">Salary</string>
+    <string name="expense_cat_supplies">Supplies</string>
+    <string name="expense_cat_maintenance">Maintenance</string>
+    <string name="expense_cat_marketing">Marketing</string>
+    <string name="expense_cat_other">Other</string>
+
+    <!-- Hardware & UI additions -->
+    <string name="cd_scan_barcode">Scan barcode</string>
+    <string name="cd_scale">Connect weighing scale</string>
+    <string name="msg_scan_hint">Point camera at a barcode</string>
+    <string name="cfd_welcome">Customer View</string>
+    <string name="msg_barcode_not_found">No product found for barcode %1</string>
+    <string name="msg_scale_no_item">Add an item to the cart before weighing</string>
+    <string name="msg_no_held_carts">No held carts to recall</string>
+    <string name="msg_cart_held">Cart held</string>
+    <string name="msg_cart_recalled">Cart recalled</string>
+    <string name="title_recall_cart">Recall Held Cart</string>
+    <string name="settings_hardware_title">Hardware</string>
+    <string name="settings_security_title">Security</string>
+    <string name="security_block_screenshots">Block screenshots and screen recording</string>
+    <string name="security_device_rooted">Warning: this device appears to be rooted. Financial data on it may be at risk.</string>
+    <string name="security_device_not_rooted">Device integrity check passed - no signs of root access.</string>
+    <string name="title_root_warning">Security warning</string>
+    <string name="msg_root_warning">This device appears to be rooted (or runs a test build). Data in LumiPOS could be read or modified outside the app. Use a locked-down device for production.</string>
+    <string name="settings_hardware_desc">Connect a printer/cash drawer and weighing scale</string>
+    <string name="btn_select_printer">Printer / Cash Drawer</string>
+    <string name="btn_select_scale">Weighing Scale</string>
+    <string name="msg_printer_selected">Printer configured</string>
+    <string name="msg_scale_selected">Scale configured</string>
+    <string name="msg_no_bonded_devices">No paired Bluetooth devices found</string>
+    <string name="title_select_printer">Select printer</string>
+    <string name="title_select_scale">Select scale</string>
+
+    <!-- Role-based access control -->
+    <string name="label_pin">PIN</string>
+    <string name="dialog_manager_approval">Approval needed</string>
+    <string name="msg_manager_pin_hint">Ask a manager or admin to enter their PIN to continue.</string>
+    <string name="btn_unlock">Unlock</string>
+    <string name="msg_pin_incorrect">Incorrect PIN</string>
+    <string name="format_active_role">Active role: %1$s</string>
+    <string name="btn_switch_role">Switch role</string>
+    <string name="dialog_switch_role">Switch active role</string>
+    <string name="msg_switch_role_hint">Pick the role for this terminal and enter its PIN (managers and admins only).</string>
+    <string name="msg_role_switched">Now acting as %1$s</string>
+
+    <!-- Nightly auto-backup -->
+    <string name="settings_auto_backup">Nightly automatic backup</string>
+    <string name="settings_auto_backup_desc">Keeps the last 7 daily copies of the database on this device. Runs around 2 AM.</string>
+    <string name="msg_auto_backup_enabled">Nightly backup enabled</string>
+    <string name="msg_auto_backup_disabled">Nightly backup disabled</string>
+
+    <!-- Import from Web/Electron -->
+    <string name="settings_import_title">Migrate from Web/Electron</string>
+    <string name="settings_import_desc">Import products, customers, sales and history from the desktop LumiPOS database file (lumipos.db). Close the desktop app before importing.</string>
+    <string name="btn_import_electron">Import desktop database</string>
+    <string name="title_import_electron">Import from Web/Electron</string>
+    <string name="msg_import_replace_warning">This will replace all products, customers, sales and history on this tablet with the imported data. Store settings, users and PINs are kept. Continue?</string>
+    <string name="btn_import">Import</string>
+    <string name="msg_import_copy_failed">Could not read the selected file</string>
+    <string name="msg_import_success">Import complete: %1$d records migrated</string>
+    <string name="msg_import_failed">Import failed: %1$s</string>
+
+    <!-- Multi-terminal LAN sync -->
+    <string name="settings_sync_title">Multi-terminal sync</string>
+    <string name="settings_sync_desc">Run one tablet as the master; other tablets connect over the shop Wi-Fi and send their sales to it.</string>
+    <string name="sync_mode_off">Off</string>
+    <string name="sync_mode_master">This tablet is the Master</string>
+    <string name="sync_mode_client">This tablet is a Client</string>
+    <string name="label_sync_port">Port</string>
+    <string name="label_sync_token">Shared token</string>
+    <string name="label_sync_master_ip">Master IP address</string>
+    <string name="btn_sync_apply">Apply</string>
+    <string name="btn_sync_test">Test connection</string>
+    <string name="btn_sync_now">Sync now</string>
+    <string name="sync_status_off">Sync disabled</string>
+    <string name="sync_status_master">Listening on %1$s:%2$d</string>
+    <string name="sync_status_master_no_lan">No Wi-Fi network detected yet</string>
+    <string name="sync_status_client">Outbox: %1$d sale(s) pending</string>
+    <string name="msg_sync_ip_required">Enter the master tablet\'s IP address</string>
+    <string name="msg_sync_port_invalid">Port must be a number between 1 and 65535</string>
+    <string name="msg_sync_delivered">Delivered %1$d queued sale(s)</string>
+    <string name="msg_sync_settings_saved">Sync settings saved</string>
+    <string name="msg_sync_test_failed">Could not reach master: %1$s</string>
+    <string name="sync_notification_title">LumiPOS sync server</string>
+    <string name="sync_notification_channel">LAN sync</string>
+    <string name="sync_notification_starting">Starting sync server…</string>
+    <string name="sync_notification_running">Listening on %1$s:%2$d</string>
+    <string name="sync_notification_failed">Sync server failed: %1$s</string>
+    <string name="btn_stop_sync">Stop</string>
+
+    <!-- Audit log -->
+    <string name="title_audit_logs">Audit log</string>
+    <string name="msg_no_audit_logs">No activity recorded yet.</string>
+    <string name="msg_audit_locked">Admin approval is required to view the audit log.</string>
+
+    <!-- Cloud backup (WebDAV) -->
+    <string name="settings_cloud_title">Cloud backup (WebDAV)</string>
+    <string name="settings_cloud_desc">Uploads each nightly backup to a WebDAV folder (Nextcloud, ownCloud, NAS) whenever the network is available.</string>
+    <string name="settings_cloud_toggle">Enable cloud upload</string>
+    <string name="label_cloud_url">Server folder URL</string>
+    <string name="label_cloud_username">Username</string>
+    <string name="label_cloud_password">Password</string>
+    <string name="btn_cloud_save">Save</string>
+    <string name="btn_cloud_test">Upload latest now</string>
+    <string name="cloud_status_never">No upload yet</string>
+    <string name="msg_cloud_saved">Cloud backup settings saved</string>
+    <string name="msg_cloud_url_required">Enter the server folder URL</string>
+    <string name="msg_cloud_no_backup">No local backup exists yet</string>
+    <string name="msg_cloud_upload_ok">Uploaded %1$s</string>
+    <string name="msg_cloud_upload_failed">Upload failed: %1$s</string>
+</resources>
+

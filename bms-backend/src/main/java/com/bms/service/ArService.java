@@ -43,6 +43,10 @@ import java.util.Set;
 @Transactional
 public class ArService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     private static final Logger log = LoggerFactory.getLogger(ArService.class);
 
     @Autowired
@@ -124,7 +128,7 @@ public class ArService {
         }
 
         ArReconciliationResponse response = new ArReconciliationResponse();
-        response.setCheckedAt(LocalDateTime.now());
+        response.setCheckedAt(shopTimeService.now());
         response.setTotalExpectedOutstanding(saleRepository.sumOutstandingAr());
         response.setTotalStoredBalance(items.stream()
                 .map(ArReconciliationResponse.CustomerReconciliation::getCurrentBalance)
@@ -241,7 +245,7 @@ public class ArService {
         ArPayment payment = new ArPayment();
         payment.setInvoice(sale);
         payment.setAmount(amount);
-        payment.setPaymentDate(LocalDateTime.now());
+        payment.setPaymentDate(shopTimeService.now());
         payment.setRecordedBy(recordedBy);
         payment.setNotes(request.getNotes());
         payment.setPaymentMethod(paymentMethod);

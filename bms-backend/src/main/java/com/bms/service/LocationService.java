@@ -10,16 +10,19 @@ import com.bms.repository.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Service
 @Transactional
 public class LocationService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final LocationRepository locationRepository;
     private final LocationStockRepository locationStockRepository;
@@ -29,6 +32,9 @@ public class LocationService {
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
     private final LedgerPostingService ledgerPostingService;
+
+    @Autowired
+    private SequenceService sequenceService;
 
     @org.springframework.beans.factory.annotation.Autowired
     private PeriodGuard periodGuard;
@@ -105,6 +111,11 @@ public class LocationService {
      * when one exists (legacy products may never have had one).
      */
     public void removeShopStock(Product product, int quantity) {
+        removeShopStock(product, quantity, false, null, null);
+    }
+
+    public void removeShopStock(Product product, int quantity, boolean overrideReserved,
+                                String overrideReason, Long userId) {
         if (quantity <= 0) {
             return;
         }
@@ -113,6 +124,7 @@ public class LocationService {
             throw new BusinessException("Only " + current + " sellable unit(s) of "
                     + product.getName() + " are available");
         }
+        assertCanReduceShopStock(product, current - quantity, overrideReserved, overrideReason, userId);
         product.setStockQuantity(current - quantity);
         Location shop = getDefault(Location.LocationType.SHOP);
         locationStockRepository.findForUpdate(shop.getId(), product.getId())
@@ -304,7 +316,7 @@ public class LocationService {
     }
 
     public Map<String, Object> rescue(RescueStockRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Product product = productRepository.findByIdForUpdate(request.getProductId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + request.getProductId()));
         Location from = getLocation(request.getFromLocationId());
@@ -312,7 +324,7 @@ public class LocationService {
         if (from.getId().equals(to.getId())) {
             throw new BusinessException("Source and destination locations must differ");
         }
-        moveStock(product, from, to, request.getQuantity(), "RESCUE", userId,
+        moveStock(product, from, to, request.getQuantity(), "RESCUE", userId, null,
                 request.getReason() != null ? request.getReason() : "Misplaced item rescue");
         auditLogService.logAction(userId, "STOCK_RESCUE",
                 "Rescued " + request.getQuantity() + " x " + product.getName() + " from "
@@ -334,6 +346,11 @@ public class LocationService {
                 .orElseThrow(() -> new ResourceNotFoundException("Stock transfer not found: " + id));
     }
 
+    private StockTransfer getTransferForUpdate(Long id) {
+        return stockTransferRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Stock transfer not found: " + id));
+    }
+
     public StockTransfer createTransfer(StockTransferRequest request, Long userId) {
         Location from = getLocation(request.getFromLocationId());
         Location to = getLocation(request.getToLocationId());
@@ -341,7 +358,7 @@ public class LocationService {
             throw new BusinessException("Source and destination locations must differ");
         }
         StockTransfer transfer = new StockTransfer();
-        transfer.setTransferNumber(nextTransferNumber());
+        transfer.setTransferNumber(sequenceService.nextTransferNumber());
         transfer.setFromLocation(from);
         transfer.setToLocation(to);
         transfer.setNotes(request.getNotes());
@@ -364,21 +381,25 @@ public class LocationService {
     }
 
     public StockTransfer completeTransfer(Long id, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
-        StockTransfer transfer = getTransfer(id);
+        return completeTransfer(id, userId, false, null);
+    }
+
+    public StockTransfer completeTransfer(Long id, Long userId, boolean overrideReserved, String overrideReason) {
+        periodGuard.assertOpen(shopTimeService.now());
+        StockTransfer transfer = getTransferForUpdate(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.DRAFT) {
             throw new BusinessException("Only a draft transfer can be completed");
         }
-        for (StockTransferItem item : transfer.getItems()) {
-            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + item.getProduct().getId()));
+        transitionTransfer(transfer, StockTransfer.TransferStatus.DRAFT,
+                StockTransfer.TransferStatus.COMPLETED, "Transfer is no longer in draft");
+        Map<Long, Product> products = lockTransferProducts(transfer);
+        for (StockTransferItem item : sortedTransferItems(transfer)) {
+            Product product = products.get(item.getProduct().getId());
             moveStock(product, transfer.getFromLocation(), transfer.getToLocation(),
-                    item.getQuantity(), "TRANSFER", userId,
-                    "Transfer " + transfer.getTransferNumber());
+                    item.getQuantity(), "TRANSFER", userId, transfer.getId(),
+                    "Transfer " + transfer.getTransferNumber(), overrideReserved, overrideReason);
         }
-        transfer.setStatus(StockTransfer.TransferStatus.COMPLETED);
-        transfer.setCompletedAt(LocalDateTime.now());
+        transfer.setCompletedAt(shopTimeService.now());
         transfer.setCompletedBy(userId);
         stockTransferRepository.save(transfer);
         auditLogService.logAction(userId, "STOCK_TRANSFER_COMPLETE",
@@ -392,20 +413,26 @@ public class LocationService {
      * TRANSIT location. It is not sellable while in transit.
      */
     public StockTransfer startTransfer(Long id, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
-        StockTransfer transfer = getTransfer(id);
+        return startTransfer(id, userId, false, null);
+    }
+
+    public StockTransfer startTransfer(Long id, Long userId, boolean overrideReserved, String overrideReason) {
+        periodGuard.assertOpen(shopTimeService.now());
+        StockTransfer transfer = getTransferForUpdate(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.DRAFT) {
             throw new BusinessException("Only a draft transfer can be dispatched");
         }
         Location transit = getDefault(Location.LocationType.TRANSIT);
-        for (StockTransferItem item : transfer.getItems()) {
-            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + item.getProduct().getId()));
+        transitionTransfer(transfer, StockTransfer.TransferStatus.DRAFT,
+                StockTransfer.TransferStatus.IN_TRANSIT, "Transfer is no longer in draft");
+        Map<Long, Product> products = lockTransferProducts(transfer);
+        for (StockTransferItem item : sortedTransferItems(transfer)) {
+            Product product = products.get(item.getProduct().getId());
             moveStock(product, transfer.getFromLocation(), transit, item.getQuantity(),
-                    "TRANSFER", userId, "Transfer " + transfer.getTransferNumber() + " dispatched");
+                    "TRANSFER", userId, transfer.getId(),
+                    "Transfer " + transfer.getTransferNumber() + " dispatched",
+                    overrideReserved, overrideReason);
         }
-        transfer.setStatus(StockTransfer.TransferStatus.IN_TRANSIT);
         stockTransferRepository.save(transfer);
         auditLogService.logAction(userId, "STOCK_TRANSFER_DISPATCH",
                 "Stock transfer dispatched: " + transfer.getTransferNumber(),
@@ -415,21 +442,21 @@ public class LocationService {
 
     /** IN_TRANSIT -> RECEIVED: transit stock lands at the destination. */
     public StockTransfer receiveTransfer(Long id, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
-        StockTransfer transfer = getTransfer(id);
+        periodGuard.assertOpen(shopTimeService.now());
+        StockTransfer transfer = getTransferForUpdate(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.IN_TRANSIT) {
             throw new BusinessException("Only an in-transit transfer can be received");
         }
         Location transit = getDefault(Location.LocationType.TRANSIT);
-        for (StockTransferItem item : transfer.getItems()) {
-            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + item.getProduct().getId()));
+        transitionTransfer(transfer, StockTransfer.TransferStatus.IN_TRANSIT,
+                StockTransfer.TransferStatus.RECEIVED, "Transfer is no longer in transit");
+        Map<Long, Product> products = lockTransferProducts(transfer);
+        for (StockTransferItem item : sortedTransferItems(transfer)) {
+            Product product = products.get(item.getProduct().getId());
             moveStock(product, transit, transfer.getToLocation(), item.getQuantity(),
-                    "TRANSFER", userId, "Transfer " + transfer.getTransferNumber() + " received");
+                    "TRANSFER", userId, transfer.getId(), "Transfer " + transfer.getTransferNumber() + " received");
         }
-        transfer.setStatus(StockTransfer.TransferStatus.RECEIVED);
-        transfer.setCompletedAt(LocalDateTime.now());
+        transfer.setCompletedAt(shopTimeService.now());
         transfer.setCompletedBy(userId);
         stockTransferRepository.save(transfer);
         auditLogService.logAction(userId, "STOCK_TRANSFER_RECEIVE",
@@ -439,16 +466,66 @@ public class LocationService {
     }
 
     public StockTransfer cancelTransfer(Long id, Long userId) {
-        StockTransfer transfer = getTransfer(id);
+        StockTransfer transfer = getTransferForUpdate(id);
         if (transfer.getStatus() != StockTransfer.TransferStatus.DRAFT) {
             throw new BusinessException("Only a draft transfer can be cancelled");
         }
-        transfer.setStatus(StockTransfer.TransferStatus.CANCELLED);
+        transitionTransfer(transfer, StockTransfer.TransferStatus.DRAFT,
+                StockTransfer.TransferStatus.CANCELLED, "Transfer is no longer in draft");
         stockTransferRepository.save(transfer);
         auditLogService.logAction(userId, "STOCK_TRANSFER_CANCEL",
                 "Stock transfer cancelled: " + transfer.getTransferNumber(),
                 "StockTransfer", transfer.getId(), null, null);
         return transfer;
+    }
+
+    public StockTransfer cancelInTransit(Long id, Long userId) {
+        periodGuard.assertOpen(shopTimeService.now());
+        StockTransfer transfer = getTransferForUpdate(id);
+        if (transfer.getStatus() != StockTransfer.TransferStatus.IN_TRANSIT) {
+            throw new BusinessException("Only an in-transit transfer can be cancelled");
+        }
+        Location transit = getDefault(Location.LocationType.TRANSIT);
+        transitionTransfer(transfer, StockTransfer.TransferStatus.IN_TRANSIT,
+                StockTransfer.TransferStatus.CANCELLED, "Transfer is no longer in transit");
+        Map<Long, Product> products = lockTransferProducts(transfer);
+        for (StockTransferItem item : sortedTransferItems(transfer)) {
+            Product product = products.get(item.getProduct().getId());
+            moveStock(product, transit, transfer.getFromLocation(), item.getQuantity(),
+                    "TRANSFER", userId, transfer.getId(),
+                    "Transfer " + transfer.getTransferNumber() + " cancelled in transit");
+        }
+        transfer.setCompletedAt(shopTimeService.now());
+        transfer.setCompletedBy(userId);
+        stockTransferRepository.save(transfer);
+        auditLogService.logAction(userId, "STOCK_TRANSFER_CANCEL_IN_TRANSIT",
+                "In-transit stock transfer cancelled: " + transfer.getTransferNumber(),
+                "StockTransfer", transfer.getId(), null, null);
+        return transfer;
+    }
+
+    private List<StockTransferItem> sortedTransferItems(StockTransfer transfer) {
+        return transfer.getItems().stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .toList();
+    }
+
+    private Map<Long, Product> lockTransferProducts(StockTransfer transfer) {
+        Map<Long, Product> products = new HashMap<>();
+        for (StockTransferItem item : sortedTransferItems(transfer)) {
+            Long productId = item.getProduct().getId();
+            products.computeIfAbsent(productId, id -> productRepository.findByIdForUpdate(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id)));
+        }
+        return products;
+    }
+
+    private void transitionTransfer(StockTransfer transfer, StockTransfer.TransferStatus expected,
+                                   StockTransfer.TransferStatus next, String errorMessage) {
+        if (stockTransferRepository.transitionStatus(transfer.getId(), expected, next) == 0) {
+            throw new BusinessException(errorMessage);
+        }
+        transfer.setStatus(next);
     }
 
     /**
@@ -457,7 +534,13 @@ public class LocationService {
      * together with the explicit location bucket.
      */
     private void moveStock(Product product, Location from, Location to, int quantity,
-                           String reasonCode, Long userId, String description) {
+                           String reasonCode, Long userId, Long transferId, String description) {
+        moveStock(product, from, to, quantity, reasonCode, userId, transferId, description, false, null);
+    }
+
+    private void moveStock(Product product, Location from, Location to, int quantity,
+                           String reasonCode, Long userId, Long transferId, String description,
+                           boolean overrideReserved, String overrideReason) {
         if (quantity <= 0) {
             throw new BusinessException("Quantity must be positive");
         }
@@ -470,7 +553,9 @@ public class LocationService {
                 throw new BusinessException("Only " + productStock + " unit(s) of "
                         + product.getName() + " are on the shop floor");
             }
-            product.setStockQuantity(productStock - quantity);
+            int newStock = productStock - quantity;
+            assertCanReduceShopStock(product, newStock, overrideReserved, overrideReason, userId);
+            product.setStockQuantity(newStock);
             // Keep the SHOP bucket in sync only when it already exists; legacy
             // products may never have had one.
             locationStockRepository.findForUpdate(from.getId(), product.getId())
@@ -499,20 +584,49 @@ public class LocationService {
         String movementDescription = description + " (" + from.getCode() + " -> " + to.getCode() + ")";
 
         if (from.getType() == Location.LocationType.QUARANTINE) {
-            recordQuarantineTransferOut(product, from, quantity, reasonCode, movementDescription, user, unitCost);
+            recordQuarantineTransferOut(product, from, quantity, reasonCode, movementDescription, user,
+                    unitCost, transferId);
         } else {
             stockMovementRepository.save(transferMovement(product, StockMovement.MovementType.TRANSFER_OUT,
-                    quantity, from.getCode(), reasonCode, movementDescription, user, totalValuation, null));
+                    quantity, from.getCode(), reasonCode, movementDescription, user, totalValuation, null, transferId));
         }
         StockMovement inMovement = transferMovement(product, StockMovement.MovementType.TRANSFER_IN,
-                quantity, to.getCode(), reasonCode, movementDescription, user, totalValuation, null);
+                quantity, to.getCode(), reasonCode, movementDescription, user, totalValuation, null, transferId);
         stockMovementRepository.save(inMovement);
 
         // P1/O8: a transfer between owned locations is net-zero on owned units, value
         // and cost; record it for the location audit trail keyed to its IN movement.
         ledgerPostingService.postInventory(product, InventoryLedger.EventType.TRANSFER,
                 "STOCK_MOVEMENT", inMovement.getId(), "transfer", 0, unitCost, java.math.BigDecimal.ZERO,
-                to.getId(), movementDescription, LocalDateTime.now(), userId);
+                to.getId(), movementDescription, shopTimeService.now(), userId);
+    }
+
+    public void assertCanReduceShopStock(Product product, int newStock, boolean allowBelowReserved) {
+        if (!allowBelowReserved) {
+            assertCanReduceShopStock(product, newStock, false, null, null);
+        }
+    }
+
+    public void assertCanReduceShopStock(Product product, int newStock, boolean overrideReserved,
+                                         String overrideReason, Long userId) {
+        int reserved = product.getReservedQuantity() != null ? product.getReservedQuantity() : 0;
+        if (newStock >= reserved) {
+            return;
+        }
+        if (overrideReserved) {
+            if (overrideReason == null || overrideReason.isBlank()) {
+                throw new BusinessException("A reason is required to override reserved stock");
+            }
+            auditLogService.logAction(userId, "STOCK_RESERVED_OVERRIDE",
+                    "Reserved-stock override for " + product.getName() + ": " + overrideReason.trim(),
+                    "Product", product.getId(), String.valueOf(product.getStockQuantity()),
+                    String.valueOf(newStock));
+            return;
+        }
+        throw new BusinessException("STOCK_RESERVED: " + product.getName() + " has " + reserved
+                + " unit(s) reserved for pending orders; only "
+                + Math.max(0, product.getStockQuantity() - reserved)
+                + " can be moved. Cancel or expire abandoned reservations first.");
     }
 
     /**
@@ -522,7 +636,7 @@ public class LocationService {
      */
     private void recordQuarantineTransferOut(Product product, Location from, int quantity,
                                              String reasonCode, String description, User user,
-                                             java.math.BigDecimal unitCost) {
+                                             java.math.BigDecimal unitCost, Long transferId) {
         int unattributed = quantity;
         List<StockMovement> receipts = stockMovementRepository.findByProductAndReferenceTypeAndLocation(
                 product.getId(), StockMovement.ReferenceType.RECEIVING, from.getCode());
@@ -551,7 +665,7 @@ public class LocationService {
                     take, from.getCode(), reasonCode, description, user,
                     unitCost.multiply(java.math.BigDecimal.valueOf(take))
                             .setScale(CostCalculationUtils.COST_SCALE, java.math.RoundingMode.HALF_UP),
-                    receipt.getPurchaseItemId()));
+                    receipt.getPurchaseItemId(), transferId));
             unattributed -= take;
         }
         if (unattributed > 0) {
@@ -559,33 +673,30 @@ public class LocationService {
                     unattributed, from.getCode(), reasonCode, description, user,
                     unitCost.multiply(java.math.BigDecimal.valueOf(unattributed))
                             .setScale(CostCalculationUtils.COST_SCALE, java.math.RoundingMode.HALF_UP),
-                    null));
+                    null, transferId));
         }
     }
 
     private StockMovement transferMovement(Product product, StockMovement.MovementType type, int quantity,
                                            String locationCode, String reasonCode, String description,
-                                           User user, java.math.BigDecimal valuation, Long purchaseItemId) {
+                                           User user, java.math.BigDecimal valuation, Long purchaseItemId,
+                                           Long transferId) {
         StockMovement movement = new StockMovement();
         movement.setProduct(product);
         movement.setMovementType(type);
         movement.setQuantity(quantity);
-        movement.setReferenceType(StockMovement.ReferenceType.TRANSFER);
+        movement.setReferenceType("RESCUE".equals(reasonCode)
+                ? StockMovement.ReferenceType.RESCUE : StockMovement.ReferenceType.TRANSFER);
         movement.setReferenceId(0L);
         movement.setPurchaseItemId(purchaseItemId);
+        movement.setSourceTransferId(transferId);
         movement.setReasonCode(reasonCode);
         movement.setLocation(locationCode);
         movement.setDescription(description);
         movement.setValuationAmount(valuation);
         movement.setCreatedBy(user);
-        movement.setMovementDate(LocalDateTime.now());
+        movement.setMovementDate(shopTimeService.now());
         return movement;
     }
 
-    private String nextTransferNumber() {
-        LocalDate today = LocalDate.now();
-        String prefix = "TR-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd")) + "-";
-        long next = stockTransferRepository.countByTransferNumberStartingWith(prefix) + 1;
-        return prefix + String.format("%04d", next);
-    }
 }

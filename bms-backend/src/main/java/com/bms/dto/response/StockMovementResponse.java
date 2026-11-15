@@ -11,6 +11,7 @@ public class StockMovementResponse {
     private Integer quantity;
     private String referenceType;
     private Long referenceId;
+    private String transferNumber;
     private String description;
     private String createdByName;
     private LocalDateTime movementDate;
@@ -38,6 +39,8 @@ public class StockMovementResponse {
 
     public Long getReferenceId() { return referenceId; }
     public void setReferenceId(Long referenceId) { this.referenceId = referenceId; }
+    public String getTransferNumber() { return transferNumber; }
+    public void setTransferNumber(String transferNumber) { this.transferNumber = transferNumber; }
 
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }

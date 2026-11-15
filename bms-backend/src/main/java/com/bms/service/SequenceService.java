@@ -3,10 +3,12 @@ package com.bms.service;
 import com.bms.entity.InvoiceSequence;
 import com.bms.entity.OrderSequence;
 import com.bms.entity.PurchaseSequence;
+import com.bms.entity.TransferSequence;
 import com.bms.exception.BusinessException;
 import com.bms.repository.InvoiceSequenceRepository;
 import com.bms.repository.OrderSequenceRepository;
 import com.bms.repository.PurchaseSequenceRepository;
+import com.bms.repository.TransferSequenceRepository;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +27,18 @@ public class SequenceService {
     private final InvoiceSequenceRepository invoiceSequenceRepository;
     private final PurchaseSequenceRepository purchaseSequenceRepository;
     private final OrderSequenceRepository orderSequenceRepository;
+    private final TransferSequenceRepository transferSequenceRepository;
     private final ShopTimeService shopTimeService;
 
     public SequenceService(InvoiceSequenceRepository invoiceSequenceRepository,
                            PurchaseSequenceRepository purchaseSequenceRepository,
                            OrderSequenceRepository orderSequenceRepository,
+                           TransferSequenceRepository transferSequenceRepository,
                            ShopTimeService shopTimeService) {
         this.invoiceSequenceRepository = invoiceSequenceRepository;
         this.purchaseSequenceRepository = purchaseSequenceRepository;
         this.orderSequenceRepository = orderSequenceRepository;
+        this.transferSequenceRepository = transferSequenceRepository;
         this.shopTimeService = shopTimeService;
     }
 
@@ -85,6 +90,27 @@ public class SequenceService {
         seq.setLastNumber(next);
         return "ORD-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
                 + "-" + String.format("%03d", next);
+    }
+
+    @Transactional
+    public String nextTransferNumber() {
+        LocalDate today = shopTimeService.today();
+        TransferSequence sequence = transferSequenceRepository.findByDateForUpdate(today)
+                .orElseGet(() -> {
+                    try {
+                        TransferSequence fresh = new TransferSequence();
+                        fresh.setSequenceDate(today);
+                        fresh.setLastNumber(0);
+                        return transferSequenceRepository.saveAndFlush(fresh);
+                    } catch (DataIntegrityViolationException ex) {
+                        return transferSequenceRepository.findByDateForUpdate(today)
+                                .orElseThrow(() -> new BusinessException("Failed to acquire transfer sequence"));
+                    }
+                });
+        int next = (sequence.getLastNumber() == null ? 0 : sequence.getLastNumber()) + 1;
+        sequence.setLastNumber(next);
+        return "TR-" + today.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+                + "-" + String.format("%04d", next);
     }
 
     private InvoiceSequence lockOrCreateInvoice(LocalDate today) {

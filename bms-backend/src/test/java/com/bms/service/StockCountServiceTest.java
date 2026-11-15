@@ -5,10 +5,13 @@ import com.bms.dto.request.SyncCountSheetRequest;
 import com.bms.dto.response.CountSheetResponse;
 import com.bms.entity.CountSheet;
 import com.bms.entity.CountSheetItem;
+import com.bms.entity.Order;
 import com.bms.entity.Product;
 import com.bms.entity.StockMovement;
+import com.bms.entity.SystemSetting;
 import com.bms.repository.CountSheetItemRepository;
 import com.bms.repository.CountSheetRepository;
+import com.bms.repository.OrderRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.StockMovementRepository;
@@ -31,6 +34,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -130,7 +134,9 @@ class StockCountServiceTest {
     }
 
     private void stubSheetLookup(CountSheet sheet) {
-        when(countSheetRepository.findById(sheet.getId())).thenReturn(Optional.of(sheet));
+        lenient().when(countSheetRepository.findByIdForUpdate(sheet.getId())).thenReturn(Optional.of(sheet));
+        lenient().when(countSheetRepository.transitionStatus(anyLong(),
+                any(CountSheet.CountStatus.class), any(CountSheet.CountStatus.class))).thenReturn(1);
         when(countSheetItemRepository.findWithProductBySheetId(sheet.getId()))
                 .thenReturn(sheet.getItems());
     }
@@ -138,6 +144,13 @@ class StockCountServiceTest {
     private void stubSettings() {
         when(systemSettingRepository.findBySettingKey("stockCountAutoApproveThreshold"))
                 .thenReturn(Optional.empty());
+    }
+
+    private SystemSetting setting(String key, String value) {
+        SystemSetting setting = new SystemSetting();
+        setting.setSettingKey(key);
+        setting.setSettingValue(value);
+        return setting;
     }
 
     private void stubApplyPersistence() {
@@ -150,7 +163,7 @@ class StockCountServiceTest {
 
     @Test
     void varianceWithinThresholdAutoApprovesAndAdjustsStock() {
-        Product product = product(50, "5.00");
+        Product product = product(10, "5.00");
         CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
         stubSettings();
@@ -163,7 +176,7 @@ class StockCountServiceTest {
         // Threshold defaults to 2 units, so a +2 variance is approved.
         assertEquals("APPROVED", response.getStatus());
         assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
-        assertEquals(52, product.getStockQuantity());
+        assertEquals(12, product.getStockQuantity());
 
         ArgumentCaptor<StockMovement> movementCaptor =
                 ArgumentCaptor.forClass(StockMovement.class);
@@ -195,8 +208,58 @@ class StockCountServiceTest {
     }
 
     @Test
+    void f19_highValueLineGoesToReviewEvenWhenUnitVarianceIsSmall() {
+        Product product = product(10, "500.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        when(systemSettingRepository.findBySettingKey("stockCountAutoApproveLineValue"))
+                .thenReturn(Optional.of(setting("stockCountAutoApproveLineValue", "20.00")));
+
+        CountSheetResponse response = stockCountService.submit(
+                sheet.getId(), submitRequest(11, "MISCOUNT"), 99L);
+
+        assertEquals("PENDING_REVIEW", response.getStatus());
+        assertEquals(10, product.getStockQuantity());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+    }
+
+    @Test
+    void f22_countShortageAnnotatesPendingOrders() {
+        Product product = product(10, "5.00");
+        product.setReservedQuantity(8);
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        Order pendingOrder = new Order();
+        pendingOrder.setId(42L);
+        pendingOrder.setOrderNumber("ORD-42");
+        pendingOrder.setNotes("Customer requested call");
+        OrderRepository orderRepository = org.mockito.Mockito.mock(OrderRepository.class);
+        when(orderRepository.findPendingOrdersForProduct(7L, Order.OrderStatus.PENDING))
+                .thenReturn(List.of(pendingOrder));
+        ReflectionTestUtils.setField(stockCountService, "orderRepository", orderRepository);
+
+        stockCountService.submit(sheet.getId(), submitRequest(6, "MISCOUNT"), 99L);
+        stockCountService.approve(sheet.getId(), 100L);
+
+        assertEquals(6, product.getStockQuantity());
+        org.junit.jupiter.api.Assertions.assertTrue(pendingOrder.getNotes()
+                .contains("Stock shortage after count " + sheet.getSheetNumber()));
+        verify(orderRepository).save(pendingOrder);
+        verify(auditLogService).logAction(100L, "ORDER_STOCK_SHORTAGE",
+                "Stock shortage after count " + sheet.getSheetNumber()
+                        + " for Milk 1L on order ORD-42",
+                "Order", 42L, "Customer requested call",
+                "Customer requested call\nStock shortage after count " + sheet.getSheetNumber());
+    }
+
+    @Test
     void c7_countVarianceKeepsSixDecimalValuation() {
-        Product product = product(50, "0.337835");
+        Product product = product(10, "0.337835");
         CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
         stubSettings();
@@ -212,7 +275,7 @@ class StockCountServiceTest {
 
     @Test
     void c11_approvalUsesCountTimeCostAfterProductCostChanges() {
-        Product product = product(50, "5.00");
+        Product product = product(10, "5.00");
         CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
         stubSettings();
@@ -221,12 +284,51 @@ class StockCountServiceTest {
 
         stockCountService.submit(sheet.getId(), submitRequest(7, "THEFT_SHRINKAGE"), 99L);
         product.setCostPrice(new BigDecimal("9.00"));
-        stockCountService.approve(sheet.getId(), 99L);
+        stockCountService.approve(sheet.getId(), 100L);
 
         ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
         verify(stockMovementRepository).save(captor.capture());
         assertEquals(0, new BigDecimal("-15.00").compareTo(captor.getValue().getValuationAmount()));
-        assertEquals(47, product.getStockQuantity());
+        assertEquals(7, product.getStockQuantity());
+    }
+
+    @Test
+    void f17_countIgnoresSalesSinceSnapshot() {
+        Product product = product(7, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        CountSheetResponse response = stockCountService.submit(
+                sheet.getId(), submitRequest(7, "MISCOUNT"), 99L);
+
+        assertEquals("APPROVED", response.getStatus());
+        assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
+        assertEquals(7, product.getStockQuantity());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+        verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
+    }
+
+    @Test
+    void f17_reasonRequiredAfterRecompute() {
+        Product product = product(6, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
+        CountSheetItem item = sheet.getItems().get(0);
+        item.setCountedQuantity(10);
+        item.setVariance(0);
+        item.setValuationAmount(BigDecimal.ZERO);
+        stubSheetLookup(sheet);
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                com.bms.exception.UnprocessableEntityException.class,
+                () -> stockCountService.approve(sheet.getId(), 99L));
+
+        assertEquals(6, product.getStockQuantity());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
     }
 
     @Test
@@ -262,5 +364,56 @@ class StockCountServiceTest {
         verify(countSheetRepository, never()).saveAndFlush(any(CountSheet.class));
         verify(countSheetRepository, never()).countBySheetNumberStartingWith(anyString());
         verify(stockMovementRepository, never()).save(any(StockMovement.class));
+    }
+
+    @Test
+    void f20_syncRejectsFutureTimestamp() {
+        SyncCountSheetRequest request = syncRequest("future-sync", 7L, 10, 10);
+        request.setSubmittedAt(LocalDateTime.now().plusMinutes(6));
+
+        assertThrows(com.bms.exception.BusinessException.class,
+                () -> stockCountService.sync(request, 99L));
+
+        verify(countSheetRepository, never()).save(any(CountSheet.class));
+    }
+
+    @Test
+    void f20_syncOldPayloadGoesToReviewAndIgnoresClientSystemQuantity() {
+        Product product = product(10, "5.00");
+        product.setIsActive(true);
+        when(productRepository.findById(7L)).thenReturn(Optional.of(product));
+        when(countSheetRepository.save(any(CountSheet.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(countSheetRepository.countBySheetNumberStartingWith(anyString())).thenReturn(0L);
+        when(countSheetRepository.findBySheetNumber(anyString())).thenReturn(Optional.empty());
+
+        SyncCountSheetRequest request = syncRequest("old-sync", 7L, 100, 10);
+        request.setSubmittedAt(LocalDateTime.now().minusDays(30));
+
+        CountSheetResponse response = stockCountService.sync(request, 99L);
+
+        ArgumentCaptor<CountSheet> captor = ArgumentCaptor.forClass(CountSheet.class);
+        verify(countSheetRepository).save(captor.capture());
+        CountSheet saved = captor.getValue();
+        CountSheetItem item = saved.getItems().get(0);
+        assertEquals("PENDING_REVIEW", response.getStatus());
+        assertEquals(10, item.getSystemQuantity());
+        assertEquals(100, item.getClientSystemQuantity());
+        assertEquals(0, item.getVariance());
+        assertNotNull(saved.getSyncReceivedAt());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+    }
+
+    private SyncCountSheetRequest syncRequest(String key, Long productId,
+                                              int clientSystemQuantity, int countedQuantity) {
+        SyncCountSheetRequest request = new SyncCountSheetRequest();
+        request.setSyncKey(key);
+        SyncCountSheetRequest.Entry entry = new SyncCountSheetRequest.Entry();
+        entry.setProductId(productId);
+        entry.setSystemQuantity(clientSystemQuantity);
+        entry.setCountedQuantity(countedQuantity);
+        entry.setReasonCode("MISCOUNT");
+        request.setItems(List.of(entry));
+        return request;
     }
 }

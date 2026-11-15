@@ -1,0 +1,16 @@
+name: Source comment encoding
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  check-source-comments:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Check source comments for mojibake
+        run: python scripts/check_source_comment_encoding.py

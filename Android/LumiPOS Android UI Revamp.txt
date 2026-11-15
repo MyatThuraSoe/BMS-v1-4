@@ -1,0 +1,186 @@
+
+
+# LumiPOS Android: Enterprise Production & Feature Parity Requirements Document (PRD)
+
+**Document Version:** 2.0
+**Target:** Lead Android Architect, Senior Kotlin Developers, UI/UX Designers
+**Objective:** Transform the current LumiPOS Android application into a fully hardened, enterprise-grade, offline-first Point of Sale (POS) system that achieves 100% feature parity with the Web/Electron versions while leveraging native Android hardware capabilities.
+
+---
+
+## 🚨 PHASE 0: Critical Architecture & Blocker Resolution (P0)
+Before adding new features, the current architectural flaws that threaten production data integrity must be resolved.
+
+### 1. The "Destructive Migration" Catastrophe (CRITICAL BUG)
+*   **Current State:** The Room database uses `fallbackToDestructiveMigration()`. If a schema change occurs during an app update, the store’s **entire database (sales, customers, stock, cash shifts) is wiped**.
+*   **Requirement:** Implement explicit `Migration` objects (e.g., `MIGRATION_1_2`, `MIGRATION_2_3`) for every future schema change.
+*   **Action:** Create a `Migrations.kt` file. Write SQL `ALTER TABLE` scripts for all future column additions. Never allow a production build with destructive fallback enabled.
+
+### 2. Domain KSP Build Blocker (Phase 21 Unblock)
+*   **Current State:** `:domain:kspDebugKotlin` fails with `error.NonExistentClass` on 4 report use cases due to stale ABI caches.
+*   **Requirement:** Refactor the dependency injection graph for `TopProductsReportUseCase`, `CashierPerformanceReportUseCase`, etc.
+*   **Action:** Delete `.kotlin` and `.ksp` caches. Ensure Domain use cases depend only on Domain *Repository Interfaces*, never on Data layer implementations or Room Entities directly (use Domain Models/DTOs).
+
+### 3. Soft Keyboard UI Overlap Bug
+*   **Current State:** On tablets, the on-screen keyboard covers critical action buttons (e.g., "Activate License", "Charge", "Save").
+*   **Requirement:** Implement global `WindowInsets.ime` padding.
+*   **Action:** Wrap the root `Scaffold` or `NavHost` in a `Modifier.imePadding()` container to ensure bottom-anchored buttons automatically slide up when the keyboard appears.
+
+---
+
+## 🎨 PHASE 1: Advanced UI/UX & Hardware Integration
+The Web/Electron version uses a premium "Grocer/Retail" aesthetic. The Android app must replicate this while optimizing for touch and physical retail hardware.
+
+### 1. Visual & Theming Overhaul
+*   **Color Palette Enforcement:**
+    *   **Primary:** "Grocer’s Green" (`#2B6E4F`) for primary actions, active states, and branding.
+    *   **Secondary/Accent:** "Brass/Gold" (`#B8862E`) strictly for pricing, totals, and financial highlights.
+    *   **Backgrounds:** Pure White (`#FFFFFF`) for Light Mode (removing mint/paper tints), Deep Forest Night for Dark Mode.
+*   **Typography:**
+    *   Use a **Serif font** (e.g., *Fraunces* or *Playfair Display*) for Headings and Dashboard Titles to match the Web/Electron premium feel.
+    *   Use a geometric Sans-Serif (e.g., *Inter* or *Roboto*) for body text and UI elements.
+    *   **Tabular Figures:** Enforce monospaced numbers (`fontFeatureSettings: "tnum"`) for all prices, totals, and stock counts to ensure perfect vertical alignment in lists.
+
+### 2. Native Hardware Integration (Android Exclusive Features)
+*   **Native Camera Barcode Scanning:** Integrate **Google ML Kit Barcode Scanning**. Add a floating camera icon in the POS search bar. When tapped, open a viewfinder overlay that instantly adds scanned items to the cart without requiring a physical scanner.
+*   **Bluetooth Weighing Scale Integration:** Implement a Serial Port Profile (SPP) Bluetooth connection for digital weighing scales (essential for bakeries, delis, and fresh produce). The POS should auto-populate the weight into the quantity field.
+*   **RJ11 Cash Drawer Trigger:** Send the standard ESC/POS hex command (`\x10\x14\x00\x00\x00`) to the connected thermal printer to physically pop open the cash drawer upon completing a cash sale.
+*   **External Keyboard Shortcuts:** For tablets with physical keyboard cases, map global shortcuts:
+    *   `F2` = Focus Search
+    *   `F9` = Open Checkout/Pay
+    *   `F11` = Suspend/Hold Cart
+    *   `F12` = Recall Held Cart
+    *   `Esc` = Clear Cart / Close Dialog
+
+### 3. Foldable & Dual-Screen Support
+*   **Customer Facing Display (CFD):** Use **Jetpack WindowManager** to detect dual-screen or foldable devices (e.g., Lenovo Yoga Book, Surface Duo). When unfolded, mirror a "Customer View" on the secondary screen showing the running cart, total price, and marketing images, while the primary screen remains the cashier POS.
+
+---
+
+## 🛒 PHASE 2: Core POS & Checkout Upgrades
+To match the speed and complexity of the Web/Electron POS.
+
+### 1. Advanced Cart & Transaction Management
+*   **Suspend/Hold & Resume Cart:** Allow cashiers to "Park" a sale. The cart is saved to a local `HeldCarts` Room table with a timestamp and customer name. Add a "Recall" drawer to fetch and resume parked sales.
+*   **Split Tender Payments:** Allow a single bill to be paid using multiple methods (e.g., $50 Cash + $50 Card + $20 Store Credit). The UI must dynamically calculate the remaining balance after each payment method is applied.
+*   **Quick Keys / Hot Keys Grid:** Add a configurable 2x4 grid on the main POS screen showing the top 8 best-selling items for one-tap adding.
+*   **Granular Returns & Refunds:**
+    *   Scan a past receipt barcode or search the invoice number.
+    *   Allow returning *specific line items* or partial quantities.
+    *   Implement restock logic (automatically increment inventory upon approved return).
+    *   Route refunds to the original payment method or issue Store Credit.
+
+### 2. Advanced Discount Engine
+*   **Promotional Pricing:** Support BOGO (Buy One Get One), "3 for $10" deals, and time-based "Happy Hour" discounts.
+*   **Item vs. Bill Level Discounts:** Allow cashiers to apply a % or $ discount to a specific line item, or to the entire subtotal (restricted by RBAC permissions).
+
+---
+
+## 📦 PHASE 3: Inventory & Supply Chain Enhancements
+Deepening the inventory module to handle complex retail scenarios.
+
+### 1. Physical Stock Take (Inventory Audit)
+*   **Blind Counting Module:** A dedicated screen where staff scan items and enter the physical count *without* seeing the system's expected stock.
+*   **Variance Calculation:** Once submitted, the system compares Physical Count vs. System Count and generates a "Stock Adjustment" draft for the manager to approve.
+
+### 2. Batch, Expiry & Composite Tracking
+*   **Expiry Date Tracking:** Add `expiry_date` and `batch_number` to the `StockMovement` and `Inventory` tables.
+    *   *Feature:* "Expiring Soon" dashboard widget.
+    *   *Feature:* POS warning when selling an item expiring in < 7 days.
+*   **Composite Products (Kitting):** Allow the creation of "Bundle" SKUs (e.g., "Gift Basket"). When sold, the system automatically deducts the stock of the child components (e.g., 1x Basket, 3x Chocolates, 1x Wine).
+
+### 3. Multi-Warehouse / Internal Transfers
+*   **Stock Transfers:** Create "Transfer Orders" to move stock from the "Main Warehouse" to the "Retail Floor" or between different physical branches. Requires "Sent" and "Received" approvals to update stock levels accurately.
+
+---
+
+## 🤝 PHASE 4: CRM, Loyalty & Customer Experience
+Moving beyond basic customer lists to a full retention engine.
+
+### 1. Loyalty Points Engine
+*   **Points Accrual:** Configurable rules (e.g., 1 point per $1 spent, double points on weekends).
+*   **Redemption:** At checkout, allow customers to pay using points. The POS converts points to a currency value and applies it as a discount.
+*   **Customer Portal QR:** Generate a dynamic QR code on the checkout screen that the customer can scan with their phone to view their digital receipt, loyalty balance, and purchase history.
+
+### 2. Store Credit & Digital Wallets
+*   **Customer Wallet:** Allow customers to keep a positive balance (Store Credit) from overpaid refunds or manual top-ups.
+*   **Wallet Payments:** Add "Store Credit" as a native payment method in the checkout flow.
+
+### 3. B2B & Wholesale Pricing
+*   **Customer Groups/Tiers:** Assign customers to groups (e.g., "Retail", "Wholesale", "VIP").
+*   **Tiered Pricing:** The POS automatically applies the correct price list based on the selected customer's group.
+
+---
+
+## 📊 PHASE 5: Advanced Accounting, Reporting & Analytics
+Matching the financial depth of the Spring Boot backend.
+
+### 1. Shift Management Upgrades
+*   **Blind Close-Out:** When closing a shift, the cashier *cannot* see the expected cash total. They must enter what they physically counted. This prevents theft and forces accurate counting.
+*   **Safe Drops / Drawer Skims:** Allow cashiers to remove excess cash from the drawer and record it as a "Safe Drop" during the shift, keeping the drawer balance manageable and secure.
+
+### 2. Double-Entry Accounting & Tax
+*   **Chart of Accounts:** Implement a basic double-entry ledger system for expenses, AR, and AP.
+*   **Tax Liability Reports:** Automated reports calculating exact VAT/GST collected vs. VAT/GST paid on purchases, ready for export to government portals.
+
+### 3. Predictive Analytics Dashboard
+*   **Reorder Suggestions:** "Based on the last 30 days of sales, you will run out of Milk by Thursday. Suggested Purchase Order: 50 units."
+*   **Dead Stock Alerts:** Identify items that haven't sold in 90+ days but are taking up capital.
+
+---
+
+## 🔒 PHASE 6: Security, Compliance & Production Hardening
+Enterprise-grade security for offline devices.
+
+### 1. Database Encryption (SQLCipher)
+*   **Requirement:** Use **SQLCipher for Android** to encrypt the Room SQLite database at rest.
+*   **Action:** Store the encryption key in the Android Keystore System (via `MasterKey`). If a tablet is stolen, the thief cannot extract the `.db` file and read customer data or financial records.
+
+### 2. Granular Role-Based Access Control (RBAC)
+*   **Requirement:** Move beyond simple "Admin/Cashier" roles. Implement a permission matrix.
+*   **Examples:**
+    *   *Cashier:* Can sell, cannot void items, cannot see cost prices, cannot export data.
+    *   *Manager:* Can void, can apply bill discounts, can view reports.
+    *   *Admin:* Can delete products, can edit store settings, can view audit logs.
+
+### 3. Anti-Tampering & PCI-DSS Adjacent Compliance
+*   **Screenshot/Screen Recording Prevention:** Add `FLAG_SECURE` to the `MainActivity` when the PIN entry screen, Credit Card input screen, or License Activation screen is visible.
+*   **Root Detection:** Implement basic root detection. If the device is rooted, show a warning or restrict access to sensitive financial data to prevent database manipulation via hex editors.
+
+### 4. Automated Data Safety (WorkManager)
+*   **Nightly Auto-Backups:** Use **WorkManager** to schedule a task at 2:00 AM daily. The task exports the Room DB to a `.json` or `.sqlite` file and saves it to the device's `Documents/LumiPOS_Backup` folder.
+*   **Cloud Sync (Optional):** If the device has internet, automatically upload this nightly backup to Google Drive or a WebDAV server.
+
+---
+
+## 🔄 PHASE 7: Cross-Platform Parity & Local Network Sync
+Bridging the gap between the offline Android app and the multi-terminal Web/Electron setup.
+
+### 1. Local Wi-Fi P2P Sync (No Internet Required)
+*   **The Problem:** The Web/Electron version uses MySQL for multi-terminal sync. The Android app is offline SQLite.
+*   **The Solution:** Implement a lightweight **Local WebSocket Server** (e.g., using Ktor Server embedded in the Android app) on the "Master" tablet.
+*   **How it works:** "Client" Android tablets on the same local Wi-Fi network connect to the Master tablet's IP address. When a sale is made on a Client, it sends a JSON payload via WebSocket to the Master, which writes it to the central SQLite DB. This allows multiple Android tablets to work together in a store without needing a PC server or internet connection.
+
+### 2. Web/Electron Data Import
+*   **Migration Tool:** Build a "Import from Web/Electron" feature. Allow the Android app to read the `.sqlite` file generated by the Electron desktop app, map the schema to the Android Room database, and migrate the store's entire history to the tablet.
+
+---
+
+## 📱 Summary of Required Tech Stack Upgrades
+To achieve the above, the following libraries must be added/upgraded in `build.gradle.kts`:
+
+| Category | Current State | Required Upgrade / Addition |
+| :--- | :--- | :--- |
+| **Database** | Room (Unencrypted) | **SQLCipher** + Room + **Paging 3** (for large lists) |
+| **Hardware** | Basic Bluetooth Print | **ML Kit** (Barcode), **Jetpack WindowManager** (Foldables) |
+| **Background** | None / Coroutines | **WorkManager** (Nightly backups, cleanup) |
+| **Networking** | None (Offline) | **Ktor Server** (Local Wi-Fi P2P Sync) |
+| **UI/UX** | Material 3 Default | Custom **Typography** (Serif/Sans), **Canvas** (Charts) |
+| **Security** | Plain DataStore | **EncryptedSharedPreferences** / Android Keystore |
+
+## ✅ Definition of Done (Production Release Criteria)
+1.  **Zero Destructive Migrations:** App can be updated from v1.0 to v2.0 over a test database of 10,000 sales without losing a single record.
+2.  **Hardware Smoke Test:** Successfully scans a barcode via camera, prints a receipt via Bluetooth, and pops the cash drawer.
+3.  **Stress Test:** The POS screen remains at 60fps while the database contains 50,000 products and 100,000 historical sales.
+4.  **Security Audit:** `FLAG_SECURE` prevents screenshots on PIN screens; DB file is unreadable via standard SQLite viewers without the Keystore key.
+5.  **Shift Reconciliation:** A cashier can open a shift, process 10 mixed-tender sales, perform a safe drop, and blind-close the shift with exact variance calculation matching the Web/Electron backend logic.

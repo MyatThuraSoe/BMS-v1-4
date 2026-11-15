@@ -7,6 +7,7 @@ import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ExpenseRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -19,6 +20,10 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class ExpenseService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     /** O4: +/- days around the expense date scanned for duplicate freight bills. */
     private static final int DUPLICATE_WINDOW_DAYS = 3;
@@ -99,7 +104,8 @@ public class ExpenseService {
         expense.setDescription(request.getDescription());
         expense.setAmount(amount);
         expense.setExpenseDate(request.getExpenseDate());
-        expense.setCreatedBy(userId);
+        expense.setUpdatedBy(userId);
+        expense.setUpdatedAt(shopTimeService.now());
         // O4: capitalization changes after the old-state reversal so toggling
         // the flag cleanly moves the cost in/out of the P&L.
         applyCapitalization(expense, request);
@@ -169,7 +175,7 @@ public class ExpenseService {
         }
         ledgerPostingService.postExpense(expense);
         ledgerPostingService.reverseExpense(expense, expense.getExpenseDate().atStartOfDay());
-        expense.setDeletedAt(java.time.LocalDateTime.now());
+        expense.setDeletedAt(shopTimeService.now());
         expenseRepository.save(expense);
     }
 

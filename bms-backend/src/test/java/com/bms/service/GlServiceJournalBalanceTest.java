@@ -3,8 +3,11 @@ package com.bms.service;
 import com.bms.dto.response.JournalEntryResponse;
 import com.bms.entity.GlAccount;
 import com.bms.entity.GlMapping;
+import com.bms.entity.PaymentMethod;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SalePayment;
+import com.bms.entity.SaleReturn;
 import com.bms.entity.StockMovement;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CashDrawerMovementRepository;
@@ -167,9 +170,82 @@ class GlServiceJournalBalanceTest {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    private static BigDecimal descriptionCredit(List<JournalEntryResponse> entries, String description,
+                                                String eventType) {
+        return entries.stream()
+                .filter(e -> description.equals(e.getDescription()) && eventType.equals(e.getEventType()))
+                .map(JournalEntryResponse::getCredit)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private static void assertMoney(String expected, BigDecimal actual) {
         assertEquals(0, new BigDecimal(expected).compareTo(actual),
                 "expected " + expected + " but was " + actual);
+    }
+
+    private static void addPayment(Sale sale, PaymentMethod method, String amount) {
+        SalePayment payment = new SalePayment();
+        payment.setSale(sale);
+        payment.setPaymentMethod(method);
+        payment.setAmount(new BigDecimal(amount));
+        sale.getPayments().add(payment);
+    }
+
+    @Test
+    void f23_cardSaleSettlesToClearingInsteadOfCash() {
+        Sale sale = sale("INV-CARD", BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        addPayment(sale, PaymentMethod.CARD, "100.00");
+
+        List<JournalEntryResponse> entries = entriesFor("INV-CARD");
+        assertMoney("0.00", eventDebit(entries, "CASH"));
+        assertMoney("100.00", eventDebit(entries, "TENDER_CLEARING"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void f23_mixedSaleSplitsSettlementAcrossCashAndClearing() {
+        Sale sale = sale("INV-MIXED", BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        addPayment(sale, PaymentMethod.CASH, "60.00");
+        addPayment(sale, PaymentMethod.CARD, "40.00");
+
+        List<JournalEntryResponse> entries = entriesFor("INV-MIXED");
+        assertMoney("60.00", eventDebit(entries, "CASH"));
+        assertMoney("40.00", eventDebit(entries, "TENDER_CLEARING"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void f23_cardRefundCreditsClearing() {
+        Sale sale = sale("INV-REFUND", BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        SaleReturn refund = new SaleReturn();
+        refund.setId(8L);
+        refund.setSale(sale);
+        refund.setReturnDate(LocalDateTime.now());
+        refund.setTotalReturnAmount(new BigDecimal("100.00"));
+        refund.setRefundMethod(PaymentMethod.CARD);
+        lenient().when(saleReturnRepository.findForJournal(any(), any())).thenReturn(List.of(refund));
+
+        List<JournalEntryResponse> entries = entriesFor("RET-8");
+        assertMoney("100.00", eventCredit(entries, "TENDER_CLEARING"));
+        assertMoney("0.00", eventCredit(entries, "CASH"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void f23_voidOfMixedSaleReversesOriginalTenderProportions() {
+        Sale sale = sale("INV-VOID-MIXED", BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        addPayment(sale, PaymentMethod.CASH, "60.00");
+        addPayment(sale, PaymentMethod.CARD, "40.00");
+        sale.setVoidedAt(LocalDateTime.now());
+        lenient().when(saleRepository.findVoidedForJournal(any(), any())).thenReturn(List.of(sale));
+
+        List<JournalEntryResponse> entries = entriesFor("INV-VOID-MIXED");
+        assertMoney("60.00", descriptionCredit(entries, "Void reversal", "CASH"));
+        assertMoney("40.00", descriptionCredit(entries, "Void reversal", "TENDER_CLEARING"));
     }
 
     @Test

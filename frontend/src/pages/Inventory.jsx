@@ -6,6 +6,7 @@ import {
   Chip, CircularProgress, Alert, Dialog, DialogTitle, DialogContent,
   DialogActions, Autocomplete, InputAdornment, TablePagination,
   TableSortLabel, Tooltip, ToggleButtonGroup, ToggleButton, Stack,
+  Checkbox, FormControlLabel,
 } from '@mui/material';
 import {
   Search as SearchIcon,
@@ -695,6 +696,7 @@ const MovementsTab = () => {
                   const meta = TYPE_META[m.movementType] || TYPE_META.ADJUSTMENT;
                   const qty = m.quantity ?? 0;
                   const isIn = ['IN', 'ADJUSTMENT_IN'].includes(m.movementType);
+                  const referenceLabel = m.transferNumber || `#${m.referenceId}`;
                   return (
                     <TableRow key={m.id} hover sx={{ '& td': { borderBottom: '1px solid', borderColor: 'divider' } }}>
                       <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDateTime(m.movementDate)}</TableCell>
@@ -720,16 +722,16 @@ const MovementsTab = () => {
                       </TableCell>
                       <TableCell>
                         {REFERENCE_KEYS[m.referenceType] ? (
-                          <Tooltip title={`#${m.referenceId}`}>
+                          <Tooltip title={referenceLabel}>
                             <Chip
                               size="small"
                               variant="outlined"
                               color="default"
-                              label={`${t(REFERENCE_KEYS[m.referenceType])} #${m.referenceId}`}
+                              label={`${t(REFERENCE_KEYS[m.referenceType])} ${referenceLabel}`}
                               sx={{ fontSize: 11 }}
                             />
                           </Tooltip>
-                        ) : `#${m.referenceId}`}
+                        ) : referenceLabel}
                       </TableCell>
                       <TableCell>{m.createdByName || '-'}</TableCell>
                       <TableCell>
@@ -823,6 +825,8 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
   const [quantityChange, setQuantityChange] = useState('');
   const [reasonCode, setReasonCode] = useState('COUNT_CORRECTION');
   const [reason, setReason] = useState('');
+  const [overrideReserved, setOverrideReserved] = useState(false);
+  const [overrideReason, setOverrideReason] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -832,6 +836,8 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
       setQuantityChange('');
       setReasonCode('COUNT_CORRECTION');
       setReason('');
+      setOverrideReserved(false);
+      setOverrideReason('');
       setError('');
     }
   }, [open, initialProduct]);
@@ -843,6 +849,8 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
         quantityChange: Number(quantityChange),
         reasonCode,
         reason: reason.trim(),
+        overrideReserved,
+        overrideReason: overrideReason.trim(),
       }),
     onSuccess: () => {
       ADJUSTMENT_KEYS.forEach((key) =>
@@ -868,6 +876,10 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
     if (!qty || qty === 0) { setError(t('quantity_must_be_positive')); return; }
     if (!reasonCode) { setError('Reason code is required'); return; }
     if (!reason.trim()) { setError(t('reason_required')); return; }
+    if (overrideReserved && !overrideReason.trim()) {
+      setError(t('reserved_override_reason_required'));
+      return;
+    }
     setError('');
     mutation.mutate();
   };
@@ -936,6 +948,22 @@ const AdjustDialog = ({ open, onClose, initialProduct }) => {
             value={reason}
             onChange={(e) => setReason(e.target.value)}
           />
+          {adjustmentType === 'REMOVE' && (
+            <>
+              <FormControlLabel
+                control={<Checkbox checked={overrideReserved} onChange={(e) => setOverrideReserved(e.target.checked)} />}
+                label={t('override_reserved_stock')}
+              />
+              {overrideReserved && (
+                <TextField
+                  fullWidth required
+                  label={t('reserved_override_reason')}
+                  value={overrideReason}
+                  onChange={(e) => setOverrideReason(e.target.value)}
+                />
+              )}
+            </>
+          )}
         </Box>
       </DialogContent>
       <DialogActions>

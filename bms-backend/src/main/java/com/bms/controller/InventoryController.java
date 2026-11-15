@@ -74,7 +74,8 @@ public class InventoryController {
         User currentUser = (User) authentication.getPrincipal();
         Long userId = currentUser.getId();
         productService.adjustStock(userId, id, request.getQuantityChange(),
-                request.getReason(), request.getReasonCode());
+                request.getReason(), request.getReasonCode(),
+                request.isOverrideReserved(), request.getOverrideReason());
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock adjusted successfully", null));
     }
 

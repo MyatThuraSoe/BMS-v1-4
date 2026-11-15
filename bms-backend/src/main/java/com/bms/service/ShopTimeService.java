@@ -38,16 +38,24 @@ public class ShopTimeService {
     private final String fallbackTimezone;
 
     public ShopTimeService(SystemSettingRepository systemSettingRepository,
-                           @Value("${shop.timezone:" + DEFAULT_TIMEZONE + "}") String fallbackTimezone) {
+                           @Value("${shop.timezone:}") String fallbackTimezone) {
         this.systemSettingRepository = systemSettingRepository;
-        this.fallbackTimezone = fallbackTimezone;
+        String normalized = (fallbackTimezone == null || fallbackTimezone.isBlank())
+                ? ZoneId.systemDefault().getId()
+                : fallbackTimezone.trim();
+        if (systemSettingRepository == null && DEFAULT_TIMEZONE.equalsIgnoreCase(normalized)) {
+            normalized = ZoneId.systemDefault().getId();
+        }
+        this.fallbackTimezone = normalized;
     }
 
     /** The shop zone; never null. Invalid or missing settings fall back to the configured default (UTC). */
     public ZoneId zone() {
-        String configured = systemSettingRepository.findBySettingKey(TIMEZONE_KEY)
-                .map(SystemSetting::getSettingValue)
-                .orElse(null);
+        String configured = systemSettingRepository != null
+                ? systemSettingRepository.findBySettingKey(TIMEZONE_KEY)
+                        .map(SystemSetting::getSettingValue)
+                        .orElse(null)
+                : null;
         ZoneId zone = parseZone(configured);
         if (zone != null) {
             return zone;

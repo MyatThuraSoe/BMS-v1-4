@@ -96,6 +96,9 @@ public class SaleReturnService {
     @Autowired
     private PeriodGuard periodGuard;
 
+    @Autowired
+    private ShopTimeService shopTimeService;
+
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
      * off the original SaleItem so the client never computes refund money.
@@ -136,7 +139,7 @@ public class SaleReturnService {
      * total returned quantities across all return transactions.
      */
     public SaleReturnResponse createSaleReturn(Long saleId, SaleReturnRequest request, Long userId) {
-        periodGuard.assertOpen(LocalDateTime.now());
+        periodGuard.assertOpen(shopTimeService.now());
         Sale sale = loadActiveSale(saleId);
 
         if (sale.getIsVoided() != null && sale.getIsVoided()) {
@@ -152,8 +155,8 @@ public class SaleReturnService {
                 && sale.getPaymentStatus() == Sale.PaymentStatus.PAID;
 
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
-        PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale);
-        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled) {
+        PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale, employeeShift);
+        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled && refundMethod == PaymentMethod.CREDIT) {
             refundMethod = PaymentMethod.CREDIT;
         }
         if (refundMethod == PaymentMethod.CASH) {
@@ -175,7 +178,7 @@ public class SaleReturnService {
         SaleReturn saleReturn = new SaleReturn();
         saleReturn.setSale(sale);
         saleReturn.setReturnedBy(returnedBy);
-        saleReturn.setReturnDate(LocalDateTime.now());
+        saleReturn.setReturnDate(shopTimeService.now());
         saleReturn.setReason(request.getReason());
         saleReturn.setRefundMethod(refundMethod);
         saleReturn.setEmployeeShift(employeeShift);
@@ -256,7 +259,7 @@ public class SaleReturnService {
                 loss.setValuationAmount(lineValuation.negate());
                 loss.setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
                 loss.setCreatedBy(returnedBy);
-                loss.setMovementDate(LocalDateTime.now());
+                loss.setMovementDate(shopTimeService.now());
                 stockMovementRepository.save(loss);
                 ledgerPostingService.postOperatingLoss(loss);
             } else {
@@ -274,7 +277,7 @@ public class SaleReturnService {
                         saleItem.getId() + ":" + alreadyReturned, requestedQuantity, costAtSale,
                         lineValuation, quarantine != null ? quarantine.getId() : null,
                         "Stock restored from sale return (" + disposition.name() + "): " + sale.getInvoiceNumber(),
-                        LocalDateTime.now(), returnedBy.getId());
+                        shopTimeService.now(), returnedBy.getId());
                 BigDecimal newCost = posting.getUnitCostAfter();
 
                 String locationCode;
@@ -314,7 +317,7 @@ public class SaleReturnService {
                 movement.setDescription("Stock restored from sale return (" + disposition.name() + "): "
                         + sale.getInvoiceNumber());
                 movement.setCreatedBy(returnedBy);
-                movement.setMovementDate(LocalDateTime.now());
+                movement.setMovementDate(shopTimeService.now());
                 stockMovementRepository.save(movement);
             }
 
@@ -398,9 +401,16 @@ public class SaleReturnService {
      * original sale when it had a single method. Older sales have no payment
      * rows and stay on the historical cash-refund default.
      */
-    private PaymentMethod resolveRefundMethod(String raw, Sale sale) {
+    private PaymentMethod resolveRefundMethod(String raw, Sale sale, CashShift employeeShift) {
         if (raw != null && !raw.isBlank()) {
             return paymentValidationService.parseMethod(raw);
+        }
+        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
+            // Credit invoices are not themselves a tender. A return on a credit sale
+            // must refund only the excess over the outstanding debt; the cash/credit
+            // choice is explicitly selected at the UI or falls back to the current
+            // drawer policy. Never infer the method from the original AR payment rows.
+            return employeeShift != null ? PaymentMethod.CASH : PaymentMethod.STORE_CREDIT;
         }
         List<SalePayment> payments = salePaymentRepository
                 .findBySaleIdOrderByPaidAtAsc(sale.getId());
@@ -439,13 +449,23 @@ public class SaleReturnService {
     }
 
     private void reverseCreditBalance(Sale sale, BigDecimal returnAmount) {
-        if (sale.getCustomer() == null) {
+        if (sale.getCustomer() == null || returnAmount == null || returnAmount.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
+
         com.bms.entity.Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
-        BigDecimal reduced = returnAmount != null ? returnAmount : BigDecimal.ZERO;
-        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(reduced)
+
+        BigDecimal total = sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+        BigDecimal returnedBefore = sale.getAmountReturned() != null ? sale.getAmountReturned() : BigDecimal.ZERO;
+        BigDecimal outstandingBefore = total.subtract(paid).subtract(returnedBefore).max(BigDecimal.ZERO)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        BigDecimal debtReduction = returnAmount.min(outstandingBefore)
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+
+        BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(debtReduction)
                 .setScale(2, java.math.RoundingMode.HALF_UP);
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
             // O1: a return worth more than the remaining debt becomes customer
@@ -483,7 +503,7 @@ public class SaleReturnService {
     }
 
     private Sale loadActiveSale(Long saleId) {
-        Sale sale = saleRepository.findById(saleId)
+        Sale sale = saleRepository.findByIdForUpdate(saleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
         if (!sale.getIsActive() || sale.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Sale not found: " + saleId);

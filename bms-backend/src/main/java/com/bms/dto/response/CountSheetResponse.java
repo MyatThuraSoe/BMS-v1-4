@@ -67,6 +67,8 @@ public class CountSheetResponse {
         private String unit;
         private BigDecimal unitPrice;
         private Integer systemQuantity;
+        private Integer liveQuantityAtApply;
+        private Integer varianceAtApply;
         private Integer countedQuantity;
         private Integer variance;
         private String reasonCode;
@@ -91,6 +93,10 @@ public class CountSheetResponse {
         public void setUnitPrice(BigDecimal unitPrice) { this.unitPrice = unitPrice; }
         public Integer getSystemQuantity() { return systemQuantity; }
         public void setSystemQuantity(Integer systemQuantity) { this.systemQuantity = systemQuantity; }
+        public Integer getLiveQuantityAtApply() { return liveQuantityAtApply; }
+        public void setLiveQuantityAtApply(Integer liveQuantityAtApply) { this.liveQuantityAtApply = liveQuantityAtApply; }
+        public Integer getVarianceAtApply() { return varianceAtApply; }
+        public void setVarianceAtApply(Integer varianceAtApply) { this.varianceAtApply = varianceAtApply; }
         public Integer getCountedQuantity() { return countedQuantity; }
         public void setCountedQuantity(Integer countedQuantity) { this.countedQuantity = countedQuantity; }
         public Integer getVariance() { return variance; }

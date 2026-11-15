@@ -196,6 +196,7 @@ const RtvDialog = ({ purchase, open, onClose }) => {
   const queryClient = useQueryClient();
   const [rows, setRows] = useState({});
   const [reason, setReason] = useState('');
+  const [overrideReserved, setOverrideReserved] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -206,6 +207,7 @@ const RtvDialog = ({ purchase, open, onClose }) => {
     });
     setRows(next);
     setReason('');
+    setOverrideReserved(false);
     setError('');
   }, [open, purchase?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -228,7 +230,8 @@ const RtvDialog = ({ purchase, open, onClose }) => {
       .map((item) => ({ purchaseItemId: item.id, quantity: Number(rows[item.id] || 0), reasonCode: 'RETURN_TO_VENDOR' }))
       .filter((item) => item.quantity > 0);
     if (items.length === 0) { setError('Enter at least one return quantity'); return; }
-    mutation.mutate({ items, reason: reason || null });
+    if (overrideReserved && !reason.trim()) { setError('Enter a reason for overriding reserved stock'); return; }
+    mutation.mutate({ items, reason: reason || null, overrideReserved });
   };
 
   return (
@@ -271,6 +274,10 @@ const RtvDialog = ({ purchase, open, onClose }) => {
           </Table>
         </TableContainer>
         <TextField fullWidth label="Reason" value={reason} onChange={(e) => setReason(e.target.value)} />
+        <FormControlLabel
+          control={<Checkbox checked={overrideReserved} onChange={(e) => setOverrideReserved(e.target.checked)} />}
+          label="Manager override: allow return below pending-order reservations"
+        />
         <Alert severity="info" sx={{ mt: 2 }}>
           Quarantined units are returned first, then sellable shop-floor stock.
         </Alert>

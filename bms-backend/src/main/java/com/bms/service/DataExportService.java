@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
@@ -15,6 +16,10 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 public class DataExportService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -166,7 +171,7 @@ public class DataExportService {
             Map<String, Object> backup = new LinkedHashMap<>();
             backup.put("app", "LumiPOS");
             backup.put("backupVersion", "1.0");
-            backup.put("exportedAt", LocalDateTime.now().toString());
+            backup.put("exportedAt", shopTimeService.now().toString());
             backup.put("data", data);
 
             return mapper.writerWithDefaultPrettyPrinter().writeValueAsBytes(backup);

@@ -11,6 +11,10 @@ import java.time.LocalDateTime;
 @Service
 public class AuditLogService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private AuditLogRepository auditLogRepository;
 
@@ -23,7 +27,7 @@ public class AuditLogService {
         auditLog.setEntityId(entityId);
         auditLog.setOldValues(oldValues);
         auditLog.setNewValues(newValues);
-        auditLog.setTimestamp(LocalDateTime.now());
+        auditLog.setTimestamp(shopTimeService.now());
 
         auditLogRepository.save(auditLog);
     }

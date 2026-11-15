@@ -7,6 +7,7 @@ import com.bms.dto.response.CountSheetResponse;
 import com.bms.entity.*;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
+import com.bms.exception.UnprocessableEntityException;
 import com.bms.repository.*;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -31,12 +32,15 @@ import java.util.stream.Collectors;
 @Transactional
 public class StockCountService {
 
-    public static final List<String> REASON_CODES = List.of(
-            "SPOILAGE_EXPIRY", "THEFT_SHRINKAGE", "DAMAGED_IN_STORE",
-            "INTERNAL_CONSUMPTION", "COUNT_CORRECTION",
-            "DAMAGED", "THEFT", "EXPIRED", "MISCOUNT", "SUPPLIER_ERROR", "RECALL", "OTHER");
+    public static final List<String> REASON_CODES = InventoryLossService.ADJUSTMENT_REASONS;
 
     private static final BigDecimal AUTO_APPROVE_DEFAULT = BigDecimal.valueOf(2);
+    private static final BigDecimal AUTO_APPROVE_LINE_VALUE_DEFAULT = new BigDecimal("20.00");
+    private static final BigDecimal AUTO_APPROVE_SHEET_VALUE_DEFAULT = new BigDecimal("100.00");
+    private static final int AUTO_APPROVE_MAX_LINES_DEFAULT = 50;
+    private static final int SYNC_MAX_BACKDATE_DAYS_DEFAULT = 7;
+    private static final int MAX_SYNC_ITEMS = 1000;
+    private static final int MAX_COUNTED_QUANTITY_DEFAULT = 1_000_000;
 
     private final CountSheetRepository countSheetRepository;
     private final CountSheetItemRepository countSheetItemRepository;
@@ -48,6 +52,9 @@ public class StockCountService {
     private final AuditLogService auditLogService;
     private final LedgerPostingService ledgerPostingService;
     private final ShopTimeService shopTimeService;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    private OrderRepository orderRepository;
 
     @org.springframework.beans.factory.annotation.Autowired
     private PeriodGuard periodGuard;
@@ -202,8 +209,10 @@ public class StockCountService {
     }
 
     public CountSheetResponse start(Long id) {
-        CountSheet sheet = getSheet(id);
+        CountSheet sheet = getSheetForUpdate(id);
         if (sheet.getStatus() == CountSheet.CountStatus.DRAFT) {
+            transitionSheet(sheet, CountSheet.CountStatus.DRAFT, CountSheet.CountStatus.IN_PROGRESS,
+                    "Count sheet is no longer in draft");
             sheet.setStatus(CountSheet.CountStatus.IN_PROGRESS);
             sheet.setStartedAt(shopTimeService.now());
             countSheetRepository.save(sheet);
@@ -231,7 +240,7 @@ public class StockCountService {
     }
 
     public CountSheetResponse submit(Long id, CountSubmitRequest request, Long userId) {
-        CountSheet sheet = getSheet(id);
+        CountSheet sheet = getSheetForUpdate(id);
         if (sheet.getStatus() != CountSheet.CountStatus.IN_PROGRESS) {
             throw new BusinessException("Only an in-progress count sheet can be submitted");
         }
@@ -254,7 +263,8 @@ public class StockCountService {
             applyCountEntry(item, entry.getCountedQuantity(), entry.getReasonCode(), entry.getNote());
         }
 
-        sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
+        transitionSheet(sheet, CountSheet.CountStatus.IN_PROGRESS, CountSheet.CountStatus.PENDING_REVIEW,
+                "Count sheet is no longer in progress");
         sheet.setSubmittedAt(shopTimeService.now());
         sheet.setSubmittedBy(userId);
         if (request.getNotes() != null && !request.getNotes().isBlank()) {
@@ -264,6 +274,17 @@ public class StockCountService {
 
         if (isWithinAutoApproveThreshold(sheet, items)) {
             applySheet(sheet, userId);
+            auditLogService.logAction(userId, "STOCK_COUNT_AUTO_APPROVE",
+                    "Count sheet auto-approved using unit limit "
+                            + decimalSetting("stockCountAutoApproveThreshold", AUTO_APPROVE_DEFAULT)
+                            + ", line value limit "
+                            + decimalSetting("stockCountAutoApproveLineValue", AUTO_APPROVE_LINE_VALUE_DEFAULT)
+                            + ", sheet value limit "
+                            + decimalSetting("stockCountAutoApproveSheetValue", AUTO_APPROVE_SHEET_VALUE_DEFAULT)
+                            + ", max non-zero lines "
+                            + integerSetting("stockCountAutoApproveMaxLines", AUTO_APPROVE_MAX_LINES_DEFAULT)
+                            + ", absolute variance total " + sheet.getVarianceValue(),
+                    "CountSheet", sheet.getId(), null, String.valueOf(sheet.getVarianceValue()));
         } else {
             countSheetRepository.save(sheet);
         }
@@ -271,7 +292,7 @@ public class StockCountService {
     }
 
     public CountSheetResponse approve(Long id, Long userId) {
-        CountSheet sheet = getSheet(id);
+        CountSheet sheet = getSheetForUpdate(id);
         if (sheet.getStatus() != CountSheet.CountStatus.PENDING_REVIEW) {
             throw new BusinessException("Only a pending-review sheet can be approved");
         }
@@ -279,17 +300,24 @@ public class StockCountService {
         if (items.stream().anyMatch(item -> item.getCountedQuantity() == null)) {
             throw new BusinessException("Count sheet still has uncounted items");
         }
+        User approver = userRepository.findById(userId).orElse(null);
+        boolean admin = approver != null && approver.getRole() != null
+                && approver.getRole().getName() == Role.RoleName.ROLE_ADMIN;
+        if (!admin && Objects.equals(sheet.getSubmittedBy(), userId)) {
+            throw new BusinessException("Approver must differ from the counter");
+        }
         applySheet(sheet, userId);
         return toResponse(sheet, false);
     }
 
     public CountSheetResponse reject(Long id, Long userId, String reason) {
-        CountSheet sheet = getSheet(id);
+        CountSheet sheet = getSheetForUpdate(id);
         if (sheet.getStatus() != CountSheet.CountStatus.PENDING_REVIEW
                 && sheet.getStatus() != CountSheet.CountStatus.IN_PROGRESS) {
             throw new BusinessException("This count sheet can no longer be rejected");
         }
-        sheet.setStatus(CountSheet.CountStatus.CANCELLED);
+        transitionSheet(sheet, sheet.getStatus(), CountSheet.CountStatus.CANCELLED,
+                "Count sheet status changed before it could be rejected");
         if (reason != null && !reason.isBlank()) {
             sheet.setNotes((sheet.getNotes() != null ? sheet.getNotes() + "\n" : "")
                     + "Rejected: " + reason);
@@ -334,44 +362,92 @@ public class StockCountService {
     }
 
     private boolean isWithinAutoApproveThreshold(CountSheet sheet, List<CountSheetItem> items) {
-        BigDecimal threshold = systemSettingRepository.findBySettingKey("stockCountAutoApproveThreshold")
-                .map(setting -> {
-                    try {
-                        return new BigDecimal(setting.getSettingValue());
-                    } catch (Exception ex) {
-                        return AUTO_APPROVE_DEFAULT;
-                    }
-                })
-                .orElse(AUTO_APPROVE_DEFAULT);
+        BigDecimal unitLimit = decimalSetting("stockCountAutoApproveThreshold", AUTO_APPROVE_DEFAULT);
+        BigDecimal lineValueLimit = decimalSetting("stockCountAutoApproveLineValue", AUTO_APPROVE_LINE_VALUE_DEFAULT);
+        BigDecimal sheetValueLimit = decimalSetting("stockCountAutoApproveSheetValue", AUTO_APPROVE_SHEET_VALUE_DEFAULT);
+        int maxLines = integerSetting("stockCountAutoApproveMaxLines", AUTO_APPROVE_MAX_LINES_DEFAULT);
+        BigDecimal sheetAbs = BigDecimal.ZERO;
+        int nonZeroLines = 0;
         for (CountSheetItem item : items) {
-            if (item.getVariance() == null) {
+            if (item.getCountedQuantity() == null) {
                 return false;
             }
-            if (BigDecimal.valueOf(Math.abs(item.getVariance())).compareTo(threshold) > 0) {
+            int live = item.getProduct().getStockQuantity() != null ? item.getProduct().getStockQuantity() : 0;
+            int variance = item.getCountedQuantity() - live;
+            if (variance == 0) continue;
+            nonZeroLines++;
+            BigDecimal value = unitCostAtCount(item, item.getProduct())
+                    .multiply(BigDecimal.valueOf(Math.abs((long) variance)));
+            if (BigDecimal.valueOf(Math.abs((long) variance)).compareTo(unitLimit) > 0
+                    || value.compareTo(lineValueLimit) > 0) {
                 return false;
             }
+            sheetAbs = sheetAbs.add(value);
         }
-        return true;
+        return nonZeroLines <= maxLines && sheetAbs.compareTo(sheetValueLimit) <= 0;
+    }
+
+    private BigDecimal decimalSetting(String key, BigDecimal defaultValue) {
+        return systemSettingRepository.findBySettingKey(key)
+                .map(setting -> new BigDecimal(setting.getSettingValue()))
+                .orElse(defaultValue);
+    }
+
+    private int integerSetting(String key, int defaultValue) {
+        return systemSettingRepository.findBySettingKey(key)
+                .map(setting -> Integer.parseInt(setting.getSettingValue()))
+                .orElse(defaultValue);
     }
 
     private void applySheet(CountSheet sheet, Long userId) {
+        sheet = getSheetForUpdate(sheet.getId());
         periodGuard.assertOpen(sheet.getSubmittedAt() != null ? sheet.getSubmittedAt() : shopTimeService.now());
-        List<CountSheetItem> items = countSheetItemRepository.findWithProductBySheetId(sheet.getId());
+        if (sheet.getStatus() != CountSheet.CountStatus.PENDING_REVIEW) {
+            throw new BusinessException("Only a pending-review sheet can be applied");
+        }
+        transitionSheet(sheet, CountSheet.CountStatus.PENDING_REVIEW, CountSheet.CountStatus.APPROVED,
+                "Count sheet is no longer pending review");
+        List<CountSheetItem> items = countSheetItemRepository.findWithProductBySheetId(sheet.getId()).stream()
+                .sorted(Comparator.comparing(item -> item.getProduct().getId()))
+                .collect(Collectors.toList());
         User user = userRepository.findById(userId).orElse(null);
         LocalDate today = shopTimeService.today();
+        Map<Long, Product> products = new HashMap<>();
+        for (CountSheetItem item : items) {
+            Long productId = item.getProduct().getId();
+            products.computeIfAbsent(productId, id -> productRepository.findByIdForUpdate(id)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id)));
+        }
+        List<String> missingReasons = new ArrayList<>();
         for (CountSheetItem item : items) {
             if (item.getCountedQuantity() == null) {
                 continue;
             }
-            int variance = item.getVariance() != null ? item.getVariance() : 0;
-            Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + item.getProduct().getId()));
-            int newQuantity = product.getStockQuantity() + variance;
-            if (newQuantity < 0) {
-                throw new BusinessException("Count variance would drive " + product.getName()
-                        + " stock below zero");
+            Product product = products.get(item.getProduct().getId());
+            int live = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+            int variance = item.getCountedQuantity() - live;
+            BigDecimal unitCost = unitCostAtCount(item, product);
+            item.setLiveQuantityAtApply(live);
+            item.setVarianceAtApply(variance);
+            item.setVariance(variance);
+            item.setValuationAmount(unitCost.multiply(BigDecimal.valueOf(variance))
+                    .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
+            if (variance != 0 && (item.getReasonCode() == null || item.getReasonCode().isBlank())) {
+                missingReasons.add(product.getName());
             }
+        }
+        if (!missingReasons.isEmpty()) {
+            throw new UnprocessableEntityException(
+                    "Reason code is required for new variance on: " + String.join(", ", missingReasons));
+        }
+        recalculateVarianceValue(sheet, items);
+
+        for (CountSheetItem item : items) {
+            if (item.getCountedQuantity() == null) {
+                continue;
+            }
+            int variance = item.getVarianceAtApply() != null ? item.getVarianceAtApply() : 0;
+            Product product = products.get(item.getProduct().getId());
 
             if (variance != 0) {
                 StockMovement movement = new StockMovement();
@@ -391,8 +467,7 @@ public class StockCountService {
                 movement.setMovementDate(sheet.getSubmittedAt() != null ? sheet.getSubmittedAt() : shopTimeService.now());
                 stockMovementRepository.save(movement);
 
-                BigDecimal unitCost = item.getValuationAmount().divide(BigDecimal.valueOf(variance),
-                        CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+                BigDecimal unitCost = unitCostAtCount(item, product);
                 ledgerPostingService.postInventory(product, InventoryLedger.EventType.COUNT,
                         "STOCK_MOVEMENT", movement.getId(), "count", variance, unitCost,
                         item.getValuationAmount(), null,
@@ -400,17 +475,34 @@ public class StockCountService {
                 ledgerPostingService.postOperatingLoss(movement);
             }
 
-            product.setStockQuantity(newQuantity);
+            product.setStockQuantity(item.getCountedQuantity());
             product.setLastCountDate(today);
             productRepository.save(product);
+            if (product.getStockQuantity() < product.getReservedQuantity()) {
+                flagPendingOrdersForCountShortage(product, sheet, userId);
+            }
         }
-        sheet.setStatus(CountSheet.CountStatus.APPROVED);
         sheet.setApprovedAt(shopTimeService.now());
         sheet.setApprovedBy(userId);
         countSheetRepository.save(sheet);
         auditLogService.logAction(userId, "STOCK_COUNT_APPROVE",
                 "Count sheet approved and stock adjusted: " + sheet.getSheetNumber(),
                 "CountSheet", sheet.getId(), null, String.valueOf(sheet.getVarianceValue()));
+    }
+
+    private void flagPendingOrdersForCountShortage(Product product, CountSheet sheet, Long userId) {
+        String note = "Stock shortage after count " + sheet.getSheetNumber();
+        for (Order order : orderRepository.findPendingOrdersForProduct(
+                product.getId(), Order.OrderStatus.PENDING)) {
+            String existing = order.getNotes() != null ? order.getNotes().trim() : "";
+            if (!existing.contains(note)) {
+                order.setNotes(existing.isEmpty() ? note : existing + "\n" + note);
+                orderRepository.save(order);
+                auditLogService.logAction(userId, "ORDER_STOCK_SHORTAGE",
+                        note + " for " + product.getName() + " on order " + order.getOrderNumber(),
+                        "Order", order.getId(), existing, order.getNotes());
+            }
+        }
     }
 
     // ------------------------------------------------------------------
@@ -427,16 +519,32 @@ public class StockCountService {
         // PeriodGuard assigns the accounting period from the guarded event
         // date (the client timestamp when present), never the receive time.
         LocalDateTime receivedAt = shopTimeService.now();
+        if (request.getItems() == null || request.getItems().isEmpty()) {
+            throw new BusinessException("Sync payload has no count items");
+        }
+        if (request.getItems().size() > MAX_SYNC_ITEMS) {
+            throw new BusinessException("A sync payload cannot contain more than " + MAX_SYNC_ITEMS + " items");
+        }
         LocalDateTime eventAt = request.getSubmittedAt() != null ? request.getSubmittedAt() : receivedAt;
-        periodGuard.assertOpen(eventAt);
+        if (eventAt.isAfter(receivedAt.plusMinutes(5))) {
+            throw new BusinessException("Submitted time cannot be more than 5 minutes in the future");
+        }
+        int maxBackdateDays = integerSetting("stockCount.sync.maxBackdateDays",
+                SYNC_MAX_BACKDATE_DAYS_DEFAULT);
+        int maxCountedQuantity = integerSetting("stockCount.maxCountedQuantity",
+                MAX_COUNTED_QUANTITY_DEFAULT);
+        LocalDateTime oldestAllowedEvent = receivedAt.minusDays(maxBackdateDays);
+        boolean withinBackdateLimit = !eventAt.isBefore(oldestAllowedEvent);
+        LocalDateTime guardedEventAt = eventAt.isBefore(oldestAllowedEvent) ? oldestAllowedEvent : eventAt;
+        periodGuard.assertOpen(guardedEventAt);
         CountSheet sheet = new CountSheet();
         sheet.setSheetNumber(nextSheetNumber());
         sheet.setSyncKey(request.getSyncKey());
         sheet.setCountType(parseType(request.getCountType()));
         sheet.setStatus(CountSheet.CountStatus.IN_PROGRESS);
-        sheet.setScheduledDate(shopTimeService.toShopDate(eventAt));
+        sheet.setScheduledDate(shopTimeService.toShopDate(guardedEventAt));
         sheet.setStartedAt(eventAt);
-        sheet.setSubmittedAt(eventAt);
+        sheet.setSubmittedAt(guardedEventAt);
         sheet.setClientSubmittedAt(request.getSubmittedAt());
         sheet.setSyncReceivedAt(receivedAt);
         sheet.setSubmittedBy(userId);
@@ -445,6 +553,7 @@ public class StockCountService {
 
         List<CountSheetItem> items = new ArrayList<>();
         Set<Long> seen = new HashSet<>();
+        boolean allProductsActive = true;
         for (SyncCountSheetRequest.Entry entry : request.getItems()) {
             if (entry.getProductId() == null || !seen.add(entry.getProductId())) {
                 throw new BusinessException("Every sync item needs a unique product id");
@@ -452,22 +561,27 @@ public class StockCountService {
             Product product = productRepository.findById(entry.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + entry.getProductId()));
+            if (entry.getCountedQuantity() == null || entry.getCountedQuantity() < 0
+                    || entry.getCountedQuantity() > maxCountedQuantity) {
+                throw new BusinessException("Counted quantity must be between 0 and "
+                        + maxCountedQuantity);
+            }
+            if (!Boolean.TRUE.equals(product.getIsActive()) || product.getDeletedAt() != null) {
+                allProductsActive = false;
+            }
             CountSheetItem item = new CountSheetItem();
             item.setCountSheet(sheet);
             item.setProduct(product);
-            item.setSystemQuantity(entry.getSystemQuantity() != null
-                    ? entry.getSystemQuantity()
-                    : (product.getStockQuantity() != null ? product.getStockQuantity() : 0));
-            applyCountEntry(item, entry.getCountedQuantity() != null ? entry.getCountedQuantity() : 0,
+            item.setClientSystemQuantity(entry.getSystemQuantity());
+            item.setSystemQuantity(product.getStockQuantity() != null ? product.getStockQuantity() : 0);
+            applyCountEntry(item, entry.getCountedQuantity(),
                     entry.getReasonCode(), entry.getNote());
             sheet.getItems().add(item);
             items.add(item);
         }
-        if (items.isEmpty()) {
-            throw new BusinessException("Sync payload has no count items");
-        }
         recalculateVarianceValue(sheet, items);
-        if (isWithinAutoApproveThreshold(sheet, items)) {
+        if (withinBackdateLimit && allProductsActive && isWithinAutoApproveThreshold(sheet, items)) {
+            sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
             CountSheet saved = countSheetRepository.saveAndFlush(sheet);
             applySheet(saved, userId);
             return toResponse(saved, false);
@@ -483,6 +597,19 @@ public class StockCountService {
     private CountSheet getSheet(Long id) {
         return countSheetRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Count sheet not found: " + id));
+    }
+
+    private CountSheet getSheetForUpdate(Long id) {
+        return countSheetRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Count sheet not found: " + id));
+    }
+
+    private void transitionSheet(CountSheet sheet, CountSheet.CountStatus expected,
+                                CountSheet.CountStatus next, String errorMessage) {
+        if (countSheetRepository.transitionStatus(sheet.getId(), expected, next) == 0) {
+            throw new BusinessException(errorMessage);
+        }
+        sheet.setStatus(next);
     }
 
     private CountSheetResponse toResponse(CountSheet sheet, boolean blind) {
@@ -518,6 +645,19 @@ public class StockCountService {
             dto.setUnitPrice(item.getProduct().getUnitPrice());
             // Blind counts never leak the expected quantity.
             dto.setSystemQuantity(blind ? null : item.getSystemQuantity());
+            if (!blind) {
+                if (sheet.getStatus() == CountSheet.CountStatus.PENDING_REVIEW) {
+                    int live = item.getProduct().getStockQuantity() != null
+                            ? item.getProduct().getStockQuantity() : 0;
+                    dto.setLiveQuantityAtApply(live);
+                    if (item.getCountedQuantity() != null) {
+                        dto.setVarianceAtApply(item.getCountedQuantity() - live);
+                    }
+                } else {
+                    dto.setLiveQuantityAtApply(item.getLiveQuantityAtApply());
+                    dto.setVarianceAtApply(item.getVarianceAtApply());
+                }
+            }
             dto.setCountedQuantity(item.getCountedQuantity());
             dto.setVariance(blind ? null : item.getVariance());
             dto.setReasonCode(item.getReasonCode());
@@ -526,6 +666,15 @@ public class StockCountService {
             response.getItems().add(dto);
         }
         return response;
+    }
+
+    private BigDecimal unitCostAtCount(CountSheetItem item, Product product) {
+        if (item.getVariance() != null && item.getVariance() != 0
+                && item.getValuationAmount() != null) {
+            return item.getValuationAmount().divide(BigDecimal.valueOf(item.getVariance()),
+                    CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
+        }
+        return product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
     }
 
     private CountSheet.CountType parseType(String type) {

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, CircularProgress, Autocomplete } from '@mui/material';
+import { Box, Typography, Paper, TextField, Button, Grid, Alert, MenuItem, CircularProgress, Autocomplete, Checkbox, FormControlLabel } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { productService, inventoryService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
@@ -48,7 +48,7 @@ const StockAdjustment = () => {
   const { t } = useTranslation('inventory');
 
   const [selectedProduct, setSelectedProduct] = useState(null);
-  const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reasonCode: 'COUNT_CORRECTION', reason: '' });
+  const [formData, setFormData] = useState({ productId: '', quantityChange: '', adjustmentType: 'ADD', reasonCode: 'COUNT_CORRECTION', reason: '', overrideReserved: false, overrideReason: '' });
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
@@ -59,6 +59,8 @@ const StockAdjustment = () => {
         quantityChange: Number(data.quantityChange),
         reasonCode: data.reasonCode,
         reason: data.reason,
+        overrideReserved: data.overrideReserved,
+        overrideReason: data.overrideReason,
       }),
     onSuccess: () => {
       setSuccess(t('stock_adjusted'));
@@ -92,6 +94,10 @@ const StockAdjustment = () => {
 
     if (!formData.reasonCode) { setError('Reason code is required'); return; }
     if (!formData.reason) { setError(t('reason_required')); return; }
+    if (formData.overrideReserved && !formData.overrideReason.trim()) {
+      setError(t('reserved_override_reason_required'));
+      return;
+    }
     setError('');
     setSuccess('');
     adjustMutation.mutate(formData);
@@ -162,6 +168,21 @@ const StockAdjustment = () => {
             <Grid item xs={12}>
               <TextField fullWidth label={t('reason')} multiline rows={3} value={formData.reason} onChange={(e) => setFormData({ ...formData, reason: e.target.value })} required />
             </Grid>
+            {formData.adjustmentType === 'REMOVE' && (
+              <>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={<Checkbox checked={formData.overrideReserved} onChange={(e) => setFormData({ ...formData, overrideReserved: e.target.checked })} />}
+                    label={t('override_reserved_stock')}
+                  />
+                </Grid>
+                {formData.overrideReserved && (
+                  <Grid item xs={12}>
+                    <TextField fullWidth label={t('reserved_override_reason')} value={formData.overrideReason} onChange={(e) => setFormData({ ...formData, overrideReason: e.target.value })} required />
+                  </Grid>
+                )}
+              </>
+            )}
             <Grid item xs={12}>
               <Button type="submit" variant="contained" disabled={adjustMutation.isPending}>
                 {adjustMutation.isPending ? <CircularProgress size={24} /> : t('adjust_stock')}

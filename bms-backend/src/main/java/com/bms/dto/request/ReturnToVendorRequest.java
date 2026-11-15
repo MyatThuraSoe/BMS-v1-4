@@ -15,10 +15,14 @@ public class ReturnToVendorRequest {
 
     private String reason;
 
+    private boolean overrideReserved;
+
     public List<ReturnItem> getItems() { return items; }
     public void setItems(List<ReturnItem> items) { this.items = items; }
     public String getReason() { return reason; }
     public void setReason(String reason) { this.reason = reason; }
+    public boolean isOverrideReserved() { return overrideReserved; }
+    public void setOverrideReserved(boolean overrideReserved) { this.overrideReserved = overrideReserved; }
 
     public static class ReturnItem {
         @NotNull(message = "Purchase item id is required")

@@ -323,17 +323,28 @@ const Locations = () => {
   };
 
   const transferAction = useMutation({
-    mutationFn: ({ action, id }) => {
-      if (action === 'start') return locationService.startTransfer(id);
+    mutationFn: ({ action, id, overrideReserved = false, reason = '' }) => {
+      if (action === 'start') return locationService.startTransfer(id, overrideReserved, reason);
       if (action === 'receive') return locationService.receiveTransfer(id);
+      if (action === 'cancel-in-transit') return locationService.cancelInTransit(id);
       if (action === 'cancel') return locationService.cancelTransfer(id);
-      return locationService.completeTransfer(id);
+      return locationService.completeTransfer(id, overrideReserved, reason);
     },
     onSuccess: (res, variables) => {
       invalidateStock();
       notifySuccess(`Transfer ${variables.action === 'start' ? 'dispatched' : variables.action === 'receive' ? 'received' : variables.action}`);
     },
-    onError: (err) => notifyError(err.friendlyMessage || err.response?.data?.message || 'Transfer action failed'),
+    onError: (err, variables) => {
+      const message = err.response?.data?.message || err.friendlyMessage || '';
+      if (message.includes('STOCK_RESERVED') && !variables.overrideReserved) {
+        const reason = window.prompt(`${message}\n\nEnter a reason to override this reservation, or cancel to keep stock protected:`);
+        if (reason?.trim()) {
+          transferAction.mutate({ ...variables, overrideReserved: true, reason: reason.trim() });
+          return;
+        }
+      }
+      notifyError(message || 'Transfer action failed');
+    },
   });
 
   const scanMutation = useMutation({
@@ -493,7 +504,14 @@ const Locations = () => {
                             <Button size="small" onClick={() => transferAction.mutate({ action: 'start', id: transfer.id })}>Dispatch</Button>
                           )}
                           {transfer.status === 'IN_TRANSIT' && (
-                            <Button size="small" color="success" onClick={() => transferAction.mutate({ action: 'receive', id: transfer.id })}>Receive</Button>
+                            <>
+                              <Button size="small" color="success" onClick={() => transferAction.mutate({ action: 'receive', id: transfer.id })}>Receive</Button>
+                              <Button size="small" color="warning" onClick={() => {
+                                if (window.confirm('Return this in-transit transfer to its source location?')) {
+                                  transferAction.mutate({ action: 'cancel-in-transit', id: transfer.id });
+                                }
+                              }}>Cancel in transit</Button>
+                            </>
                           )}
                           {transfer.status === 'DRAFT' && (
                             <Button size="small" color="error" onClick={() => transferAction.mutate({ action: 'cancel', id: transfer.id })}>Cancel</Button>

@@ -2,6 +2,7 @@ package com.bms.service;
 
 import com.bms.entity.Location;
 import com.bms.entity.Product;
+import com.bms.exception.BusinessException;
 import com.bms.repository.LocationRepository;
 import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ProductRepository;
@@ -15,7 +16,10 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -67,5 +71,36 @@ class LocationServiceTotalOwnedUnitsTest {
         lenient().when(locationStockRepository.sumNonShopQuantityByProduct(7L)).thenReturn(0L);
 
         assertEquals(0, locationService.totalOwnedUnits(product));
+    }
+
+    @Test
+    void reservedShopStockCannotBeReducedWithoutOverride() {
+        Product product = new Product();
+        product.setId(7L);
+        product.setName("Coffee");
+        product.setStockQuantity(10);
+        product.setReservedQuantity(8);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> locationService.assertCanReduceShopStock(product, 5, false, null, 2L));
+        org.junit.jupiter.api.Assertions.assertTrue(exception.getMessage().contains("STOCK_RESERVED"));
+        assertDoesNotThrow(() -> locationService.assertCanReduceShopStock(product, 8, false, null, 2L));
+    }
+
+    @Test
+    void reservedStockOverrideRequiresReasonAndIsAudited() {
+        Product product = new Product();
+        product.setId(7L);
+        product.setName("Coffee");
+        product.setStockQuantity(10);
+        product.setReservedQuantity(8);
+
+        assertThrows(BusinessException.class,
+                () -> locationService.assertCanReduceShopStock(product, 5, true, "  ", 2L));
+        locationService.assertCanReduceShopStock(product, 5, true, "Urgent customer return", 2L);
+
+        verify(auditLogService).logAction(2L, "STOCK_RESERVED_OVERRIDE",
+                "Reserved-stock override for Coffee: Urgent customer return",
+                "Product", 7L, "10", "5");
     }
 }

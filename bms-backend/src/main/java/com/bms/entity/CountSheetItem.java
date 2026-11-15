@@ -38,6 +38,15 @@ public class CountSheetItem {
     @Column
     private Integer variance;
 
+    @Column(name = "live_quantity_at_apply")
+    private Integer liveQuantityAtApply;
+
+    @Column(name = "variance_at_apply")
+    private Integer varianceAtApply;
+
+    @Column(name = "client_system_quantity")
+    private Integer clientSystemQuantity;
+
     @Column(name = "reason_code", length = 50)
     private String reasonCode;
 
@@ -62,6 +71,12 @@ public class CountSheetItem {
     public void setCountedQuantity(Integer countedQuantity) { this.countedQuantity = countedQuantity; }
     public Integer getVariance() { return variance; }
     public void setVariance(Integer variance) { this.variance = variance; }
+    public Integer getLiveQuantityAtApply() { return liveQuantityAtApply; }
+    public void setLiveQuantityAtApply(Integer liveQuantityAtApply) { this.liveQuantityAtApply = liveQuantityAtApply; }
+    public Integer getVarianceAtApply() { return varianceAtApply; }
+    public void setVarianceAtApply(Integer varianceAtApply) { this.varianceAtApply = varianceAtApply; }
+    public Integer getClientSystemQuantity() { return clientSystemQuantity; }
+    public void setClientSystemQuantity(Integer clientSystemQuantity) { this.clientSystemQuantity = clientSystemQuantity; }
     public String getReasonCode() { return reasonCode; }
     public void setReasonCode(String reasonCode) { this.reasonCode = reasonCode; }
     public BigDecimal getValuationAmount() { return valuationAmount; }

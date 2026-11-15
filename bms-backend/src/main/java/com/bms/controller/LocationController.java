@@ -128,10 +128,13 @@ public class LocationController {
     @PostMapping("/transfers/{id}/start")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<StockTransfer>> startTransfer(
-            @PathVariable Long id, Authentication authentication) {
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean overrideReserved,
+            @RequestParam(required = false) String reason,
+            Authentication authentication) {
         Long userId = userService.findByUsername(authentication.getName()).getId();
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock transfer dispatched",
-                locationService.startTransfer(id, userId)));
+                locationService.startTransfer(id, userId, overrideReserved, reason)));
     }
 
     @PostMapping("/transfers/{id}/receive")
@@ -146,10 +149,13 @@ public class LocationController {
     @PostMapping("/transfers/{id}/complete")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
     public ResponseEntity<ApiResponse<StockTransfer>> completeTransfer(
-            @PathVariable Long id, Authentication authentication) {
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "false") boolean overrideReserved,
+            @RequestParam(required = false) String reason,
+            Authentication authentication) {
         Long userId = userService.findByUsername(authentication.getName()).getId();
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock transfer completed",
-                locationService.completeTransfer(id, userId)));
+                locationService.completeTransfer(id, userId, overrideReserved, reason)));
     }
 
     @PostMapping("/transfers/{id}/cancel")
@@ -159,5 +165,14 @@ public class LocationController {
         Long userId = userService.findByUsername(authentication.getName()).getId();
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock transfer cancelled",
                 locationService.cancelTransfer(id, userId)));
+    }
+
+    @PostMapping("/transfers/{id}/cancel-in-transit")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    public ResponseEntity<ApiResponse<StockTransfer>> cancelInTransit(
+            @PathVariable Long id, Authentication authentication) {
+        Long userId = userService.findByUsername(authentication.getName()).getId();
+        return ResponseEntity.ok(new ApiResponse<>(true, "In-transit stock transfer cancelled",
+                locationService.cancelInTransit(id, userId)));
     }
 }

@@ -6,6 +6,7 @@ import com.bms.entity.ProfitLedger;
 import com.bms.entity.Expense;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SalePayment;
 import com.bms.entity.StockMovement;
 import com.bms.entity.GlMapping;
 import com.bms.entity.PaymentMethod;
@@ -22,6 +23,8 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Consumer;
 
@@ -40,6 +43,9 @@ import java.util.function.Consumer;
 @Service
 @Transactional
 public class LedgerPostingService {
+
+    @Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
 
     private static final int COST_SCALE = CostCalculationUtils.COST_SCALE;
     private static final int MONEY_SCALE = 4;
@@ -63,8 +69,9 @@ public class LedgerPostingService {
     @Autowired
     private PeriodGuard periodGuard;
 
-    public static String periodOf(LocalDateTime at) {
-        return (at != null ? at : LocalDateTime.now()).format(PERIOD_FMT);
+    public String periodOf(LocalDateTime at) {
+        LocalDateTime effectiveAt = at != null ? at : shopTimeService.now();
+        return effectiveAt.format(PERIOD_FMT);
     }
 
     public InventoryLedger postInventory(Product product, InventoryLedger.EventType eventType,
@@ -96,7 +103,7 @@ public class LedgerPostingService {
 
         BigDecimal unitCostNorm = scaleCost(unitCost);
         BigDecimal valueDeltaNorm = scaleCost(valueDelta);
-        LocalDateTime at = occurredAt != null ? occurredAt : LocalDateTime.now();
+        LocalDateTime at = occurredAt != null ? occurredAt : shopTimeService.now();
         periodGuard.assertOpen(at);
 
         // Derive the pre-event balance from the ACTUAL owned stock and cost cache.
@@ -197,7 +204,7 @@ public class LedgerPostingService {
         if (profitLedgerRepository.existsPosting(sourceType, sourceId, eventType, productId, key)) {
             return null;
         }
-        LocalDateTime at = occurredAt != null ? occurredAt : LocalDateTime.now();
+        LocalDateTime at = occurredAt != null ? occurredAt : shopTimeService.now();
         periodGuard.assertOpen(at);
         ProfitLedger row = new ProfitLedger();
         row.setPeriod(periodOf(at));
@@ -219,8 +226,10 @@ public class LedgerPostingService {
                 String.valueOf(item.getId()), item.getQuantity(),
                 SaleDiscountUtils.netItemRevenue(sale, item, item.getQuantity()),
                 lineCogs(item, item.getQuantity()), BigDecimal.ZERO, sale.getSaleDate());
-        snapshotSettlement(row, SaleDiscountUtils.taxForQuantity(item, item.getQuantity()),
-                saleTender(sale), sale.getInvoiceNumber());
+        if (row != null) {
+            BigDecimal tax = SaleDiscountUtils.taxForQuantity(item, item.getQuantity());
+            snapshotSaleSettlement(row, tax, sale, sale.getInvoiceNumber());
+        }
     }
 
     public void postReturnProfit(SaleReturn saleReturn, SaleItem item, int quantity, int alreadyReturned) {
@@ -236,7 +245,7 @@ public class LedgerPostingService {
                 BigDecimal.ZERO, saleReturn.getReturnDate());
         BigDecimal tax = SaleDiscountUtils.taxForQuantity(item, after)
                 .subtract(SaleDiscountUtils.taxForQuantity(item, before));
-        snapshotSettlement(row, tax, refundTender(saleReturn.getRefundMethod()), "RET-" + saleReturn.getId());
+        snapshotRefundSettlement(row, tax, saleReturn.getRefundMethod(), "RET-" + saleReturn.getId());
     }
 
     public void postVoidProfit(Sale sale, SaleItem item, int remaining, LocalDateTime voidedAt) {
@@ -244,8 +253,10 @@ public class LedgerPostingService {
                 String.valueOf(item.getId()), -remaining,
                 SaleDiscountUtils.netItemRevenue(sale, item, remaining).negate(),
                 lineCogs(item, remaining).negate(), BigDecimal.ZERO, voidedAt);
-        snapshotSettlement(row, SaleDiscountUtils.taxForQuantity(item, remaining).negate(),
-                saleTender(sale), sale.getInvoiceNumber());
+        if (row != null) {
+            BigDecimal tax = SaleDiscountUtils.taxForQuantity(item, remaining).negate();
+            snapshotSaleSettlement(row, tax, sale, sale.getInvoiceNumber());
+        }
     }
 
     static GlMapping.EventType saleTender(Sale sale) {
@@ -271,6 +282,74 @@ public class LedgerPostingService {
         }
     }
 
+    private void snapshotSaleSettlement(ProfitLedger row, BigDecimal tax, Sale sale, String reference) {
+        row.setTaxAmount(scaleMoney(tax));
+        row.setReference(reference);
+        BigDecimal settlement = row.getNetRevenue().add(row.getTaxAmount());
+        row.setSettlementCash(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementClearing(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementAr(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        if (payments.isEmpty()) {
+            setSettlementAmount(row, saleTender(sale), settlement);
+            return;
+        }
+        BigDecimal totalPaid = payments.stream().map(SalePayment::getAmount)
+                .filter(Objects::nonNull).map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (totalPaid.signum() == 0) {
+            setSettlementAmount(row, saleTender(sale), settlement);
+            return;
+        }
+        BigDecimal remaining = scaleMoney(settlement);
+        for (int i = 0; i < payments.size(); i++) {
+            SalePayment payment = payments.get(i);
+            BigDecimal allocated = i == payments.size() - 1 ? remaining
+                    : scaleMoney(settlement.multiply(money(payment.getAmount()).abs())
+                    .divide(totalPaid, MONEY_SCALE + 4, RoundingMode.HALF_UP));
+            remaining = remaining.subtract(allocated);
+            setSettlementAmount(row, settlementAccount(payment.getPaymentMethod()), allocated);
+        }
+    }
+
+    private void snapshotRefundSettlement(ProfitLedger row, BigDecimal tax, PaymentMethod method, String reference) {
+        if (row == null) return;
+        row.setTaxAmount(scaleMoney(tax));
+        row.setReference(reference);
+        setSettlementAmount(row, refundSettlementAccount(method), row.getNetRevenue().add(row.getTaxAmount()));
+    }
+
+    private void setSettlementAmount(ProfitLedger row, GlMapping.EventType account, BigDecimal amount) {
+        BigDecimal scaled = scaleMoney(amount);
+        row.setSettlementAccount(account);
+        if (GlMapping.EventType.CASH == account) {
+            row.setSettlementCash(money(row.getSettlementCash()).add(scaled));
+        } else if (GlMapping.EventType.ACCOUNTS_RECEIVABLE == account) {
+            row.setSettlementAr(money(row.getSettlementAr()).add(scaled));
+        } else if (GlMapping.EventType.TENDER_CLEARING == account) {
+            row.setSettlementClearing(money(row.getSettlementClearing()).add(scaled));
+        }
+    }
+
+    private GlMapping.EventType settlementAccount(PaymentMethod method) {
+        if (method == null) return GlMapping.EventType.TENDER_CLEARING;
+        return switch (method) {
+            case CASH -> GlMapping.EventType.CASH;
+            case CREDIT -> GlMapping.EventType.ACCOUNTS_RECEIVABLE;
+            default -> GlMapping.EventType.TENDER_CLEARING;
+        };
+    }
+
+    private GlMapping.EventType refundSettlementAccount(PaymentMethod method) {
+        if (method == PaymentMethod.CASH) return GlMapping.EventType.CASH;
+        if (method == PaymentMethod.CREDIT) return GlMapping.EventType.ACCOUNTS_RECEIVABLE;
+        if (method == PaymentMethod.STORE_CREDIT) return GlMapping.EventType.REFUND_LIABILITY;
+        return GlMapping.EventType.TENDER_CLEARING;
+    }
+
+    private BigDecimal money(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
     public void postOperatingLoss(StockMovement movement) {
         if (inventoryLossService.isOperatingLoss(movement)) {
             ProfitLedger row = postProfit(ProfitLedger.EventType.WRITE_OFF, "STOCK_MOVEMENT", movement.getId(),
@@ -280,6 +359,24 @@ public class LedgerPostingService {
             if (row != null) {
                 row.setCategory(inventoryLossService.lossCategory(movement));
             }
+        }
+
+    }
+
+    public void postInventoryGain(StockMovement movement) {
+        BigDecimal value = movement.getValuationAmount();
+        if (value == null || value.signum() <= 0
+                || !InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(
+                movement.getReasonCode() != null ? movement.getReasonCode().trim().toUpperCase() : "")) {
+            return;
+        }
+        ProfitLedger row = postProfit(ProfitLedger.EventType.INVENTORY_GAIN, "STOCK_MOVEMENT",
+                movement.getId(), movement.getProduct().getId(), "inventory-gain",
+                movement.getQuantity(), BigDecimal.ZERO, BigDecimal.ZERO, value.negate(),
+                movement.getMovementDate());
+        if (row != null) {
+            row.setCategory(movement.getReasonCode().trim().toUpperCase());
+            row.setReference("MOV-" + movement.getId());
         }
     }
 

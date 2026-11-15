@@ -6,6 +6,7 @@ import com.bms.entity.SystemSetting;
 import com.bms.exception.BusinessException;
 import com.bms.repository.SystemSettingRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.awt.Font;
@@ -39,6 +40,10 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  */
 @Service
 public class CounterPrintService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     public static final String CONFIG_KEY = "receipt.counter.printer";
 
@@ -134,7 +139,7 @@ public class CounterPrintService {
         lines.add("If you can read this, the counter");
         lines.add("printer is configured correctly.");
         lines.add("");
-        lines.add(java.time.LocalDateTime.now()
+        lines.add(shopTimeService.now()
                 .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
         lines.add("");
         spool(preferredPrinter, lines, 80, null, 0, "center", "normal");

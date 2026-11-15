@@ -25,7 +25,7 @@ import java.time.LocalDateTime;
 public class ProfitLedger {
 
     public enum EventType {
-        SALE, RETURN, VOID, WRITE_OFF, EXPENSE, REVALUATION, PURCHASE_VARIANCE
+        SALE, RETURN, VOID, WRITE_OFF, EXPENSE, REVALUATION, PURCHASE_VARIANCE, INVENTORY_GAIN
     }
 
     @Id
@@ -76,6 +76,15 @@ public class ProfitLedger {
     @Column(name = "settlement_account", length = 50)
     private GlMapping.EventType settlementAccount;
 
+    @Column(name = "settlement_cash", precision = 19, scale = 4)
+    private BigDecimal settlementCash;
+
+    @Column(name = "settlement_clearing", precision = 19, scale = 4)
+    private BigDecimal settlementClearing;
+
+    @Column(name = "settlement_ar", precision = 19, scale = 4)
+    private BigDecimal settlementAr;
+
     @Column(name = "reference", length = 100)
     private String reference;
 
@@ -124,6 +133,12 @@ public class ProfitLedger {
     public void setTaxAmount(BigDecimal taxAmount) { this.taxAmount = taxAmount; }
     public GlMapping.EventType getSettlementAccount() { return settlementAccount; }
     public void setSettlementAccount(GlMapping.EventType settlementAccount) { this.settlementAccount = settlementAccount; }
+    public BigDecimal getSettlementCash() { return settlementCash; }
+    public void setSettlementCash(BigDecimal settlementCash) { this.settlementCash = settlementCash; }
+    public BigDecimal getSettlementClearing() { return settlementClearing; }
+    public void setSettlementClearing(BigDecimal settlementClearing) { this.settlementClearing = settlementClearing; }
+    public BigDecimal getSettlementAr() { return settlementAr; }
+    public void setSettlementAr(BigDecimal settlementAr) { this.settlementAr = settlementAr; }
     public String getReference() { return reference; }
     public void setReference(String reference) { this.reference = reference; }
     public String getCategory() { return category; }

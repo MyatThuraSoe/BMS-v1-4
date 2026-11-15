@@ -6,6 +6,7 @@ import com.bms.repository.SystemSettingRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -17,6 +18,10 @@ import java.util.Map;
 @Service
 @Transactional(readOnly = true)
 public class LedgerReadService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     public static final String CUTOVER_KEY = "accounting.ledger.cutover";
 

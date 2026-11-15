@@ -13,6 +13,7 @@ import com.bms.repository.PromotionRepository;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
@@ -25,6 +26,10 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class PromotionService {
+
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
 
     private final PromotionRepository promotionRepository;
     private final ProductRepository productRepository;
@@ -221,7 +226,7 @@ public class PromotionService {
 
     @Transactional(readOnly = true)
     public List<Promotion> getActivePromotions(LocalDateTime at) {
-        LocalDateTime moment = at != null ? at : LocalDateTime.now();
+        LocalDateTime moment = at != null ? at : shopTimeService.now();
         return promotionRepository.findActiveAt(moment);
     }
 
@@ -233,7 +238,7 @@ public class PromotionService {
     @Transactional(readOnly = true)
     public PricingQuote calculateBestPrice(Product product, int quantity,
                                            Customer customer, LocalDateTime at) {
-        LocalDateTime moment = at != null ? at : LocalDateTime.now();
+        LocalDateTime moment = at != null ? at : shopTimeService.now();
         return calculateBestPrice(product, quantity, customer, moment, getActivePromotions(moment));
     }
 
@@ -243,7 +248,7 @@ public class PromotionService {
                                            List<Promotion> activePromotions) {
         BigDecimal original = product.getUnitPrice() != null
                 ? product.getUnitPrice() : BigDecimal.ZERO;
-        LocalDateTime moment = at != null ? at : LocalDateTime.now();
+        LocalDateTime moment = at != null ? at : shopTimeService.now();
 
         BigDecimal priceListPrice = priceListService.resolveCustomerPrice(
                 customer, product, moment.toLocalDate());

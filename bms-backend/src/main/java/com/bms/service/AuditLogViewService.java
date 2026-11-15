@@ -19,6 +19,10 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class AuditLogViewService {
 
+@Autowired
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+
+
     @Autowired
     private AuditLogRepository auditLogRepository;
 
