@@ -51,6 +51,12 @@ public class ArPayment {
     @JoinColumn(name = "recorded_by_id", nullable = false)
     private User recordedBy;
 
+    @Column(name = "reversed_at")
+    private LocalDateTime reversedAt;
+
+    @Column(name = "reversal_note", length = 1000)
+    private String reversalNote;
+
     @Column(length = 255)
     private String notes;
 
@@ -78,6 +84,12 @@ public class ArPayment {
 
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+
+    public LocalDateTime getReversedAt() { return reversedAt; }
+    public void setReversedAt(LocalDateTime reversedAt) { this.reversedAt = reversedAt; }
+
+    public String getReversalNote() { return reversalNote; }
+    public void setReversalNote(String reversalNote) { this.reversalNote = reversalNote; }
 
     public PaymentMethod getPaymentMethod() {
         return paymentMethod != null ? paymentMethod : PaymentMethod.CASH;

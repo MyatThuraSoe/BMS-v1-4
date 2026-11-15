@@ -14,6 +14,9 @@ public class ReturnableItemsResponse {
     private String invoiceNumber;
     private LocalDateTime saleDate;
     private Boolean voided;
+    private BigDecimal outstandingBefore;
+    private BigDecimal estimatedDebtReduction;
+    private BigDecimal estimatedRefundDue;
     private List<ReturnableItem> items;
 
     public Long getSaleId() { return saleId; }
@@ -24,6 +27,12 @@ public class ReturnableItemsResponse {
     public void setSaleDate(LocalDateTime saleDate) { this.saleDate = saleDate; }
     public Boolean getVoided() { return voided; }
     public void setVoided(Boolean voided) { this.voided = voided; }
+    public BigDecimal getOutstandingBefore() { return outstandingBefore; }
+    public void setOutstandingBefore(BigDecimal outstandingBefore) { this.outstandingBefore = outstandingBefore; }
+    public BigDecimal getEstimatedDebtReduction() { return estimatedDebtReduction; }
+    public void setEstimatedDebtReduction(BigDecimal estimatedDebtReduction) { this.estimatedDebtReduction = estimatedDebtReduction; }
+    public BigDecimal getEstimatedRefundDue() { return estimatedRefundDue; }
+    public void setEstimatedRefundDue(BigDecimal estimatedRefundDue) { this.estimatedRefundDue = estimatedRefundDue; }
     public List<ReturnableItem> getItems() { return items; }
     public void setItems(List<ReturnableItem> items) { this.items = items; }
 

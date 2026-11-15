@@ -9,19 +9,27 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 
 @Repository
 public interface UserRepository extends JpaRepository<User, Long> {
     Optional<User> findByUsername(String username);
+    Optional<User> findByUsernameNormalized(String usernameNormalized);
     Optional<User> findByEmail(String email);
+    Optional<User> findByEmailNormalized(String emailNormalized);
     boolean existsByUsername(String username);
+    boolean existsByUsernameNormalized(String usernameNormalized);
     boolean existsByEmail(String email);
+    boolean existsByEmailNormalized(String emailNormalized);
 
+    List<User> findByDeletedAtIsNullOrderByUsernameAsc();
 
-    
     @Query("SELECT u FROM User u WHERE u.username = :username AND u.isActive = true AND u.deletedAt IS NULL")
     Optional<User> findActiveByUsername(@Param("username") String username);
+
+    @Query("SELECT u FROM User u WHERE u.usernameNormalized = :usernameNormalized AND u.isActive = true AND u.deletedAt IS NULL")
+    Optional<User> findActiveByUsernameNormalized(@Param("usernameNormalized") String usernameNormalized);
     
     @Query("SELECT u FROM User u WHERE u.email = :email AND u.isActive = true AND u.deletedAt IS NULL")
     Optional<User> findActiveByEmail(@Param("email") String email);

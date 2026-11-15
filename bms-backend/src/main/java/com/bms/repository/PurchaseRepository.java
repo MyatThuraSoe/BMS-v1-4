@@ -4,6 +4,7 @@ import com.bms.entity.Purchase;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,7 +27,13 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT p FROM Purchase p WHERE p.id = :id")
     Optional<Purchase> findByIdForUpdate(@Param("id") Long id);
-    
+
+    @Modifying
+    @Query("UPDATE Purchase p SET p.receivingStatus = :next WHERE p.id = :id AND p.receivingStatus = :expected")
+    int updateReceivingStatus(@Param("id") Long id,
+                              @Param("expected") Purchase.ReceivingStatus expected,
+                              @Param("next") Purchase.ReceivingStatus next);
+
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL ORDER BY p.purchaseDate DESC")
     Page<Purchase> findActivePurchases(Pageable pageable);
 
@@ -47,20 +54,20 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
         """)
     List<Purchase> findForJournal(@Param("startDate") LocalDate startDate,
                                   @Param("endDate") LocalDate endDate);
-    
+
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL AND " +
            "(LOWER(p.purchaseNumber) LIKE LOWER(CONCAT('%', :keyword, '%')) OR " +
            "LOWER(p.supplier.name) LIKE LOWER(CONCAT('%', :keyword, '%')))")
     Page<Purchase> searchActivePurchases(@Param("keyword") String keyword, Pageable pageable);
-    
+
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL AND " +
            "p.supplier.id = :supplierId ORDER BY p.purchaseDate DESC")
     Page<Purchase> findBySupplierId(@Param("supplierId") Long supplierId, Pageable pageable);
-    
+
     @Query("SELECT p FROM Purchase p WHERE p.isActive = true AND p.deletedAt IS NULL AND " +
            "p.purchaseDate BETWEEN :startDate AND :endDate ORDER BY p.purchaseDate DESC")
-    Page<Purchase> findByDateRange(@Param("startDate") LocalDate startDate, 
-                                   @Param("endDate") LocalDate endDate, 
+    Page<Purchase> findByDateRange(@Param("startDate") LocalDate startDate,
+                                   @Param("endDate") LocalDate endDate,
                                    Pageable pageable);
 
     // Claude told them to delete

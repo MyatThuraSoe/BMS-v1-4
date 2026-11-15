@@ -44,6 +44,7 @@ class ReportProfitAggregationIntegrationTest {
     @Autowired private TestEntityManager em;
     @Autowired private ReportService reportService;
     @Autowired private JdbcTemplate jdbcTemplate;
+    @Autowired private ShopTimeService shopTimeService;
 
     // ReportService injects these but the profit/accounting summaries never use them.
     @MockBean private CashShiftService cashShiftService;
@@ -66,7 +67,7 @@ class ReportProfitAggregationIntegrationTest {
         em.flush();
         Long productId = product.getId();
 
-        LocalDate today = LocalDate.now();
+        LocalDate today = shopTimeService.today();
         // All data lands in [today-12, today] so two WEEK buckets or one
         // 14-day sales trend always cover it, whatever day the suite runs.
         LocalDateTime[] dates = new LocalDateTime[13];

@@ -128,6 +128,20 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- Byte Buddy 1.15+ is required for Mockito inline mocking on Java 23.
+             Spring Boot 3.3.x pins the older 1.14.x line, which fails class
+             redefinition on the JDK in this environment. -->
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy</artifactId>
+            <version>1.15.11</version>
+        </dependency>
+        <dependency>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-agent</artifactId>
+            <version>1.15.11</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-test</artifactId>

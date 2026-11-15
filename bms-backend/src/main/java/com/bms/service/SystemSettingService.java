@@ -6,6 +6,8 @@ import com.bms.entity.SystemSetting;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SystemSettingRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -20,9 +22,10 @@ import java.util.stream.Collectors;
 @Transactional
 public class SystemSettingService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private static final Logger log = LoggerFactory.getLogger(SystemSettingService.class);
 
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private SystemSettingRepository systemSettingRepository;
@@ -182,12 +185,24 @@ public class SystemSettingService {
         if ("shop.cashVarianceTolerance".equals(key)
                 || "stockCountAutoApproveLineValue".equals(key)
                 || "stockCountAutoApproveSheetValue".equals(key)
-                || "stockCountAutoApproveThreshold".equals(key)) {
+                || "stockCountAutoApproveThreshold".equals(key)
+                || "shop.discount.maxPercentCashier".equals(key)
+                || "shop.discount.maxPercentManager".equals(key)
+                || "shop.order.reservationHours".equals(key)) {
             try {
-                if (new BigDecimal(value).signum() < 0) {
+                BigDecimal decimal = new BigDecimal(value);
+                if ("shop.order.reservationHours".equals(key)) {
+                    int hours = Integer.parseInt(value);
+                    if (hours < 0) {
+                        throw new BusinessException("Reservation hours cannot be negative");
+                    }
+                } else if (decimal.signum() < 0) {
                     throw new BusinessException("Setting value cannot be negative");
                 }
             } catch (NumberFormatException ex) {
+                if ("shop.order.reservationHours".equals(key)) {
+                    throw new BusinessException("Reservation hours must be a whole number");
+                }
                 throw new BusinessException("Setting value must be a valid amount");
             }
         }

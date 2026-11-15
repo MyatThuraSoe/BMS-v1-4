@@ -52,6 +52,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
   const [quantities, setQuantities] = useState({});
   const [dispositions, setDispositions] = useState({});
   const [reason, setReason] = useState('');
+  const [refundMethod, setRefundMethod] = useState('');
   const [step, setStep] = useState('form'); // 'form' | 'confirm'
 
   const { data, isLoading } = useQuery({
@@ -65,11 +66,14 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
       setQuantities({});
       setDispositions({});
       setReason('');
+      setRefundMethod('');
       setStep('form');
     }
   }, [open]);
 
   const items = data?.data?.items || [];
+  const estimatedRefundDue = Number(data?.data?.estimatedRefundDue || 0);
+  const showRefundMethodSelector = estimatedRefundDue > 0;
   const returnableItems = items.filter((item) => (item.quantityReturnable || 0) > 0);
 
   const selectedLines = returnableItems
@@ -89,6 +93,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
     setQuantities({});
     setDispositions({});
     setReason('');
+    setRefundMethod('');
     setStep('form');
   };
 
@@ -130,6 +135,9 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
         disposition: line.disposition,
       })),
     };
+    if (showRefundMethodSelector && refundMethod) {
+      payload.refundMethod = refundMethod;
+    }
     if (!payload.reason || payload.items.length === 0) return;
     mutation.mutate(payload);
   };
@@ -226,12 +234,48 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
               onChange={(e) => setReason(e.target.value)}
             />
 
+            {showRefundMethodSelector && (
+              <TextField
+                fullWidth
+                select
+                SelectProps={{ native: true }}
+                label="Refund method"
+                value={refundMethod}
+                onChange={(e) => setRefundMethod(e.target.value)}
+                sx={{ mt: 2 }}
+              >
+                <option value="">Default</option>
+                <option value="CASH">CASH</option>
+                <option value="STORE_CREDIT">STORE_CREDIT</option>
+              </TextField>
+            )}
+
             <Divider sx={{ my: 2 }} />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-              <Typography fontWeight={600}>{t('return_total')}</Typography>
-              <Typography fontWeight={700} color="warning.main" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
-                {formatCurrency(returnTotal)}
-              </Typography>
+            <Box sx={{ display: 'grid', gap: 1 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Outstanding before</Typography>
+                <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {formatCurrency(Number(data?.data?.outstandingBefore || 0))}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Estimated debt reduction</Typography>
+                <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {formatCurrency(Number(data?.data?.estimatedDebtReduction || 0))}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Estimated refund due</Typography>
+                <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {formatCurrency(Number(data?.data?.estimatedRefundDue || 0))}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography fontWeight={600}>{t('return_total')}</Typography>
+                <Typography fontWeight={700} color="warning.main" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {formatCurrency(returnTotal)}
+                </Typography>
+              </Box>
             </Box>
           </>
         ) : (

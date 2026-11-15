@@ -95,6 +95,7 @@ public class ArService {
         }
         return arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(invoiceId)
                 .stream()
+                .filter(payment -> payment.getReversedAt() == null)
                 .map(this::toPaymentResponse)
                 .toList();
     }

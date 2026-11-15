@@ -709,7 +709,13 @@ public class SaleService {
                 .map(SalePayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal arCashPaid = arPayments.stream()
-                .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
+                .filter(payment -> payment.getReversedAt() == null
+                        && payment.getPaymentMethod() == com.bms.entity.PaymentMethod.CASH)
+                .map(ArPayment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal arNonCashPaid = arPayments.stream()
+                .filter(payment -> payment.getReversedAt() == null
+                        && payment.getPaymentMethod() != com.bms.entity.PaymentMethod.CASH)
                 .map(ArPayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cashAlreadyRefunded = safeSum(
@@ -838,9 +844,38 @@ public class SaleService {
 
         // Voiding a credit sale reverses the increase in the customer's
         // outstanding balance for whatever is still owed on this invoice.
-        if (sale.getSaleType() == Sale.SaleType.CREDIT
-                && sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
-            reverseCreditBalance(sale);
+        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
+            if (sale.getPaymentStatus() != Sale.PaymentStatus.PAID) {
+                reverseCreditBalance(sale);
+            }
+            if (arPaymentRepository != null && !arPayments.isEmpty()) {
+                LocalDateTime reversalAt = shopTimeService.now();
+                Customer creditCustomer = sale.getCustomer() != null
+                        ? customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                        .orElse(null)
+                        : null;
+                BigDecimal convertedNonCash = BigDecimal.ZERO;
+                for (ArPayment payment : arPayments) {
+                    if (payment.getReversedAt() != null) {
+                        continue;
+                    }
+                    payment.setReversedAt(reversalAt);
+                    payment.setReversalNote("Voided sale " + sale.getInvoiceNumber() + ": " + reason);
+                    arPaymentRepository.save(payment);
+                    if (payment.getPaymentMethod() != PaymentMethod.CASH) {
+                        convertedNonCash = convertedNonCash.add(payment.getAmount() != null ? payment.getAmount() : BigDecimal.ZERO);
+                    }
+                }
+                if (creditCustomer != null && convertedNonCash.compareTo(BigDecimal.ZERO) > 0) {
+                    BigDecimal currentBalance = creditCustomer.getCurrentBalance() != null
+                            ? creditCustomer.getCurrentBalance() : BigDecimal.ZERO;
+                    creditCustomer.setCurrentBalance(currentBalance.subtract(convertedNonCash)
+                            .max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP));
+                    creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
+                            .add(convertedNonCash).setScale(2, java.math.RoundingMode.HALF_UP));
+                    customerRepository.save(creditCustomer);
+                }
+            }
         }
 
         return convertToResponse(updatedSale);

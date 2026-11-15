@@ -41,6 +41,18 @@ public class OrderItem {
     @Column(name = "cost_price_at_order", precision = 19, scale = 6)
     private BigDecimal costPriceAtOrder;
 
+    @Column(name = "original_unit_price", precision = 10, scale = 2)
+    private BigDecimal originalUnitPrice;
+
+    @Column(name = "line_discount", precision = 10, scale = 2)
+    private BigDecimal lineDiscount = BigDecimal.ZERO;
+
+    @Column(name = "promotion_id")
+    private Long promotionId;
+
+    @Column(name = "promotion_name", length = 255)
+    private String promotionName;
+
     @PrePersist
     protected void onCreate() {
         if (totalPrice == null && unitPrice != null && quantity != null) {
@@ -71,4 +83,16 @@ public class OrderItem {
 
     public BigDecimal getCostPriceAtOrder() { return costPriceAtOrder; }
     public void setCostPriceAtOrder(BigDecimal costPriceAtOrder) { this.costPriceAtOrder = costPriceAtOrder; }
+
+    public BigDecimal getOriginalUnitPrice() { return originalUnitPrice != null ? originalUnitPrice : unitPrice; }
+    public void setOriginalUnitPrice(BigDecimal originalUnitPrice) { this.originalUnitPrice = originalUnitPrice; }
+
+    public BigDecimal getLineDiscount() { return lineDiscount != null ? lineDiscount : BigDecimal.ZERO; }
+    public void setLineDiscount(BigDecimal lineDiscount) { this.lineDiscount = lineDiscount; }
+
+    public Long getPromotionId() { return promotionId; }
+    public void setPromotionId(Long promotionId) { this.promotionId = promotionId; }
+
+    public String getPromotionName() { return promotionName; }
+    public void setPromotionName(String promotionName) { this.promotionName = promotionName; }
 }

@@ -1,14 +1,21 @@
 package com.bms.service;
 
+import com.bms.dto.request.ChangePasswordRequest;
+import com.bms.dto.request.CloseShiftRequest;
+import com.bms.dto.request.UserCreateRequest;
 import com.bms.dto.request.UserUpdateRequest;
 import com.bms.dto.response.UserStatsDto;
+import com.bms.entity.CashShift;
 import com.bms.entity.Role;
 import com.bms.entity.User;
+import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
+import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -16,9 +23,8 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 @Service
 @Transactional
@@ -30,42 +36,46 @@ public class UserService implements UserDetailsService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final SaleRepository saleRepository;
-
+    private final CashShiftRepository cashShiftRepository;
+    private final CashShiftService cashShiftService;
     private final PasswordEncoder passwordEncoder;
-
     private final AuditLogService auditLogService;
 
     public UserService(UserRepository userRepository,
-                        RoleRepository roleRepository,
-                        SaleRepository saleRepository,
-                        PasswordEncoder passwordEncoder,
-                        AuditLogService auditLogService) {
+                      RoleRepository roleRepository,
+                      SaleRepository saleRepository,
+                      CashShiftRepository cashShiftRepository,
+                      CashShiftService cashShiftService,
+                      PasswordEncoder passwordEncoder,
+                      AuditLogService auditLogService) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.saleRepository = saleRepository;
+        this.cashShiftRepository = cashShiftRepository;
+        this.cashShiftService = cashShiftService;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
     }
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
-        // Load regardless of isActive — an inactive account must reach the
-        // authentication provider so it fails with DisabledException (surfaced
-        // to the user as "contact administrator"), not as "invalid credentials".
-        User user = userRepository.findByUsernameIgnoreCase(username)
+        String normalized = normalizeKey(username);
+        User user = userRepository.findByUsernameNormalized(normalized)
+                .or(() -> userRepository.findByUsernameIgnoreCase(username))
                 .orElseThrow(() -> new UsernameNotFoundException("User not found: " + username));
         if (user.getDeletedAt() != null) {
-            // Soft-deleted users are treated as non-existent
             throw new UsernameNotFoundException("User not found: " + username);
         }
         return user;
     }
 
-    public User createUser(com.bms.dto.request.UserCreateRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+    public User createUser(UserCreateRequest request) {
+        String normalizedUsername = normalizeKey(request.getUsername());
+        String normalizedEmail = normalizeKey(request.getEmail());
+        if (userRepository.existsByUsernameNormalized(normalizedUsername)) {
             throw new IllegalArgumentException("Username already exists");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+        if (userRepository.existsByEmailNormalized(normalizedEmail)) {
             throw new IllegalArgumentException("Email already exists");
         }
 
@@ -73,21 +83,23 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
 
         User user = new User();
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
+        user.setUsername(trimmed(request.getUsername()));
+        user.setUsernameNormalized(normalizedUsername);
+        user.setEmail(trimmed(request.getEmail()));
+        user.setEmailNormalized(normalizedEmail);
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
         user.setPhone(request.getPhone());
         user.setRole(role);
         user.setIsActive(true);
+        user.setTokenVersion(0);
 
         User savedUser = userRepository.save(user);
-        
-        auditLogService.logAction(savedUser.getId(), "USER_CREATE", 
-            "User created: " + savedUser.getUsername(), 
-            "User", savedUser.getId(), null, savedUser.toString());
 
+        auditLogService.logAction(savedUser.getId(), "USER_CREATE",
+            "User created: " + savedUser.getUsername(),
+            "User", savedUser.getId(), null, savedUser.toString());
         return savedUser;
     }
 
@@ -95,80 +107,115 @@ public class UserService implements UserDetailsService {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (!user.getUsername().equals(request.getUsername()) && 
-            userRepository.existsByUsername(request.getUsername())) {
+        String requestedUsername = trimmed(request.getUsername());
+        String requestedEmail = trimmed(request.getEmail());
+        String normalizedUsername = normalizeKey(requestedUsername);
+        String normalizedEmail = normalizeKey(requestedEmail);
+
+        if (!user.getUsernameNormalized().equals(normalizedUsername)
+                && userRepository.existsByUsernameNormalized(normalizedUsername)) {
             throw new IllegalArgumentException("Username already exists");
         }
-        if (!user.getEmail().equals(request.getEmail()) && 
-            userRepository.existsByEmail(request.getEmail())) {
+        if (!user.getEmailNormalized().equals(normalizedEmail)
+                && userRepository.existsByEmailNormalized(normalizedEmail)) {
             throw new IllegalArgumentException("Email already exists");
         }
-
 
         Role role = roleRepository.findById(request.getRoleId())
                 .orElseThrow(() -> new ResourceNotFoundException("Role not found"));
 
-        // Guard: the LAST active admin must never be demoted — that would lock
-        // the store out permanently with no one left to promote someone back.
         boolean targetIsAdmin = isAdmin(user);
         boolean newRoleIsAdmin = Role.RoleName.ROLE_ADMIN.equals(role.getName());
         if (targetIsAdmin && !newRoleIsAdmin && isLastActiveAdmin()) {
-            throw new com.bms.exception.BusinessException("auth.lastadmin.demote");
+            throw new BusinessException("auth.lastadmin.demote");
         }
 
         String oldValues = user.toString();
+        boolean passwordChanged = request.getPassword() != null && !request.getPassword().isBlank();
+        boolean deactivateRequested = request.getIsActive() != null && Boolean.FALSE.equals(request.getIsActive());
+        if (deactivateRequested) {
+            Optional<CashShift> openShift = cashShiftRepository.findByCashierIdAndStatus(userId, "OPEN");
+            if (openShift.isPresent()) {
+                if (!Boolean.TRUE.equals(request.getCloseOpenShifts())) {
+                    throw new BusinessException("Open shift for user: " + openShift.get().getId() + "; close it before deactivation");
+                }
+                closeUserOpenShift(userId, openShift.get().getId(), "User deactivated");
+            }
+        }
+        if (Boolean.FALSE.equals(request.getIsActive()) && user.getUsername().equals(currentUsername())) {
+            throw new BusinessException("auth.user.self.deactivate");
+        }
+        if (Boolean.FALSE.equals(request.getIsActive()) && targetIsAdmin && isLastActiveAdmin()) {
+            throw new BusinessException("auth.lastadmin.deactivate");
+        }
 
-        user.setUsername(request.getUsername());
-        user.setEmail(request.getEmail());
+        user.setUsername(requestedUsername);
+        user.setUsernameNormalized(normalizedUsername);
+        user.setEmail(requestedEmail);
+        user.setEmailNormalized(normalizedEmail);
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
         user.setPhone(request.getPhone());
         user.setRole(role);
-        if (request.getPassword() != null && !request.getPassword().isBlank()) {
+        if (passwordChanged) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));
+            bumpTokenVersion(user);
         }
         if (request.getIsActive() != null) {
-            // Guard: an admin deactivating their own account would lock themselves
-            // out with no one left to re-enable them.
-            if (Boolean.FALSE.equals(request.getIsActive())
-                    && user.getUsername().equals(currentUsername())) {
-                throw new com.bms.exception.BusinessException("auth.user.self.deactivate");
-            }
-            // Guard: the LAST active admin cannot be deactivated either — even by
-            // an admin colleague, since the result would be a permanent lockout.
-            if (Boolean.FALSE.equals(request.getIsActive()) && targetIsAdmin && isLastActiveAdmin()) {
-                throw new com.bms.exception.BusinessException("auth.lastadmin.deactivate");
-            }
             user.setIsActive(request.getIsActive());
+            if (Boolean.FALSE.equals(request.getIsActive())) {
+                bumpTokenVersion(user);
+            }
+        }
+        if (!isAdmin(user) && newRoleIsAdmin) {
+            bumpTokenVersion(user);
         }
 
         User updatedUser = userRepository.save(user);
-        
-        auditLogService.logAction(updatedUser.getId(), "USER_UPDATE", 
-            "User updated: " + updatedUser.getUsername(), 
+        auditLogService.logAction(updatedUser.getId(), "USER_UPDATE",
+            "User updated: " + updatedUser.getUsername(),
             "User", updatedUser.getId(), oldValues, updatedUser.toString());
-
         return updatedUser;
     }
 
     public void deleteUser(Long userId) {
+        deleteUser(userId, false, null);
+    }
+
+    public void deleteUser(Long userId, boolean closeOpenShifts, Long actingUserId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        // Guard: the LAST active admin must never be deleted.
+        Long currentUserId = currentUserId();
+        if (currentUserId != null && currentUserId.equals(userId)) {
+            throw new BusinessException("auth.user.self.delete");
+        }
+        if (actingUserId != null && actingUserId.equals(userId)) {
+            throw new BusinessException("auth.user.self.delete");
+        }
         if (isAdmin(user) && isLastActiveAdmin()) {
-            throw new com.bms.exception.BusinessException("auth.lastadmin.delete");
+            throw new BusinessException("auth.lastadmin.delete");
         }
 
-        // Free the unique username/email values so a new account can reuse them after this soft delete.
+        Optional<CashShift> openShift = cashShiftRepository.findByCashierIdAndStatus(userId, "OPEN");
+        if (openShift.isPresent()) {
+            if (!closeOpenShifts) {
+                throw new BusinessException("Open shift for user: " + openShift.get().getId() + "; close it before delete");
+            }
+            closeUserOpenShift(userId, openShift.get().getId(), "User deleted");
+        }
+
         user.setUsername(com.bms.util.SoftDeleteKeys.release(user.getUsername(), user.getId(), 255));
+        user.setUsernameNormalized(com.bms.util.SoftDeleteKeys.release(user.getUsernameNormalized(), user.getId(), 255));
         user.setEmail(com.bms.util.SoftDeleteKeys.release(user.getEmail(), user.getId(), 255));
+        user.setEmailNormalized(com.bms.util.SoftDeleteKeys.release(user.getEmailNormalized(), user.getId(), 255));
         user.setDeletedAt(shopTimeService.now());
         user.setIsActive(false);
+        bumpTokenVersion(user);
         userRepository.save(user);
-        
-        auditLogService.logAction(user.getId(), "USER_DELETE", 
-            "User deleted: " + user.getUsername(), 
+
+        auditLogService.logAction(actingUserId != null ? actingUserId : user.getId(), "USER_DELETE",
+            "User deleted: " + user.getUsername(),
             "User", user.getId(), user.toString(), null);
     }
 
@@ -177,44 +224,39 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    private String currentUsername() {
-        var auth = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
-        return auth != null ? auth.getName() : null;
-    }
-
-    private boolean isAdmin(User user) {
-        return user.getRole() != null && Role.RoleName.ROLE_ADMIN.equals(user.getRole().getName());
-    }
-
-    /** True when the given admin is the only active administrator left. */
-    private boolean isLastActiveAdmin() {
-        return userRepository.countActiveByRole(Role.RoleName.ROLE_ADMIN) <= 1;
-    }
-
     public User findByUsername(String username) {
-        return userRepository.findByUsername(username)
+        String normalized = normalizeKey(username);
+        return userRepository.findByUsernameNormalized(normalized)
+                .or(() -> userRepository.findByUsernameIgnoreCase(username))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    public void changeOwnPassword(String username, com.bms.dto.request.ChangePasswordRequest request) {
-        User user = userRepository.findByUsername(username)
+    public void changeOwnPassword(String username, ChangePasswordRequest request) {
+        User user = userRepository.findByUsernameNormalized(normalizeKey(username))
+                .or(() -> userRepository.findByUsernameIgnoreCase(username))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
         if (!passwordEncoder.matches(request.getCurrentPassword(), user.getPassword())) {
-            throw new com.bms.exception.BusinessException("auth.current.password.incorrect");
+            throw new BusinessException("auth.current.password.incorrect");
         }
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        bumpTokenVersion(user);
         userRepository.save(user);
         auditLogService.logAction(user.getId(), "PASSWORD_CHANGE", "User changed their own password", "User", user.getId(), null, null);
     }
 
     public List<User> getAllUsers() {
-        return userRepository.findAll();
+        return getAllUsers(false);
+    }
+
+    public List<User> getAllUsers(boolean includeDeleted) {
+        return includeDeleted ? userRepository.findAll() : userRepository.findByDeletedAtIsNullOrderByUsernameAsc();
     }
 
     public User updatePreferredLanguage(String username, String lang) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameNormalized(normalizeKey(username))
+                .or(() -> userRepository.findByUsernameIgnoreCase(username))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         user.setPreferredLanguage(lang);
         return userRepository.save(user);
@@ -224,8 +266,7 @@ public class UserService implements UserDetailsService {
     public UserStatsDto getUserSalesStats(Long userId) {
         userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-
-        LocalDateTime todayStart = shopTimeService.today().atStartOfDay();
+        java.time.LocalDateTime todayStart = shopTimeService.today().atStartOfDay();
         SaleRepository.CashierStats allTime = saleRepository.findCashierStats(userId);
         SaleRepository.CashierStats today = saleRepository.findCashierStatsSince(userId, todayStart);
 
@@ -235,5 +276,53 @@ public class UserService implements UserDetailsService {
                 today.getTotalSales(),
                 today.getTotalRevenue()
         );
+    }
+
+    private void closeUserOpenShift(Long userId, Long shiftId, String reason) {
+        if (shiftId == null) {
+            return;
+        }
+        CashShift shift = cashShiftRepository.findById(shiftId).orElse(null);
+        if (shift == null || !"OPEN".equals(shift.getStatus())) {
+            return;
+        }
+        CloseShiftRequest request = new CloseShiftRequest();
+        request.setForceClose(true);
+        request.setForceReason(reason);
+        request.setCloseDrawer(Boolean.FALSE);
+        cashShiftService.closeShift(shiftId, request, userId, true);
+    }
+
+    private void bumpTokenVersion(User user) {
+        user.setTokenVersion((user.getTokenVersion() == null ? 0 : user.getTokenVersion()) + 1);
+    }
+
+    private String currentUsername() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        return auth != null ? auth.getName() : null;
+    }
+
+    private Long currentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !(auth.getPrincipal() instanceof User principal)) {
+            return null;
+        }
+        return principal.getId();
+    }
+
+    private boolean isAdmin(User user) {
+        return user.getRole() != null && Role.RoleName.ROLE_ADMIN.equals(user.getRole().getName());
+    }
+
+    private boolean isLastActiveAdmin() {
+        return userRepository.countActiveByRole(Role.RoleName.ROLE_ADMIN) <= 1;
+    }
+
+    private String normalizeKey(String value) {
+        return value == null ? null : value.trim().toLowerCase();
+    }
+
+    private String trimmed(String value) {
+        return value == null ? null : value.trim();
     }
 }

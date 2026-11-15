@@ -111,7 +111,7 @@ public class AuthService {
 
             loginAttempts.remove(key);
 
-            String jwtToken = jwtUtil.generateToken(user.getUsername());
+            String jwtToken = jwtUtil.generateToken(user);
             UserResponse userResponse = createUserResponse(user);
 
             auditLogService.logAction(user.getId(), "LOGIN_SUCCESS",

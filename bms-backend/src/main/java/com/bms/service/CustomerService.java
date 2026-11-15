@@ -7,6 +7,7 @@ import com.bms.entity.CustomerPhone;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
+import java.math.BigDecimal;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -33,6 +34,9 @@ public class CustomerService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private SequenceService sequenceService;
 
     public Page<CustomerResponse> getAllCustomers(Pageable pageable) {
         return customerRepository.findActiveCustomers(pageable).map(this::convertToResponse);
@@ -145,42 +149,28 @@ public class CustomerService {
     public void deleteCustomer(Long id) {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + id));
-        
-        // Free the unique customer code so it can be reused after this soft delete
-        // (phone/email checks already ignore soft-deleted customers).
+
+        BigDecimal currentBalance = customer.getCurrentBalance();
+        if (currentBalance != null && currentBalance.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException("Cannot delete customer with outstanding balance: " + currentBalance);
+        }
+        BigDecimal creditBalance = customer.getCreditBalance();
+        if (creditBalance != null && creditBalance.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException("Cannot delete customer with store credit remaining: " + creditBalance);
+        }
+
         customer.setCustomerCode(com.bms.util.SoftDeleteKeys.release(customer.getCustomerCode(), customer.getId(), 255));
         customer.setDeletedAt(shopTimeService.now());
         customer.setIsActive(false);
         customerRepository.save(customer);
 
-        auditLogService.logAction(null, "CUSTOMER_DELETE", 
-            "Customer deleted: " + customer.getFirstName() + " " + customer.getLastName(), 
+        auditLogService.logAction(null, "CUSTOMER_DELETE",
+            "Customer deleted: " + customer.getFirstName() + " " + customer.getLastName(),
             "Customer", customer.getId(), customer.toString(), null);
     }
 
     private String generateCustomerCode() {
-        String prefix = "CUST-";
-        String datePart = shopTimeService.now().format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
-        
-        Optional<Customer> lastCustomerOpt = customerRepository.findAll(
-            org.springframework.data.domain.PageRequest.of(0, 1, org.springframework.data.domain.Sort.by("customerCode").descending())
-        ).stream()
-            .filter(c -> c.getCustomerCode() != null && c.getCustomerCode().startsWith(prefix + datePart))
-            .findFirst();
-        
-        String lastCode = lastCustomerOpt.map(Customer::getCustomerCode)
-                .orElse(prefix + datePart + "-0000");
-        
-        int seqNum = 1;
-        if (lastCode.contains("-")) {
-            try {
-                seqNum = Integer.parseInt(lastCode.substring(lastCode.lastIndexOf("-") + 1)) + 1;
-            } catch (NumberFormatException e) {
-                seqNum = 1;
-            }
-        }
-        
-        return prefix + datePart + "-" + String.format("%04d", seqNum);
+        return sequenceService.nextCustomerNumber();
     }
 
     private CustomerResponse convertToResponse(Customer customer) {

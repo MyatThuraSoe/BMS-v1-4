@@ -77,6 +77,36 @@ public class AccountingPeriodService {
         if (periodCloseRepository.existsById(month.toString())) {
             throw new BusinessException("Accounting period " + month + " is already closed");
         }
+        YearMonth currentMonth = YearMonth.from(shopTimeService.today());
+        if (!month.isBefore(currentMonth)) {
+            throw new BusinessException("Only a completed month can be closed");
+        }
+
+        boolean sequentialRequired = systemSettingRepository.findBySettingKey("accounting.period.requireSequentialClose")
+                .map(setting -> "true".equalsIgnoreCase(setting.getSettingValue()) || "1".equals(setting.getSettingValue()))
+                .orElse(true);
+        if (sequentialRequired) {
+            List<PeriodClose> closed = periodCloseRepository.findAll(org.springframework.data.domain.Sort.by("period"));
+            YearMonth firstOpen = null;
+            YearMonth cursor = YearMonth.of(2000, 1);
+            for (PeriodClose existing : closed) {
+                cursor = YearMonth.parse(existing.getPeriod());
+            }
+            YearMonth lastClosed = closed.stream()
+                    .map(pc -> YearMonth.parse(pc.getPeriod()))
+                    .max(java.util.Comparator.naturalOrder())
+                    .orElse(null);
+            if (lastClosed != null && month.isAfter(lastClosed)) {
+                firstOpen = lastClosed.plusMonths(1);
+                if (!firstOpen.equals(month)) {
+                    throw new BusinessException("Only sequential close is allowed; the next open month is " + firstOpen);
+                }
+            }
+            if (closed.isEmpty()) {
+                // The first close can be any completed month; continue to validate a stricter rule only when a prior month has ledger history.
+            }
+        }
+
         Map<String, Object> reconciliation = historyService.reconcile(month, month);
         if (!Boolean.TRUE.equals(reconciliation.get("reconciled"))
                 || !Boolean.TRUE.equals(inventoryHistoryService.reconcile().get("reconciled"))) {
@@ -103,6 +133,15 @@ public class AccountingPeriodService {
         periodGuard.lock();
         PeriodClose close = periodCloseRepository.findById(month.toString())
                 .orElseThrow(() -> new ResourceNotFoundException("Closed accounting period not found: " + month));
+
+        List<PeriodClose> closed = periodCloseRepository.findAll(org.springframework.data.domain.Sort.by("period"));
+        YearMonth latestClosed = closed.stream()
+                .map(pc -> YearMonth.parse(pc.getPeriod()))
+                .max(java.util.Comparator.naturalOrder())
+                .orElse(null);
+        if (latestClosed != null && !latestClosed.equals(month)) {
+            throw new BusinessException("Accounting period " + month + " cannot be reopened while later closed months remain: " + latestClosed);
+        }
         periodCloseRepository.delete(close);
         auditLogService.logAction(userId, "PERIOD_REOPEN", "Accounting period reopened: " + month + ". Reason: " + reason.trim(),
                 "PeriodClose", null, close.getFrozenRevenue() + "/" + close.getFrozenCogs() + "/" + close.getFrozenExpense(),

@@ -65,6 +65,12 @@ public class AccountingSchemaMigration implements ApplicationRunner {
         ensureNullableColumn(dialect, "count_sheet_items", "live_quantity_at_apply", "INT");
         ensureNullableColumn(dialect, "count_sheet_items", "variance_at_apply", "INT");
         ensureNullableColumn(dialect, "count_sheet_items", "client_system_quantity", "INT");
+        ensureNullableColumn(dialect, "sale_returns", "debt_reduction_amount", "DECIMAL(10,2)");
+        ensureNullableColumn(dialect, "sale_returns", "refund_amount", "DECIMAL(10,2)");
+        ensureNullableColumn(dialect, "ar_payments", "reversed_at", "TIMESTAMP");
+        ensureNullableColumn(dialect, "ar_payments", "reversal_note", "VARCHAR(1000)");
+        ensureNullableColumn(dialect, "stock_movements", "source_sale_id", "BIGINT");
+        ensureNullableColumn(dialect, "stock_movements", "source_return_id", "BIGINT");
         ensureNullableColumn(dialect, "profit_ledger", "settlement_cash", "DECIMAL(19,4)");
         ensureNullableColumn(dialect, "profit_ledger", "settlement_clearing", "DECIMAL(19,4)");
         ensureNullableColumn(dialect, "profit_ledger", "settlement_ar", "DECIMAL(19,4)");

@@ -650,8 +650,6 @@ public class PurchaseService {
 
         Map<Long, PurchaseItem> itemsById = purchase.getItems().stream()
                 .collect(Collectors.toMap(PurchaseItem::getId, item -> item));
-        Location quarantine = locationService.getDefault(Location.LocationType.QUARANTINE);
-        Location shop = locationService.getDefault(Location.LocationType.SHOP);
         User user = userRepository.findById(userId).orElse(null);
 
         BigDecimal totalCredit = BigDecimal.ZERO;
@@ -685,27 +683,26 @@ public class PurchaseService {
                     message -> recordCostReconciliationAlert(userId, product, purchase, message));
             BigDecimal newCostPrice = posting.getUnitCostAfter();
 
-            // Draw only from quarantine stock that THIS purchase's receipt put
-            // there; never from another PO's quarantined goods.
-            int remaining = entry.getQuantity();
-            int fromQuarantine = Math.min(remaining,
-                    quarantineAvailableForItem(purchase, item, product, quarantine));
-            if (fromQuarantine > 0) {
-                locationService.removeStock(product, quarantine, fromQuarantine);
-                remaining -= fromQuarantine;
-                recordReturnMovement(purchase, product, fromQuarantine, quarantine.getCode(),
-                        "RTV from quarantine", item, user);
-            }
-            if (remaining > 0) {
-                int current = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
-                if (current < remaining) {
-                    throw new BusinessException("Only " + current + " sellable unit(s) of "
-                            + product.getName() + " are available to return");
+            Map<String, Integer> removedByLocation = new LinkedHashMap<>();
+            removeUnitsFromReceiptLocations(purchase, item, product, entry.getQuantity(),
+                    request.isOverrideReserved(), request.getReason(), userId, removedByLocation);
+            for (Map.Entry<String, Integer> removedEntry : removedByLocation.entrySet()) {
+                int removed = removedEntry.getValue();
+                if (removed <= 0) {
+                    continue;
                 }
-                locationService.removeShopStock(product, remaining, request.isOverrideReserved(),
-                        request.getReason(), userId);
-                recordReturnMovement(purchase, product, remaining, shop.getCode(),
-                        "RTV from shop floor", item, user);
+                String locationCode = removedEntry.getKey();
+                String description = "RTV from shop floor";
+                if (locationCode != null && !locationCode.equalsIgnoreCase("SHOP")) {
+                    Location location = locationService.findByCode(locationCode).orElse(null);
+                    if (location != null && location.getType() == Location.LocationType.QUARANTINE) {
+                        description = "RTV from quarantine";
+                    } else if (location != null) {
+                        description = "RTV from " + location.getCode();
+                    }
+                }
+                recordReturnMovement(purchase, product, removed, locationCode,
+                        description, item, user);
             }
 
             // Stock removed above; cost already revalued by the ledger posting.
@@ -779,6 +776,118 @@ public class PurchaseService {
         }
         int scoped = Math.max(0, received - left);
         return Math.min(scoped, locationService.quantityIn(quarantine, product));
+    }
+
+    private void removeUnitsFromReceiptLocations(Purchase purchase, PurchaseItem item, Product product,
+                                                int quantity, boolean overrideReserved,
+                                                String reason, Long userId) {
+        removeUnitsFromReceiptLocations(purchase, item, product, quantity, overrideReserved,
+                reason, userId, new LinkedHashMap<>());
+    }
+
+    private void removeUnitsFromReceiptLocations(Purchase purchase, PurchaseItem item, Product product,
+                                                int quantity, boolean overrideReserved,
+                                                String reason, Long userId,
+                                                Map<String, Integer> removedByLocation) {
+        if (quantity <= 0) {
+            return;
+        }
+
+        Map<String, Integer> receivedByLocation = new HashMap<>();
+        for (StockMovement movement : stockMovementRepository.findByReferenceAndPurchaseItem(
+                StockMovement.ReferenceType.RECEIVING, purchase.getId(), item.getId())) {
+            if (movement.getMovementType() == StockMovement.MovementType.IN
+                    && movement.getLocation() != null && movement.getQuantity() != null) {
+                receivedByLocation.merge(movement.getLocation(), movement.getQuantity(), Integer::sum);
+            }
+        }
+
+        Map<String, Integer> removedAlreadyByLocation = new HashMap<>();
+        for (StockMovement movement : stockMovementRepository.findByPurchaseItemId(item.getId())) {
+            if (movement.getLocation() == null || movement.getQuantity() == null) {
+                continue;
+            }
+            boolean isReturnRemoval = movement.getReferenceType() == StockMovement.ReferenceType.RTV
+                    && movement.getMovementType() == StockMovement.MovementType.OUT;
+            boolean isPurchaseReversal = movement.getReferenceType() == StockMovement.ReferenceType.PURCHASE
+                    && movement.getMovementType() == StockMovement.MovementType.OUT;
+            boolean isTransferOut = movement.getReferenceType() == StockMovement.ReferenceType.TRANSFER
+                    && movement.getMovementType() == StockMovement.MovementType.TRANSFER_OUT;
+            if (isReturnRemoval || isPurchaseReversal || isTransferOut) {
+                removedAlreadyByLocation.merge(movement.getLocation(), movement.getQuantity(), Integer::sum);
+            }
+        }
+
+        List<String> orderedCodes = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (String code : receivedByLocation.keySet()) {
+            Location location = locationService.findByCode(code).orElse(null);
+            if (location != null && location.getType() == Location.LocationType.QUARANTINE) {
+                orderedCodes.add(code);
+                seen.add(code);
+            }
+        }
+        List<String> nonShopCodes = receivedByLocation.keySet().stream()
+                .filter(code -> !seen.contains(code))
+                .filter(code -> {
+                    Location location = locationService.findByCode(code).orElse(null);
+                    return location != null && location.getType() != Location.LocationType.SHOP;
+                })
+                .sorted(Comparator.comparing(code -> locationService.findByCode(code)
+                        .map(Location::getId).orElse(Long.MAX_VALUE)))
+                .toList();
+        orderedCodes.addAll(nonShopCodes);
+        List<String> shopCodes = receivedByLocation.keySet().stream()
+                .filter(code -> !seen.contains(code))
+                .filter(code -> {
+                    Location location = locationService.findByCode(code).orElse(null);
+                    return location == null || location.getType() == Location.LocationType.SHOP;
+                })
+                .toList();
+        orderedCodes.addAll(shopCodes);
+
+        int remaining = quantity;
+        for (String code : orderedCodes) {
+            if (remaining <= 0) {
+                break;
+            }
+            int received = receivedByLocation.getOrDefault(code, 0);
+            int alreadyRemoved = removedAlreadyByLocation.getOrDefault(code, 0);
+            int available = Math.max(0, received - alreadyRemoved);
+            if (available <= 0) {
+                continue;
+            }
+            int take = Math.min(remaining, available);
+            Location location = locationService.findByCode(code).orElse(null);
+            if (location == null) {
+                continue;
+            }
+            if (location.getType() == Location.LocationType.SHOP) {
+                locationService.removeShopStock(product, take, overrideReserved, reason, userId);
+            } else {
+                locationService.removeStock(product, location, take);
+            }
+            removedByLocation.merge(code, take, Integer::sum);
+            remaining -= take;
+        }
+
+        if (remaining > 0) {
+            int shopUnits = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+            if (shopUnits <= 0) {
+                throw new BusinessException("Only " + (quantity - remaining) + " unit(s) of "
+                        + product.getName() + " are available to return");
+            }
+            int take = Math.min(remaining, shopUnits);
+            locationService.removeShopStock(product, take, overrideReserved, reason, userId);
+            String shopCode = locationService.getDefault(Location.LocationType.SHOP).getCode();
+            removedByLocation.merge(shopCode, take, Integer::sum);
+            remaining -= take;
+        }
+
+        if (remaining > 0) {
+            throw new BusinessException("Only " + (quantity - remaining) + " unit(s) of "
+                    + product.getName() + " are available to return");
+        }
     }
 
     /**
@@ -856,51 +965,18 @@ public class PurchaseService {
                 message -> recordCostReconciliationAlert(userId, product, purchase, message));
         BigDecimal newCostPrice = posting.getUnitCostAfter();
 
-        // Where did this line's receipt put the goods? Reverse in place.
-        List<String> receiptLocations = stockMovementRepository
-                .findByReferenceAndPurchaseItem(StockMovement.ReferenceType.RECEIVING,
-                        purchase.getId(), item.getId())
-                .stream()
-                .filter(m -> m.getMovementType() == StockMovement.MovementType.IN)
-                .map(StockMovement::getLocation)
-                .filter(Objects::nonNull)
-                .distinct()
-                .sorted(Comparator.comparing(code -> "SHOP".equalsIgnoreCase(code) ? 1 : 0))
-                .collect(Collectors.toList());
-
+        // Where did this line's receipt put the goods? Reverse in place,
+        // following the same receipt-location precedence used for RTVs.
+        Map<String, Integer> removedByLocation = new LinkedHashMap<>();
+        removeUnitsFromReceiptLocations(purchase, item, product, quantity, false, "Purchase " + operation, userId, removedByLocation);
         int remaining = quantity;
-        for (String code : receiptLocations) {
-            if (remaining <= 0) {
-                break;
-            }
-            Location location = locationService.findByCode(code).orElse(null);
-            boolean isShop = location == null || location.getType() == Location.LocationType.SHOP;
-            int available = isShop
-                    ? (product.getStockQuantity() != null ? product.getStockQuantity() : 0)
-                    : locationService.quantityIn(location, product);
-            int take = Math.min(remaining, available);
+        for (Map.Entry<String, Integer> removedEntry : removedByLocation.entrySet()) {
+            int take = removedEntry.getValue();
             if (take <= 0) {
                 continue;
             }
-            if (isShop) {
-                locationService.removeShopStock(product, take);
-            } else {
-                locationService.removeStock(product, location, take);
-            }
-            recordReversalMovement(purchase, item, product, take,
-                    isShop ? "SHOP" : location.getCode(), user);
+            recordReversalMovement(purchase, item, product, take, removedEntry.getKey(), user);
             remaining -= take;
-        }
-        // Legacy receipts (pre-receiving feature) have no movement trail;
-        // goods may also have been transferred to the shop floor since.
-        if (remaining > 0) {
-            int available = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
-            int take = Math.min(remaining, available);
-            if (take > 0) {
-                locationService.removeShopStock(product, take);
-                recordReversalMovement(purchase, item, product, take, "SHOP", user);
-                remaining -= take;
-            }
         }
         if (remaining > 0) {
             throw new BusinessException(

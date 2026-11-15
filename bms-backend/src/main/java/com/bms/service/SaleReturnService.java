@@ -8,6 +8,7 @@ import com.bms.dto.response.SaleReturnResponse;
 import com.bms.entity.CashDrawerMovement;
 import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
+import com.bms.entity.Customer;
 import com.bms.entity.DrawerMovementType;
 import com.bms.entity.InventoryLedger;
 import com.bms.entity.Location;
@@ -97,7 +98,7 @@ public class SaleReturnService {
     private PeriodGuard periodGuard;
 
     @Autowired
-    private ShopTimeService shopTimeService;
+    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
 
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
@@ -107,11 +108,36 @@ public class SaleReturnService {
     public ReturnableItemsResponse getReturnableItems(Long saleId) {
         Sale sale = loadActiveSale(saleId);
 
+        BigDecimal outstandingBefore = sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal paidBefore = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+        BigDecimal returnedBefore = sale.getAmountReturned() != null ? sale.getAmountReturned() : BigDecimal.ZERO;
+        outstandingBefore = outstandingBefore.subtract(paidBefore).subtract(returnedBefore).max(BigDecimal.ZERO)
+                .setScale(2, RoundingMode.HALF_UP);
+
+        BigDecimal totalReturnable = sale.getItems().stream()
+                .filter(item -> item.getQuantity() != null && item.getQuantity() > 0)
+                .map(item -> {
+                    int alreadyReturned = item.getQuantityRefunded() != null ? item.getQuantityRefunded() : 0;
+                    int returnable = Math.max(0, item.getQuantity() - alreadyReturned);
+                    BigDecimal refund = calculateUnitRefundAmount(sale, item)
+                            .multiply(BigDecimal.valueOf(returnable))
+                            .setScale(2, RoundingMode.HALF_UP);
+                    return refund;
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+
         ReturnableItemsResponse response = new ReturnableItemsResponse();
         response.setSaleId(sale.getId());
         response.setInvoiceNumber(sale.getInvoiceNumber());
         response.setSaleDate(sale.getSaleDate());
         response.setVoided(sale.getIsVoided());
+        response.setOutstandingBefore(outstandingBefore);
+        response.setEstimatedDebtReduction(sale.getSaleType() == Sale.SaleType.CREDIT
+                ? totalReturnable.min(outstandingBefore).setScale(2, RoundingMode.HALF_UP)
+                : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP));
+        response.setEstimatedRefundDue(sale.getSaleType() == Sale.SaleType.CREDIT
+                ? totalReturnable.subtract(response.getEstimatedDebtReduction()).setScale(2, RoundingMode.HALF_UP)
+                : totalReturnable.setScale(2, RoundingMode.HALF_UP));
         response.setItems(sale.getItems().stream()
                 .map(item -> convertToReturnableItem(sale, item))
                 .collect(Collectors.toList()));
@@ -149,44 +175,30 @@ public class SaleReturnService {
         User returnedBy = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
 
+        BigDecimal totalBefore = sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO;
+        BigDecimal paidBefore = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
+        BigDecimal returnedBefore = sale.getAmountReturned() != null ? sale.getAmountReturned() : BigDecimal.ZERO;
+        BigDecimal outstandingBefore = totalBefore.subtract(paidBefore).subtract(returnedBefore)
+                .max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+
         // Was every cent of this invoice already paid before this return?
         // Unpaid credit returns only reduce the debt and never move cash.
         boolean cashSettled = sale.getSaleType() == Sale.SaleType.CREDIT
                 && sale.getPaymentStatus() == Sale.PaymentStatus.PAID;
 
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
-        PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale, employeeShift);
-        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled && refundMethod == PaymentMethod.CREDIT) {
-            refundMethod = PaymentMethod.CREDIT;
-        }
-        if (refundMethod == PaymentMethod.CASH) {
-            if (employeeShift == null) {
-                throw new BusinessException(
-                        "CASH_REFUND_REQUIRES_DRAWER: Cash refunds require an active cash drawer shift.");
-            }
-            SalePaymentRequest probe = new SalePaymentRequest();
-            probe.setMethod(PaymentMethod.CASH.name());
-            probe.setAmount(BigDecimal.ONE);
-            PaymentValidationResponse validation = paymentValidationService.validate(
-                    employeeShift, List.of(probe));
-            if (!validation.isValid()) {
-                throw new BusinessException(validation.getCode() + ": "
-                        + "Cash refund requires the cash drawer cashier or manager.");
-            }
-        }
 
         SaleReturn saleReturn = new SaleReturn();
         saleReturn.setSale(sale);
         saleReturn.setReturnedBy(returnedBy);
         saleReturn.setReturnDate(shopTimeService.now());
         saleReturn.setReason(request.getReason());
-        saleReturn.setRefundMethod(refundMethod);
         saleReturn.setEmployeeShift(employeeShift);
         saleReturn.setExternalReference(request.getExternalReference());
 
         BigDecimal totalReturnAmount = BigDecimal.ZERO;
         Set<Long> requestedSaleItemIds = new HashSet<>();
-        Map<Long, Integer> returnedBefore = new java.util.HashMap<>();
+        Map<Long, Integer> returnedQuantitiesBefore = new java.util.HashMap<>();
 
         for (SaleReturnRequest.SaleReturnItemRequest itemRequest : request.getItems()) {
             if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
@@ -233,7 +245,7 @@ public class SaleReturnService {
             BigDecimal lineValuation = costAtSale.multiply(BigDecimal.valueOf(requestedQuantity))
                     .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
 
-            returnedBefore.put(saleItem.getId(), alreadyReturned);
+            returnedQuantitiesBefore.put(saleItem.getId(), alreadyReturned);
             saleItem.setQuantityRefunded(alreadyReturned + requestedQuantity);
 
             SaleReturnItem returnItem = new SaleReturnItem();
@@ -324,21 +336,48 @@ public class SaleReturnService {
             totalReturnAmount = totalReturnAmount.add(returnAmount);
         }
 
+        BigDecimal debtReduction = BigDecimal.ZERO;
+        BigDecimal refundDue = totalReturnAmount;
+        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
+            debtReduction = totalReturnAmount.min(outstandingBefore).setScale(2, RoundingMode.HALF_UP);
+            refundDue = totalReturnAmount.subtract(debtReduction).setScale(2, RoundingMode.HALF_UP);
+        }
+
+        PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale, employeeShift, debtReduction, refundDue);
+        if (refundMethod == PaymentMethod.CASH && refundDue.compareTo(BigDecimal.ZERO) > 0) {
+            if (employeeShift == null) {
+                throw new BusinessException(
+                        "CASH_REFUND_REQUIRES_DRAWER: Cash refunds require an active cash drawer shift.");
+            }
+            SalePaymentRequest probe = new SalePaymentRequest();
+            probe.setMethod(PaymentMethod.CASH.name());
+            probe.setAmount(BigDecimal.ONE);
+            PaymentValidationResponse validation = paymentValidationService.validate(
+                    employeeShift, List.of(probe));
+            if (!validation.isValid()) {
+                throw new BusinessException(validation.getCode() + ": "
+                        + "Cash refund requires the cash drawer cashier or manager.");
+            }
+        }
+
+        saleReturn.setRefundMethod(refundMethod);
+        saleReturn.setDebtReductionAmount(debtReduction);
+        saleReturn.setRefundAmount(refundDue);
         saleReturn.setTotalReturnAmount(totalReturnAmount);
         SaleReturn savedReturn = saleReturnRepository.save(saleReturn);
         for (SaleReturnItem item : savedReturn.getItems()) {
             ledgerPostingService.postReturnProfit(savedReturn, item.getSaleItem(), item.getQuantityReturned(),
-                    returnedBefore.get(item.getSaleItem().getId()));
+                returnedQuantitiesBefore.get(item.getSaleItem().getId()));
         }
 
         // Cash physically leaves the drawer only for a real cash refund. An
         // unpaid credit return is a balance reduction, not cash.
-        if (refundMethod == PaymentMethod.CASH && totalReturnAmount.compareTo(BigDecimal.ZERO) > 0) {
+        if (refundMethod == PaymentMethod.CASH && refundDue.compareTo(BigDecimal.ZERO) > 0) {
             CashDrawerSession session = employeeShift != null ? employeeShift.getDrawerSession() : null;
             CashDrawerMovement movement = cashDrawerSessionService.recordFinancialMovement(
                     session,
                     DrawerMovementType.CASH_REFUND,
-                    totalReturnAmount.negate(),
+                    refundDue.negate(),
                     "SALE_RETURN",
                     savedReturn.getId(),
                     returnedBy,
@@ -352,29 +391,19 @@ public class SaleReturnService {
 
         updateSaleReturnStatus(sale);
 
-        // Was every cent of this invoice already paid in cash before this return?
-        // If so the customer balance was already reduced by those payments and a
-        // return only entitles the customer to a cash refund — never a second
-        // balance reduction.
-        // (cashSettled is resolved above, before the refund tender is chosen.)
-
         // Credit-invoice returns must touch the invoice itself, not just the
         // customer's balance: accumulate the returned amount so the invoice's
-        // outstanding balance stays (total - paid - returned). Otherwise the
-        // customer balance drops while the AR invoice still shows the full
-        // debt forever — a permanent phantom balance that can never be cleared.
+        // outstanding balance stays (total - paid - returned). We compute the
+        // split from the original pre-return values and apply it once.
         if (sale.getSaleType() == Sale.SaleType.CREDIT) {
-            BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
-            BigDecimal returnedSoFar = sale.getAmountReturned();
-            sale.setAmountReturned(returnedSoFar.add(totalReturnAmount).setScale(2, java.math.RoundingMode.HALF_UP));
+            BigDecimal returnedTotal = returnedBefore.add(totalReturnAmount).setScale(2, RoundingMode.HALF_UP);
+            sale.setAmountReturned(returnedTotal);
 
-            // Recompute settlement: once payments + returns fully cover the invoice
-            // it reaches PAID, so a paid-down invoice never stays stuck on UNPAID.
-            if (sale.getAmountReturned().compareTo(BigDecimal.ZERO) > 0) {
-                BigDecimal settled = sale.getAmountReturned().add(paid);
-                if (settled.compareTo(sale.getTotalAmount()) >= 0) {
+            if (returnedTotal.compareTo(BigDecimal.ZERO) > 0) {
+                BigDecimal settled = returnedTotal.add(paidBefore);
+                if (settled.compareTo(totalBefore) >= 0) {
                     sale.setPaymentStatus(Sale.PaymentStatus.PAID);
-                } else if (paid.compareTo(BigDecimal.ZERO) > 0) {
+                } else if (paidBefore.compareTo(BigDecimal.ZERO) > 0) {
                     sale.setPaymentStatus(Sale.PaymentStatus.PARTIAL);
                 } else {
                     sale.setPaymentStatus(Sale.PaymentStatus.UNPAID);
@@ -385,8 +414,18 @@ public class SaleReturnService {
 
         // Returns on credit invoices that were UNPAID/PARTIAL should NOT
         // dispense cash — they reduce what the customer owes instead.
-        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled) {
-            reverseCreditBalance(sale, totalReturnAmount);
+        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
+            if (!cashSettled) {
+                reverseCreditBalance(sale, debtReduction);
+            }
+            if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0
+                    && sale.getCustomer() != null) {
+                Customer customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+                customer.setCreditBalance(customer.getCreditBalance()
+                        .add(refundDue).setScale(2, RoundingMode.HALF_UP));
+                customerRepository.save(customer);
+            }
         }
 
         auditLogService.logAction(userId, "SALE_RETURN",
@@ -397,19 +436,18 @@ public class SaleReturnService {
     }
 
     /**
-     * Prefers the caller's explicit refund method; otherwise mirrors the
-     * original sale when it had a single method. Older sales have no payment
-     * rows and stay on the historical cash-refund default.
+     * Prefers the caller's explicit refund method; otherwise uses the debt split
+     * to decide whether a credit return is balance-only or a real cash/store-credit refund.
      */
-    private PaymentMethod resolveRefundMethod(String raw, Sale sale, CashShift employeeShift) {
+    private PaymentMethod resolveRefundMethod(String raw, Sale sale, CashShift employeeShift,
+                                            BigDecimal debtReduction, BigDecimal refundDue) {
+        if (sale.getSaleType() == Sale.SaleType.CREDIT && refundDue.compareTo(BigDecimal.ZERO) <= 0) {
+            return PaymentMethod.CREDIT;
+        }
         if (raw != null && !raw.isBlank()) {
             return paymentValidationService.parseMethod(raw);
         }
         if (sale.getSaleType() == Sale.SaleType.CREDIT) {
-            // Credit invoices are not themselves a tender. A return on a credit sale
-            // must refund only the excess over the outstanding debt; the cash/credit
-            // choice is explicitly selected at the UI or falls back to the current
-            // drawer policy. Never infer the method from the original AR payment rows.
             return employeeShift != null ? PaymentMethod.CASH : PaymentMethod.STORE_CREDIT;
         }
         List<SalePayment> payments = salePaymentRepository
@@ -448,30 +486,21 @@ public class SaleReturnService {
         saleRepository.save(sale);
     }
 
-    private void reverseCreditBalance(Sale sale, BigDecimal returnAmount) {
-        if (sale.getCustomer() == null || returnAmount == null || returnAmount.compareTo(BigDecimal.ZERO) <= 0) {
+    private void reverseCreditBalance(Sale sale, BigDecimal debtReduction) {
+        if (sale.getCustomer() == null || debtReduction == null || debtReduction.compareTo(BigDecimal.ZERO) <= 0) {
             return;
         }
 
         com.bms.entity.Customer creditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
 
-        BigDecimal total = sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO;
-        BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
-        BigDecimal returnedBefore = sale.getAmountReturned() != null ? sale.getAmountReturned() : BigDecimal.ZERO;
-        BigDecimal outstandingBefore = total.subtract(paid).subtract(returnedBefore).max(BigDecimal.ZERO)
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-
-        BigDecimal debtReduction = returnAmount.min(outstandingBefore)
-                .setScale(2, java.math.RoundingMode.HALF_UP);
-
         BigDecimal newBalance = creditCustomer.getCurrentBalance().subtract(debtReduction)
-                .setScale(2, java.math.RoundingMode.HALF_UP);
+                .setScale(2, RoundingMode.HALF_UP);
         if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
             // O1: a return worth more than the remaining debt becomes customer
             // credit instead of being silently dropped.
             creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
-                    .add(newBalance.negate()).setScale(2, java.math.RoundingMode.HALF_UP));
+                    .add(newBalance.negate()).setScale(2, RoundingMode.HALF_UP));
             newBalance = BigDecimal.ZERO;
         }
         creditCustomer.setCurrentBalance(newBalance);
@@ -504,7 +533,8 @@ public class SaleReturnService {
 
     private Sale loadActiveSale(Long saleId) {
         Sale sale = saleRepository.findByIdForUpdate(saleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
+                .orElseGet(() -> saleRepository.findById(saleId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
         if (!sale.getIsActive() || sale.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Sale not found: " + saleId);
         }
@@ -544,6 +574,8 @@ public class SaleReturnService {
         response.setReturnDate(saleReturn.getReturnDate());
         response.setReason(saleReturn.getReason());
         response.setTotalReturnAmount(saleReturn.getTotalReturnAmount());
+        response.setDebtReductionAmount(saleReturn.getDebtReductionAmount());
+        response.setRefundAmount(saleReturn.getRefundAmount());
         response.setRefundMethod(saleReturn.getRefundMethod().name());
         if (saleReturn.getEmployeeShift() != null) {
             response.setEmployeeShiftId(saleReturn.getEmployeeShift().getId());
