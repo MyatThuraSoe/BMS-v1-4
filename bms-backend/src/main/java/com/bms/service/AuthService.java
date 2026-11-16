@@ -20,10 +20,6 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.time.Instant;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class AuthService {
@@ -33,17 +29,13 @@ public class AuthService {
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(15);
-    private static final Duration ATTEMPT_WINDOW = Duration.ofMinutes(15);
+    @Autowired
+    private LoginAttemptTracker attemptTracker;
 
-    private final Map<String, AttemptRecord> loginAttempts = new ConcurrentHashMap<>();
     private final Object firstAdminLock = new Object();
 
-    private record AttemptRecord(int failures, Instant lastAttempt, Instant lockedUntil) {}
-
     private String attemptKey(String username) {
-        return username == null ? "" : username.trim().toLowerCase();
+        return LoginAttemptTracker.keyOf(username);
     }
 
 
@@ -68,8 +60,7 @@ public class AuthService {
     public LoginResponse authenticateUser(LoginRequest loginRequest) {
         String key = attemptKey(loginRequest.getUsername());
 
-        AttemptRecord frozen = loginAttempts.get(key);
-        if (frozen != null && frozen.lockedUntil() != null && Instant.now().isBefore(frozen.lockedUntil())) {
+        if (attemptTracker.isLocked(key)) {
             log.warn("Login rejected for locked account: username={}", key);
             throw new BusinessException("auth.login.locked");
         }
@@ -96,7 +87,7 @@ public class AuthService {
             // Blocked here so no JWT is ever issued; no lockout penalty applies.
             if (!Boolean.TRUE.equals(user.getIsActive())) {
                 SecurityContextHolder.clearContext();
-                loginAttempts.remove(key);
+                attemptTracker.clear(key);
                 log.warn("Login rejected for inactive account: username={}", key);
                 try {
                     auditLogService.logAction(user.getId(), "LOGIN_BLOCKED_INACTIVE",
@@ -108,7 +99,7 @@ public class AuthService {
                 throw new BusinessException("auth.login.inactive");
             }
 
-            loginAttempts.remove(key);
+            attemptTracker.clear(key);
 
             String jwtToken = jwtUtil.generateToken(user);
             UserResponse userResponse = createUserResponse(user);
@@ -121,7 +112,7 @@ public class AuthService {
             // Inactive-account rejection is not a password failure — don't count it
             // toward the lockout, otherwise a deactivated user could lock themselves in.
             if (!"auth.login.inactive".equals(be.getMessage())) {
-                recordFailedAttempt(key);
+                attemptTracker.recordFailure(key, LoginAttemptTracker.LOGIN);
             }
             // Preserve our intentional business error messages
             throw be;
@@ -133,7 +124,7 @@ public class AuthService {
             log.warn("Login rejected for inactive account: username={}", key);
             throw new BusinessException("auth.login.inactive");
         } catch (Exception e) {
-            recordFailedAttempt(key);
+            attemptTracker.recordFailure(key, LoginAttemptTracker.LOGIN);
             log.error("Login failed due to unexpected error. username={}", loginRequest.getUsername(), e);
 
             // Best-effort audit log; do not mask the root exception with audit issues
@@ -206,22 +197,6 @@ public class AuthService {
                     "User", savedUser.getId(), null, savedUser.toString());
 
             return savedUser;
-        }
-    }
-
-    private void recordFailedAttempt(String key) {
-        loginAttempts.merge(key, new AttemptRecord(1, Instant.now(), null), (existing, ignored) -> {
-            if (existing.lockedUntil() != null && Instant.now().isBefore(existing.lockedUntil())) {
-                return existing;
-            }
-            boolean withinWindow = existing.lastAttempt().isAfter(Instant.now().minus(ATTEMPT_WINDOW));
-            int failures = withinWindow ? existing.failures() + 1 : 1;
-            Instant lockedUntil = failures >= MAX_FAILED_ATTEMPTS ? Instant.now().plus(LOCKOUT_DURATION) : null;
-            return new AttemptRecord(failures, Instant.now(), lockedUntil);
-        });
-        AttemptRecord cur = loginAttempts.get(key);
-        if (cur != null && cur.lockedUntil() != null && Instant.now().isBefore(cur.lockedUntil())) {
-            log.warn("Account locked after repeated failed login attempts: username={}", key);
         }
     }
 

@@ -88,6 +88,7 @@ class OrderPromotionParityTest {
     @Mock private InventoryLedgerRepository inventoryLedgerRepository;
     @Mock private ProfitLedgerRepository profitLedgerRepository;
     @Mock private LocationStockRepository locationStockRepository;
+    @Mock private ManagerApprovalService managerApprovalService;
 
     private SaleService saleService;
     private OrderService orderService;
@@ -129,6 +130,7 @@ class OrderPromotionParityTest {
         ReflectionTestUtils.setField(saleService, "saleReturnRepository", saleReturnRepository);
         ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
+        ReflectionTestUtils.setField(saleService, "managerApprovalService", managerApprovalService);
         ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
         ShopTimeTestSupport.withClock(saleService);
 

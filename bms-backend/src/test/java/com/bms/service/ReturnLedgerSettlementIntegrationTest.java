@@ -10,6 +10,7 @@ import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SaleReturn;
 import com.bms.entity.SaleReturnItem;
+import com.bms.entity.StockMovement;
 import com.bms.entity.SystemSetting;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
@@ -30,6 +31,7 @@ import org.springframework.test.context.ContextConfiguration;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -190,13 +192,12 @@ class ReturnLedgerSettlementIntegrationTest {
     private void postReturnLines(SaleReturn saleReturn) {
         BigDecimal total = saleReturn.getTotalReturnAmount();
         BigDecimal debt = saleReturn.getDebtReductionAmount();
-        BigDecimal unallocated = debt;
         List<SaleReturnItem> lines = saleReturn.getItems();
+        List<BigDecimal> lineTotals = lines.stream().map(SaleReturnItem::getReturnAmount).toList();
+        List<BigDecimal> lineDebts = SaleReturnService.debtForLines(debt, total, lineTotals);
         for (int i = 0; i < lines.size(); i++) {
-            BigDecimal lineTotal = lines.get(i).getReturnAmount();
-            BigDecimal lineDebt = SaleReturnService.debtForLine(debt, total, lineTotal, unallocated,
-                    i == lines.size() - 1);
-            unallocated = unallocated.subtract(lineDebt);
+            BigDecimal lineTotal = lineTotals.get(i);
+            BigDecimal lineDebt = lineDebts.get(i);
             postingService.postReturnProfit(saleReturn, lines.get(i).getSaleItem(),
                     lines.get(i).getQuantityReturned(), 0, lineDebt, lineTotal.subtract(lineDebt));
         }
@@ -414,6 +415,38 @@ class ReturnLedgerSettlementIntegrationTest {
         postReturnLines(storeCreditReturn);
 
         assertBalanced(journal(), "a month of sales, a void and a two-line refund");
+    }
+
+    /**
+     * Spec 6 final check: a count that found stock posts an INVENTORY_GAIN row, and the month
+     * it lands in still has to reconcile. The history only ever named shortages and
+     * revaluations, so a gain posting matched nothing and the shop was told its books were
+     * wrong for counting correctly.
+     */
+    @Test
+    void aCountThatFoundStockReconcilesAgainstItsGainPosting() {
+        StockMovement movement = new StockMovement();
+        movement.setProduct(product("GAIN-1"));
+        movement.setMovementType(StockMovement.MovementType.ADJUSTMENT_IN);
+        movement.setReferenceType(StockMovement.ReferenceType.STOCK_COUNT);
+        movement.setReferenceId(1L);
+        movement.setQuantity(3);
+        // A counter's own reason code is not one of the positive adjustment ones, so it is
+        // the STOCK_COUNT reference that makes this a gain rather than an adjustment guess.
+        movement.setReasonCode("MISCOUNT");
+        movement.setCreatedBy(cashier);
+        movement.setValuationAmount(decimal("90.00"));
+        movement.setMovementDate(LocalDateTime.of(2026, 11, 7, 9, 0));
+        em.persistAndFlush(movement);
+
+        postingService.postInventoryGain(movement);
+        em.flush();
+
+        List<Map<String, Object>> issues =
+                (List<Map<String, Object>>) historyService.reconcile(YearMonth.of(2026, 11),
+                        YearMonth.of(2026, 11)).get("issues");
+        assertTrue(issues.stream().noneMatch(row -> "STOCK_MOVEMENT".equals(row.get("source"))),
+                "the gain posting needs a historical source it can be matched to: " + issues);
     }
 
     @Test

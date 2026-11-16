@@ -453,26 +453,44 @@ public class LedgerPostingService {
     }
 
     public void postInventoryGain(StockMovement movement) {
-        BigDecimal value = movement.getValuationAmount();
-        if (value == null || value.signum() <= 0) {
-            return;
-        }
-        String reason = movement.getReasonCode() != null
-                ? movement.getReasonCode().trim().toUpperCase() : "";
-        // S3: a physical count that finds more stock than the books is a gain
-        // too, and the counter's reason code is not one of the adjustment ones.
-        boolean fromStockCount = movement.getReferenceType() == StockMovement.ReferenceType.STOCK_COUNT;
-        if (!fromStockCount && !InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(reason)) {
+        if (!isInventoryGain(movement)) {
             return;
         }
         ProfitLedger row = postProfit(ProfitLedger.EventType.INVENTORY_GAIN, "STOCK_MOVEMENT",
                 movement.getId(), movement.getProduct().getId(), "inventory-gain",
-                movement.getQuantity(), BigDecimal.ZERO, BigDecimal.ZERO, value.negate(),
-                movement.getMovementDate());
+                movement.getQuantity(), BigDecimal.ZERO, BigDecimal.ZERO,
+                movement.getValuationAmount().negate(), movement.getMovementDate());
         if (row != null) {
-            row.setCategory(reason.isEmpty() ? "COUNT_CORRECTION" : reason);
+            row.setCategory(inventoryGainCategory(movement));
             row.setReference("MOV-" + movement.getId());
         }
+    }
+
+    /**
+     * The gain half of an inventory movement: a physical count that found stock, or an
+     * adjustment whose reason says the books were short. Reconciliation recognises a gain
+     * through this same rule, because a posting the history cannot name reads as a month
+     * that does not balance.
+     */
+    public boolean isInventoryGain(StockMovement movement) {
+        BigDecimal value = movement.getValuationAmount();
+        if (value == null || value.signum() <= 0) {
+            return false;
+        }
+        // S3: a count that finds more stock than the books is a gain even when the counter's
+        // reason code is not one of the adjustment ones.
+        return movement.getReferenceType() == StockMovement.ReferenceType.STOCK_COUNT
+                || InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(gainReason(movement));
+    }
+
+    /** The P&L category a gain is reported under: the counter's reason, or the count default. */
+    public String inventoryGainCategory(StockMovement movement) {
+        String reason = gainReason(movement);
+        return reason.isEmpty() ? "COUNT_CORRECTION" : reason;
+    }
+
+    private String gainReason(StockMovement movement) {
+        return movement.getReasonCode() != null ? movement.getReasonCode().trim().toUpperCase() : "";
     }
 
     public void postExpense(Expense expense) {

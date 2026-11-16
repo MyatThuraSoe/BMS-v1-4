@@ -96,7 +96,7 @@ public class SaleService {
     private ShopTimeService shopTimeService;
 
     @Autowired
-    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private ManagerApprovalService managerApprovalService;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -318,9 +318,12 @@ public class SaleService {
         sale.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         // O5: one manager override covers both authority gates below.
         boolean managerOverride = approveManagerCredentials(
-                request.getManagerUsername(), request.getManagerPassword());
-        assertDiscountWithinAuthority(subtotal, request.getDiscountAmount(), cashierId, managerOverride);
+                request.getManagerUsername(), request.getManagerPassword(), cashierId);
+        // M3: judge the discount that will actually be booked, not the raw request value.
+        // In FIXED/PERCENTAGE modes computeDiscount ignores the request, so a sent amount
+        // must not trip a limit for a discount that was never applied.
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
+        assertDiscountWithinAuthority(subtotal, discountAmount, cashierId, managerOverride);
         sale.setDiscountAmount(discountAmount);
 
         // P5: tax applies to the discounted line value, so the header discount
@@ -1274,15 +1277,20 @@ public class SaleService {
     }
 
     /**
-     * O5: a cashier-entered discount is capped at a configurable share of the
-     * subtotal. Managers and administrators get their own (higher) cap, and a
-     * cashier can clear the cap with manager credentials the same way an
-     * over-shipment is approved.
+     * O5/M3: a cashier-entered discount is capped at a configurable share of the subtotal.
+     * The cap only applies in AMOUNT mode, where the cashier chose the figure. In FIXED and
+     * PERCENTAGE modes the shop owner set the discount on purpose, so the cashier limit is
+     * skipped - the amount was never the cashier's to authorise. Managers and administrators
+     * get their own (higher) cap and a cashier can clear the cap with manager credentials the
+     * same way an over-shipment is approved.
      */
     private void assertDiscountWithinAuthority(BigDecimal subtotal, BigDecimal entered, Long cashierId,
                                                boolean managerOverride) {
         if (entered == null || entered.compareTo(BigDecimal.ZERO) <= 0
                 || subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        if (!shopDiscountIsCashierEntered()) {
             return;
         }
         boolean manager = isManagerOrAdmin(cashierId);
@@ -1298,6 +1306,22 @@ public class SaleService {
         throw new BusinessException("Discount " + entered.setScale(2, java.math.RoundingMode.HALF_UP)
                 + " exceeds the allowed " + limitPercent.stripTrailingZeros().toPlainString()
                 + "% of this sale (max " + maxAmount + "); manager approval is required");
+    }
+
+    /**
+     * M3: whether the figure under review was chosen by the cashier (AMOUNT mode) or fixed by
+     * the shop (FIXED / PERCENTAGE). The cashier cap only means something for the former, so a
+     * shop-set percentage is not the cashier's decision to police. A shop that wants its own
+     * percentages watched anyway can switch shop.discount.limitShopDiscounts on.
+     */
+    private boolean shopDiscountIsCashierEntered() {
+        ShopInfo info = shopInfoRepository.findTopByOrderByIdAsc().orElse(null);
+        if (info == null || info.getDiscountType() == ShopInfo.DiscountType.AMOUNT) {
+            return true;
+        }
+        return systemSettingRepository.findBySettingKey("shop.discount.limitShopDiscounts")
+                .map(SystemSetting::getSettingValue).map("true"::equalsIgnoreCase)
+                .orElse(false);
     }
 
     /** O5: the percentage cap for the acting role, falling back to the shipped defaults. */
@@ -1317,21 +1341,14 @@ public class SaleService {
         }
     }
 
-    /** O5: same credential check the receiving override uses; silent when none was entered. */
-    private boolean approveManagerCredentials(String username, String password) {
-        if (username == null || username.isBlank() || password == null || password.isBlank()) {
-            return false;
-        }
-        User manager = userRepository.findActiveByUsernameIgnoreCase(username.trim())
-                .orElseThrow(() -> new BusinessException("Invalid manager credentials"));
-        Role.RoleName role = manager.getRole() != null ? manager.getRole().getName() : null;
-        if (role != Role.RoleName.ROLE_ADMIN && role != Role.RoleName.ROLE_MANAGER) {
-            throw new BusinessException("Only a manager or administrator can approve this discount");
-        }
-        if (!passwordEncoder.matches(password, manager.getPassword())) {
-            throw new BusinessException("Invalid manager credentials");
-        }
-        return true;
+    /**
+     * O5/M2: the sale's manager override, now through the one shared approval path so a
+     * cashier guessing at a manager password is counted and audited like a login attempt.
+     * Silent when no credentials were entered; that is a normal sale with no override.
+     */
+    private boolean approveManagerCredentials(String username, String password, Long cashierId) {
+        return managerApprovalService.verify(username, password,
+                ManagerApprovalService.Purpose.SALE_DISCOUNT, cashierId);
     }
 
     /**

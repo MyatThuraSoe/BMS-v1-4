@@ -29,7 +29,9 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -225,6 +227,203 @@ class SqliteSchemaMigratorTest {
                 .toList();
         assertEquals(List.of("amount numeric(10,2)", "category varchar(50)", "code varchar(255)",
                 "ledger_revision BIGINT default 0 not null", "receipt_image LONGBLOB"), declarations);
+    }
+
+    /**
+     * A profit ledger as an older build created it: the event list stops before the
+     * write-off, variance and gain events existed.
+     */
+    private static final String LEGACY_PROFIT_LEDGER = """
+            create table profit_ledger (
+                cogs numeric(19,4) not null,
+                expense numeric(19,4) not null,
+                net_revenue numeric(19,4) not null,
+                quantity integer,
+                tax_amount numeric(19,4) not null,
+                period varchar(7) not null,
+                id integer,
+                occurred_at timestamp not null,
+                posted_at timestamp not null,
+                product_id bigint,
+                source_id bigint,
+                event_type varchar(30) not null check (event_type in ('SALE','RETURN','VOID')),
+                source_type varchar(40) not null,
+                category varchar(50),
+                line_key varchar(60) not null,
+                reference varchar(100),
+                posting_key varchar(200) not null unique,
+                primary key (id)
+            )""";
+
+    private static final String LEDGER_ROW =
+            "insert into profit_ledger (cogs, expense, net_revenue, tax_amount, period, id, occurred_at,"
+                    + " posted_at, event_type, source_type, line_key, posting_key) values"
+                    + " (0,0,1000,0,'2026-11',";
+
+    private static void insertLedgerRow(Statement statement, int id, String event, String postingKey)
+            throws SQLException {
+        statement.executeUpdate(LEDGER_ROW + id + ",'2026-11-01 08:00:00','2026-11-01 08:00:00','"
+                + event + "','SALE','L" + id + "','" + postingKey + "')");
+    }
+
+    @Test
+    void anUpgradedTableAcceptsAnEventTheOldCheckListDidNotAllow(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER);
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+            insertLedgerRow(statement, 2, "VOID", "PK-2");
+            try {
+                insertLedgerRow(statement, 3, "INVENTORY_GAIN", "PK-3");
+                throw new AssertionError("the old check list was expected to reject INVENTORY_GAIN");
+            } catch (SQLException expected) {
+                assertTrue(expected.getMessage().contains("CHECK constraint failed"),
+                        "expected a check failure, got: " + expected.getMessage());
+            }
+        }
+
+        migrate(sqlite(file));
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            insertLedgerRow(statement, 3, "INVENTORY_GAIN", "PK-3");
+            try (ResultSet rs = statement.executeQuery("select count(*) from profit_ledger")) {
+                rs.next();
+                assertEquals(3, rs.getInt(1), "both posted rows plus the new gain must be present");
+            }
+            try (ResultSet rs = statement.executeQuery(
+                    "select event_type from profit_ledger where id in (1,2) order by id")) {
+                assertTrue(rs.next());
+                assertEquals("SALE", rs.getString(1));
+                assertTrue(rs.next());
+                assertEquals("VOID", rs.getString(1), "existing entries must survive the rebuild");
+            }
+        }
+    }
+
+    @Test
+    void aRebuildBacksTheDatabaseUpOnceAndTheNextStartChangesNothing(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER);
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+        }
+
+        migrate(sqlite(file));
+
+        List<Path> backups;
+        try (var stream = Files.list(dir)) {
+            backups = stream.filter(path -> path.getFileName().toString().contains(".pre-upgrade-")).toList();
+        }
+        assertEquals(1, backups.size(), "one backup per start that rebuilds");
+        assertTrue(backups.get(0).getFileName().toString().startsWith("lumipos.db.pre-upgrade-"));
+        assertTrue(backups.get(0).getFileName().toString().endsWith(".bak"));
+
+        migrate(sqlite(file));
+
+        try (var stream = Files.list(dir)) {
+            assertEquals(1, stream.filter(path -> path.getFileName().toString().contains(".pre-upgrade-")).count(),
+                    "a start that rebuilds nothing must not make another backup");
+        }
+    }
+
+    @Test
+    void aTableAnotherTablePointsAtKeepsItsRowsAfterARebuild(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("create table shop_info (id integer, shop_name varchar(255) not null,"
+                    + " shop_type varchar(50) not null check (shop_type in ('MINI_MART','GROCERY')),"
+                    + " discount_type varchar(20) check (discount_type in ('PERCENTAGE','AMOUNT')),"
+                    + " primary key (id))");
+            statement.execute("create table shop_counters (id integer primary key, shop_id bigint"
+                    + " references shop_info (id), label varchar(50))");
+            statement.executeUpdate("insert into shop_info (id, shop_name, shop_type, discount_type)"
+                    + " values (7,'Mini Mart','GROCERY','AMOUNT')");
+            statement.executeUpdate("insert into shop_counters (id, shop_id, label) values (1,7,'Front')");
+        }
+
+        migrate(sqlite(file));
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            try (ResultSet rs = statement.executeQuery("select shop_name, shop_type from shop_info")) {
+                assertTrue(rs.next(), "the rebuilt table must still hold the shop row");
+                assertEquals("Mini Mart", rs.getString(1));
+                assertEquals("GROCERY", rs.getString(2));
+            }
+            try (ResultSet rs = statement.executeQuery("select label from shop_counters")) {
+                assertTrue(rs.next(), "the referencing table must be untouched");
+                assertEquals("Front", rs.getString(1));
+            }
+            try (ResultSet rs = statement.executeQuery("PRAGMA foreign_key_check")) {
+                assertFalse(rs.next(), "no row may be left pointing at a missing parent");
+            }
+            // The point of the rebuild: a shop type the old list refused is accepted now.
+            statement.executeUpdate("update shop_info set shop_type = 'PHARMACY' where id = 7");
+        }
+    }
+
+    @Test
+    void aRebuildThatCannotStartLeavesTheOriginalTableAlone(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER);
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+            insertLedgerRow(statement, 2, "VOID", "PK-2");
+            // The name the swap needs is taken, so nothing can be built without risking
+            // the rows that are already posted.
+            statement.execute("create table profit_ledger__new (id integer)");
+        }
+
+        SQLException failure = assertThrows(SQLException.class, () -> migrate(sqlite(file)));
+        assertTrue(failure.getMessage().contains("profit_ledger"),
+                "the message must name the table: " + failure.getMessage());
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            try (ResultSet rs = statement.executeQuery("select count(*) from profit_ledger")) {
+                rs.next();
+                assertEquals(2, rs.getInt(1), "the shop's own rows must still be there");
+            }
+            try (ResultSet rs = statement.executeQuery(
+                    "select sql from sqlite_master where type='table' and name='profit_ledger'")) {
+                rs.next();
+                assertTrue(rs.getString(1).contains("'SALE','RETURN','VOID'"),
+                        "the original definition must be intact, not half rebuilt");
+            }
+        }
+    }
+
+    /**
+     * The rebuild widens value lists and changes nothing else, so a shop keeps the columns
+     * its own data has even where the current model no longer mentions them.
+     */
+    @Test
+    void aRebuildKeepsAColumnTheCurrentModelNoLongerDeclares(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER.replace("primary key (id)",
+                    "legacy_note varchar(40), primary key (id)"));
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+            statement.executeUpdate("update profit_ledger set legacy_note = 'from the old build' where id = 1");
+        }
+
+        migrate(sqlite(file));
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            try (ResultSet rs = statement.executeQuery(
+                    "select legacy_note from profit_ledger where id = 1")) {
+                assertTrue(rs.next());
+                assertEquals("from the old build", rs.getString(1));
+            }
+            insertLedgerRow(statement, 2, "REVALUATION", "PK-2");
+        }
     }
 
     /** The dependsOn hook names this bean literally, so a rename has to be caught here. */

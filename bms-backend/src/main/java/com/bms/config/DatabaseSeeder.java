@@ -139,6 +139,9 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Maximum header discount percentage a cashier may apply without manager approval", "DECIMAL"});
         defaults.put("shop.discount.maxPercentManager", new String[]{"100.00",
                 "Maximum header discount percentage a manager may apply", "DECIMAL"});
+        defaults.put("shop.discount.limitShopDiscounts", new String[]{"false",
+                "Also require manager approval when the discount was fixed by the shop, not typed by the cashier",
+                "BOOLEAN"});
         defaults.put("shop.order.reservationHours", new String[]{"0",
                 "Hours a pending order can keep reserved stock before automatic expiry; 0 disables expiry", "INTEGER"});
         defaults.put("accounting.period.lock", new String[]{"LOCK",
@@ -155,6 +158,10 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Allow admin write-off flow for customer debt before deletion", "BOOLEAN"});
         defaults.put("auth.token.requireVersionClaim", new String[]{"false",
                 "Reject JWTs that do not carry the token version claim", "BOOLEAN"});
+        defaults.put("auth.approval.maxFailures", new String[]{"5",
+                "Failed manager approvals a cashier may enter before their approvals lock", "INTEGER"});
+        defaults.put("auth.approval.lockMinutes", new String[]{"10",
+                "Minutes a cashier's manager approvals stay locked after too many failures", "INTEGER"});
 
         for (Map.Entry<String, String[]> entry : defaults.entrySet()) {
             if (systemSettingRepository.findBySettingKey(entry.getKey()).isEmpty()) {

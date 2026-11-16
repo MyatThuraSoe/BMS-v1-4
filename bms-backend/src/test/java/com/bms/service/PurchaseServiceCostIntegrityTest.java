@@ -34,6 +34,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
@@ -52,6 +53,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 
 /**
  * Reproduction tests for audit findings C1, C2 and C3 (see
@@ -100,6 +102,8 @@ class PurchaseServiceCostIntegrityTest {
     private PeriodGuard periodGuard;
     @Mock
     private PurchasePaymentService purchasePaymentService;
+    @Mock
+    private com.bms.repository.SystemSettingRepository systemSettingRepository;
 
     private final List<InventoryLedger> inventoryLedgerRows = new ArrayList<>();
 
@@ -158,7 +162,7 @@ class PurchaseServiceCostIntegrityTest {
         ReflectionTestUtils.setField(purchaseService, "userRepository", userRepository);
         ReflectionTestUtils.setField(purchaseService, "sequenceService", sequenceService);
         ReflectionTestUtils.setField(purchaseService, "locationService", locationService);
-        ReflectionTestUtils.setField(purchaseService, "passwordEncoder", passwordEncoder);
+        ReflectionTestUtils.setField(purchaseService, "managerApprovalService", managerApprovalService());
         ReflectionTestUtils.setField(purchaseService, "expenseRepository", expenseRepository);
         ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(purchaseService, "periodGuard", periodGuard);
@@ -407,6 +411,16 @@ class PurchaseServiceCostIntegrityTest {
         item.setUnitCost(new BigDecimal(unitCost));
         request.setItems(List.of(item));
         return request;
+    }
+
+    /**
+     * M2: the over-shipment override is the shared approval service, so the manager-credential
+     * stubs below are what let a receive go through.
+     */
+    private ManagerApprovalService managerApprovalService() {
+        lenient().when(systemSettingRepository.findBySettingKey(anyString())).thenReturn(Optional.empty());
+        return new ManagerApprovalService(userRepository, passwordEncoder, systemSettingRepository,
+                auditLogService, new LoginAttemptTracker(), mock(PlatformTransactionManager.class));
     }
 
     private Purchase doCreate(int quantity, String unitCost, boolean receiveNow) {
