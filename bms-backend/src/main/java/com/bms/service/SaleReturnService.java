@@ -389,16 +389,18 @@ public class SaleReturnService {
         }
         // N1: the debt reduction and the refund are decided once for the whole
         // return, but each ledger row must carry only its own share — otherwise a
-        // multi-line return books the totals once per line. The last line takes
-        // whatever is left so the parts sum back to the exact totals.
-        BigDecimal unallocatedDebt = debtReduction;
+        // multi-line return books the totals once per line. M5: the whole split is
+        // planned in one call so no line is asked for more than it is worth.
         List<SaleReturnItem> returnLines = savedReturn.getItems();
+        List<BigDecimal> lineTotals = new ArrayList<>(returnLines.size());
+        for (SaleReturnItem item : returnLines) {
+            lineTotals.add(item.getReturnAmount() != null ? item.getReturnAmount() : BigDecimal.ZERO);
+        }
+        List<BigDecimal> lineDebts = debtForLines(debtReduction, totalReturnAmount, lineTotals);
         for (int i = 0; i < returnLines.size(); i++) {
             SaleReturnItem item = returnLines.get(i);
-            boolean lastLine = i == returnLines.size() - 1;
-            BigDecimal lineTotal = item.getReturnAmount() != null ? item.getReturnAmount() : BigDecimal.ZERO;
-            BigDecimal lineDebt = debtForLine(debtReduction, totalReturnAmount, lineTotal, unallocatedDebt, lastLine);
-            unallocatedDebt = unallocatedDebt.subtract(lineDebt);
+            BigDecimal lineTotal = lineTotals.get(i);
+            BigDecimal lineDebt = lineDebts.get(i);
             ledgerPostingService.postReturnProfit(savedReturn, item.getSaleItem(), item.getQuantityReturned(),
                     returnedQuantitiesBefore.get(item.getSaleItem().getId()), lineDebt,
                     lineTotal.subtract(lineDebt));
@@ -489,6 +491,50 @@ public class SaleReturnService {
         BigDecimal share = debtReduction.multiply(lineTotal)
                 .divide(totalReturnAmount, 2, RoundingMode.HALF_UP);
         return share.min(unallocated).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * M5: the debt reduction as one allocation over the whole return. A line never
+     * takes more than it is worth, because {@code lineTotal - lineDebt} is the
+     * refund for that line and a negative refund would reach the drawer with the
+     * wrong sign. Whatever rounding leaves unplaced after the last line is handed
+     * back to the earlier lines a cent at a time, so the parts still add up to
+     * exactly {@code debtReduction} whenever the reduction fits the return.
+     */
+    static List<BigDecimal> debtForLines(BigDecimal debtReduction, BigDecimal totalReturnAmount,
+                                         List<BigDecimal> lineTotals) {
+        BigDecimal unallocated = debtReduction == null ? BigDecimal.ZERO : debtReduction;
+        List<BigDecimal> parts = new ArrayList<>(lineTotals.size());
+        for (int i = 0; i < lineTotals.size(); i++) {
+            BigDecimal lineTotal = lineTotals.get(i) == null
+                    ? BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP) : lineTotals.get(i);
+            BigDecimal share = debtForLine(debtReduction, totalReturnAmount, lineTotal, unallocated,
+                    i == lineTotals.size() - 1).min(lineTotal).max(BigDecimal.ZERO)
+                    .setScale(2, RoundingMode.HALF_UP);
+            parts.add(share);
+            unallocated = unallocated.subtract(share);
+        }
+        spreadLeftoverDebt(parts, lineTotals, unallocated);
+        return parts;
+    }
+
+    private static void spreadLeftoverDebt(List<BigDecimal> parts, List<BigDecimal> lineTotals, BigDecimal leftover) {
+        BigDecimal hundredths = new BigDecimal("0.01");
+        BigDecimal remaining = leftover == null ? BigDecimal.ZERO : leftover;
+        while (remaining.compareTo(hundredths) >= 0) {
+            boolean placed = false;
+            for (int i = 0; i < parts.size() && remaining.compareTo(hundredths) >= 0; i++) {
+                BigDecimal lineTotal = lineTotals.get(i);
+                if (lineTotal != null && parts.get(i).add(hundredths).compareTo(lineTotal) <= 0) {
+                    parts.set(i, parts.get(i).add(hundredths));
+                    remaining = remaining.subtract(hundredths);
+                    placed = true;
+                }
+            }
+            if (!placed) {
+                return;
+            }
+        }
     }
 
     /**

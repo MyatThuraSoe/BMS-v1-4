@@ -1,0 +1,14 @@
+# Keeps the editor writing the same endings .gitattributes stores, so saving a
+# file does not rewrite every line in it.
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+
+[*.bat]
+end_of_line = crlf
+
+[*.cmd]
+end_of_line = crlf

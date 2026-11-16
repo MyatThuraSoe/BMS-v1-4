@@ -1,0 +1,38 @@
+# Line endings are decided here, not by each developer's git config, so editing
+# three lines shows as three changed lines instead of a whole-file diff.
+* text=auto eol=lf
+
+# cmd.exe refuses to parse a batch file that only has LF endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# These must keep their exact bytes; text conversion corrupts them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.bmp binary
+*.ico binary
+*.icns binary
+*.db binary
+*.sqlite binary
+*.jar binary
+*.war binary
+*.ear binary
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.zip binary
+*.gz binary
+*.bz2 binary
+*.xz binary
+*.7z binary
+*.pdf binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+
+# The Android app is not part of this cleanup, so it keeps the endings it has.
+Android/** -text

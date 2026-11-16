@@ -11,12 +11,15 @@ import org.springframework.stereotype.Component;
 import javax.sql.DataSource;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -24,6 +27,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Creates and upgrades the SQLite schema in place of Hibernate's {@code ddl-auto: update}.
@@ -38,7 +43,10 @@ import java.util.Set;
  * mattering.
  *
  * <p>Statements come from {@code db/sqlite/schema.sql}, which is Hibernate's own export
- * of the entity model and is what {@code ddl-auto: update} used to run.
+ * of the entity model and is what {@code ddl-auto: update} used to run. That script is also
+ * the source of the enum value lists: an existing table whose {@code CHECK (col in (...))}
+ * no longer covers the current model is rebuilt here, because SQLite cannot widen a check
+ * in place and an upgrade that only added values would leave a shop rejecting them forever.
  */
 @Component
 @Profile("sqlite")
@@ -56,6 +64,15 @@ public class SqliteSchemaMigrator implements InitializingBean {
     /** Body clauses of a CREATE TABLE that describe the table, not a column. */
     private static final Set<String> TABLE_LEVEL_KEYWORDS = Set.of(
             "primary", "unique", "check", "foreign", "constraint");
+
+    /** An enum column's allowed values, as Hibernate writes them: {@code check (col in ('A','B'))}. */
+    private static final Pattern ENUM_CHECK = Pattern.compile(
+            "check\\s*\\(\\s*([^\\s(),]+)\\s+in\\s*\\(([^()]*)\\)", Pattern.CASE_INSENSITIVE);
+
+    /** Name given to the replacement table while a stale one is being rebuilt. */
+    private static final String STAGING_SUFFIX = "__new";
+
+    private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmm");
 
     private final DataSource dataSource;
     private final Resource script;
@@ -82,9 +99,12 @@ public class SqliteSchemaMigrator implements InitializingBean {
         try (Connection connection = dataSource.getConnection()) {
             Set<String> alreadyCreated = tableNames(connection);
             execute(connection, tables);
-            // Indexes come last: a shop whose tables predate a column cannot have that
-            // column's index created until the column itself has been added.
             addMissingColumns(connection, expected, alreadyCreated);
+            // Indexes come last: a shop whose tables predate a column cannot have that
+            // column's index created until the column itself has been added. A widened enum
+            // also has to be refreshed before them, because that rebuild drops the table and
+            // carries its own indexes across with it.
+            refreshCheckConstraints(connection, expected, alreadyCreated);
             execute(connection, indexes);
         }
     }
@@ -148,6 +168,300 @@ public class SqliteSchemaMigrator implements InitializingBean {
         }
     }
 
+    /**
+     * Gives tables that survived from an older build the enum value list of the current
+     * model. SQLite has no {@code ALTER ... CHECK}, and a CHECK created with the table can
+     * never be widened in place, so a shop that installed before {@code INVENTORY_GAIN}
+     * existed keeps rejecting it forever. Such a table is replaced by a copy of itself with
+     * the wider list, inside one transaction, after the file has been backed up.
+     *
+     * <p>Only columns that carry a list on both sides are compared. A table whose old
+     * definition had no list at all is left alone: it already accepts everything, and adding
+     * a check could reject rows that are already stored.
+     */
+    private void refreshCheckConstraints(Connection connection, Map<String, Table> expected,
+                                         Set<String> alreadyCreated) throws SQLException, IOException {
+        Map<String, Map<String, String>> widenings = new LinkedHashMap<>();
+        try (Statement statement = connection.createStatement()) {
+            for (Table table : expected.values()) {
+                if (!alreadyCreated.contains(table.name()) || table.checks().isEmpty()) {
+                    continue;
+                }
+                String live = liveDefinition(statement, table.name());
+                Map<String, String> current = enumChecks(live);
+                Map<String, String> wider = new LinkedHashMap<>();
+                for (Map.Entry<String, String> check : table.checks().entrySet()) {
+                    String allowed = current.get(check.getKey());
+                    if (allowed != null && !enumValues(allowed).containsAll(enumValues(check.getValue()))) {
+                        wider.put(check.getKey(), check.getValue());
+                    }
+                }
+                if (!wider.isEmpty()) {
+                    widenings.put(table.name(), wider);
+                }
+            }
+        }
+        if (widenings.isEmpty()) {
+            return;
+        }
+        log.info("SQLite schema: {} table(s) still hold an older enum value list: {}",
+                widenings.size(), widenings.keySet());
+        Path backup = backUpDatabaseFile(connection);
+        // Rows that already dangled before the upgrade are the shop's own history, so the
+        // swap is only refused if it is what orphaned them.
+        int violationsBefore = foreignKeyViolations(connection);
+        try (Statement statement = connection.createStatement()) {
+            for (Map.Entry<String, Map<String, String>> widening : widenings.entrySet()) {
+                rebuild(connection, statement, widening.getKey(),
+                        liveDefinition(statement, widening.getKey()), widening.getValue());
+            }
+        }
+        int violations = foreignKeyViolations(connection);
+        if (violations > violationsBefore) {
+            throw new SQLException("LumiPOS stopped: rebuilding " + widenings.keySet() + " left "
+                    + violations + " row(s) pointing at a parent that is not there. Restore "
+                    + (backup == null ? "the backup" : "file " + backup)
+                    + " and start the previous version.");
+        }
+        if (backup != null) {
+            log.warn("SQLite schema: the database was copied to {} before those tables were rebuilt",
+                    backup.getFileName());
+        }
+    }
+
+    /**
+     * Swaps one table for an identical definition whose enum lists are the current ones,
+     * keeping every column and row it already had. Only the lists change: rebuilding from
+     * {@code schema.sql} instead would pull in columns the shop has never had values for and
+     * drop columns the current model no longer declares, which is a far larger upgrade than a
+     * check that was widened.
+     */
+    private void rebuild(Connection connection, Statement source, String name, String liveDefinition,
+                         Map<String, String> widerLists) throws SQLException {
+        String staging = name + STAGING_SUFFIX;
+        List<String> columns = new ArrayList<>(columnNames(source, name));
+        List<String> legacyIndexes = legacyIndexDefinitions(source, name);
+        long rowsBefore = rowCount(source, name);
+
+        // Foreign keys have to be off while the parent is gone, and the pragma does nothing
+        // once a transaction has opened, so it is set here rather than inside the block.
+        boolean autoCommit = connection.getAutoCommit();
+        String foreignKeys = pragma(connection, "foreign_keys");
+        try {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys=OFF");
+            }
+            connection.setAutoCommit(false);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute(stagingDefinition(liveDefinition, name, staging, widerLists));
+                statement.execute("insert into " + staging + " (" + String.join(", ", columns) + ")"
+                        + " select " + String.join(", ", columns) + " from " + name);
+                long copied = rowCount(statement, staging);
+                if (copied != rowsBefore) {
+                    throw new SQLException("the copy holds " + copied + " row(s) where the table has "
+                            + rowsBefore);
+                }
+                statement.execute("drop table " + name);
+                statement.execute("alter table " + staging + " rename to " + name);
+                if (countRows(statement, "PRAGMA foreign_key_check(" + name + ")") > 0) {
+                    throw new SQLException("the rebuilt table points at rows that are not there");
+                }
+            }
+            connection.commit();
+            log.info("SQLite schema: widened the enum lists of table '{}' ({} column(s), {} row(s) carried over)",
+                    name, widerLists.keySet(), rowsBefore, columns.size());
+        } catch (SQLException ex) {
+            rollback(connection);
+            throw new SQLException("LumiPOS could not widen the allowed values of table '" + name
+                    + "', and the table was left exactly as it was: " + ex.getMessage(),
+                    ex.getSQLState(), ex.getErrorCode(), ex);
+        } finally {
+            restoreAutoCommit(connection, autoCommit);
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("PRAGMA foreign_keys=" + (foreignKeys == null ? "OFF" : foreignKeys));
+            } catch (SQLException ignored) {
+                log.warn("SQLite schema: could not restore PRAGMA foreign_keys after rebuilding '{}'", name);
+            }
+        }
+        recreateDroppedIndexes(connection, name, legacyIndexes);
+    }
+
+    /**
+     * The live {@code CREATE TABLE} with the staging name and the current value lists. It is
+     * otherwise untouched, so the copy holds what the shop already had.
+     */
+    static String stagingDefinition(String liveDefinition, String name, String staging,
+                                    Map<String, String> widerLists) {
+        Matcher matcher = ENUM_CHECK.matcher(liveDefinition);
+        StringBuilder widened = new StringBuilder();
+        while (matcher.find()) {
+            String column = strip(matcher.group(1)).toLowerCase(Locale.ROOT);
+            String values = widerLists.getOrDefault(column, matcher.group(2));
+            matcher.appendReplacement(widened, Matcher.quoteReplacement(
+                    matcher.group(0).replace(matcher.group(2), values)));
+        }
+        matcher.appendTail(widened);
+        return widened.toString().replaceFirst(
+                "(?i)^(create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?)[\"`\\[]?" + Pattern.quote(name)
+                        + "[\"`\\]]?",
+                "$1" + Matcher.quoteReplacement(staging));
+    }
+
+    /**
+     * Re-creates the indexes the dropped table had that the script does not declare; the ones
+     * it does are made moments later by the script's own index pass. A legacy index sitting on
+     * a column the current model no longer has cannot be rebuilt and is only reported - the
+     * table itself is already correct by then, so losing that one index must not stop a shop.
+     */
+    private void recreateDroppedIndexes(Connection connection, String name, List<String> definitions) {
+        try (Statement statement = connection.createStatement()) {
+            for (String ddl : definitions) {
+                try {
+                    statement.execute(ddl);
+                } catch (SQLException ex) {
+                    log.warn("SQLite schema: index of table '{}' could not be rebuilt ({}): {}",
+                            name, ex.getMessage(), abbreviate(ddl));
+                }
+            }
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: indexes of table '{}' were not checked: {}", name, ex.getMessage());
+        }
+    }
+
+    private static List<String> legacyIndexDefinitions(Statement statement, String name) throws SQLException {
+        List<String> definitions = new ArrayList<>();
+        try (ResultSet rs = statement.executeQuery("SELECT sql FROM sqlite_master WHERE type = 'index'"
+                + " AND tbl_name = '" + name + "' AND sql IS NOT NULL")) {
+            while (rs.next()) {
+                definitions.add(rs.getString(1).replaceFirst("(?i)^(create\\s+(?:unique\\s+)?index\\s+)",
+                        "$1if not exists "));
+            }
+        }
+        return definitions;
+    }
+
+    private static String liveDefinition(Statement statement, String name) throws SQLException {
+        try (ResultSet rs = statement.executeQuery("SELECT sql FROM sqlite_master WHERE type = 'table'"
+                + " AND name = '" + name + "'")) {
+            return rs.next() ? rs.getString(1) : "";
+        }
+    }
+
+    private static int foreignKeyViolations(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            return countRows(statement, "PRAGMA foreign_key_check");
+        }
+    }
+
+    private static long rowCount(Statement statement, String table) throws SQLException {
+        try (ResultSet rs = statement.executeQuery("select count(*) from " + table)) {
+            return rs.next() ? rs.getLong(1) : 0L;
+        }
+    }
+
+    private static int countRows(Statement statement, String query) throws SQLException {
+        try (ResultSet rs = statement.executeQuery(query)) {
+            int rows = 0;
+            while (rs.next()) {
+                rows++;
+            }
+            return rows;
+        }
+    }
+
+    private static void rollback(Connection connection) {
+        try {
+            connection.rollback();
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: the rollback after a failed rebuild did not complete: {}", ex.getMessage());
+        }
+    }
+
+    private static void restoreAutoCommit(Connection connection, boolean autoCommit) {
+        try {
+            connection.setAutoCommit(autoCommit);
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: could not restore the connection's auto-commit mode: {}", ex.getMessage());
+        }
+    }
+
+    private static String pragma(Connection connection, String name) {
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("PRAGMA " + name)) {
+            return rs.next() ? rs.getString(1) : null;
+        } catch (SQLException ex) {
+            return null;
+        }
+    }
+
+    /**
+     * A copy of the whole database next to the original, taken before the first rebuild of a
+     * start. A rebuild is the only step here that can lose anything, so it is the only one
+     * that is guarded, and one copy per start is enough to get back to.
+     */
+    private static Path backUpDatabaseFile(Connection connection) throws SQLException, IOException {
+        String file = null;
+        try (Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("PRAGMA database_list")) {
+            while (rs.next()) {
+                if ("main".equalsIgnoreCase(rs.getString(2))) {
+                    file = rs.getString(3);
+                }
+            }
+        }
+        if (file == null || file.isBlank()) {
+            log.warn("SQLite schema: no database file to back up; rebuilding without a copy");
+            return null;
+        }
+        Path source = Path.of(file);
+        if (!Files.isRegularFile(source)) {
+            log.warn("SQLite schema: '{}' is not a file on disk; rebuilding without a copy", file);
+            return null;
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: the write-ahead log of '{}' was not folded into the copy: {}",
+                    file, ex.getMessage());
+        }
+        Path copy = source.resolveSibling(source.getFileName() + ".pre-upgrade-"
+                + LocalDateTime.now().format(BACKUP_STAMP) + ".bak");
+        for (int attempt = 2; Files.exists(copy); attempt++) {
+            copy = source.resolveSibling(source.getFileName() + ".pre-upgrade-"
+                    + LocalDateTime.now().format(BACKUP_STAMP) + "-" + attempt + ".bak");
+        }
+        Files.copy(source, copy);
+        return copy;
+    }
+
+    /**
+     * The enum-shaped checks of a {@code CREATE TABLE}: column name to the values it allows,
+     * written exactly as the script writes them.
+     */
+    static Map<String, String> enumChecks(String createStatement) {
+        Map<String, String> checks = new LinkedHashMap<>();
+        Matcher matcher = ENUM_CHECK.matcher(createStatement);
+        while (matcher.find()) {
+            String values = matcher.group(2).trim();
+            if (!enumValues(values).isEmpty()) {
+                checks.put(strip(matcher.group(1)).toLowerCase(Locale.ROOT), values);
+            }
+        }
+        return checks;
+    }
+
+    /** The members of a value list, compared without regard to case. */
+    static Set<String> enumValues(String values) {
+        Set<String> parsed = new LinkedHashSet<>();
+        for (String value : values.split(",")) {
+            String allowed = value.trim().replaceAll("^'+|'+$", "").toLowerCase(Locale.ROOT);
+            if (!allowed.isEmpty()) {
+                parsed.add(allowed);
+            }
+        }
+        return parsed;
+    }
+
     private Set<String> columnNames(Statement statement, String table) throws SQLException {
         Set<String> names = new LinkedHashSet<>();
         try (ResultSet rs = statement.executeQuery("PRAGMA table_info(" + table + ")")) {
@@ -186,7 +500,7 @@ public class SqliteSchemaMigrator implements InitializingBean {
             String name = table(nameBetween(statement, open));
             int close = statement.lastIndexOf(')');
             List<Column> columns = columns(statement.substring(open + 1, close));
-            tables.put(name, new Table(name, columns));
+            tables.put(name, new Table(name, columns, enumChecks(statement)));
         }
         return tables;
     }
@@ -378,7 +692,7 @@ public class SqliteSchemaMigrator implements InitializingBean {
         return parts;
     }
 
-    record Table(String name, List<Column> columns) {
+    record Table(String name, List<Column> columns, Map<String, String> checks) {
     }
 
     record Column(String name, String declaration) {

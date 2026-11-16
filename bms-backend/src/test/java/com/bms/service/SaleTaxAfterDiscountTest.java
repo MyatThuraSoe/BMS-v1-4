@@ -92,6 +92,7 @@ class SaleTaxAfterDiscountTest {
     @Mock private LocationStockRepository locationStockRepository;
     @Mock private LocationService locationService;
     @Mock private ProductPriceHistoryRepository priceHistoryRepository;
+    @Mock private ManagerApprovalService managerApprovalService;
 
     private SaleService saleService;
     private SaleReturnService saleReturnService;
@@ -133,6 +134,7 @@ class SaleTaxAfterDiscountTest {
         ShopTimeTestSupport.withClock(ledgerPostingService);
         ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
+        ReflectionTestUtils.setField(saleService, "managerApprovalService", managerApprovalService);
         ShopTimeTestSupport.withClock(saleService);
         ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
         lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(

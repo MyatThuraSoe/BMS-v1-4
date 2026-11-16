@@ -153,16 +153,20 @@ public class LedgerHistoryService {
     private int repairSettlementGroup(SaleReturn saleReturn, List<ProfitLedger> rows) {
         BigDecimal debt = money(saleReturn.getDebtReductionAmount());
         BigDecimal total = money(saleReturn.getTotalReturnAmount());
-        BigDecimal unallocated = debt;
+        List<BigDecimal> lineTotals = new ArrayList<>(rows.size());
+        for (ProfitLedger row : rows) {
+            // The row is its own source of truth for the line total: those amounts
+            // were never wrong, only the way the money was split across accounts.
+            lineTotals.add(money(row.getNetRevenue()).add(money(row.getTaxAmount())).negate());
+        }
+        // M5: repair has to split the debt exactly like the return did, otherwise a
+        // rewritten row would disagree with the till that booked it.
+        List<BigDecimal> lineDebts = SaleReturnService.debtForLines(debt, total, lineTotals);
         int rewritten = 0;
         for (int i = 0; i < rows.size(); i++) {
             ProfitLedger row = rows.get(i);
-            // The row is its own source of truth for the line total: those amounts
-            // were never wrong, only the way the money was split across accounts.
-            BigDecimal lineTotal = money(row.getNetRevenue()).add(money(row.getTaxAmount())).negate();
-            BigDecimal lineDebt = SaleReturnService.debtForLine(debt, total, lineTotal, unallocated,
-                    i == rows.size() - 1);
-            unallocated = unallocated.subtract(lineDebt);
+            BigDecimal lineTotal = lineTotals.get(i);
+            BigDecimal lineDebt = lineDebts.get(i);
             BigDecimal[] before = {money(row.getSettlementCash()), money(row.getSettlementClearing()),
                     money(row.getSettlementAr()), money(row.getSettlementRefundLiability())};
             postingService.repairRefundSettlement(row, saleReturn.getRefundMethod(), lineDebt,
@@ -517,6 +521,11 @@ public class LedgerHistoryService {
                 events.add(new Event(ProfitLedger.EventType.WRITE_OFF, "STOCK_MOVEMENT", movement.getId(),
                         movement.getProduct().getId(), category, -movement.getQuantity(), money(BigDecimal.ZERO),
                         money(BigDecimal.ZERO), money(movement.getValuationAmount().abs()), category, movement.getMovementDate()));
+            } else if (postingService.isInventoryGain(movement)) {
+                events.add(new Event(ProfitLedger.EventType.INVENTORY_GAIN, "STOCK_MOVEMENT", movement.getId(),
+                        movement.getProduct().getId(), "inventory-gain", movement.getQuantity(),
+                        money(BigDecimal.ZERO), money(BigDecimal.ZERO), money(movement.getValuationAmount()).negate(),
+                        postingService.inventoryGainCategory(movement), movement.getMovementDate()));
             } else if (movement.getMovementType() == StockMovement.MovementType.REVALUATION) {
                 events.add(new Event(ProfitLedger.EventType.REVALUATION, "STOCK_MOVEMENT", movement.getId(),
                         movement.getProduct().getId(), "revaluation", 0, money(BigDecimal.ZERO), money(BigDecimal.ZERO),

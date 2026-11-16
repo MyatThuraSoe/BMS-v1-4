@@ -43,10 +43,12 @@ public class DiscountTypeCheckConstraintRepair implements ApplicationRunner {
             boolean isH2 = url.contains(":h2:");
             boolean isSqlite = url.contains(":sqlite:");
 
-            // SQLite has no native enum type — Hibernate always creates
-            // discount_type as VARCHAR there, so there is never anything to fix.
+            // SQLite has no native enum type, and a discount_type column that was created
+            // with a narrow CHECK is widened by SqliteSchemaMigrator, which rebuilds the
+            // table; there is nothing for this repair to do here.
             if (isSqlite) {
-                log.info("DiscountTypeCheckConstraintRepair: SQLite stores enums as VARCHAR — no repair needed");
+                log.info("DiscountTypeCheckConstraintRepair: SQLite enum checks are widened by"
+                        + " SqliteSchemaMigrator - no repair needed");
                 return;
             }
 

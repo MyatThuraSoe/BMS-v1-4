@@ -66,7 +66,7 @@ public class PurchaseService {
     private com.bms.repository.ExpenseRepository expenseRepository;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    private ManagerApprovalService managerApprovalService;
 
     @Autowired
     private LedgerPostingService ledgerPostingService;
@@ -463,7 +463,7 @@ public class PurchaseService {
         }
 
         if (overShipment) {
-            verifyManagerOverride(request.getManagerUsername(), request.getManagerPassword());
+            verifyManagerOverride(request.getManagerUsername(), request.getManagerPassword(), userId);
         }
 
         Location quarantineLocation = locationService.getDefault(Location.LocationType.QUARANTINE);
@@ -620,20 +620,18 @@ public class PurchaseService {
         stockMovementRepository.save(movement);
     }
 
-    private void verifyManagerOverride(String username, String password) {
+    /**
+     * M2: the over-shipment override goes through the shared approval path, so a wrong
+     * manager password here counts against the same lockout as login and every result is
+     * audited.
+     */
+    private void verifyManagerOverride(String username, String password, Long cashierId) {
         if (username == null || username.isBlank() || password == null || password.isBlank()) {
             throw new BusinessException(
                     "Received quantity exceeds the ordered quantity. Manager credentials are required.");
         }
-        User manager = userRepository.findActiveByUsernameIgnoreCase(username.trim())
-                .orElseThrow(() -> new BusinessException("Invalid manager credentials"));
-        Role.RoleName role = manager.getRole() != null ? manager.getRole().getName() : null;
-        if (role != Role.RoleName.ROLE_ADMIN && role != Role.RoleName.ROLE_MANAGER) {
-            throw new BusinessException("Only a manager or administrator can approve over-shipments");
-        }
-        if (!passwordEncoder.matches(password, manager.getPassword())) {
-            throw new BusinessException("Invalid manager credentials");
-        }
+        managerApprovalService.verify(username, password, ManagerApprovalService.Purpose.OVER_SHIPMENT,
+                cashierId);
     }
 
     // ------------------------------------------------------------------
