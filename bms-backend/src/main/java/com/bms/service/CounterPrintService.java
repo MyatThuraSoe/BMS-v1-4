@@ -41,9 +41,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 @Service
 public class CounterPrintService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     public static final String CONFIG_KEY = "receipt.counter.printer";
 

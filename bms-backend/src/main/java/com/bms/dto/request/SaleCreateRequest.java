@@ -31,6 +31,17 @@ public class SaleCreateRequest {
     /** Optional split-payment lines. Legacy clients may omit this. */
     private List<SalePaymentRequest> payments;
 
+    /** O5: manager credentials for a discount above the cashier limit. Optional. */
+    private String managerUsername;
+
+    private String managerPassword;
+
+    public String getManagerUsername() { return managerUsername; }
+    public void setManagerUsername(String managerUsername) { this.managerUsername = managerUsername; }
+
+    public String getManagerPassword() { return managerPassword; }
+    public void setManagerPassword(String managerPassword) { this.managerPassword = managerPassword; }
+
     public List<SalePaymentRequest> getPayments() { return payments; }
     public void setPayments(List<SalePaymentRequest> payments) { this.payments = payments; }
 

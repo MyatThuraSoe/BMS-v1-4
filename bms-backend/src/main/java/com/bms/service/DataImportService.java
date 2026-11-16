@@ -23,9 +23,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DataImportService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;
@@ -50,19 +49,19 @@ public class DataImportService {
     @PersistenceContext
     private EntityManager entityManager;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PeriodGuard periodGuard;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PeriodCloseRepository periodCloseRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private InventoryLedgerRepository inventoryLedgerRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private ProfitLedgerRepository profitLedgerRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private LedgerReadService ledgerReadService;
 
     public enum ImportMode { REPLACE_ALL, MERGE }

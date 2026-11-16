@@ -148,6 +148,8 @@ class PurchaseServiceReceivingTest {
         ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
         ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
+        ShopTimeTestSupport.withClock(purchaseService);
+        ShopTimeTestSupport.withClock(ledgerPostingService);
         lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
                 any(), any(), any(), any(), any())).thenReturn(Optional.empty());
         lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);
@@ -156,7 +158,7 @@ class PurchaseServiceReceivingTest {
     }
 
     private void stubReceiving() {
-        when(purchaseRepository.findById(1L)).thenReturn(Optional.of(purchase));
+        when(purchaseRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(purchase));
         when(locationService.getDefault(Location.LocationType.SHOP)).thenReturn(shop);
         when(locationService.getDefault(Location.LocationType.QUARANTINE)).thenReturn(quarantine);
         // Owned position before receipt: 10 shop units, no other buckets.

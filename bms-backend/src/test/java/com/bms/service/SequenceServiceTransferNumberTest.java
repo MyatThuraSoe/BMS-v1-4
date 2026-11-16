@@ -21,7 +21,7 @@ class SequenceServiceTransferNumberTest {
         sequence.setSequenceDate(shopTimeService.today());
         sequence.setLastNumber(0);
         when(repository.findByDateForUpdate(sequence.getSequenceDate())).thenReturn(Optional.of(sequence));
-        SequenceService service = new SequenceService(null, null, null, repository, shopTimeService);
+        SequenceService service = new SequenceService(null, null, null, repository, null, null, shopTimeService);
 
         String first = service.nextTransferNumber();
         String second = service.nextTransferNumber();

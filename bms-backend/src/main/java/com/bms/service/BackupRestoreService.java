@@ -53,9 +53,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class BackupRestoreService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private static final Logger log = LoggerFactory.getLogger(BackupRestoreService.class);
     private static final SecureRandom RANDOM = new SecureRandom();

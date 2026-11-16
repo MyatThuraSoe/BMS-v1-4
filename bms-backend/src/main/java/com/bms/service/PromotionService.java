@@ -27,9 +27,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class PromotionService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final PromotionRepository promotionRepository;
     private final ProductRepository productRepository;

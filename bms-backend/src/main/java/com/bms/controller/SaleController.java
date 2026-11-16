@@ -42,6 +42,9 @@ public class SaleController {
     @Autowired
     private com.bms.service.UserService userService;
 
+    @Autowired
+    private com.bms.service.DataRetentionService dataRetentionService;
+
     @GetMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Page<SaleResponse>>> getAllSales(
@@ -141,11 +144,13 @@ public class SaleController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> deleteOldSales(
             @RequestParam(defaultValue = "1") int olderThanYears,
+            @RequestParam(defaultValue = "false") boolean backupConfirmed,
             Authentication authentication) {
         org.springframework.security.core.userdetails.UserDetails userDetails =
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
-        Map<String, Object> result = saleService.deleteSalesOlderThanYears(olderThanYears, userId);
+        Map<String, Object> result = dataRetentionService
+                .deleteSalesOlderThanYears(olderThanYears, backupConfirmed, userId);
         return ResponseEntity.ok(new ApiResponse<>(true, "Old sales deleted successfully", result));
     }
 

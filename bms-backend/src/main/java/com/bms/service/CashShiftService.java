@@ -55,9 +55,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class CashShiftService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private CashShiftRepository cashShiftRepository;
@@ -428,8 +427,8 @@ public class CashShiftService {
             shift.setNotes(note != null ? note : "Closed with drawer session #" + session.getId());
         } else {
             BigDecimal cashSales = nullSafe(saleRepository.sumNetCashSalesByShiftId(shiftId));
-            BigDecimal returns = nullSafe(saleRepository.sumRefundsBetween(
-                    shift.getOpeningTime(), closingTime));
+            BigDecimal returns = nullSafe(saleRepository.sumRefundsForShift(
+                    shiftId, shift.getOpeningTime(), closingTime));
             BigDecimal expected = CashVarianceUtil.expectedDrawer(
                     shift.getOpeningAmount(), cashSales, returns);
             BigDecimal counted = request.resolvedCountedCash() != null

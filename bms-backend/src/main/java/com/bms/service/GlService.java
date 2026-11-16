@@ -26,9 +26,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class GlService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final GlAccountRepository accountRepository;
     private final GlMappingRepository mappingRepository;
@@ -41,16 +40,16 @@ public class GlService {
     private final SaleReturnRepository saleReturnRepository;
     private final CashDrawerMovementRepository cashDrawerMovementRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private LedgerReadService ledgerReadService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private ProfitLedgerRepository profitLedgerRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private InventoryLedgerRepository inventoryLedgerRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PurchasePaymentRepository purchasePaymentRepository;
 
     public GlService(GlAccountRepository accountRepository,
@@ -254,7 +253,7 @@ public class GlService {
                     || row.getEventType() == ProfitLedger.EventType.RETURN
                     || row.getEventType() == ProfitLedger.EventType.VOID) {
                 if (row.getSettlementCash() != null || row.getSettlementClearing() != null
-                        || row.getSettlementAr() != null) {
+                        || row.getSettlementAr() != null || row.getSettlementRefundLiability() != null) {
                     addSettlementSplit(entries, accounts, date, reference, row);
                 } else {
                     if (row.getSettlementAccount() == null) {
@@ -263,14 +262,6 @@ public class GlService {
                     BigDecimal settlement = revenue.add(tax);
                     add(entries, accounts, date, reference, "Ledger settlement", row.getSettlementAccount(),
                             settlement.max(BigDecimal.ZERO), settlement.negate().max(BigDecimal.ZERO));
-                }
-                if (row.getSettlementAccount() == GlMapping.EventType.REFUND_LIABILITY) {
-                    BigDecimal debt = row.getSettlementAr() != null ? row.getSettlementAr().abs() : BigDecimal.ZERO;
-                    BigDecimal refund = (revenue.add(tax)).abs().subtract(debt).max(BigDecimal.ZERO);
-                    if (refund.signum() > 0) {
-                        add(entries, accounts, date, reference, "Ledger settlement",
-                                GlMapping.EventType.REFUND_LIABILITY, BigDecimal.ZERO, refund);
-                    }
                 }
                 add(entries, accounts, date, reference, "Ledger net sales revenue", GlMapping.EventType.SALES_REVENUE,
                         revenue.negate().max(BigDecimal.ZERO), revenue.max(BigDecimal.ZERO));
@@ -318,6 +309,10 @@ public class GlService {
                 row.getSettlementClearing());
         addSignedSettlement(entries, accounts, date, reference, GlMapping.EventType.ACCOUNTS_RECEIVABLE,
                 row.getSettlementAr());
+        BigDecimal liability = LedgerPostingService.refundLiabilityOf(row);
+        if (liability != null) {
+            addSignedSettlement(entries, accounts, date, reference, GlMapping.EventType.REFUND_LIABILITY, liability);
+        }
     }
 
     private void addSignedSettlement(List<JournalEntryResponse> entries,

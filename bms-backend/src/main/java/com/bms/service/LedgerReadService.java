@@ -19,9 +19,8 @@ import java.util.Map;
 @Transactional(readOnly = true)
 public class LedgerReadService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     public static final String CUTOVER_KEY = "accounting.ledger.cutover";
 

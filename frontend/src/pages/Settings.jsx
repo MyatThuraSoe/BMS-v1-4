@@ -44,6 +44,14 @@ const COUNT_AUTO_APPROVE_SETTINGS = [
   { key: 'stockCountAutoApproveMaxLines', labelKey: 'count_auto_approve_max_lines', helpKey: 'count_auto_approve_max_lines_help', step: '1' },
 ];
 
+// O5: how far a cashier and a manager may discount a sale, as a percent of it.
+const DISCOUNT_LIMIT_SETTINGS = [
+  { key: 'shop.discount.maxPercentCashier', labelKey: 'discount_max_percent_cashier', helpKey: 'discount_max_percent_cashier_help', step: '0.01', max: 100 },
+  { key: 'shop.discount.maxPercentManager', labelKey: 'discount_max_percent_manager', helpKey: 'discount_max_percent_manager_help', step: '0.01', max: 100 },
+];
+
+const NUMERIC_SETTINGS = [...COUNT_AUTO_APPROVE_SETTINGS, ...DISCOUNT_LIMIT_SETTINGS];
+
 const Settings = () => {
   const { t } = useTranslation(['settings', 'common']);
   const { isAdmin } = useAuth();
@@ -74,7 +82,7 @@ const Settings = () => {
 
   useEffect(() => {
     const values = {};
-    COUNT_AUTO_APPROVE_SETTINGS.forEach(({ key }) => {
+    NUMERIC_SETTINGS.forEach(({ key }) => {
       const setting = (settingsData?.data || []).find((row) => row.settingKey === key);
       if (setting && countAutoApproveValues[key] === undefined) {
         values[key] = setting.settingValue;
@@ -96,8 +104,40 @@ const Settings = () => {
     onError: (err) => notifyError(err.friendlyMessage || t('setting_update_failed')),
   });
 
-  const handleDownloadBackup = async () => {
-    setBackupLoading(true);
+  // One admin-editable number field; saved when the operator leaves the box.
+  const numericField = (setting) => {
+    const stored = (settingsData?.data || [])
+      .find((row) => row.settingKey === setting.key)?.settingValue;
+    return (
+      <TextField
+        key={setting.key}
+        label={t(setting.labelKey)}
+        type="number"
+        size="small"
+        value={countAutoApproveValues[setting.key] ?? ''}
+        onChange={(e) => setCountAutoApproveValues((current) => ({
+          ...current,
+          [setting.key]: e.target.value,
+        }))}
+        onBlur={() => {
+          const value = Number(countAutoApproveValues[setting.key]);
+          if (Number.isFinite(value) && value >= 0
+              && (setting.step !== '1' || Number.isInteger(value))
+              && String(value) !== String(stored ?? '')) {
+            updateSettingMutation.mutate({
+              key: setting.key,
+              value: countAutoApproveValues[setting.key],
+            });
+          }
+        }}
+        inputProps={{ min: 0, max: setting.max, step: setting.step }}
+        helperText={t(setting.helpKey)}
+        disabled={updateSettingMutation.isPending}
+      />
+    );
+  };
+
+  const handleDownloadBackup = async () => {    setBackupLoading(true);
     try {
       const blob = await backupService.downloadFullBackup();
       const url = window.URL.createObjectURL(new Blob([blob]));
@@ -245,37 +285,19 @@ const Settings = () => {
             {t('stock_count_auto_approval')}
           </Typography>
           <Stack spacing={1.5}>
-            {COUNT_AUTO_APPROVE_SETTINGS.map((setting) => {
-              const stored = (settingsData?.data || [])
-                .find((row) => row.settingKey === setting.key)?.settingValue;
-              return (
-                <TextField
-                  key={setting.key}
-                  label={t(setting.labelKey)}
-                  type="number"
-                  size="small"
-                  value={countAutoApproveValues[setting.key] ?? ''}
-                  onChange={(e) => setCountAutoApproveValues((current) => ({
-                    ...current,
-                    [setting.key]: e.target.value,
-                  }))}
-                  onBlur={() => {
-                    const value = Number(countAutoApproveValues[setting.key]);
-                    if (Number.isFinite(value) && value >= 0
-                        && (setting.step !== '1' || Number.isInteger(value))
-                        && String(value) !== String(stored ?? '')) {
-                      updateSettingMutation.mutate({
-                        key: setting.key,
-                        value: countAutoApproveValues[setting.key],
-                      });
-                    }
-                  }}
-                  inputProps={{ min: 0, step: setting.step }}
-                  helperText={t(setting.helpKey)}
-                  disabled={updateSettingMutation.isPending}
-                />
-              );
-            })}
+            {COUNT_AUTO_APPROVE_SETTINGS.map(numericField)}
+          </Stack>
+        </Paper>
+      )}
+
+      {isAdmin() && (
+        <Paper sx={{ p: 3, mb: 3 }}>
+          <Typography variant="h6" gutterBottom>
+            {t('discount_limits')}
+            <HelpTip helpKey="help_system_discount_limits" t={t} />
+          </Typography>
+          <Stack spacing={1.5}>
+            {DISCOUNT_LIMIT_SETTINGS.map(numericField)}
           </Stack>
         </Paper>
       )}

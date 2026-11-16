@@ -11,6 +11,7 @@ import com.bms.entity.StockMovement;
 import com.bms.entity.GlMapping;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.SaleReturn;
+import com.bms.exception.BusinessException;
 import com.bms.repository.InventoryLedgerRepository;
 import com.bms.repository.LocationStockRepository;
 import com.bms.repository.ProductRepository;
@@ -45,10 +46,13 @@ import java.util.function.Consumer;
 public class LedgerPostingService {
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
 
     private static final int COST_SCALE = CostCalculationUtils.COST_SCALE;
     private static final int MONEY_SCALE = 4;
+
+    /** N1: a settlement split may be off by one rounding cent, no more. */
+    private static final BigDecimal SETTLEMENT_TOLERANCE = new BigDecimal("0.01");
     private static final DateTimeFormatter PERIOD_FMT = DateTimeFormatter.ofPattern("yyyy-MM");
 
     @Autowired
@@ -232,7 +236,13 @@ public class LedgerPostingService {
         }
     }
 
-    public void postReturnProfit(SaleReturn saleReturn, SaleItem item, int quantity, int alreadyReturned) {
+    /**
+     * Posts one returned line. {@code lineDebt} and {@code lineRefund} are that
+     * line's own share of the return's debt reduction and refund, never the whole
+     * return's totals — the caller splits them per line (N1).
+     */
+    public void postReturnProfit(SaleReturn saleReturn, SaleItem item, int quantity, int alreadyReturned,
+                                 BigDecimal lineDebt, BigDecimal lineRefund) {
         Sale sale = saleReturn.getSale();
         int before = item.getQuantity() - alreadyReturned;
         int after = before - quantity;
@@ -245,7 +255,17 @@ public class LedgerPostingService {
         BigDecimal tax = SaleDiscountUtils.taxForQuantity(item, after)
                 .subtract(SaleDiscountUtils.taxForQuantity(item, before));
         snapshotRefundSettlement(row, tax, saleReturn.getRefundMethod(), "RET-" + saleReturn.getId(),
-                saleReturn.getDebtReductionAmount(), saleReturn.getRefundAmount());
+                lineDebt, lineRefund);
+    }
+
+    /**
+     * N1 repair: recompute only the settlement columns of an existing RETURN row.
+     * Revenue, COGS, tax and dates stay frozen; the row is its own source of truth
+     * for the line total because those amounts were never wrong.
+     */
+    public void repairRefundSettlement(ProfitLedger row, PaymentMethod method,
+                                       BigDecimal lineDebt, BigDecimal lineRefund) {
+        snapshotRefundSettlement(row, row.getTaxAmount(), method, row.getReference(), lineDebt, lineRefund);
     }
 
     public void postVoidProfit(Sale sale, SaleItem item, int remaining, LocalDateTime voidedAt) {
@@ -311,36 +331,80 @@ public class LedgerPostingService {
         }
     }
 
+    /**
+     * N1: every settlement part of a RETURN row is stored NEGATIVE, because a
+     * refund is always a credit (cash out) or a liability reduction. The GL layer
+     * reads these columns as signed deltas, so a positive cash here previously
+     * debited the till on a refund. {@code lineDebt} reduces the invoice's AR and
+     * {@code lineRefund} is paid out by {@code method}; together they must equal
+     * the line's revenue + tax, which is what the guard below enforces.
+     */
     private void snapshotRefundSettlement(ProfitLedger row, BigDecimal tax, PaymentMethod method, String reference,
-                                        BigDecimal debtReduction, BigDecimal refundAmount) {
+                                        BigDecimal lineDebt, BigDecimal lineRefund) {
         if (row == null) return;
         row.setTaxAmount(scaleMoney(tax));
         row.setReference(reference);
 
-        BigDecimal debt = debtReduction != null ? scaleMoney(debtReduction) : BigDecimal.ZERO;
-        BigDecimal refund = refundAmount != null ? scaleMoney(refundAmount) : BigDecimal.ZERO;
+        BigDecimal debt = scaleMoney(lineDebt);
+        BigDecimal refund = scaleMoney(lineRefund);
 
-        row.setSettlementCash(BigDecimal.ZERO.setScale(MONEY_SCALE));
-        row.setSettlementClearing(BigDecimal.ZERO.setScale(MONEY_SCALE));
-        row.setSettlementAr(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        BigDecimal zero = BigDecimal.ZERO.setScale(MONEY_SCALE);
+        row.setSettlementCash(zero);
+        row.setSettlementClearing(zero);
+        row.setSettlementAr(zero);
+        row.setSettlementRefundLiability(zero);
         row.setSettlementAccount(null);
 
-        if (debt.signum() > 0) {
+        if (debt.signum() != 0) {
             row.setSettlementAr(debt.negate());
         }
-        if (refund.signum() > 0) {
-            if (method == PaymentMethod.CASH) {
-                row.setSettlementCash(refund);
-            } else if (method == PaymentMethod.STORE_CREDIT) {
-                row.setSettlementAccount(GlMapping.EventType.REFUND_LIABILITY);
-            } else if (method == PaymentMethod.CREDIT) {
-                row.setSettlementAccount(GlMapping.EventType.ACCOUNTS_RECEIVABLE);
-            } else {
-                row.setSettlementClearing(refund);
+        if (refund.signum() != 0) {
+            switch (refundTender(method)) {
+                case CASH -> row.setSettlementCash(refund.negate());
+                case ACCOUNTS_RECEIVABLE -> row.setSettlementAr(money(row.getSettlementAr()).subtract(refund));
+                case REFUND_LIABILITY -> row.setSettlementRefundLiability(refund.negate());
+                default -> row.setSettlementClearing(refund.negate());
             }
-        } else if (debt.signum() > 0) {
-            row.setSettlementAccount(GlMapping.EventType.ACCOUNTS_RECEIVABLE);
         }
+
+        BigDecimal posted = money(row.getSettlementCash())
+                .add(money(row.getSettlementClearing()))
+                .add(money(row.getSettlementAr()))
+                .add(money(row.getSettlementRefundLiability()));
+        BigDecimal lineTotal = money(row.getNetRevenue()).add(money(row.getTaxAmount()));
+        if (posted.subtract(lineTotal).abs().compareTo(SETTLEMENT_TOLERANCE) > 0) {
+            throw new BusinessException("Refund settlement split of " + posted.toPlainString()
+                    + " does not match the returned line total " + lineTotal.toPlainString()
+                    + " for " + reference);
+        }
+    }
+
+    /**
+     * N1: the store-credit part carried by a ledger row. Rows written before the
+     * settlement_refund_liability column existed kept it implicitly — it is what
+     * the other three parts leave of the line total — so reading it through one
+     * helper keeps the journal and the reconciliation agreeing on un-repaired
+     * history. Returns null when the row has no store-credit part at all.
+     */
+    public static BigDecimal refundLiabilityOf(ProfitLedger row) {
+        if (row.getSettlementRefundLiability() != null) {
+            return row.getSettlementRefundLiability();
+        }
+        boolean legacyStoreCredit = row.getEventType() == ProfitLedger.EventType.RETURN
+                && row.getSettlementAccount() == GlMapping.EventType.REFUND_LIABILITY
+                && (row.getSettlementCash() != null || row.getSettlementClearing() != null
+                || row.getSettlementAr() != null);
+        if (!legacyStoreCredit) {
+            return null;
+        }
+        return nz(row.getNetRevenue()).add(nz(row.getTaxAmount()))
+                .subtract(nz(row.getSettlementCash()))
+                .subtract(nz(row.getSettlementClearing()))
+                .subtract(nz(row.getSettlementAr()));
+    }
+
+    private static BigDecimal nz(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
     }
 
     private void setSettlementAmount(ProfitLedger row, GlMapping.EventType account, BigDecimal amount) {
@@ -390,9 +454,15 @@ public class LedgerPostingService {
 
     public void postInventoryGain(StockMovement movement) {
         BigDecimal value = movement.getValuationAmount();
-        if (value == null || value.signum() <= 0
-                || !InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(
-                movement.getReasonCode() != null ? movement.getReasonCode().trim().toUpperCase() : "")) {
+        if (value == null || value.signum() <= 0) {
+            return;
+        }
+        String reason = movement.getReasonCode() != null
+                ? movement.getReasonCode().trim().toUpperCase() : "";
+        // S3: a physical count that finds more stock than the books is a gain
+        // too, and the counter's reason code is not one of the adjustment ones.
+        boolean fromStockCount = movement.getReferenceType() == StockMovement.ReferenceType.STOCK_COUNT;
+        if (!fromStockCount && !InventoryLossService.POSITIVE_ADJUSTMENT_REASONS.contains(reason)) {
             return;
         }
         ProfitLedger row = postProfit(ProfitLedger.EventType.INVENTORY_GAIN, "STOCK_MOVEMENT",
@@ -400,7 +470,7 @@ public class LedgerPostingService {
                 movement.getQuantity(), BigDecimal.ZERO, BigDecimal.ZERO, value.negate(),
                 movement.getMovementDate());
         if (row != null) {
-            row.setCategory(movement.getReasonCode().trim().toUpperCase());
+            row.setCategory(reason.isEmpty() ? "COUNT_CORRECTION" : reason);
             row.setReference("MOV-" + movement.getId());
         }
     }

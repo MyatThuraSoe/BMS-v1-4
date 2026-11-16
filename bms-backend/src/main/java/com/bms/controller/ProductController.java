@@ -221,11 +221,15 @@ public class ProductController {
             @RequestParam String reason,
             @RequestParam(defaultValue = "false") boolean overrideReserved,
             @RequestParam(required = false) String overrideReason,
+            @RequestParam(required = false) String reasonCode,
             Authentication authentication) {
         org.springframework.security.core.userdetails.UserDetails userDetails = 
             (org.springframework.security.core.userdetails.UserDetails) authentication.getPrincipal();
         Long userId = userService.findByUsername(userDetails.getUsername()).getId();
-        productService.adjustStock(userId, id, quantityChange, reason, null,
+        // S4: this route predates reason codes and callers cannot all be
+        // updated at once, so an omitted code means a plain count correction.
+        productService.adjustStock(userId, id, quantityChange, reason,
+                reasonCode != null && !reasonCode.isBlank() ? reasonCode : "COUNT_CORRECTION",
                 overrideReserved, overrideReason);
         return ResponseEntity.ok(new ApiResponse<>(true, "Stock adjusted successfully", null));
     }

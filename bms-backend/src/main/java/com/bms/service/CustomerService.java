@@ -7,6 +7,8 @@ import com.bms.entity.CustomerPhone;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
+import com.bms.repository.OrderRepository;
+import com.bms.repository.SaleRepository;
 import java.math.BigDecimal;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -25,9 +27,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class CustomerService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private CustomerRepository customerRepository;
@@ -37,6 +38,12 @@ public class CustomerService {
 
     @Autowired
     private SequenceService sequenceService;
+
+    @Autowired
+    private SaleRepository saleRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
 
     public Page<CustomerResponse> getAllCustomers(Pageable pageable) {
         return customerRepository.findActiveCustomers(pageable).map(this::convertToResponse);
@@ -59,7 +66,7 @@ public class CustomerService {
         return convertToResponse(customer);
     }
 
-    public Customer createCustomer(CustomerCreateRequest request) {
+    public Customer createCustomer(CustomerCreateRequest request, Long userId) {
         String customerCode = generateCustomerCode();
 
         if (request.getEmail() != null && !request.getEmail().isBlank() && customerRepository.existsByEmail(request.getEmail())) {
@@ -90,7 +97,7 @@ public class CustomerService {
 
         Customer savedCustomer = customerRepository.save(customer);
 
-        auditLogService.logAction(null, "CUSTOMER_CREATE", 
+        auditLogService.logAction(userId, "CUSTOMER_CREATE", 
             "Customer created: " + savedCustomer.getFirstName() + " " + savedCustomer.getLastName(), 
             "Customer", savedCustomer.getId(), null, savedCustomer.toString());
 
@@ -98,7 +105,7 @@ public class CustomerService {
     }
 
 
-    public Customer updateCustomer(Long id, CustomerCreateRequest request) {
+    public Customer updateCustomer(Long id, CustomerCreateRequest request, Long userId) {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + id));
         if (!customer.getIsActive() || customer.getDeletedAt() != null) {
@@ -139,14 +146,14 @@ public class CustomerService {
 
         Customer updatedCustomer = customerRepository.save(customer);
 
-        auditLogService.logAction(null, "CUSTOMER_UPDATE", 
-            "Customer updated: " + updatedCustomer.getFirstName() + " " + updatedCustomer.getLastName(), 
+        auditLogService.logAction(userId, "CUSTOMER_UPDATE",
+            "Customer updated: " + updatedCustomer.getFirstName() + " " + updatedCustomer.getLastName(),
             "Customer", updatedCustomer.getId(), oldValues, updatedCustomer.toString());
 
         return updatedCustomer;
     }
 
-    public void deleteCustomer(Long id) {
+    public void deleteCustomer(Long id, Long userId) {
         Customer customer = customerRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + id));
 
@@ -158,13 +165,26 @@ public class CustomerService {
         if (creditBalance != null && creditBalance.compareTo(BigDecimal.ZERO) > 0) {
             throw new BusinessException("Cannot delete customer with store credit remaining: " + creditBalance);
         }
+        // T3: the stored balance is only as good as the invoices behind it. A
+        // hidden customer with an open invoice makes the debt uncollectable from
+        // the UI while it still counts in every AR total.
+        BigDecimal openInvoices = saleRepository.sumOutstandingArByCustomerId(id);
+        if (openInvoices != null && openInvoices.compareTo(BigDecimal.ZERO) > 0) {
+            throw new BusinessException("Cannot delete customer with unpaid credit invoices ("
+                    + openInvoices + " outstanding)");
+        }
+        long pendingOrders = orderRepository.countPendingOrdersByCustomerId(id);
+        if (pendingOrders > 0) {
+            throw new BusinessException("Cannot delete customer with " + pendingOrders
+                    + " pending order(s); cancel or convert them first");
+        }
 
         customer.setCustomerCode(com.bms.util.SoftDeleteKeys.release(customer.getCustomerCode(), customer.getId(), 255));
         customer.setDeletedAt(shopTimeService.now());
         customer.setIsActive(false);
         customerRepository.save(customer);
 
-        auditLogService.logAction(null, "CUSTOMER_DELETE",
+        auditLogService.logAction(userId, "CUSTOMER_DELETE",
             "Customer deleted: " + customer.getFirstName() + " " + customer.getLastName(),
             "Customer", customer.getId(), customer.toString(), null);
     }

@@ -17,6 +17,7 @@ public class ReturnableItemsResponse {
     private BigDecimal outstandingBefore;
     private BigDecimal estimatedDebtReduction;
     private BigDecimal estimatedRefundDue;
+    private Boolean hasCustomer;
     private List<ReturnableItem> items;
 
     public Long getSaleId() { return saleId; }
@@ -33,6 +34,8 @@ public class ReturnableItemsResponse {
     public void setEstimatedDebtReduction(BigDecimal estimatedDebtReduction) { this.estimatedDebtReduction = estimatedDebtReduction; }
     public BigDecimal getEstimatedRefundDue() { return estimatedRefundDue; }
     public void setEstimatedRefundDue(BigDecimal estimatedRefundDue) { this.estimatedRefundDue = estimatedRefundDue; }
+    public Boolean getHasCustomer() { return hasCustomer; }
+    public void setHasCustomer(Boolean hasCustomer) { this.hasCustomer = hasCustomer; }
     public List<ReturnableItem> getItems() { return items; }
     public void setItems(List<ReturnableItem> items) { this.items = items; }
 

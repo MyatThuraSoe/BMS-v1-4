@@ -28,9 +28,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class AuthService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
@@ -229,14 +228,21 @@ public class AuthService {
     private User buildUser(RegisterRequest request, Role role) {
         User user = new User();
         user.setUsername(request.getUsername());
+        user.setUsernameNormalized(normalizeKey(request.getUsername()));
         user.setEmail(request.getEmail());
+        user.setEmailNormalized(normalizeKey(request.getEmail()));
         user.setPassword(passwordEncoder.encode(request.getPassword()));
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
         user.setPhone("");
         user.setRole(role);
         user.setIsActive(true);
+        user.setTokenVersion(0);
         return user;
+    }
+
+    private static String normalizeKey(String value) {
+        return value == null ? null : value.trim().toLowerCase();
     }
 
     private UserResponse createUserResponse(User user) {

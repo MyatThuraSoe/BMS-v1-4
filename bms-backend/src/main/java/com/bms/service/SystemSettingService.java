@@ -45,16 +45,33 @@ public class SystemSettingService {
         synchronized (this) {
             now = System.currentTimeMillis();
             if (cachedCashVarianceTolerance == null || now - cashVarianceToleranceCachedAt >= 60_000L) {
-                BigDecimal value = systemSettingRepository.findBySettingKey("shop.cashVarianceTolerance")
-                        .map(setting -> new BigDecimal(setting.getSettingValue()))
-                        .orElse(new BigDecimal("10.00"));
-                if (value.signum() < 0) {
-                    throw new BusinessException("Cash variance tolerance cannot be negative");
-                }
-                cachedCashVarianceTolerance = value;
+                cachedCashVarianceTolerance = readCashVarianceTolerance();
                 cashVarianceToleranceCachedAt = now;
             }
             return cachedCashVarianceTolerance;
+        }
+    }
+
+    /** S2: a hand-edited row must not take cash shift closing down with it. */
+    private BigDecimal readCashVarianceTolerance() {
+        BigDecimal defaultValue = new BigDecimal("10.00");
+        String raw = systemSettingRepository.findBySettingKey("shop.cashVarianceTolerance")
+                .map(SystemSetting::getSettingValue)
+                .filter(value -> value != null && !value.isBlank())
+                .orElse(null);
+        if (raw == null) {
+            return defaultValue;
+        }
+        try {
+            BigDecimal value = new BigDecimal(raw);
+            if (value.signum() < 0) {
+                throw new NumberFormatException("negative");
+            }
+            return value;
+        } catch (NumberFormatException ex) {
+            log.warn("Setting shop.cashVarianceTolerance holds \"{}\" which is not an amount; using {}",
+                    raw, defaultValue);
+            return defaultValue;
         }
     }
 

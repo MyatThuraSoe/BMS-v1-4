@@ -39,8 +39,8 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class InventoryHistoryService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final InventoryLedgerRepository ledgerRepository;
     private final StockMovementRepository movementRepository;

@@ -21,7 +21,7 @@ import java.util.*;
 public class LocationService {
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
 
     private final LocationRepository locationRepository;
     private final LocationStockRepository locationStockRepository;
@@ -35,7 +35,7 @@ public class LocationService {
     @Autowired
     private SequenceService sequenceService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PeriodGuard periodGuard;
 
     public LocationService(LocationRepository locationRepository,
@@ -357,10 +357,7 @@ public class LocationService {
             throw new BusinessException("Source and destination locations must differ");
         }
         StockTransfer transfer = new StockTransfer();
-        transfer.setTransferNumber((sequenceService != null)
-                ? sequenceService.nextTransferNumber()
-                : "TR-" + java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE)
-                    + "-" + System.identityHashCode(this));
+        transfer.setTransferNumber(sequenceService.nextTransferNumber());
         transfer.setFromLocation(from);
         transfer.setToLocation(to);
         transfer.setNotes(request.getNotes());

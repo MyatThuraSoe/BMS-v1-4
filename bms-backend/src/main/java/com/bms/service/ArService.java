@@ -43,9 +43,8 @@ import java.util.Set;
 @Transactional
 public class ArService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private static final Logger log = LoggerFactory.getLogger(ArService.class);
 

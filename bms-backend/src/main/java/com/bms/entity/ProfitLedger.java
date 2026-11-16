@@ -85,6 +85,10 @@ public class ProfitLedger {
     @Column(name = "settlement_ar", precision = 19, scale = 4)
     private BigDecimal settlementAr;
 
+    /** N1: the store-credit part of a refund — money the shop owes the customer. */
+    @Column(name = "settlement_refund_liability", precision = 19, scale = 4)
+    private BigDecimal settlementRefundLiability;
+
     @Column(name = "reference", length = 100)
     private String reference;
 
@@ -139,6 +143,10 @@ public class ProfitLedger {
     public void setSettlementClearing(BigDecimal settlementClearing) { this.settlementClearing = settlementClearing; }
     public BigDecimal getSettlementAr() { return settlementAr; }
     public void setSettlementAr(BigDecimal settlementAr) { this.settlementAr = settlementAr; }
+    public BigDecimal getSettlementRefundLiability() { return settlementRefundLiability; }
+    public void setSettlementRefundLiability(BigDecimal settlementRefundLiability) {
+        this.settlementRefundLiability = settlementRefundLiability;
+    }
     public String getReference() { return reference; }
     public void setReference(String reference) { this.reference = reference; }
     public String getCategory() { return category; }

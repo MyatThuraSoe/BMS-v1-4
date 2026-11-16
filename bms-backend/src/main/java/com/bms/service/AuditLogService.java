@@ -11,9 +11,8 @@ import java.time.LocalDateTime;
 @Service
 public class AuditLogService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private AuditLogRepository auditLogRepository;

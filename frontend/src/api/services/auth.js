@@ -48,6 +48,10 @@ export const authService = {
       currentPassword,
       newPassword,
     });
+    // T6: the server revoked every session for this user, this one included.
+    // Keep working by switching to the replacement token it sent back.
+    const freshToken = response?.data?.data?.accessToken;
+    if (freshToken) localStorage.setItem('token', freshToken);
     return response.data;
   },
 

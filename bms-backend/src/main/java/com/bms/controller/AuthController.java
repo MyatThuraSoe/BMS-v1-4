@@ -4,6 +4,7 @@ import com.bms.dto.request.ChangePasswordRequest;
 import com.bms.dto.request.LoginRequest;
 import com.bms.dto.request.RegisterRequest;
 import com.bms.dto.response.ApiResponse;
+import com.bms.dto.response.ChangePasswordResponse;
 import com.bms.dto.response.LoginResponse;
 import com.bms.service.AuthService;
 import com.bms.service.UserService;
@@ -39,11 +40,12 @@ public class AuthController {
 
     @PostMapping("/change-password")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<ApiResponse<Void>> changeOwnPassword(
+    public ResponseEntity<ApiResponse<ChangePasswordResponse>> changeOwnPassword(
             @Valid @RequestBody ChangePasswordRequest request,
             Authentication authentication) {
         UserDetails userDetails = (UserDetails) authentication.getPrincipal();
-        userService.changeOwnPassword(userDetails.getUsername(), request);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Password changed successfully", null));
+        String accessToken = userService.changeOwnPassword(userDetails.getUsername(), request);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Password changed successfully",
+                new ChangePasswordResponse(accessToken)));
     }
 }

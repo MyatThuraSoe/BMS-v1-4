@@ -61,7 +61,9 @@ public class User implements UserDetails {
     @Column(name = "preferred_language", nullable = false)
     private String preferredLanguage = "en";
 
-    @Column(name = "token_version", nullable = false)
+    // Nullable column: older databases gain it through
+    // AccountingSchemaMigration, which backfills the default of 0.
+    @Column(name = "token_version")
     private Integer tokenVersion = 0;
 
     @Column(name = "created_at", nullable = false, updatable = false)
