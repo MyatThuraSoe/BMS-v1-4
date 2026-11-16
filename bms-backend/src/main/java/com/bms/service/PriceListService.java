@@ -28,9 +28,8 @@ import java.util.Set;
 @Transactional
 public class PriceListService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final PriceListRepository priceListRepository;
     private final PriceListItemRepository priceListItemRepository;

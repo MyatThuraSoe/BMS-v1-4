@@ -190,6 +190,29 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     BigDecimal sumRefundsBetween(@Param("shiftStart") LocalDateTime shiftStart,
                                  @Param("shiftEnd") LocalDateTime shiftEnd);
 
+    /**
+     * O7: the cash one employee shift handed back.
+     *
+     * <p>Same cash-follows-the-refund rule as {@link #sumRefundsBetween}, but
+     * keyed on the shift the refund was processed in rather than the clock, so
+     * two shifts that overlap (same drawer, two cashiers, or a shift left open
+     * across a day) no longer subtract one another's refunds. Rows written
+     * before a refund carried a shift still fall back to that shift's window.
+     */
+    @Query("""
+        SELECT COALESCE(SUM(r.totalReturnAmount), 0)
+        FROM SaleReturn r
+        WHERE (r.employeeShift.id = :shiftId
+               OR (r.employeeShift IS NULL
+                   AND r.returnDate >= :shiftStart AND r.returnDate <= :shiftEnd))
+          AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
+          AND (r.sale.saleType <> com.bms.entity.Sale.SaleType.CREDIT
+               OR r.sale.paymentStatus = com.bms.entity.Sale.PaymentStatus.PAID)
+        """)
+    BigDecimal sumRefundsForShift(@Param("shiftId") Long shiftId,
+                                  @Param("shiftStart") LocalDateTime shiftStart,
+                                  @Param("shiftEnd") LocalDateTime shiftEnd);
+
     // Customer LTV — aggregate per customer across all non-voided sales
     @Query("""
         SELECT s.customer.id, s.customer.firstName, s.customer.lastName, s.customer.phone,
@@ -294,6 +317,21 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         GROUP BY s.customer.id
         """)
     List<Object[]> sumOutstandingArByCustomer();
+
+    // T3: the same filter and formula as sumOutstandingAr(), narrowed to one
+    // customer. Deleting a customer who still owes money would hide the invoice
+    // from the AR screen while it kept counting in the global total.
+    @Query("""
+        SELECT COALESCE(SUM(s.totalAmount) - COALESCE(SUM(s.amountPaid), 0) - COALESCE(SUM(s.amountReturned), 0), 0)
+        FROM Sale s
+        WHERE s.saleType = com.bms.entity.Sale.SaleType.CREDIT
+          AND s.paymentStatus <> com.bms.entity.Sale.PaymentStatus.PAID
+          AND s.isVoided = false
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+          AND s.customer.id = :customerId
+        """)
+    BigDecimal sumOutstandingArByCustomerId(@Param("customerId") Long customerId);
 
     // Full AR history (including already-paid invoices) for a single customer.
     @EntityGraph(attributePaths = {"customer"})

@@ -5,6 +5,7 @@ import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.CustomerResponse;
 import com.bms.entity.Customer;
 import com.bms.entity.CustomerPhone;
+import com.bms.entity.User;
 import com.bms.service.CustomerService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,8 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -66,16 +69,21 @@ public class CustomerController {
 
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<CustomerResponse>> createCustomer(@Valid @RequestBody CustomerCreateRequest request) {
-        Customer customer = customerService.createCustomer(request);
+    public ResponseEntity<ApiResponse<CustomerResponse>> createCustomer(
+            @Valid @RequestBody CustomerCreateRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        Customer customer = customerService.createCustomer(request, currentUserId(principal));
         CustomerResponse response = convertToResponse(customer);
         return ResponseEntity.status(HttpStatus.CREATED).body(new ApiResponse<>(true, "Customer created successfully", response));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<CustomerResponse>> updateCustomer(@PathVariable Long id, @Valid @RequestBody CustomerCreateRequest request) {
-        Customer customer = customerService.updateCustomer(id, request);
+    public ResponseEntity<ApiResponse<CustomerResponse>> updateCustomer(
+            @PathVariable Long id,
+            @Valid @RequestBody CustomerCreateRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        Customer customer = customerService.updateCustomer(id, request, currentUserId(principal));
         CustomerResponse response = convertToResponse(customer);
         return ResponseEntity.ok(new ApiResponse<>(true, "Customer updated successfully", response));
     }
@@ -83,9 +91,20 @@ public class CustomerController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-    public ResponseEntity<ApiResponse<Void>> deleteCustomer(@PathVariable Long id) {
-        customerService.deleteCustomer(id);
+    public ResponseEntity<ApiResponse<Void>> deleteCustomer(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserDetails principal) {
+        customerService.deleteCustomer(id, currentUserId(principal));
         return ResponseEntity.ok(new ApiResponse<>(true, "Customer deleted successfully", null));
+    }
+
+    /**
+     * T3: customer audit rows must say who made them. Resolving the principal
+     * here keeps the service free of the security context, so a system job can
+     * still call it with a null actor.
+     */
+    private Long currentUserId(UserDetails principal) {
+        return principal instanceof User user ? user.getId() : null;
     }
 
     private CustomerResponse convertToResponse(Customer customer) {

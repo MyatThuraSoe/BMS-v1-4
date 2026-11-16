@@ -37,9 +37,8 @@ import java.util.List;
 @Transactional
 public class PaymentValidationService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private CashShiftRepository cashShiftRepository;

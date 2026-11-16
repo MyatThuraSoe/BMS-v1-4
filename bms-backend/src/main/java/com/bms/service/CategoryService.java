@@ -25,9 +25,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CategoryService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final CategoryRepository categoryRepository;
 

@@ -25,9 +25,8 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ReceiptService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
 
     private final SaleRepository saleRepository;

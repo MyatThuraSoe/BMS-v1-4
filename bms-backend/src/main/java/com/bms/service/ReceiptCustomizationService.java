@@ -11,9 +11,8 @@ import java.util.Optional;
 @Service
 public class ReceiptCustomizationService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final ReceiptCustomizationRepository receiptCustomizationRepository;
 

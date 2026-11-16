@@ -36,9 +36,8 @@ import java.util.TreeSet;
 @Transactional
 public class LedgerHistoryService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final SaleRepository saleRepository;
     private final SaleReturnRepository saleReturnRepository;
@@ -101,6 +100,85 @@ public class LedgerHistoryService {
                 "ProfitLedger", null, null, String.valueOf(posted));
         return Map.of("posted", posted, "blocked", false, "issues", history.issues(),
                 "reconciliation", reconcileHistory(history, null, null));
+    }
+
+    /**
+     * N1 repair: rewrite the settlement columns of the RETURN rows already stored
+     * by PR #18-style code. Revenue, COGS, tax and dates are never touched — only
+     * the signed split between cash, tender clearing, receivable and refund
+     * liability. Repeat-safe: a row whose parts already agree is left alone and
+     * not counted. Rows of a return that sits in a closed period are skipped as a
+     * group, because handing "the remainder" to the last line only works when all
+     * of the lines move together.
+     */
+    public Map<String, Object> repairReturnSettlements(boolean backupConfirmed, Long userId) {
+        if (!backupConfirmed) {
+            throw new BusinessException("Confirm that a database backup was taken and "
+                    + "the settlement repair was tested on a copy of the database");
+        }
+        periodGuard.lock();
+        Map<Long, List<ProfitLedger>> rowsByReturn = new LinkedHashMap<>();
+        for (ProfitLedger row : profitLedgerRepository.findByEventTypeAndSourceTypeOrderByIdAsc(
+                ProfitLedger.EventType.RETURN, "SALE_RETURN")) {
+            rowsByReturn.computeIfAbsent(row.getSourceId(), key -> new ArrayList<>()).add(row);
+        }
+        int repaired = 0;
+        List<String> skippedPeriods = new ArrayList<>();
+        for (Map.Entry<Long, List<ProfitLedger>> group : rowsByReturn.entrySet()) {
+            SaleReturn saleReturn = saleReturnRepository.findById(group.getKey()).orElse(null);
+            // Only returns written by the PR #18 code carry a refund amount; rows
+            // older than that never had a settlement split to repair.
+            if (saleReturn == null || saleReturn.getRefundAmount() == null) {
+                continue;
+            }
+            List<String> closed = group.getValue().stream()
+                    .map(ProfitLedger::getPeriod)
+                    .filter(periodCloseRepository::existsById)
+                    .distinct()
+                    .toList();
+            if (!closed.isEmpty()) {
+                closed.stream().filter(period -> !skippedPeriods.contains(period)).forEach(skippedPeriods::add);
+                continue;
+            }
+            repaired += repairSettlementGroup(saleReturn, group.getValue());
+        }
+        profitLedgerRepository.flush();
+        auditLogService.logAction(userId, "RETURN_SETTLEMENT_REPAIR",
+                "Return settlement splits rewritten for ledger rows: " + repaired,
+                "ProfitLedger", null, null, String.valueOf(repaired));
+        return Map.of("repaired", repaired, "skippedClosedPeriods", skippedPeriods,
+                "saleReturnsScanned", rowsByReturn.size());
+    }
+
+    private int repairSettlementGroup(SaleReturn saleReturn, List<ProfitLedger> rows) {
+        BigDecimal debt = money(saleReturn.getDebtReductionAmount());
+        BigDecimal total = money(saleReturn.getTotalReturnAmount());
+        BigDecimal unallocated = debt;
+        int rewritten = 0;
+        for (int i = 0; i < rows.size(); i++) {
+            ProfitLedger row = rows.get(i);
+            // The row is its own source of truth for the line total: those amounts
+            // were never wrong, only the way the money was split across accounts.
+            BigDecimal lineTotal = money(row.getNetRevenue()).add(money(row.getTaxAmount())).negate();
+            BigDecimal lineDebt = SaleReturnService.debtForLine(debt, total, lineTotal, unallocated,
+                    i == rows.size() - 1);
+            unallocated = unallocated.subtract(lineDebt);
+            BigDecimal[] before = {money(row.getSettlementCash()), money(row.getSettlementClearing()),
+                    money(row.getSettlementAr()), money(row.getSettlementRefundLiability())};
+            postingService.repairRefundSettlement(row, saleReturn.getRefundMethod(), lineDebt,
+                    lineTotal.subtract(lineDebt));
+            if (differs(before, row)) {
+                rewritten++;
+            }
+        }
+        return rewritten;
+    }
+
+    private static boolean differs(BigDecimal[] before, ProfitLedger row) {
+        return before[0].compareTo(money(row.getSettlementCash())) != 0
+                || before[1].compareTo(money(row.getSettlementClearing())) != 0
+                || before[2].compareTo(money(row.getSettlementAr())) != 0
+                || before[3].compareTo(money(row.getSettlementRefundLiability())) != 0;
     }
 
     @Transactional(readOnly = true)
@@ -192,10 +270,11 @@ public class LedgerHistoryService {
             SettlementTotals totals = result.computeIfAbsent(row.getPeriod(), key -> new SettlementTotals());
             totals.expected = totals.expected.add(money(row.getNetRevenue()).add(money(row.getTaxAmount())));
             if (row.getSettlementCash() != null || row.getSettlementClearing() != null
-                    || row.getSettlementAr() != null) {
+                    || row.getSettlementAr() != null || row.getSettlementRefundLiability() != null) {
                 totals.addAccount("CASH", row.getSettlementCash());
                 totals.addAccount("TENDER_CLEARING", row.getSettlementClearing());
                 totals.addAccount("ACCOUNTS_RECEIVABLE", row.getSettlementAr());
+                totals.addAccount("REFUND_LIABILITY", LedgerPostingService.refundLiabilityOf(row));
             } else if (row.getSettlementAccount() != null) {
                 totals.addAccount(row.getSettlementAccount().name(),
                         money(row.getNetRevenue()).add(money(row.getTaxAmount())));
@@ -258,10 +337,12 @@ public class LedgerHistoryService {
             if (event.type() == ProfitLedger.EventType.SALE || event.type() == ProfitLedger.EventType.RETURN
                     || event.type() == ProfitLedger.EventType.VOID) {
                 boolean hasSettlementSplit = row.getSettlementCash() != null
-                        || row.getSettlementClearing() != null || row.getSettlementAr() != null;
+                        || row.getSettlementClearing() != null || row.getSettlementAr() != null
+                        || row.getSettlementRefundLiability() != null;
                 BigDecimal settlementTotal = hasSettlementSplit
                         ? money(row.getSettlementCash()).add(money(row.getSettlementClearing()))
                                 .add(money(row.getSettlementAr()))
+                                .add(money(LedgerPostingService.refundLiabilityOf(row)))
                         : money(row.getNetRevenue()).add(money(row.getTaxAmount()));
                 boolean tenderMismatch = hasSettlementSplit
                         ? settlementTotal.compareTo(money(event.revenue()).add(money(event.tax()))) != 0

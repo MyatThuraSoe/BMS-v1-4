@@ -32,6 +32,7 @@ class ExpenseServiceCreatorAuditTest {
         when(expenseRepository.save(expense)).thenReturn(expense);
 
         ExpenseService service = new ExpenseService(expenseRepository);
+        ShopTimeTestSupport.withClock(service);
         ReflectionTestUtils.setField(service, "periodGuard", mock(PeriodGuard.class));
         ReflectionTestUtils.setField(service, "ledgerPostingService", mock(LedgerPostingService.class));
         ReflectionTestUtils.setField(service, "purchaseExpenseRepository", mock(PurchaseExpenseRepository.class));

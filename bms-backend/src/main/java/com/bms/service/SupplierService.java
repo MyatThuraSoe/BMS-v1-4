@@ -23,12 +23,14 @@ import java.util.stream.Collectors;
 @Transactional
 public class SupplierService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private SupplierRepository supplierRepository;
+
+    @Autowired
+    private com.bms.repository.PurchaseRepository purchaseRepository;
 
     @Autowired
     private AuditLogService auditLogService;
@@ -129,10 +131,24 @@ public class SupplierService {
         return updatedSupplier;
     }
 
-    public void deleteSupplier(Long id) {
+    public void deleteSupplier(Long id, Long userId) {
         Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + id));
-        
+
+        // Same gap customer delete had (T3): the row is only soft-deleted, so the
+        // debt and the goods still coming in survive while the supplier disappears
+        // from the payables and receiving screens.
+        long unpaid = purchaseRepository.countUnpaidInvoicesBySupplierId(id);
+        if (unpaid > 0) {
+            throw new BusinessException("Cannot delete supplier with " + unpaid
+                    + " unpaid purchase invoice(s); settle them first");
+        }
+        long awaitingReceiving = purchaseRepository.countAwaitingReceivingBySupplierId(id);
+        if (awaitingReceiving > 0) {
+            throw new BusinessException("Cannot delete supplier with " + awaitingReceiving
+                    + " purchase order(s) still awaiting delivery; receive or cancel them first");
+        }
+
         // Free the unique name/email values so a new supplier can reuse them after this soft delete.
         supplier.setName(com.bms.util.SoftDeleteKeys.release(supplier.getName(), supplier.getId(), 255));
         supplier.setEmail(com.bms.util.SoftDeleteKeys.release(supplier.getEmail(), supplier.getId(), 255));
@@ -140,7 +156,7 @@ public class SupplierService {
         supplier.setIsActive(false);
         supplierRepository.save(supplier);
 
-        auditLogService.logAction(null, "SUPPLIER_DELETE", 
+        auditLogService.logAction(userId, "SUPPLIER_DELETE", 
             "Supplier deleted: " + supplier.getName(), 
             "Supplier", supplier.getId(), supplier.toString(), null);
     }

@@ -17,9 +17,8 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class DataExportService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final CategoryRepository categoryRepository;
     private final ProductRepository productRepository;

@@ -53,4 +53,28 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     java.util.List<Order> findPendingOrdersForProduct(
             @Param("productId") Long productId,
             @Param("status") Order.OrderStatus status);
+
+    /** O8: pending orders that have been holding stock since before {@code cutoff}. */
+    @EntityGraph(attributePaths = {"items", "items.product"})
+    @Query("""
+    SELECT o FROM Order o
+    WHERE o.status = com.bms.entity.Order.OrderStatus.PENDING
+      AND o.isActive = true AND o.deletedAt IS NULL
+      AND o.createdAt < :cutoff
+    ORDER BY o.createdAt, o.id
+    """)
+    java.util.List<Order> findPendingOrdersOlderThan(@Param("cutoff") LocalDateTime cutoff);
+
+    /**
+     * T3: pending orders still holding stock for one customer. A pending order
+     * reserves units, so deleting the customer behind it leaves reservations no
+     * screen can reach and stock that never frees.
+     */
+    @Query("""
+    SELECT COUNT(o) FROM Order o
+    WHERE o.status = com.bms.entity.Order.OrderStatus.PENDING
+      AND o.isActive = true AND o.deletedAt IS NULL
+      AND o.customer.id = :customerId
+    """)
+    long countPendingOrdersByCustomerId(@Param("customerId") Long customerId);
 }

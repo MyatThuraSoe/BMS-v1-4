@@ -17,9 +17,8 @@ import java.util.Optional;
 @Service
 public class ShopInfoService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private final ShopInfoRepository shopInfoRepository;
 

@@ -2,10 +2,13 @@ package com.bms.service;
 
 import com.bms.dto.request.SystemSettingRequest;
 import com.bms.dto.response.SystemSettingResponse;
+import com.bms.entity.Role;
 import com.bms.entity.SystemSetting;
+import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SystemSettingRepository;
+import com.bms.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.math.BigDecimal;
 import java.util.stream.Collectors;
 
@@ -24,6 +28,21 @@ public class SystemSettingService {
 
     private static final Logger log = LoggerFactory.getLogger(SystemSettingService.class);
 
+    /**
+     * Keys a manager may change. Everything else under {@code /api/settings/key}
+     * is administrator-only, because the ceilings a manager works inside (discount
+     * limits, cash variance, count auto-approval, below-cost policy, debt write-off,
+     * token enforcement, tax and numbering) must not be editable from that seat.
+     */
+    private static final Set<String> MANAGER_EDITABLE_KEYS = Set.of(
+            "business_name",
+            "business_address",
+            "business_phone",
+            "business_email",
+            "low_stock_threshold",
+            "receipt_print_enabled",
+            "shop.order.reservationHours");
+
     @Autowired
     private ShopTimeService shopTimeService;
 
@@ -32,6 +51,9 @@ public class SystemSettingService {
 
     @Autowired
     private AuditLogService auditLogService;
+
+    @Autowired
+    private UserRepository userRepository;
 
     private volatile BigDecimal cachedCashVarianceTolerance;
     private volatile long cashVarianceToleranceCachedAt;
@@ -45,16 +67,33 @@ public class SystemSettingService {
         synchronized (this) {
             now = System.currentTimeMillis();
             if (cachedCashVarianceTolerance == null || now - cashVarianceToleranceCachedAt >= 60_000L) {
-                BigDecimal value = systemSettingRepository.findBySettingKey("shop.cashVarianceTolerance")
-                        .map(setting -> new BigDecimal(setting.getSettingValue()))
-                        .orElse(new BigDecimal("10.00"));
-                if (value.signum() < 0) {
-                    throw new BusinessException("Cash variance tolerance cannot be negative");
-                }
-                cachedCashVarianceTolerance = value;
+                cachedCashVarianceTolerance = readCashVarianceTolerance();
                 cashVarianceToleranceCachedAt = now;
             }
             return cachedCashVarianceTolerance;
+        }
+    }
+
+    /** S2: a hand-edited row must not take cash shift closing down with it. */
+    private BigDecimal readCashVarianceTolerance() {
+        BigDecimal defaultValue = new BigDecimal("10.00");
+        String raw = systemSettingRepository.findBySettingKey("shop.cashVarianceTolerance")
+                .map(SystemSetting::getSettingValue)
+                .filter(value -> value != null && !value.isBlank())
+                .orElse(null);
+        if (raw == null) {
+            return defaultValue;
+        }
+        try {
+            BigDecimal value = new BigDecimal(raw);
+            if (value.signum() < 0) {
+                throw new NumberFormatException("negative");
+            }
+            return value;
+        } catch (NumberFormatException ex) {
+            log.warn("Setting shop.cashVarianceTolerance holds \"{}\" which is not an amount; using {}",
+                    raw, defaultValue);
+            return defaultValue;
         }
     }
 
@@ -135,6 +174,7 @@ public class SystemSettingService {
 
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
     public SystemSettingResponse updateSettingByKey(String key, String settingValue, Long userId) {
+        assertKeyEditableBy(key, userId);
         validateValue(key, settingValue);
         SystemSetting setting = systemSettingRepository.findBySettingKey(key)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
@@ -178,6 +218,22 @@ public class SystemSettingService {
         if (key != null && key.startsWith("accounting.")) {
             throw new BusinessException("Internal accounting settings cannot be edited through this endpoint");
         }
+    }
+
+    private void assertKeyEditableBy(String key, Long userId) {
+        if (isAdmin(userId) || MANAGER_EDITABLE_KEYS.contains(key)) {
+            return;
+        }
+        log.warn("User {} tried to change administrator-only setting '{}'", userId, key);
+        throw new BusinessException("Only an administrator may change '" + key + "'");
+    }
+
+    private boolean isAdmin(Long userId) {
+        return userRepository.findById(userId)
+                .map(User::getRole)
+                .map(Role::getName)
+                .filter(Role.RoleName.ROLE_ADMIN::equals)
+                .isPresent();
     }
 
     private void validateValue(String key, String value) {

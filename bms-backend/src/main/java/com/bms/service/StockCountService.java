@@ -36,6 +36,8 @@ public class StockCountService {
 
     public static final List<String> REASON_CODES = InventoryLossService.ADJUSTMENT_REASONS;
 
+    private static final Logger log = LoggerFactory.getLogger(StockCountService.class);
+
     private static final BigDecimal AUTO_APPROVE_DEFAULT = BigDecimal.valueOf(2);
     private static final BigDecimal AUTO_APPROVE_LINE_VALUE_DEFAULT = new BigDecimal("20.00");
     private static final BigDecimal AUTO_APPROVE_SHEET_VALUE_DEFAULT = new BigDecimal("100.00");
@@ -274,7 +276,7 @@ public class StockCountService {
         }
         recalculateVarianceValue(sheet, items);
 
-        if (isWithinAutoApproveThreshold(sheet, items)) {
+        if (isWithinAutoApproveThreshold(sheet, items) && liveVariancesHaveReasonCodes(items)) {
             applySheet(sheet, userId);
             auditLogService.logAction(userId, "STOCK_COUNT_AUTO_APPROVE",
                     "Count sheet auto-approved using unit limit "
@@ -389,16 +391,65 @@ public class StockCountService {
         return nonZeroLines <= maxLines && sheetAbs.compareTo(sheetValueLimit) <= 0;
     }
 
+    /**
+     * S1: the same rule applySheet enforces, evaluated without throwing so a
+     * submission that needs a reason lands in PENDING_REVIEW with counts saved
+     * instead of failing outright.
+     */
+    private boolean liveVariancesHaveReasonCodes(List<CountSheetItem> items) {
+        for (CountSheetItem item : items) {
+            if (item.getCountedQuantity() == null) {
+                continue;
+            }
+            int live = item.getProduct().getStockQuantity() != null
+                    ? item.getProduct().getStockQuantity() : 0;
+            if (needsReasonCode(item.getCountedQuantity(), live, item.getReasonCode())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean needsReasonCode(int countedQuantity, int liveQuantity, String reasonCode) {
+        return countedQuantity != liveQuantity && (reasonCode == null || reasonCode.isBlank());
+    }
+
     private BigDecimal decimalSetting(String key, BigDecimal defaultValue) {
-        return systemSettingRepository.findBySettingKey(key)
-                .map(setting -> new BigDecimal(setting.getSettingValue()))
-                .orElse(defaultValue);
+        String raw = settingValue(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        try {
+            return new BigDecimal(raw);
+        } catch (NumberFormatException ex) {
+            logBadSetting(key, raw);
+            return defaultValue;
+        }
     }
 
     private int integerSetting(String key, int defaultValue) {
+        String raw = settingValue(key);
+        if (raw == null) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(raw);
+        } catch (NumberFormatException ex) {
+            logBadSetting(key, raw);
+            return defaultValue;
+        }
+    }
+
+    private String settingValue(String key) {
         return systemSettingRepository.findBySettingKey(key)
-                .map(setting -> Integer.parseInt(setting.getSettingValue()))
-                .orElse(defaultValue);
+                .map(SystemSetting::getSettingValue)
+                .filter(value -> value != null && !value.isBlank())
+                .orElse(null);
+    }
+
+    /** S2: a hand-edited row must never take a count submission down with it. */
+    private void logBadSetting(String key, String raw) {
+        log.warn("Setting {} holds \"{}\" which is not a number; using the default", key, raw);
     }
 
     private void applySheet(CountSheet sheet, Long userId) {
@@ -434,7 +485,7 @@ public class StockCountService {
             item.setVariance(variance);
             item.setValuationAmount(unitCost.multiply(BigDecimal.valueOf(variance))
                     .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
-            if (variance != 0 && (item.getReasonCode() == null || item.getReasonCode().isBlank())) {
+            if (needsReasonCode(item.getCountedQuantity(), live, item.getReasonCode())) {
                 missingReasons.add(product.getName());
             }
         }
@@ -474,7 +525,11 @@ public class StockCountService {
                         "STOCK_MOVEMENT", movement.getId(), "count", variance, unitCost,
                         item.getValuationAmount(), null,
                         movement.getDescription(), movement.getMovementDate(), userId);
-                ledgerPostingService.postOperatingLoss(movement);
+                if (variance > 0) {
+                    ledgerPostingService.postInventoryGain(movement);
+                } else {
+                    ledgerPostingService.postOperatingLoss(movement);
+                }
             }
 
             product.setStockQuantity(item.getCountedQuantity());
@@ -582,7 +637,8 @@ public class StockCountService {
             items.add(item);
         }
         recalculateVarianceValue(sheet, items);
-        if (withinBackdateLimit && allProductsActive && isWithinAutoApproveThreshold(sheet, items)) {
+        if (withinBackdateLimit && allProductsActive && isWithinAutoApproveThreshold(sheet, items)
+                && liveVariancesHaveReasonCodes(items)) {
             sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
             CountSheet saved = countSheetRepository.saveAndFlush(sheet);
             applySheet(saved, userId);

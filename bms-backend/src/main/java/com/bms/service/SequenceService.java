@@ -39,15 +39,6 @@ public class SequenceService {
                            PurchaseSequenceRepository purchaseSequenceRepository,
                            OrderSequenceRepository orderSequenceRepository,
                            TransferSequenceRepository transferSequenceRepository,
-                           ShopTimeService shopTimeService) {
-        this(invoiceSequenceRepository, purchaseSequenceRepository, orderSequenceRepository,
-                transferSequenceRepository, null, null, shopTimeService);
-    }
-
-    public SequenceService(InvoiceSequenceRepository invoiceSequenceRepository,
-                           PurchaseSequenceRepository purchaseSequenceRepository,
-                           OrderSequenceRepository orderSequenceRepository,
-                           TransferSequenceRepository transferSequenceRepository,
                            CustomerSequenceRepository customerSequenceRepository,
                            CustomerRepository customerRepository,
                            ShopTimeService shopTimeService) {

@@ -22,6 +22,9 @@ public interface ProfitLedgerRepository extends JpaRepository<ProfitLedger, Long
 
     List<ProfitLedger> findByPeriodOrderByOccurredAtAscIdAsc(String period);
 
+    /** N1 repair: every ledger row of one source kind, in the order they were posted. */
+    List<ProfitLedger> findByEventTypeAndSourceTypeOrderByIdAsc(ProfitLedger.EventType eventType, String sourceType);
+
     List<ProfitLedger> findByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAscIdAsc(
             LocalDateTime from, LocalDateTime to);
 

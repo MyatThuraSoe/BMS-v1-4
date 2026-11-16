@@ -46,5 +46,6 @@
   "help_local_export": "Export everything to a single JSON file you can store offline (USB/external drive). This is safe and works without internet.",
   "help_local_import": "Restore from a previously exported JSON file. Choose Merge to keep existing data, or Replace Everything to fully overwrite it (irreversible).",
   "help_system_data_backup": "One-click snapshot of all business data, saved to this PC as a JSON file. No internet or Google Drive needed. Keep the file on a USB stick or a second cloud folder. To put the data back later, use Backup and Restore > Local Export and Import.",
+  "help_system_discount_limits": "Caps how much of a sale a cashier may discount. A cashier can still go higher with a manager username and password, and every discount above zero is written to the audit log.",
   "help_old_sales_cleanup": "Permanently erases sales older than one year, together with their returns, payments and stock-movement records, so the database stays small. It cannot be undone, and reports for those dates will no longer include those sales. Take a backup first. Note: deleting old sales does not return stock to inventory."
 }

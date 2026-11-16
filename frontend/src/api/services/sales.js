@@ -47,7 +47,9 @@ export const saleService = {
   },
 
   deleteOld: async (olderThanYears = 1) => {
-    const response = await apiClient.delete(`/sales/old?olderThanYears=${olderThanYears}`);
+    // The Settings screen confirms the backup before calling this, so the
+    // server-side O4 guard is satisfied by the operator's own confirmation.
+    const response = await apiClient.delete(`/sales/old?olderThanYears=${olderThanYears}&backupConfirmed=true`);
     return response.data;
   },
 

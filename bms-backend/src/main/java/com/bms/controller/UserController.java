@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -71,8 +72,9 @@ public class UserController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable Long id) {
-        userService.deleteUser(id);
+    public ResponseEntity<ApiResponse<Void>> deleteUser(@PathVariable Long id,
+                                                        @AuthenticationPrincipal User actor) {
+        userService.deleteUser(id, false, actor != null ? actor.getId() : null);
         return ResponseEntity.ok(new ApiResponse<>(true, "User deleted successfully"));
     }
 

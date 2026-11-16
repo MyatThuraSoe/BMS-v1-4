@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Box, Typography, Paper, TextField, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, FormControlLabel, Checkbox, Divider } from '@mui/material';
+import { Box, Typography, Paper, TextField, Button, Stack, Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Dialog, DialogTitle, DialogContent, DialogActions, Alert, Chip, FormControlLabel, Checkbox, Divider, Tooltip } from '@mui/material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { accountingService } from '../api/services';
@@ -25,6 +25,12 @@ const PeriodControl = () => {
   const periods = periodsData?.data || [];
 
   const invalidate = () => queryClient.invalidateQueries({ queryKey: ['accountingPeriods'] });
+
+  // T1: freezing the month still in progress stops every sale in it, so the
+  // close button only arms for a month the shop has already finished.
+  const today = new Date();
+  const currentPeriod = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+  const targetNotFinished = !!closeTarget && closeTarget >= currentPeriod;
 
   const closeMutation = useMutation({
     mutationFn: (period) => accountingService.closePeriod(period),
@@ -121,10 +127,15 @@ const PeriodControl = () => {
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }} sx={{ mb: 2 }}>
         <TextField size="small" type="month" label={t('period_label')} value={closeTarget}
           onChange={(e) => setCloseTarget(e.target.value)} InputLabelProps={{ shrink: true }} />
-        <Button variant="outlined" color="warning" disabled={!closeTarget || closeMutation.isPending}
-          onClick={() => closeMutation.mutate(closeTarget)}>
-          {t('close_period')}
-        </Button>
+        <Tooltip title={targetNotFinished ? t('close_needs_finished_month') : ''}>
+          <span>
+            <Button variant="outlined" color="warning"
+              disabled={!closeTarget || targetNotFinished || closeMutation.isPending}
+              onClick={() => closeMutation.mutate(closeTarget)}>
+              {t('close_period')}
+            </Button>
+          </span>
+        </Tooltip>
         <Button variant="outlined" disabled={cutoverMutation.isPending}
           onClick={() => { if (window.confirm(t('cutover_confirm'))) cutoverMutation.mutate(); }}>
           {t('activate_ledger_reads')}

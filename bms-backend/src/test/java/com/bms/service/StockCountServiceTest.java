@@ -416,4 +416,79 @@ class StockCountServiceTest {
         request.setItems(List.of(entry));
         return request;
     }
+
+    /**
+     * S1: the counts matched the sheet's snapshot, but stock moved afterwards,
+     * so the live recompute needs a reason the counter never gave. Auto-approval
+     * has to step aside and keep the submission instead of rolling it back.
+     */
+    @Test
+    void s1_submitNeedingANewReasonCodeStaysInPendingReviewWithTheCountsSaved() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 8);
+        stubSheetLookup(sheet);
+        lenient().when(countSheetRepository.save(any(CountSheet.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        CountSheetResponse response = stockCountService.submit(sheet.getId(), submitRequest(8, null), 99L);
+
+        assertEquals("PENDING_REVIEW", response.getStatus());
+        assertEquals(CountSheet.CountStatus.PENDING_REVIEW, sheet.getStatus());
+        assertEquals(8, sheet.getItems().get(0).getCountedQuantity(), "the counter's work must survive");
+        assertEquals(10, product.getStockQuantity());
+        verify(countSheetRepository).save(sheet);
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+        verify(ledgerPostingService, never()).postInventoryGain(any(StockMovement.class));
+    }
+
+    /** S2: a hand-edited setting holding "abc" must not break the submit path. */
+    @Test
+    void s2_unreadableAutoApproveSettingFallsBackToTheDefault() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+        when(systemSettingRepository.findBySettingKey("stockCountAutoApproveThreshold"))
+                .thenReturn(Optional.of(setting("stockCountAutoApproveThreshold", "abc")));
+
+        CountSheetResponse response = stockCountService.submit(sheet.getId(), submitRequest(11, "MISCOUNT"), 99L);
+
+        assertEquals("APPROVED", response.getStatus());
+        assertEquals(11, product.getStockQuantity());
+    }
+
+    @Test
+    void s3_positiveCountVariancePostsAnInventoryGain() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(12, "MISCOUNT"), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(StockMovement.MovementType.ADJUSTMENT_IN, captor.getValue().getMovementType());
+        verify(ledgerPostingService).postInventoryGain(captor.getValue());
+        verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
+    }
+
+    @Test
+    void s3_negativeCountVarianceKeepsPostingTheOperatingLoss() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10);
+        stubSheetLookup(sheet);
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        stockCountService.submit(sheet.getId(), submitRequest(8, "MISCOUNT"), 99L);
+
+        ArgumentCaptor<StockMovement> captor = ArgumentCaptor.forClass(StockMovement.class);
+        verify(stockMovementRepository).save(captor.capture());
+        assertEquals(StockMovement.MovementType.ADJUSTMENT_OUT, captor.getValue().getMovementType());
+        verify(ledgerPostingService).postOperatingLoss(captor.getValue());
+        verify(ledgerPostingService, never()).postInventoryGain(any(StockMovement.class));
+    }
 }

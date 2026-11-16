@@ -141,6 +141,10 @@ class PurchaseServiceCostIntegrityTest {
                 locationStockRepository, stockTransferRepository, productRepository,
                 stockMovementRepository, userRepository, auditLogService, ledgerPostingService);
         ReflectionTestUtils.setField(locationService, "periodGuard", periodGuard);
+        ReflectionTestUtils.setField(locationService, "sequenceService", sequenceService);
+        ShopTimeTestSupport.withClock(locationService);
+        ShopTimeTestSupport.withClock(ledgerPostingService);
+        lenient().when(sequenceService.nextTransferNumber()).thenReturn("TR-20261116-0001");
         this.locationService = locationService;
 
         purchaseService = new PurchaseService();
@@ -159,6 +163,7 @@ class PurchaseServiceCostIntegrityTest {
         ReflectionTestUtils.setField(purchaseService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(purchaseService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(purchaseService, "purchasePaymentService", purchasePaymentService);
+        ShopTimeTestSupport.withClock(purchaseService);
         lenient().when(purchasePaymentService.paidAmount(anyLong())).thenReturn(BigDecimal.ZERO);
 
         lenient().when(expenseRepository.save(any(Expense.class))).thenAnswer(inv -> {
@@ -309,7 +314,7 @@ class PurchaseServiceCostIntegrityTest {
     }
 
     private void stubPurchases() {
-        lenient().when(purchaseRepository.findById(anyLong()))
+        lenient().when(purchaseRepository.findByIdForUpdate(anyLong()))
                 .thenAnswer(inv -> Optional.ofNullable(purchases.get(inv.getArgument(0))));
         lenient().when(purchaseRepository.save(any(Purchase.class))).thenAnswer(inv -> {
             Purchase purchase = inv.getArgument(0);

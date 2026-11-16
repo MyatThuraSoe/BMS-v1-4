@@ -124,6 +124,7 @@ class SaleServiceVoidCashTrailTest {
         ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
+        ShopTimeTestSupport.withClock(saleService);
 
         admin = user(1L, Role.RoleName.ROLE_ADMIN);
         manager = user(2L, Role.RoleName.ROLE_MANAGER);
@@ -192,6 +193,7 @@ class SaleServiceVoidCashTrailTest {
         cashPayment.setPaidAt(sale.getSaleDate());
 
         lenient().when(saleRepository.findById(100L)).thenReturn(Optional.of(sale));
+        lenient().when(saleRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(sale));
         lenient().when(saleRepository.save(any(Sale.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(admin));
         lenient().when(userRepository.findById(2L)).thenReturn(Optional.of(manager));
@@ -341,20 +343,12 @@ class SaleServiceVoidCashTrailTest {
 
     @Test
     void voidCreditSaleConvertsNonCashArPaymentsToCustomerCredit() {
-        sale.setSaleType(Sale.SaleType.CREDIT);
-        sale.setPaymentStatus(Sale.PaymentStatus.PARTIAL);
-        sale.setAmountPaid(new BigDecimal("80.00"));
-        sale.setTotalAmount(new BigDecimal("100.00"));
-        sale.setSubtotal(new BigDecimal("100.00"));
-        sale.setTaxAmount(BigDecimal.ZERO);
-
-        Customer customer = new Customer();
-        customer.setId(7L);
-        customer.setCustomerCode("CUST-7");
-        customer.setFirstName("Alice");
-        customer.setLastName("Customer");
-        customer.setCurrentBalance(new BigDecimal("80.00"));
-        customer.setCreditBalance(BigDecimal.ZERO);
+        // N3: the customer owes 100 on other invoices and 20 is still unpaid here.
+        // Paying 80 of this invoice by card already lowered the balance, so the
+        // void must hand that 80 back as credit WITHOUT taking it off the balance
+        // a second time.
+        Sale sale = creditSale();
+        Customer customer = creditCustomer(new BigDecimal("120.00"));
         sale.setCustomer(customer);
 
         ArPayment arPayment = new ArPayment();
@@ -367,13 +361,81 @@ class SaleServiceVoidCashTrailTest {
 
         lenient().when(saleRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(sale));
         lenient().when(customerRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(customer));
+        lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L)).thenReturn(List.of());
         lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(100L))
                 .thenReturn(List.of(arPayment));
 
         saleService.voidSale(100L, 1L, "Credit sale reversed");
 
         assertNotNull(arPayment.getReversedAt());
-        assertEquals(0, customer.getCreditBalance().compareTo(new BigDecimal("80.00")));
-        assertEquals(0, customer.getCurrentBalance().compareTo(new BigDecimal("0.00")));
+        assertEquals(0, customer.getCreditBalance().compareTo(new BigDecimal("80.00")),
+                "the card payment comes back as store credit");
+        assertEquals(0, customer.getCurrentBalance().compareTo(new BigDecimal("100.00")),
+                "only the 20 still owed on this invoice may leave the balance");
+    }
+
+    @Test
+    void voidCreditSaleRefundsCashArPaymentFromTheDrawer() {
+        Sale sale = creditSale();
+        Customer customer = creditCustomer(new BigDecimal("120.00"));
+        sale.setCustomer(customer);
+
+        ArPayment arPayment = new ArPayment();
+        arPayment.setId(12L);
+        arPayment.setInvoice(sale);
+        arPayment.setAmount(new BigDecimal("80.00"));
+        arPayment.setPaymentMethod(PaymentMethod.CASH);
+        arPayment.setPaymentDate(LocalDateTime.now().minusHours(1));
+
+        lenient().when(saleRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(sale));
+        lenient().when(customerRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(customer));
+        lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L)).thenReturn(List.of());
+        lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(100L))
+                .thenReturn(List.of(arPayment));
+
+        saleService.voidSale(100L, 1L, "Credit sale reversed");
+
+        ArgumentCaptor<BigDecimal> amountCaptor = ArgumentCaptor.forClass(BigDecimal.class);
+        verify(cashDrawerSessionService).recordFinancialMovement(
+                eq(todaySession), eq(DrawerMovementType.PAY_OUT), amountCaptor.capture(),
+                eq("SALE"), eq(100L), any(), any(), anyString());
+        assertEquals(0, amountCaptor.getValue().compareTo(new BigDecimal("-80.00")),
+                "a cash payment on the invoice leaves the drawer as cash");
+        assertEquals(0, customer.getCreditBalance().compareTo(BigDecimal.ZERO),
+                "cash is refunded, not converted to credit");
+        assertEquals(0, customer.getCurrentBalance().compareTo(new BigDecimal("100.00")));
+    }
+
+    @Test
+    void voidingTheSameSaleTwiceIsRejected() {
+        sale.setIsVoided(true);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
+        assertTrue(ex.getMessage().toLowerCase().contains("already voided"), ex.getMessage());
+        verify(cashDrawerSessionService, never()).recordFinancialMovement(
+                any(), any(), any(), anyString(), anyLong(), any(), any(), anyString());
+    }
+
+    /** A 100 credit invoice with 80 paid and 20 still outstanding. */
+    private Sale creditSale() {
+        sale.setSaleType(Sale.SaleType.CREDIT);
+        sale.setPaymentStatus(Sale.PaymentStatus.PARTIAL);
+        sale.setAmountPaid(new BigDecimal("80.00"));
+        sale.setTotalAmount(new BigDecimal("100.00"));
+        sale.setSubtotal(new BigDecimal("100.00"));
+        sale.setTaxAmount(BigDecimal.ZERO);
+        return sale;
+    }
+
+    private Customer creditCustomer(BigDecimal currentBalance) {
+        Customer customer = new Customer();
+        customer.setId(7L);
+        customer.setCustomerCode("CUST-7");
+        customer.setFirstName("Alice");
+        customer.setLastName("Customer");
+        customer.setCurrentBalance(currentBalance);
+        customer.setCreditBalance(BigDecimal.ZERO);
+        return customer;
     }
 }

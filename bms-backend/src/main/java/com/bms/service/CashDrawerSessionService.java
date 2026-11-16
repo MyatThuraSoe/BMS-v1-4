@@ -50,9 +50,8 @@ import java.util.stream.Collectors;
 @Transactional
 public class CashDrawerSessionService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     public static final String SETTING_ALLOW_SHARED = "allow_shared_cash_drawer";
     public static final String SETTING_REQUIRE_APPROVAL = "require_manager_approval_shared_drawer";

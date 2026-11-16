@@ -26,9 +26,8 @@ import java.util.function.LongConsumer;
 @Service
 public class GoogleDriveService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Value("${google.oauth.client-id}")
     private String clientId;

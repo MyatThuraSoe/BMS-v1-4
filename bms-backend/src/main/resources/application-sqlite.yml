@@ -33,10 +33,13 @@ spring:
 
   jpa:
     hibernate:
-      # Hibernate owns the SQLite schema (same as the H2/electron profile).
-      # SQLite accepts any column type name, so LONGBLOB @Lob columns create
-      # BLOB-affinity columns that store byte[] correctly.
-      ddl-auto: update
+      # SQLite is migrated by SqliteSchemaMigrator from db/sqlite/schema.sql, not by
+      # Hibernate. ddl-auto: update reads the whole schema through
+      # DatabaseMetaData.getColumns(null, null, null, null), which sqlite-jdbc compiles
+      # into a compound SELECT with one term per column; SQLite caps those at 500 and the
+      # schema is past it, so with update the app cannot start at all after the upgrade
+      # that crosses the line. The migrator asks about one table at a time instead.
+      ddl-auto: none
     show-sql: false
     properties:
       hibernate:

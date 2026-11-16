@@ -19,13 +19,21 @@ import java.util.function.Function;
 @Component
 public class JwtUtil {
 
+    private static final long VERSION_CLAIM_TTL_MS = 60_000L;
+
     private final JwtSecretService jwtSecretService;
+    private final com.bms.repository.SystemSettingRepository systemSettingRepository;
+
+    private volatile boolean requireVersionClaim;
+    private volatile long versionClaimReadAt;
 
     @Value("${jwt.expiration}")
     private Long jwtExpiration;
 
-    public JwtUtil(@Autowired JwtSecretService jwtSecretService) {
+    public JwtUtil(@Autowired JwtSecretService jwtSecretService,
+                   @Autowired com.bms.repository.SystemSettingRepository systemSettingRepository) {
         this.jwtSecretService = jwtSecretService;
+        this.systemSettingRepository = systemSettingRepository;
     }
 
     public String extractUsername(String token) {
@@ -51,10 +59,6 @@ public class JwtUtil {
 
     private Boolean isTokenExpired(String token) {
         return extractExpiration(token).before(new Date());
-    }
-
-    public String generateToken(String username) {
-        return createToken(username, null);
     }
 
     public String generateToken(UserDetails userDetails) {
@@ -87,11 +91,37 @@ public class JwtUtil {
         if (userDetails instanceof com.bms.entity.User user) {
             Integer claimVersion = extractClaim(token, claims -> claims.get("tv", Integer.class));
             Integer userVersion = user.getTokenVersion() == null ? 0 : user.getTokenVersion();
-            if (claimVersion != null && !claimVersion.equals(userVersion)) {
-                return false;
+            if (claimVersion == null) {
+                // T6: a claim-less token is a pre-version session. Left accepted
+                // forever, it would outlive every logout, so the shop can turn
+                // those off. Default stays off because old installs issued them.
+                return !requireVersionClaim();
             }
+            return claimVersion.equals(userVersion);
         }
         return true;
+    }
+
+    /**
+     * T6: read once a minute, not once a request. A hand-edited or missing row
+     * reads as off rather than taking authentication down with it.
+     */
+    private boolean requireVersionClaim() {
+        long now = System.currentTimeMillis();
+        if (now - versionClaimReadAt < VERSION_CLAIM_TTL_MS) {
+            return requireVersionClaim;
+        }
+        synchronized (this) {
+            if (now - versionClaimReadAt >= VERSION_CLAIM_TTL_MS) {
+                requireVersionClaim = systemSettingRepository
+                        .findBySettingKey("auth.token.requireVersionClaim")
+                        .map(com.bms.entity.SystemSetting::getSettingValue)
+                        .map("true"::equalsIgnoreCase)
+                        .orElse(false);
+                versionClaimReadAt = System.currentTimeMillis();
+            }
+            return requireVersionClaim;
+        }
     }
 
     private Key getSignKey() {

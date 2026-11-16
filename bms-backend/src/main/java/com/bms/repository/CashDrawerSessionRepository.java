@@ -41,6 +41,16 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
     @Query("SELECT s FROM CashDrawerSession s WHERE s.drawer.id = :drawerId AND s.status = 'OPEN' ORDER BY s.openedAt ASC, s.id ASC")
     List<CashDrawerSession> findOpenSessionsForDrawer(@Param("drawerId") Long drawerId);
 
+    /** T1: drawers a period close must not leave running — opened inside that month. */
+    @Query("""
+        SELECT s FROM CashDrawerSession s
+        WHERE s.status = com.bms.entity.DrawerSessionStatus.OPEN
+          AND s.openedAt >= :monthStart AND s.openedAt < :monthEnd
+        ORDER BY s.openedAt, s.id
+        """)
+    List<CashDrawerSession> findOpenSessionsOpenedIn(@Param("monthStart") LocalDateTime monthStart,
+                                                     @Param("monthEnd") LocalDateTime monthEnd);
+
     /**
      * Sessions that overlap the report window. A drawer opened yesterday and
      * closed today must be reconciled in today's end-of-day report.

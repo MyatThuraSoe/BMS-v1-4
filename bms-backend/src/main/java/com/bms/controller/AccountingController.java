@@ -50,6 +50,13 @@ public class AccountingController {
                 historyService.backfillProfit(request.backupConfirmed(), userId(authentication))));
     }
 
+    @PostMapping("/return-settlement-repair")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> returnSettlementRepair(@RequestBody BackfillRequest request,
+                                                                                   Authentication authentication) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Return settlement repair result",
+                historyService.repairReturnSettlements(request.backupConfirmed(), userId(authentication))));
+    }
+
     @GetMapping("/reconciliation")
     public ResponseEntity<ApiResponse<Map<String, Object>>> reconciliation(
             @RequestParam(required = false) String startPeriod, @RequestParam(required = false) String endPeriod) {

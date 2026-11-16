@@ -1,6 +1,7 @@
 package com.bms.sqlite;
 
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.orm.jpa.EntityManagerFactoryDependsOnPostProcessor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
@@ -24,6 +25,23 @@ public class SqliteDataSourceConfig {
     @Primary
     public DataSource sqliteDataSource(@Value("${spring.datasource.url}") String url) {
         return new HikariSqliteDataSource(url);
+    }
+
+    /**
+     * Keeps the schema ahead of the SessionFactory. Hibernate used to create the tables
+     * while the EntityManagerFactory was being built; {@link SqliteSchemaMigrator} now does
+     * it in its own bean, so the factory has to wait for it instead of happening to come
+     * second.
+     */
+    @Bean
+    static SqliteSchemaMigrationOrdering sqliteSchemaMigrationOrdering() {
+        return new SqliteSchemaMigrationOrdering();
+    }
+
+    static final class SqliteSchemaMigrationOrdering extends EntityManagerFactoryDependsOnPostProcessor {
+        SqliteSchemaMigrationOrdering() {
+            super("sqliteSchemaMigrator");
+        }
     }
 
     static DataSource build(String url) {

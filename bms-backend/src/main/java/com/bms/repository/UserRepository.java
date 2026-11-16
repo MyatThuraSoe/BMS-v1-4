@@ -47,6 +47,20 @@ public interface UserRepository extends JpaRepository<User, Long> {
     @Query("SELECT u FROM User u WHERE LOWER(u.username) = LOWER(:username)")
     Optional<User> findByUsernameIgnoreCase(@Param("username") String username);
 
+    // N2 safety net: rows that predate the normalized columns have null there,
+    // so the normalized duplicate check alone would let "ADMIN" through.
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE LOWER(u.username) = LOWER(:username)")
+    boolean existsByUsernameIgnoreCase(@Param("username") String username);
+
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE LOWER(u.email) = LOWER(:email)")
+    boolean existsByEmailIgnoreCase(@Param("email") String email);
+
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE LOWER(u.username) = LOWER(:username) AND u.id <> :id")
+    boolean existsOtherByUsernameIgnoreCase(@Param("username") String username, @Param("id") Long id);
+
+    @Query("SELECT COUNT(u) > 0 FROM User u WHERE LOWER(u.email) = LOWER(:email) AND u.id <> :id")
+    boolean existsOtherByEmailIgnoreCase(@Param("email") String email, @Param("id") Long id);
+
     // Active (non-deleted, non-deactivated) users holding the given role —
     // used by the last-administrator guards.
     @Query("SELECT COUNT(u) FROM User u WHERE u.deletedAt IS NULL AND u.isActive = true AND u.role.name = :role")

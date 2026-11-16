@@ -21,22 +21,21 @@ import java.util.stream.Collectors;
 @Transactional
 public class ExpenseService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     /** O4: +/- days around the expense date scanned for duplicate freight bills. */
     private static final int DUPLICATE_WINDOW_DAYS = 3;
 
     private final ExpenseRepository expenseRepository;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private LedgerPostingService ledgerPostingService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PeriodGuard periodGuard;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private com.bms.repository.PurchaseExpenseRepository purchaseExpenseRepository;
 
     public ExpenseService(ExpenseRepository expenseRepository) {

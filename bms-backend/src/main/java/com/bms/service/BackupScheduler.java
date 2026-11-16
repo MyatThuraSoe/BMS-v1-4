@@ -19,9 +19,8 @@ import java.time.LocalDateTime;
 @Component
 public class BackupScheduler {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     private static final Logger log = LoggerFactory.getLogger(BackupScheduler.class);
 

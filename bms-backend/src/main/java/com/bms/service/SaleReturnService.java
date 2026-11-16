@@ -42,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +99,7 @@ public class SaleReturnService {
     private PeriodGuard periodGuard;
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
 
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
@@ -106,7 +107,7 @@ public class SaleReturnService {
      */
     @Transactional(readOnly = true)
     public ReturnableItemsResponse getReturnableItems(Long saleId) {
-        Sale sale = loadActiveSale(saleId);
+        Sale sale = activeSale(saleId);
 
         BigDecimal outstandingBefore = sale.getTotalAmount() != null ? sale.getTotalAmount() : BigDecimal.ZERO;
         BigDecimal paidBefore = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
@@ -138,6 +139,9 @@ public class SaleReturnService {
         response.setEstimatedRefundDue(sale.getSaleType() == Sale.SaleType.CREDIT
                 ? totalReturnable.subtract(response.getEstimatedDebtReduction()).setScale(2, RoundingMode.HALF_UP)
                 : totalReturnable.setScale(2, RoundingMode.HALF_UP));
+        // N4: STORE_CREDIT needs a customer, so the dialog needs to know whether
+        // this sale has one before it offers the option.
+        response.setHasCustomer(sale.getCustomer() != null);
         response.setItems(sale.getItems().stream()
                 .map(item -> convertToReturnableItem(sale, item))
                 .collect(Collectors.toList()));
@@ -166,7 +170,7 @@ public class SaleReturnService {
      */
     public SaleReturnResponse createSaleReturn(Long saleId, SaleReturnRequest request, Long userId) {
         periodGuard.assertOpen(shopTimeService.now());
-        Sale sale = loadActiveSale(saleId);
+        Sale sale = lockedActiveSale(saleId);
 
         if (sale.getIsVoided() != null && sale.getIsVoided()) {
             throw new BusinessException("Cannot return a voided sale");
@@ -199,6 +203,7 @@ public class SaleReturnService {
         BigDecimal totalReturnAmount = BigDecimal.ZERO;
         Set<Long> requestedSaleItemIds = new HashSet<>();
         Map<Long, Integer> returnedQuantitiesBefore = new java.util.HashMap<>();
+        List<StockMovement> restockMovements = new ArrayList<>();
 
         for (SaleReturnRequest.SaleReturnItemRequest itemRequest : request.getItems()) {
             if (!requestedSaleItemIds.add(itemRequest.getSaleItemId())) {
@@ -324,6 +329,8 @@ public class SaleReturnService {
                 movement.setQuantity(requestedQuantity);
                 movement.setReferenceType(StockMovement.ReferenceType.RETURN);
                 movement.setReferenceId(sale.getId());
+                movement.setSourceSaleId(sale.getId());
+                restockMovements.add(movement);
                 movement.setLocation(locationCode);
                 movement.setValuationAmount(lineValuation);
                 movement.setDescription("Stock restored from sale return (" + disposition.name() + "): "
@@ -361,13 +368,40 @@ public class SaleReturnService {
         }
 
         saleReturn.setRefundMethod(refundMethod);
+        // N4: store credit is money owed to a specific person, so it only works on
+        // a sale that carries a customer — for any sale type, not just credit.
+        // Refusing here keeps the whole return unsaved instead of booking a
+        // refund liability nobody can claim.
+        if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0
+                && sale.getCustomer() == null) {
+            throw new BusinessException("Store credit needs a customer on the sale");
+        }
         saleReturn.setDebtReductionAmount(debtReduction);
         saleReturn.setRefundAmount(refundDue);
         saleReturn.setTotalReturnAmount(totalReturnAmount);
         SaleReturn savedReturn = saleReturnRepository.save(saleReturn);
-        for (SaleReturnItem item : savedReturn.getItems()) {
+        // O4: restock rows are stamped with the return they came from once that
+        // row exists, so deleting old sales can find them without guessing from
+        // a shared reference id.
+        for (StockMovement restock : restockMovements) {
+            restock.setSourceReturnId(savedReturn.getId());
+            stockMovementRepository.save(restock);
+        }
+        // N1: the debt reduction and the refund are decided once for the whole
+        // return, but each ledger row must carry only its own share — otherwise a
+        // multi-line return books the totals once per line. The last line takes
+        // whatever is left so the parts sum back to the exact totals.
+        BigDecimal unallocatedDebt = debtReduction;
+        List<SaleReturnItem> returnLines = savedReturn.getItems();
+        for (int i = 0; i < returnLines.size(); i++) {
+            SaleReturnItem item = returnLines.get(i);
+            boolean lastLine = i == returnLines.size() - 1;
+            BigDecimal lineTotal = item.getReturnAmount() != null ? item.getReturnAmount() : BigDecimal.ZERO;
+            BigDecimal lineDebt = debtForLine(debtReduction, totalReturnAmount, lineTotal, unallocatedDebt, lastLine);
+            unallocatedDebt = unallocatedDebt.subtract(lineDebt);
             ledgerPostingService.postReturnProfit(savedReturn, item.getSaleItem(), item.getQuantityReturned(),
-                returnedQuantitiesBefore.get(item.getSaleItem().getId()));
+                    returnedQuantitiesBefore.get(item.getSaleItem().getId()), lineDebt,
+                    lineTotal.subtract(lineDebt));
         }
 
         // Cash physically leaves the drawer only for a real cash refund. An
@@ -414,18 +448,18 @@ public class SaleReturnService {
 
         // Returns on credit invoices that were UNPAID/PARTIAL should NOT
         // dispense cash — they reduce what the customer owes instead.
-        if (sale.getSaleType() == Sale.SaleType.CREDIT) {
-            if (!cashSettled) {
-                reverseCreditBalance(sale, debtReduction);
-            }
-            if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0
-                    && sale.getCustomer() != null) {
-                Customer customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
-                customer.setCreditBalance(customer.getCreditBalance()
-                        .add(refundDue).setScale(2, RoundingMode.HALF_UP));
-                customerRepository.save(customer);
-            }
+        if (sale.getSaleType() == Sale.SaleType.CREDIT && !cashSettled) {
+            reverseCreditBalance(sale, debtReduction);
+        }
+        // N4: store credit is a real refund, so it runs for every sale type. It is
+        // the one refund that never touches the drawer — the value stays in the
+        // shop and is recorded as owed to the customer.
+        if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0) {
+            Customer customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+            customer.setCreditBalance(customer.getCreditBalance()
+                    .add(refundDue).setScale(2, RoundingMode.HALF_UP));
+            customerRepository.save(customer);
         }
 
         auditLogService.logAction(userId, "SALE_RETURN",
@@ -433,6 +467,28 @@ public class SaleReturnService {
                 "SaleReturn", savedReturn.getId(), null, savedReturn.toString());
 
         return convertToResponse(savedReturn);
+    }
+
+    /**
+     * N1: one line's share of the whole return's debt reduction. Non-last lines
+     * take their proportional slice, clamped so accumulated rounding can never
+     * ask for debt that is already gone; the last line takes the remainder, which
+     * keeps the parts summing to exactly {@code debtReduction}.
+     */
+    static BigDecimal debtForLine(BigDecimal debtReduction, BigDecimal totalReturnAmount,
+                                  BigDecimal lineTotal, BigDecimal unallocatedDebt, boolean lastLine) {
+        BigDecimal unallocated = unallocatedDebt == null ? BigDecimal.ZERO : unallocatedDebt;
+        if (lastLine) {
+            return unallocated.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
+        }
+        if (debtReduction == null || debtReduction.signum() == 0
+                || totalReturnAmount == null || totalReturnAmount.signum() == 0
+                || lineTotal == null || lineTotal.signum() == 0) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        BigDecimal share = debtReduction.multiply(lineTotal)
+                .divide(totalReturnAmount, 2, RoundingMode.HALF_UP);
+        return share.min(unallocated).max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
     }
 
     /**
@@ -531,12 +587,21 @@ public class SaleReturnService {
         }
     }
 
-    private Sale loadActiveSale(Long saleId) {
-        Sale sale = saleRepository.findByIdForUpdate(saleId)
-                .orElseGet(() -> saleRepository.findById(saleId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
+    /** Read-only load: the return dialog must not write-lock the sale while the till is busy. */
+    private Sale activeSale(Long saleId) {
+        return requireActive(saleRepository.findById(saleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
+    }
+
+    /** Load used by the write path, so the row stays locked to this transaction. */
+    private Sale lockedActiveSale(Long saleId) {
+        return requireActive(saleRepository.findByIdForUpdate(saleId)
+                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
+    }
+
+    private Sale requireActive(Sale sale) {
         if (!sale.getIsActive() || sale.getDeletedAt() != null) {
-            throw new ResourceNotFoundException("Sale not found: " + saleId);
+            throw new ResourceNotFoundException("Sale not found: " + sale.getId());
         }
         return sale;
     }

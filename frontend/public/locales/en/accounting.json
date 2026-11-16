@@ -71,6 +71,7 @@
   "period_control": "Accounting Period Control",
   "period_label": "Period (YYYY-MM)",
   "close_period": "Close Period",
+  "close_needs_finished_month": "Only a month that has already ended can be closed.",
   "activate_ledger_reads": "Activate Ledger Reads",
   "cutover_confirm": "Activate ledger-backed reporting? Reports will read from the ledgers from now on. Make sure reconciliation is clean first.",
   "closed_at": "Closed At",

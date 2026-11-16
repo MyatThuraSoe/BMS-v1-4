@@ -130,8 +130,10 @@ class SaleTaxAfterDiscountTest {
         ReflectionTestUtils.setField(ledgerPostingService, "productRepository", productRepository);
         ReflectionTestUtils.setField(ledgerPostingService, "locationStockRepository", locationStockRepository);
         ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
+        ShopTimeTestSupport.withClock(ledgerPostingService);
         ReflectionTestUtils.setField(saleService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(saleService, "systemSettingRepository", systemSettingRepository);
+        ShopTimeTestSupport.withClock(saleService);
         ReflectionTestUtils.setField(saleService, "ledgerPostingService", ledgerPostingService);
         lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
                 any(), any(), any(), any(), any())).thenReturn(Optional.empty());
@@ -155,6 +157,7 @@ class SaleTaxAfterDiscountTest {
         ReflectionTestUtils.setField(saleReturnService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(saleReturnService, "locationService", locationService);
         ReflectionTestUtils.setField(saleReturnService, "priceHistoryRepository", priceHistoryRepository);
+        ShopTimeTestSupport.withClock(saleReturnService);
         lenient().when(locationService.totalOwnedUnits(any(Product.class)))
                 .thenAnswer(inv -> {
                     Product p = inv.getArgument(0);
@@ -170,6 +173,11 @@ class SaleTaxAfterDiscountTest {
         lenient().when(shopInfoRepository.findTopByOrderByIdAsc()).thenReturn(Optional.of(shopInfo));
 
         lenient().when(sequenceService.nextInvoiceNumber()).thenReturn("INV-T-0001");
+
+        // O5 caps a cashier's discount; these fixtures are about tax math, so the
+        // shop here lets any entered discount through.
+        lenient().when(systemSettingRepository.findBySettingKey("shop.discount.maxPercentCashier"))
+                .thenReturn(Optional.of(numericSetting("shop.discount.maxPercentCashier", "100")));
 
         CashShift shift = new CashShift();
         shift.setId(1L);
@@ -226,6 +234,8 @@ class SaleTaxAfterDiscountTest {
         });
         lenient().when(saleRepository.findById(anyLong()))
                 .thenAnswer(inv -> Optional.ofNullable(sales.get(inv.getArgument(0))));
+        lenient().when(saleRepository.findByIdForUpdate(anyLong()))
+                .thenAnswer(inv -> Optional.ofNullable(sales.get(inv.getArgument(0))));
 
         lenient().when(saleItemRepository.findByIdForUpdate(anyLong()))
                 .thenAnswer(inv -> Optional.ofNullable(saleItems.get(inv.getArgument(0))));
@@ -246,6 +256,13 @@ class SaleTaxAfterDiscountTest {
         lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(anyLong()))
                 .thenReturn(new ArrayList<>());
         lenient().when(stockMovementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    private static com.bms.entity.SystemSetting numericSetting(String key, String value) {
+        com.bms.entity.SystemSetting setting = new com.bms.entity.SystemSetting();
+        setting.setSettingKey(key);
+        setting.setSettingValue(value);
+        return setting;
     }
 
     private Product product(long id, String unitPrice) {

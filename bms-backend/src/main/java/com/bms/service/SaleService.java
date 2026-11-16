@@ -93,7 +93,10 @@ public class SaleService {
     private PeriodGuard periodGuard;
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
+
+    @Autowired
+    private org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -288,21 +291,9 @@ public class SaleService {
                     product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
             BigDecimal effectiveUnitPrice = quote.getUnitPrice();
 
-            // P10: below-cost guard on the effective (post-promotion/price-list)
-            // price. ALLOW_WARN proceeds; REQUIRE_MANAGER gates to ADMIN/MANAGER;
-            // BLOCK rejects. Refund money and stock are untouched by this check.
-            BigDecimal lineCost = product.getCostPrice();
-            if (lineCost != null && effectiveUnitPrice.compareTo(lineCost) < 0) {
-                if (belowCostPolicy == BelowCostPolicy.BLOCK) {
-                    throw new BusinessException("Product '" + product.getName()
-                            + "' is priced below cost; below-cost sales are blocked");
-                }
-                if (belowCostPolicy == BelowCostPolicy.REQUIRE_MANAGER && !belowCostAllowedForUser) {
-                    throw new BusinessException("Product '" + product.getName()
-                            + "' is priced below cost; manager approval is required");
-                }
-            }
-
+            // P10/O5: the below-cost guard runs on the net price after the header
+            // discount has been allocated, so it happens once for the whole cart
+            // below instead of per line here.
             item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
             item.setUnitPrice(effectiveUnitPrice);
             item.setLineDiscount(quote.getLineDiscount());
@@ -325,6 +316,10 @@ public class SaleService {
         sale.setSubtotal(subtotal);
         sale.setPromotionDiscount(promotionDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
         sale.setPriceListDiscount(priceListDiscount.setScale(2, java.math.RoundingMode.HALF_UP));
+        // O5: one manager override covers both authority gates below.
+        boolean managerOverride = approveManagerCredentials(
+                request.getManagerUsername(), request.getManagerPassword());
+        assertDiscountWithinAuthority(subtotal, request.getDiscountAmount(), cashierId, managerOverride);
         BigDecimal discountAmount = computeDiscount(subtotal, request.getDiscountAmount());
         sale.setDiscountAmount(discountAmount);
 
@@ -332,6 +327,11 @@ public class SaleService {
         // is allocated to lines before any tax is computed.
         BigDecimal taxAmount = applyDiscountedLineTaxes(sale, getShopTaxRate());
         sale.setTaxAmount(taxAmount);
+
+        // O5: with the discount spread over the lines, the net unit prices are
+        // final — this is where the below-cost policy applies.
+        assertNetPriceRespectsCostPolicy(sale, belowCostPolicy,
+                belowCostAllowedForUser || managerOverride);
 
         BigDecimal totalAmount = subtotal.subtract(discountAmount).add(taxAmount);
         sale.setTotalAmount(totalAmount);
@@ -393,6 +393,14 @@ public class SaleService {
         auditLogService.logAction(cashierId, "SALE_CREATE",
             "Sale created: " + savedSale.getInvoiceNumber(),
             "Sale", savedSale.getId(), null, savedSale.toString());
+
+        // O5: every discount leaves a trail — who gave it and how much.
+        if (discountAmount.compareTo(BigDecimal.ZERO) > 0) {
+            auditLogService.logAction(cashierId, "SALE_DISCOUNT",
+                    "Discount " + discountAmount + " on " + savedSale.getInvoiceNumber()
+                            + " (subtotal " + subtotal + ")",
+                    "Sale", savedSale.getId(), null, String.valueOf(subtotal));
+        }
 
         return convertToResponse(savedSale);
     }
@@ -469,6 +477,7 @@ public class SaleService {
             movement.setQuantity(item.getQuantity());
             movement.setReferenceType(StockMovement.ReferenceType.SALE);
             movement.setReferenceId(sale.getId());
+            movement.setSourceSaleId(sale.getId());
             movement.setDescription("Stock deducted from sale: " + sale.getInvoiceNumber());
             User user = userRepository.findById(userId).orElse(null);
             movement.setCreatedBy(user);
@@ -557,15 +566,20 @@ public class SaleService {
             orderReservedByProduct.merge(oi.getProduct().getId(), oi.getQuantity(), Integer::sum);
         }
 
+        // F22: the demand that has to fit is the order's TOTAL for the product, so a
+        // product on two lines is not checked twice against the same units.
+        Map<Long, Integer> demandCheckedByProduct = new HashMap<>();
         for (OrderItem orderItem : order.getItems()) {
             Product product = productRepository.findByIdForUpdate(orderItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + orderItem.getProduct().getId()));
 
             int selfReserved = orderReservedByProduct.getOrDefault(orderItem.getProduct().getId(), 0);
-            int available = product.getStockQuantity() - product.getReservedQuantity() + selfReserved;
-            if (available < orderItem.getQuantity()) {
+            int neededSoFar = demandCheckedByProduct.merge(product.getId(), orderItem.getQuantity(), Integer::sum);
+            int sellable = product.getStockQuantity()
+                    - Math.max(0, product.getReservedQuantity() - selfReserved);
+            if (sellable < neededSoFar) {
                 throw new BusinessException("Insufficient stock for product '" + product.getName() +
-                    "'. Available: " + available + ", Requested: " + orderItem.getQuantity());
+                    "'. Available: " + sellable + ", Requested: " + neededSoFar);
             }
 
             SaleItem item = new SaleItem();
@@ -578,6 +592,12 @@ public class SaleService {
             // P2: COGS uses the cost in force at fulfilment (read under the product lock above),
             // not the order-time quote. costPriceAtOrder stays for margin quoting only.
             item.setCostPriceAtSale(product.getCostPrice());
+            // O6: the pricing the order was created with has to survive onto the
+            // sale line, otherwise promotion reports miss every converted order.
+            item.setOriginalUnitPrice(orderItem.getOriginalUnitPrice());
+            item.setLineDiscount(orderItem.getLineDiscount());
+            item.setPromotionId(orderItem.getPromotionId());
+            item.setPromotionName(orderItem.getPromotionName());
             sale.getItems().add(item);
         }
 
@@ -586,6 +606,10 @@ public class SaleService {
         // O2: the order locked its prices (and shop discount) at creation; carry the
         // header discount so line allocation, refunds and reports match the order.
         sale.setDiscountAmount(order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO);
+        // O6: the split between cashier, promotion and price-list discount is
+        // part of the locked order pricing and must reach the sale.
+        sale.setPromotionDiscount(order.getPromotionDiscount());
+        sale.setPriceListDiscount(order.getPriceListDiscount());
         sale.setTotalAmount(totalAmount);
 
         SalePaymentRequest paymentLine = new SalePaymentRequest();
@@ -627,6 +651,11 @@ public class SaleService {
         }
 
         // Deduct physical stock and clear the reservation in the same pass
+        // F22: what this order still owes back, per product. Releasing the sold
+        // quantity instead of the order's own reservation would eat into the
+        // units other pending orders are holding whenever two orders share a
+        // product, and those orders would then fail to convert.
+        Map<Long, Integer> ownReservationToRelease = new HashMap<>(orderReservedByProduct);
         for (SaleItem item : savedSale.getItems()) {
             Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
@@ -634,6 +663,15 @@ public class SaleService {
             int newStock = oldStock - item.getQuantity();
             if (newStock < 0) {
                 throw new BusinessException("Stock cannot go below zero for product: " + product.getName());
+            }
+            int stillOurs = ownReservationToRelease.getOrDefault(product.getId(), 0);
+            int release = Math.min(stillOurs, product.getReservedQuantity());
+            int reservedForOthers = product.getReservedQuantity() - release;
+            ownReservationToRelease.put(product.getId(), stillOurs - release);
+            if (newStock < reservedForOthers) {
+                throw new BusinessException("Converting this order would leave '" + product.getName()
+                        + "' below the " + reservedForOthers
+                        + " unit(s) other pending orders reserve; restock the product or cancel those orders first");
             }
             // P1/O8: inventory relief at fulfilment cost, posted before stock moves.
             BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
@@ -643,8 +681,7 @@ public class SaleService {
                     null, "Sale (order conversion) " + savedSale.getInvoiceNumber(), sale.getSaleDate(), cashierId);
             ledgerPostingService.postSaleProfit(savedSale, item);
             product.setStockQuantity(newStock);
-            int newReserved = Math.max(0, product.getReservedQuantity() - item.getQuantity());
-            product.setReservedQuantity(newReserved);
+            product.setReservedQuantity(reservedForOthers);
             productRepository.save(product);
 
             StockMovement movement = new StockMovement();
@@ -653,6 +690,7 @@ public class SaleService {
             movement.setQuantity(item.getQuantity());
             movement.setReferenceType(StockMovement.ReferenceType.SALE);
             movement.setReferenceId(sale.getId());
+            movement.setSourceSaleId(sale.getId());
             movement.setDescription("Stock deducted from sale (order conversion): " + savedSale.getInvoiceNumber());
             User user = userRepository.findById(cashierId).orElse(null);
             movement.setCreatedBy(user);
@@ -670,8 +708,7 @@ public class SaleService {
     public SaleResponse voidSale(Long saleId, Long userId, String reason) {
         periodGuard.assertOpen(shopTimeService.now());
         Sale sale = saleRepository.findByIdForUpdate(saleId)
-                .orElseGet(() -> saleRepository.findById(saleId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId)));
+                .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
 
         if (sale.getIsVoided()) {
             throw new BusinessException("Sale is already voided");
@@ -831,6 +868,7 @@ public class SaleService {
             movement.setQuantity(quantityToRestore);
             movement.setReferenceType(StockMovement.ReferenceType.RETURN);
             movement.setReferenceId(sale.getId());
+            movement.setSourceSaleId(sale.getId());
             movement.setDescription("Stock restored from voided sale: " + sale.getInvoiceNumber() +
                     (alreadyRefunded > 0 ? " (" + alreadyRefunded + " already restored via prior refund)" : ""));
             movement.setCreatedBy(user);
@@ -867,10 +905,11 @@ public class SaleService {
                     }
                 }
                 if (creditCustomer != null && convertedNonCash.compareTo(BigDecimal.ZERO) > 0) {
-                    BigDecimal currentBalance = creditCustomer.getCurrentBalance() != null
-                            ? creditCustomer.getCurrentBalance() : BigDecimal.ZERO;
-                    creditCustomer.setCurrentBalance(currentBalance.subtract(convertedNonCash)
-                            .max(BigDecimal.ZERO).setScale(2, java.math.RoundingMode.HALF_UP));
+                    // N3: only the credit balance grows here. The paid part was
+                    // already taken off currentBalance when the customer paid, and
+                    // whatever is still unpaid on this invoice is reversed by
+                    // reverseCreditBalance(sale) above — subtracting again would
+                    // cancel someone else's debt.
                     creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
                             .add(convertedNonCash).setScale(2, java.math.RoundingMode.HALF_UP));
                     customerRepository.save(creditCustomer);
@@ -916,92 +955,6 @@ public class SaleService {
         }
         creditCustomer.setCurrentBalance(newBalance);
         customerRepository.save(creditCustomer);
-    }
-
-    public Map<String, Object> deleteSalesOlderThanYears(int years, Long userId) {
-        if (years < 1) {
-            throw new BusinessException("Years must be at least 1");
-        }
-
-        LocalDateTime cutoff = shopTimeService.today().minusYears(years).atStartOfDay();
-        List<Long> saleIds = entityManager.createQuery("""
-                SELECT s.id
-                FROM Sale s
-                WHERE s.saleDate < :cutoff
-                """, Long.class)
-            .setParameter("cutoff", cutoff)
-            .getResultList();
-
-        if (saleIds.isEmpty()) {
-            return Map.of(
-                "deletedSales", 0,
-                "cutoffDate", cutoff.toLocalDate().toString()
-            );
-        }
-
-        entityManager.createQuery("""
-                DELETE FROM SaleReturnItem ri
-                WHERE ri.saleReturn.sale.id IN :saleIds
-                   OR ri.saleItem.sale.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        entityManager.createQuery("""
-                DELETE FROM SaleReturn r
-                WHERE r.sale.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        entityManager.createQuery("""
-                DELETE FROM SalePayment sp
-                WHERE sp.sale.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        entityManager.createQuery("""
-                DELETE FROM StockMovement sm
-                WHERE sm.referenceId IN :saleIds
-                  AND sm.referenceType IN (:referenceTypes)
-                """)
-            .setParameter("saleIds", saleIds)
-            .setParameter("referenceTypes", List.of(
-                StockMovement.ReferenceType.SALE,
-                StockMovement.ReferenceType.RETURN
-            ))
-            .executeUpdate();
-
-        entityManager.createQuery("""
-                DELETE FROM ArPayment ap
-                WHERE ap.invoice.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        entityManager.createQuery("""
-                DELETE FROM SaleItem si
-                WHERE si.sale.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        int deletedSales = entityManager.createQuery("""
-                DELETE FROM Sale s
-                WHERE s.id IN :saleIds
-                """)
-            .setParameter("saleIds", saleIds)
-            .executeUpdate();
-
-        auditLogService.logAction(userId, "SALE_DELETE_OLD",
-            "Deleted sales older than " + cutoff.toLocalDate() + ". Count: " + deletedSales,
-            "Sale", null, null, null);
-
-        return Map.of(
-            "deletedSales", deletedSales,
-            "cutoffDate", cutoff.toLocalDate().toString()
-        );
     }
 
     public SaleResponse convertToResponse(Sale sale) {
@@ -1156,16 +1109,9 @@ public class SaleService {
             result.setTaxRate(taxRate);
             result.setAvailableStock(product.getAvailableQuantity());
 
-            // P10: flag lines whose effective price is below cost so the POS can
-            // warn the cashier. Enforcement of the configured policy happens in
-            // createSale; verifyCart only surfaces the flag and a message.
-            BigDecimal lineCost = product.getCostPrice();
-            boolean belowCost = lineCost != null && quote.getUnitPrice().compareTo(lineCost) < 0;
-            result.setBelowCost(belowCost);
-            if (belowCost) {
-                messages.add(String.format("%s is priced below cost (price %s, cost %s)",
-                        product.getName(), quote.getUnitPrice(), lineCost));
-            }
+            // P10/O5: the below-cost flag is set once the header discount has been
+            // allocated to the lines, so the POS warns about the price the
+            // customer really pays. See the allocation pass below.
 
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
             boolean priceChanged = product.getUnitPrice().compareTo(itemRequest.getExpectedUnitPrice()) != 0;
@@ -1193,6 +1139,8 @@ public class SaleService {
             SaleItem taxLine = new SaleItem();
             taxLine.setQuantity(itemRequest.getQuantity());
             taxLine.setTotalPrice(lineTotal);
+            taxLine.setProduct(product);
+            taxLine.setCostPriceAtSale(product.getCostPrice());
             taxLines.add(taxLine);
             if ("PROMOTION".equals(quote.getSource())) {
                 promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
@@ -1215,6 +1163,25 @@ public class SaleService {
         BigDecimal taxAmount = applyDiscountedLineTaxes(taxCarrier, taxRate);
         response.setTaxAmount(taxAmount);
         response.setTotalAmount(subtotal.subtract(discountAmount).add(taxAmount));
+
+        // O5: the discount is only known at cart level, so the below-cost flag is
+        // derived from each line's net unit price after the allocation.
+        Map<SaleItem, BigDecimal> cartAllocations = SaleDiscountUtils.allocateDiscounts(taxCarrier);
+        for (int i = 0; i < taxLines.size(); i++) {
+            SaleItem line = taxLines.get(i);
+            BigDecimal lineNet = line.getTotalPrice()
+                    .subtract(cartAllocations.getOrDefault(line, BigDecimal.ZERO));
+            BigDecimal netUnit = lineNet.divide(BigDecimal.valueOf(line.getQuantity()), 4,
+                    java.math.RoundingMode.HALF_UP);
+            BigDecimal cost = line.getCostPriceAtSale();
+            boolean belowCost = cost != null && netUnit.compareTo(cost) < 0;
+            results.get(i).setBelowCost(belowCost);
+            if (belowCost) {
+                messages.add(String.format("%s is priced below cost after discount (net %s, cost %s)",
+                        line.getProduct().getName(), netUnit.setScale(2, java.math.RoundingMode.HALF_UP), cost));
+            }
+        }
+
         response.setMessages(messages);
         response.setValid(!anyChanged);
         return response;
@@ -1304,6 +1271,96 @@ public class SaleService {
         if (discount.compareTo(BigDecimal.ZERO) < 0) discount = BigDecimal.ZERO;
         if (discount.compareTo(subtotal) > 0) discount = subtotal;
         return discount.setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    /**
+     * O5: a cashier-entered discount is capped at a configurable share of the
+     * subtotal. Managers and administrators get their own (higher) cap, and a
+     * cashier can clear the cap with manager credentials the same way an
+     * over-shipment is approved.
+     */
+    private void assertDiscountWithinAuthority(BigDecimal subtotal, BigDecimal entered, Long cashierId,
+                                               boolean managerOverride) {
+        if (entered == null || entered.compareTo(BigDecimal.ZERO) <= 0
+                || subtotal == null || subtotal.compareTo(BigDecimal.ZERO) <= 0) {
+            return;
+        }
+        boolean manager = isManagerOrAdmin(cashierId);
+        BigDecimal limitPercent = discountLimitPercent(manager);
+        BigDecimal maxAmount = subtotal.multiply(limitPercent)
+                .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
+        if (entered.compareTo(maxAmount) <= 0) {
+            return;
+        }
+        if (!manager && managerOverride) {
+            return;
+        }
+        throw new BusinessException("Discount " + entered.setScale(2, java.math.RoundingMode.HALF_UP)
+                + " exceeds the allowed " + limitPercent.stripTrailingZeros().toPlainString()
+                + "% of this sale (max " + maxAmount + "); manager approval is required");
+    }
+
+    /** O5: the percentage cap for the acting role, falling back to the shipped defaults. */
+    private BigDecimal discountLimitPercent(boolean manager) {
+        String key = manager ? "shop.discount.maxPercentManager" : "shop.discount.maxPercentCashier";
+        BigDecimal fallback = manager ? new BigDecimal("100") : new BigDecimal("10");
+        String raw = systemSettingRepository.findBySettingKey(key)
+                .map(SystemSetting::getSettingValue).orElse(null);
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            BigDecimal value = new BigDecimal(raw);
+            return value.signum() < 0 ? fallback : value;
+        } catch (NumberFormatException ex) {
+            return fallback;
+        }
+    }
+
+    /** O5: same credential check the receiving override uses; silent when none was entered. */
+    private boolean approveManagerCredentials(String username, String password) {
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            return false;
+        }
+        User manager = userRepository.findActiveByUsernameIgnoreCase(username.trim())
+                .orElseThrow(() -> new BusinessException("Invalid manager credentials"));
+        Role.RoleName role = manager.getRole() != null ? manager.getRole().getName() : null;
+        if (role != Role.RoleName.ROLE_ADMIN && role != Role.RoleName.ROLE_MANAGER) {
+            throw new BusinessException("Only a manager or administrator can approve this discount");
+        }
+        if (!passwordEncoder.matches(password, manager.getPassword())) {
+            throw new BusinessException("Invalid manager credentials");
+        }
+        return true;
+    }
+
+    /**
+     * O5/P10: the below-cost policy judges the price the customer actually pays,
+     * so it runs after the header discount has been allocated to the lines.
+     */
+    private void assertNetPriceRespectsCostPolicy(Sale sale, BelowCostPolicy policy, boolean allowedForUser) {
+        if (policy == BelowCostPolicy.ALLOW_WARN) {
+            return;
+        }
+        Map<SaleItem, BigDecimal> allocations = SaleDiscountUtils.allocateDiscounts(sale);
+        for (SaleItem item : sale.getItems()) {
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(allocations.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal netUnit = lineNet.divide(BigDecimal.valueOf(item.getQuantity()), 4,
+                    java.math.RoundingMode.HALF_UP);
+            BigDecimal cost = item.getCostPriceAtSale();
+            if (cost == null || netUnit.compareTo(cost) >= 0) {
+                continue;
+            }
+            if (policy == BelowCostPolicy.BLOCK) {
+                throw new BusinessException("Product '" + item.getProduct().getName()
+                        + "' is priced below cost; below-cost sales are blocked");
+            }
+            if (!allowedForUser) {
+                throw new BusinessException("Product '" + item.getProduct().getName()
+                        + "' is priced below cost; manager approval is required");
+            }
+        }
     }
 
     public CustomerStatsResponse getCustomerStats(Long customerId) {

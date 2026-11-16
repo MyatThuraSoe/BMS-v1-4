@@ -3,6 +3,10 @@ package com.bms.service;
 import com.bms.dto.response.AccountingSummaryResponse;
 import com.bms.dto.response.JournalEntryResponse;
 import com.bms.entity.ArPayment;
+import com.bms.entity.CashDrawer;
+import com.bms.entity.CashDrawerMovement;
+import com.bms.entity.CashDrawerSession;
+import com.bms.entity.DrawerMovementType;
 import com.bms.entity.Expense;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
@@ -47,10 +51,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Phase 3 acceptance (spec 6.1): one month containing a promotion+tax sale, a
- * partial return, a void, a freight purchase with a partial receipt, an RTV, a
- * purchase reversal, a write-off, a revaluation, expenses (incl. purchase
- * variance) and an AR payment. Asserts I4 over real persistence: the journal
- * balances, GL COGS equals report COGS, and GL expense equals P&L expense.
+ * partial return, a multi-item return, a card refund, a store-credit refund, a
+ * void, a freight purchase with a partial receipt, an RTV, a purchase reversal,
+ * a write-off, a revaluation, expenses (incl. purchase variance) and an AR
+ * payment. Asserts I4 over real persistence: the journal balances, GL COGS
+ * equals report COGS, and GL expense equals P&L expense.
+ *
+ * Also asserts the spec 5 final check on the same month: the cash account
+ * equals the drawer's expected cash, and refunds paid by card or store credit
+ * stay out of both.
  *
  * Runs on an isolated in-memory H2 slice (no production data, no web context).
  */
@@ -88,6 +97,8 @@ class GlJournalIntegrationTest {
 
     private User user;
     private Product product;
+    private Product secondProduct;
+    private CashDrawerSession drawerSession;
 
     @BeforeEach
     void seed() {
@@ -113,6 +124,14 @@ class GlJournalIntegrationTest {
         product.setCostPrice(new BigDecimal("60.000000"));
         product.setStockQuantity(100);
         em.persist(product);
+
+        secondProduct = new Product();
+        secondProduct.setSku("GL-INT-2");
+        secondProduct.setName("Second integration product");
+        secondProduct.setUnitPrice(new BigDecimal("50.00"));
+        secondProduct.setCostPrice(new BigDecimal("20.000000"));
+        secondProduct.setStockQuantity(100);
+        em.persist(secondProduct);
         em.flush();
     }
 
@@ -223,6 +242,97 @@ class GlJournalIntegrationTest {
         arPayment.setRecordedBy(user);
         em.persist(arPayment);
 
+        // 11. Multi-item return: two lines of a two-product cash sale come back in
+        // one refund, so the till pays once for two revenue lines.
+        Sale multi = sale("INV-MULTI", Sale.SaleType.CASH, false,
+                new BigDecimal("500.00"), new BigDecimal("50.00"), new BigDecimal("550.00"),
+                LocalDateTime.of(2026, 11, 12, 10, 0));
+        SaleItem multiFirst = multi.getItems().get(0);
+        multiFirst.setQuantity(4);
+        multiFirst.setTotalPrice(new BigDecimal("400.00"));
+        multiFirst.setTaxAmount(new BigDecimal("40.00"));
+        SaleItem multiSecond = new SaleItem();
+        multiSecond.setSale(multi);
+        multiSecond.setProduct(secondProduct);
+        multiSecond.setQuantity(2);
+        multiSecond.setUnitPrice(new BigDecimal("50.00"));
+        multiSecond.setTotalPrice(new BigDecimal("100.00"));
+        multiSecond.setTaxAmount(new BigDecimal("10.00"));
+        multiSecond.setCostPriceAtSale(new BigDecimal("20.000000"));
+        multi.getItems().add(multiSecond);
+        em.persist(multi);
+        multiFirst.setQuantityRefunded(2);
+        multiSecond.setQuantityRefunded(1);
+        SaleReturn multiReturn = new SaleReturn();
+        multiReturn.setSale(multi);
+        multiReturn.setReturnedBy(user);
+        multiReturn.setReturnDate(LocalDateTime.of(2026, 11, 13, 10, 0));
+        multiReturn.setReason("Wrong size on both lines");
+        multiReturn.setRefundMethod(PaymentMethod.CASH);
+        multiReturn.setTotalReturnAmount(new BigDecimal("275.00"));
+        multiReturn.getItems().add(returnLine(multiReturn, multiFirst, 2, "220.00"));
+        multiReturn.getItems().add(returnLine(multiReturn, multiSecond, 1, "55.00"));
+        em.persist(multiReturn);
+
+        // 12. Card refund: the money went back over the card network, so none of it
+        // may leave the cash account.
+        Sale cardSale = sale("INV-CARDTENDER", Sale.SaleType.CASH, false,
+                new BigDecimal("100.00"), new BigDecimal("10.00"), new BigDecimal("110.00"),
+                LocalDateTime.of(2026, 11, 14, 10, 0));
+        em.persist(cardSale);
+        wholeReturn(cardSale, PaymentMethod.CARD, "110.00",
+                LocalDateTime.of(2026, 11, 15, 10, 0), "Card refund");
+
+        // 13. Store-credit refund: owed to the customer as credit, so it sits in the
+        // refund liability, not in cash or tender clearing.
+        Sale creditSale = sale("INV-STORECREDIT", Sale.SaleType.CASH, false,
+                new BigDecimal("50.00"), BigDecimal.ZERO, new BigDecimal("50.00"),
+                LocalDateTime.of(2026, 11, 16, 10, 0));
+        SaleItem creditLine = creditSale.getItems().get(0);
+        creditLine.setProduct(secondProduct);
+        creditLine.setUnitPrice(new BigDecimal("50.00"));
+        creditLine.setTotalPrice(new BigDecimal("50.00"));
+        creditLine.setCostPriceAtSale(new BigDecimal("20.000000"));
+        em.persist(creditSale);
+        wholeReturn(creditSale, PaymentMethod.STORE_CREDIT, "50.00",
+                LocalDateTime.of(2026, 11, 17, 10, 0), "Store credit refund");
+
+        // 14. The till itself: every cash event of the month recorded the way the
+        // drawer services record it, so the cash account has something physical to
+        // be checked against. Card and store-credit refunds deliberately have no
+        // movement here — no cash moved.
+        CashDrawer drawer = new CashDrawer();
+        drawer.setName("Integration drawer");
+        drawer.setCode("GL-INT-DRW");
+        em.persist(drawer);
+        drawerSession = new CashDrawerSession();
+        drawerSession.setDrawer(drawer);
+        drawerSession.setOpenedBy(user);
+        drawerSession.setOpeningFloat(new BigDecimal("500.00"));
+        drawerSession.setOpenedAt(LocalDateTime.of(2026, 11, 1, 8, 0));
+        em.persist(drawerSession);
+
+        drawerMovement(DrawerMovementType.OPENING_FLOAT, "500.00",
+                LocalDateTime.of(2026, 11, 1, 8, 0), "DRAWER_SESSION", drawerSession.getId());
+        drawerMovement(DrawerMovementType.CASH_SALE, "176.00",
+                LocalDateTime.of(2026, 11, 5, 10, 0), "SALE", promoted.getId());
+        drawerMovement(DrawerMovementType.CASH_REFUND, "-88.00",
+                LocalDateTime.of(2026, 11, 10, 12, 0), "SALE_RETURN", ret.getId());
+        drawerMovement(DrawerMovementType.CASH_SALE, "110.00",
+                LocalDateTime.of(2026, 11, 6, 9, 0), "SALE", voided.getId());
+        drawerMovement(DrawerMovementType.CASH_REFUND, "-110.00",
+                LocalDateTime.of(2026, 11, 12, 9, 0), "SALE", voided.getId());
+        drawerMovement(DrawerMovementType.CASH_SALE, "550.00",
+                LocalDateTime.of(2026, 11, 12, 10, 0), "SALE", multi.getId());
+        drawerMovement(DrawerMovementType.CASH_REFUND, "-275.00",
+                LocalDateTime.of(2026, 11, 13, 10, 0), "SALE_RETURN", multiReturn.getId());
+        drawerMovement(DrawerMovementType.CASH_SALE, "110.00",
+                LocalDateTime.of(2026, 11, 14, 10, 0), "SALE", cardSale.getId());
+        drawerMovement(DrawerMovementType.CASH_SALE, "50.00",
+                LocalDateTime.of(2026, 11, 16, 10, 0), "SALE", creditSale.getId());
+        drawerMovement(DrawerMovementType.PAY_IN, "110.00",
+                LocalDateTime.of(2026, 11, 22, 9, 0), "AR_PAYMENT", arPayment.getId());
+
         em.flush();
         em.clear();
 
@@ -232,7 +342,22 @@ class GlJournalIntegrationTest {
         assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)),
                 "journal must balance across all event classes");
 
-        // I4: GL COGS equals report COGS (net of returns; voided sale excluded).
+        // Final check (spec 5): the cash account equals the money the till should
+        // hold, taken from the drawer ledger itself rather than recomputed here.
+        BigDecimal tillExpected = cashDrawerMovementRepository.sumAmountBySession(drawerSession.getId());
+        assertEquals(0, netDebit(entries, "CASH").compareTo(tillExpected),
+                "GL cash account must equal the drawer's expected cash: GL "
+                        + netDebit(entries, "CASH") + " vs till " + tillExpected);
+
+        // A card refund and a store-credit refund never touch the till, so their
+        // money has to sit in the accounts that describe it.
+        assertEquals(0, netDebit(entries, "TENDER_CLEARING").compareTo(new BigDecimal("-110.00")),
+                "the card refund settles through tender clearing, not cash");
+        assertEquals(0, netDebit(entries, "REFUND_LIABILITY").compareTo(new BigDecimal("-50.00")),
+                "the store-credit refund is owed as credit, not paid out");
+
+        // I4: GL COGS equals report COGS (net of the partial and multi-item
+        // returns; the voided sale cancels out).
         Map<String, Object> profit = reportService.getProfitSummary(START, END);
         BigDecimal reportCogs = (BigDecimal) profit.get("cogs");
         assertEquals(0, netDebit(entries, "COST_OF_GOODS_SOLD").compareTo(reportCogs),
@@ -308,6 +433,46 @@ class GlJournalIntegrationTest {
         expense.setCreatedBy(user.getId());
         expense.setDescription(category.name());
         return expense;
+    }
+
+    private SaleReturnItem returnLine(SaleReturn saleReturn, SaleItem saleItem,
+                                      int quantity, String amount) {
+        SaleReturnItem item = new SaleReturnItem();
+        item.setSaleReturn(saleReturn);
+        item.setSaleItem(saleItem);
+        item.setQuantityReturned(quantity);
+        item.setReturnAmount(new BigDecimal(amount));
+        return item;
+    }
+
+    /** A refund of the whole invoice, paid out through the given tender. */
+    private SaleReturn wholeReturn(Sale sale, PaymentMethod refundMethod, String gross,
+                                   LocalDateTime date, String reason) {
+        SaleItem line = sale.getItems().get(0);
+        line.setQuantityRefunded(line.getQuantity());
+        SaleReturn saleReturn = new SaleReturn();
+        saleReturn.setSale(sale);
+        saleReturn.setReturnedBy(user);
+        saleReturn.setReturnDate(date);
+        saleReturn.setReason(reason);
+        saleReturn.setRefundMethod(refundMethod);
+        saleReturn.setTotalReturnAmount(new BigDecimal(gross));
+        saleReturn.getItems().add(returnLine(saleReturn, line, line.getQuantity(), gross));
+        return em.persist(saleReturn);
+    }
+
+    private CashDrawerMovement drawerMovement(DrawerMovementType type, String amount,
+                                              LocalDateTime occurredAt, String referenceType,
+                                              Long referenceId) {
+        CashDrawerMovement movement = new CashDrawerMovement();
+        movement.setDrawerSession(drawerSession);
+        movement.setMovementType(type);
+        movement.setAmount(new BigDecimal(amount));
+        movement.setOccurredAt(occurredAt);
+        movement.setReferenceType(referenceType);
+        movement.setReferenceId(referenceId);
+        movement.setPerformedBy(user);
+        return em.persist(movement);
     }
 
     private static BigDecimal sumDebits(List<JournalEntryResponse> entries) {

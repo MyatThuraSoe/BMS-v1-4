@@ -92,6 +92,8 @@ class ProductServiceCostAdjustmentTest {
         ReflectionTestUtils.setField(ledgerPostingService, "periodGuard", periodGuard);
         ReflectionTestUtils.setField(productService, "ledgerPostingService", ledgerPostingService);
         ReflectionTestUtils.setField(productService, "periodGuard", periodGuard);
+        ShopTimeTestSupport.withClock(productService);
+        ShopTimeTestSupport.withClock(ledgerPostingService);
         lenient().when(inventoryLedgerRepository.findBySourceTypeAndSourceIdAndEventTypeAndProductIdAndLineKey(
                 any(), any(), any(), any(), any())).thenReturn(Optional.empty());
         lenient().when(inventoryLedgerRepository.existsByProductId(any())).thenReturn(true);

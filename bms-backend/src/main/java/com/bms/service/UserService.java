@@ -5,7 +5,9 @@ import com.bms.dto.request.CloseShiftRequest;
 import com.bms.dto.request.UserCreateRequest;
 import com.bms.dto.request.UserUpdateRequest;
 import com.bms.dto.response.UserStatsDto;
+import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
+import com.bms.entity.DrawerSessionStatus;
 import com.bms.entity.Role;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
@@ -24,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 
 @Service
@@ -31,7 +34,11 @@ import java.util.Optional;
 public class UserService implements UserDetailsService {
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
+
+    /** T6: a password change issues the caller its own replacement token. */
+    @Autowired
+    private com.bms.config.JwtUtil jwtUtil;
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
@@ -72,10 +79,12 @@ public class UserService implements UserDetailsService {
     public User createUser(UserCreateRequest request) {
         String normalizedUsername = normalizeKey(request.getUsername());
         String normalizedEmail = normalizeKey(request.getEmail());
-        if (userRepository.existsByUsernameNormalized(normalizedUsername)) {
+        if (userRepository.existsByUsernameNormalized(normalizedUsername)
+                || userRepository.existsByUsernameIgnoreCase(request.getUsername())) {
             throw new IllegalArgumentException("Username already exists");
         }
-        if (userRepository.existsByEmailNormalized(normalizedEmail)) {
+        if (userRepository.existsByEmailNormalized(normalizedEmail)
+                || userRepository.existsByEmailIgnoreCase(request.getEmail())) {
             throw new IllegalArgumentException("Email already exists");
         }
 
@@ -112,12 +121,19 @@ public class UserService implements UserDetailsService {
         String normalizedUsername = normalizeKey(requestedUsername);
         String normalizedEmail = normalizeKey(requestedEmail);
 
-        if (!user.getUsernameNormalized().equals(normalizedUsername)
-                && userRepository.existsByUsernameNormalized(normalizedUsername)) {
+        // An identity that is not really changing must not be reported as a
+        // duplicate of itself. The stored username is compared because a row that
+        // predates the normalized columns has a null key and would otherwise look
+        // like a rename on every save (and a method call on that null threw 500).
+        // The ignore-case checks catch the rows whose key is still not backfilled.
+        if (!sameIdentity(user.getUsername(), user.getUsernameNormalized(), normalizedUsername)
+                && (userRepository.existsByUsernameNormalized(normalizedUsername)
+                    || userRepository.existsOtherByUsernameIgnoreCase(requestedUsername, userId))) {
             throw new IllegalArgumentException("Username already exists");
         }
-        if (!user.getEmailNormalized().equals(normalizedEmail)
-                && userRepository.existsByEmailNormalized(normalizedEmail)) {
+        if (!sameIdentity(user.getEmail(), user.getEmailNormalized(), normalizedEmail)
+                && (userRepository.existsByEmailNormalized(normalizedEmail)
+                    || userRepository.existsOtherByEmailIgnoreCase(requestedEmail, userId))) {
             throw new IllegalArgumentException("Email already exists");
         }
 
@@ -139,7 +155,7 @@ public class UserService implements UserDetailsService {
                 if (!Boolean.TRUE.equals(request.getCloseOpenShifts())) {
                     throw new BusinessException("Open shift for user: " + openShift.get().getId() + "; close it before deactivation");
                 }
-                closeUserOpenShift(userId, openShift.get().getId(), "User deactivated");
+                closeUserOpenShift(openShift.get().getId(), "User deactivated", currentUserId());
             }
         }
         if (Boolean.FALSE.equals(request.getIsActive()) && user.getUsername().equals(currentUsername())) {
@@ -178,10 +194,6 @@ public class UserService implements UserDetailsService {
         return updatedUser;
     }
 
-    public void deleteUser(Long userId) {
-        deleteUser(userId, false, null);
-    }
-
     public void deleteUser(Long userId, boolean closeOpenShifts, Long actingUserId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -202,7 +214,7 @@ public class UserService implements UserDetailsService {
             if (!closeOpenShifts) {
                 throw new BusinessException("Open shift for user: " + openShift.get().getId() + "; close it before delete");
             }
-            closeUserOpenShift(userId, openShift.get().getId(), "User deleted");
+            closeUserOpenShift(openShift.get().getId(), "User deleted", actingUserId);
         }
 
         user.setUsername(com.bms.util.SoftDeleteKeys.release(user.getUsername(), user.getId(), 255));
@@ -231,7 +243,7 @@ public class UserService implements UserDetailsService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
     }
 
-    public void changeOwnPassword(String username, ChangePasswordRequest request) {
+    public String changeOwnPassword(String username, ChangePasswordRequest request) {
         User user = userRepository.findByUsernameNormalized(normalizeKey(username))
                 .or(() -> userRepository.findByUsernameIgnoreCase(username))
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -244,6 +256,10 @@ public class UserService implements UserDetailsService {
         bumpTokenVersion(user);
         userRepository.save(user);
         auditLogService.logAction(user.getId(), "PASSWORD_CHANGE", "User changed their own password", "User", user.getId(), null, null);
+        // T6: the version bump above is what logs every other device out, and it
+        // invalidates this request's own token too, so the session making the
+        // change has to leave with a replacement.
+        return jwtUtil.generateToken(user);
     }
 
     public List<User> getAllUsers() {
@@ -278,7 +294,7 @@ public class UserService implements UserDetailsService {
         );
     }
 
-    private void closeUserOpenShift(Long userId, Long shiftId, String reason) {
+    private void closeUserOpenShift(Long shiftId, String reason, Long actingUserId) {
         if (shiftId == null) {
             return;
         }
@@ -286,11 +302,28 @@ public class UserService implements UserDetailsService {
         if (shift == null || !"OPEN".equals(shift.getStatus())) {
             return;
         }
+        // N6: a force-close never counts the float, so when this shift is the
+        // only one left on the drawer it would leave the drawer session open
+        // with nobody attached. The manager has to close the drawer properly.
+        CashDrawerSession session = shift.getDrawerSession();
+        if (session != null && session.getStatus() == DrawerSessionStatus.OPEN) {
+            boolean sharesDrawer = cashShiftRepository
+                    .findByDrawerSessionIdAndStatus(session.getId(), "OPEN").stream()
+                    .anyMatch(other -> !Objects.equals(other.getId(), shift.getId()));
+            if (!sharesDrawer) {
+                throw new BusinessException("Close the drawer first, then retry");
+            }
+        }
+
         CloseShiftRequest request = new CloseShiftRequest();
         request.setForceClose(true);
         request.setForceReason(reason);
         request.setCloseDrawer(Boolean.FALSE);
-        cashShiftService.closeShift(shiftId, request, userId, true);
+        // The manager who pressed the button is the actor, otherwise the audit
+        // reads as if the cashier had closed their own shift.
+        Long actor = actingUserId != null ? actingUserId : currentUserId();
+        cashShiftService.closeShift(shiftId, request,
+                actor != null ? actor : shift.getCashierId(), true);
     }
 
     private void bumpTokenVersion(User user) {
@@ -318,8 +351,13 @@ public class UserService implements UserDetailsService {
         return userRepository.countActiveByRole(Role.RoleName.ROLE_ADMIN) <= 1;
     }
 
-    private String normalizeKey(String value) {
+    private static String normalizeKey(String value) {
         return value == null ? null : value.trim().toLowerCase();
+    }
+
+    private static boolean sameIdentity(String storedValue, String storedKey, String requestedKey) {
+        return Objects.equals(normalizeKey(storedValue), requestedKey)
+                || Objects.equals(storedKey, requestedKey);
     }
 
     private String trimmed(String value) {

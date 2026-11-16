@@ -89,6 +89,20 @@ public interface PurchaseRepository extends JpaRepository<Purchase, Long> {
     @Query("SELECT COUNT(p) FROM Purchase p WHERE p.supplier.id = :supplierId AND p.isActive = true AND p.deletedAt IS NULL")
     Long countInvoicesBySupplierId(@Param("supplierId") Long supplierId);
 
+    /** Money still owed to this supplier on live invoices. */
+    @Query("SELECT COUNT(p) FROM Purchase p WHERE p.supplier.id = :supplierId AND p.isActive = true "
+            + "AND p.deletedAt IS NULL "
+            + "AND p.paymentStatus IN (com.bms.entity.Purchase.PaymentStatus.PENDING, "
+            + "com.bms.entity.Purchase.PaymentStatus.PARTIAL)")
+    long countUnpaidInvoicesBySupplierId(@Param("supplierId") Long supplierId);
+
+    /** Live orders from this supplier whose goods have not fully arrived. */
+    @Query("SELECT COUNT(p) FROM Purchase p WHERE p.supplier.id = :supplierId AND p.isActive = true "
+            + "AND p.deletedAt IS NULL "
+            + "AND p.receivingStatus IN (com.bms.entity.Purchase.ReceivingStatus.ORDERED, "
+            + "com.bms.entity.Purchase.ReceivingStatus.PARTIAL)")
+    long countAwaitingReceivingBySupplierId(@Param("supplierId") Long supplierId);
+
     @Query("SELECT pi.product.id, pi.product.name, SUM(pi.quantity) as totalQty, SUM(pi.totalCost) as totalAmt " +
             "FROM PurchaseItem pi JOIN pi.purchase p " +
             "WHERE p.supplier.id = :supplierId AND p.isActive = true AND p.deletedAt IS NULL " +

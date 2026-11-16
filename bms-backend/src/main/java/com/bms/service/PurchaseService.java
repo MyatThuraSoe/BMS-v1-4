@@ -78,7 +78,7 @@ public class PurchaseService {
     private PeriodGuard periodGuard;
 
     @Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
+    private ShopTimeService shopTimeService;
 
     public Page<PurchaseResponse> getAllPurchases(Pageable pageable) {
         return purchaseRepository.findActivePurchases(pageable).map(this::mapToResponse);
@@ -426,7 +426,7 @@ public class PurchaseService {
 
     public PurchaseResponse receivePurchase(Long purchaseId, ReceivePurchaseRequest request, Long userId) {
         periodGuard.assertOpen(shopTimeService.now());
-        Purchase purchase = purchaseRepository.findById(purchaseId)
+        Purchase purchase = purchaseRepository.findByIdForUpdate(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
@@ -642,7 +642,7 @@ public class PurchaseService {
 
     public PurchaseResponse returnToVendor(Long purchaseId, ReturnToVendorRequest request, Long userId) {
         periodGuard.assertOpen(shopTimeService.now());
-        Purchase purchase = purchaseRepository.findById(purchaseId)
+        Purchase purchase = purchaseRepository.findByIdForUpdate(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
@@ -1041,7 +1041,7 @@ public class PurchaseService {
 
     public void deletePurchase(Long id, Long userId) {
         periodGuard.assertOpen(shopTimeService.now());
-        Purchase purchase = purchaseRepository.findById(id)
+        Purchase purchase = purchaseRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + id));
 
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
@@ -1070,7 +1070,7 @@ public class PurchaseService {
 
     public PurchaseResponse updatePurchase(Long purchaseId, PurchaseCreateRequest request, Long userId) {
         periodGuard.assertOpen(LocalDate.parse(request.getPurchaseDate(), DateTimeFormatter.ISO_LOCAL_DATE));
-        Purchase purchase = purchaseRepository.findById(purchaseId)
+        Purchase purchase = purchaseRepository.findByIdForUpdate(purchaseId)
                 .orElseThrow(() -> new ResourceNotFoundException("Purchase not found: " + purchaseId));
         periodGuard.assertOpen(purchase.getPurchaseDate());
 

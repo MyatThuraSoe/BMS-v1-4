@@ -45,9 +45,8 @@ import java.util.Map;
 @Transactional
 public class PurchasePaymentService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     @Autowired
     private PurchaseRepository purchaseRepository;

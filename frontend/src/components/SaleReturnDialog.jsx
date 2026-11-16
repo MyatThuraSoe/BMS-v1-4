@@ -9,6 +9,7 @@ import { AssignmentReturn as ReturnIcon } from '@mui/icons-material';
 import { saleService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
 import { preventNumberScroll } from '../utils/helpers';
+import { estimateSettlement } from '../utils/returnEstimate';
 import { notifySuccess, notifyError } from '../utils/notify';
 import { useTranslation } from 'react-i18next';
 
@@ -72,9 +73,8 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
   }, [open]);
 
   const items = data?.data?.items || [];
-  const estimatedRefundDue = Number(data?.data?.estimatedRefundDue || 0);
-  const showRefundMethodSelector = estimatedRefundDue > 0;
   const returnableItems = items.filter((item) => (item.quantityReturnable || 0) > 0);
+  const hasCustomer = Boolean(data?.data?.hasCustomer);
 
   const selectedLines = returnableItems
     .map((item) => ({
@@ -88,6 +88,19 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
     (sum, line) => sum + Number(line.item.unitRefundAmount || 0) * line.qty,
     0
   );
+
+  // N5: the server snapshot prices returning EVERYTHING, so it is only the
+  // fallback for the moment no line is picked. As soon as there is a selection
+  // the debt/refund numbers and the method selector follow that selection.
+  const estimate = estimateSettlement({
+    selectedTotal: returnTotal,
+    outstandingBefore: Number(data?.data?.outstandingBefore || 0),
+    serverDebt: Number(data?.data?.estimatedDebtReduction || 0),
+    serverRefund: Number(data?.data?.estimatedRefundDue || 0),
+  });
+  const showRefundMethodSelector = estimate.showRefundMethod;
+  // N4: only a sale with a customer can be owed store credit.
+  const activeRefundMethod = refundMethod === 'STORE_CREDIT' && !hasCustomer ? '' : refundMethod;
 
   const resetState = () => {
     setQuantities({});
@@ -135,8 +148,8 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
         disposition: line.disposition,
       })),
     };
-    if (showRefundMethodSelector && refundMethod) {
-      payload.refundMethod = refundMethod;
+    if (showRefundMethodSelector && activeRefundMethod) {
+      payload.refundMethod = activeRefundMethod;
     }
     if (!payload.reason || payload.items.length === 0) return;
     mutation.mutate(payload);
@@ -240,13 +253,13 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                 select
                 SelectProps={{ native: true }}
                 label="Refund method"
-                value={refundMethod}
+                value={activeRefundMethod}
                 onChange={(e) => setRefundMethod(e.target.value)}
                 sx={{ mt: 2 }}
               >
                 <option value="">Default</option>
                 <option value="CASH">CASH</option>
-                <option value="STORE_CREDIT">STORE_CREDIT</option>
+                {hasCustomer && <option value="STORE_CREDIT">STORE_CREDIT</option>}
               </TextField>
             )}
 
@@ -259,15 +272,15 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Estimated debt reduction</Typography>
+                <Typography variant="body2" color="text.secondary">Debt reduction</Typography>
                 <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {formatCurrency(Number(data?.data?.estimatedDebtReduction || 0))}
+                  {formatCurrency(estimate.debt)}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Estimated refund due</Typography>
+                <Typography variant="body2" color="text.secondary">Refund due</Typography>
                 <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
-                  {formatCurrency(Number(data?.data?.estimatedRefundDue || 0))}
+                  {formatCurrency(estimate.refund)}
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>

@@ -44,7 +44,6 @@ public class OrderService {
     @Autowired
     private ShopTimeService shopTimeService;
 
-
     private final OrderRepository orderRepository;
     private final ProductRepository productRepository;
     private final CustomerRepository customerRepository;
@@ -54,13 +53,13 @@ public class OrderService {
     private final SaleService saleService;
     private final AuditLogService auditLogService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PeriodGuard periodGuard;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private PromotionService promotionService;
 
-    @org.springframework.beans.factory.annotation.Autowired
+    @Autowired
     private SystemSettingRepository systemSettingRepository;
 
     @Transactional(readOnly = true)
@@ -126,6 +125,10 @@ public class OrderService {
         boolean belowCostAllowedForUser = belowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
                 || isManagerOrAdmin(userId);
         BigDecimal subtotal = BigDecimal.ZERO;
+        // O6: the order header keeps the same discount split a direct sale does,
+        // so a converted order reports promotion value exactly like the walk-in.
+        BigDecimal promotionDiscount = BigDecimal.ZERO;
+        BigDecimal priceListDiscount = BigDecimal.ZERO;
 
         // Validate + reserve stock while building items
         Map<Long, Integer> reservedByProduct = new java.util.HashMap<>();
@@ -171,6 +174,11 @@ public class OrderService {
 
             order.getItems().add(item);
             subtotal = subtotal.add(itemTotal);
+            if ("PROMOTION".equals(quote.getSource())) {
+                promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
+            } else if ("PRICE_LIST".equals(quote.getSource())) {
+                priceListDiscount = priceListDiscount.add(quote.getLineDiscount());
+            }
 
             reservedByProduct.merge(product.getId(), itemRequest.getQuantity(), Integer::sum);
         }
@@ -178,6 +186,8 @@ public class OrderService {
         BigDecimal discountAmount = computeShopDiscount(subtotal);
         order.setSubtotal(subtotal);
         order.setDiscountAmount(discountAmount);
+        order.setPromotionDiscount(promotionDiscount.setScale(2, RoundingMode.HALF_UP));
+        order.setPriceListDiscount(priceListDiscount.setScale(2, RoundingMode.HALF_UP));
         // P5: tax applies to the discounted line value, using the same proportional
         // allocation rule as sales so conversion reproduces identical line taxes.
         BigDecimal taxAmount = applyDiscountedLineTaxes(order, taxRate);
@@ -263,6 +273,48 @@ public class OrderService {
                 "Order", saved.getId(), oldValues, saved.toString());
 
         return toResponse(saved);
+    }
+
+    // ------------------------------------------------------------------
+    // Scheduled reservation expiry (O8)
+    // ------------------------------------------------------------------
+
+    /** O8: the sweep runs with no cashier behind it, so its audit rows are system-authored. */
+    static final Long SYSTEM_USER = null;
+
+    /**
+     * Frees the stock a pre-order is holding after the shop's reservation window.
+     * Off unless {@code shop.order.reservationHours} is above zero.
+     */
+    @Scheduled(cron = "0 15 * * * *")
+    @Transactional(rollbackFor = Exception.class)
+    public int expireStaleReservations() {
+        int hours = reservationExpiryHours();
+        if (hours <= 0) {
+            return 0;
+        }
+        List<Order> expired = orderRepository.findPendingOrdersOlderThan(
+                shopTimeService.now().minusHours(hours));
+        for (Order order : expired) {
+            OrderCancelRequest request = new OrderCancelRequest();
+            request.setReason("Reservation expired");
+            cancelOrder(order.getId(), request, SYSTEM_USER);
+        }
+        return expired.size();
+    }
+
+    /** O8: how long a pending order may reserve stock; unusable values mean off. */
+    private int reservationExpiryHours() {
+        String raw = systemSettingRepository.findBySettingKey("shop.order.reservationHours")
+                .map(SystemSetting::getSettingValue).orElse(null);
+        if (raw == null || raw.isBlank()) {
+            return 0;
+        }
+        try {
+            return Math.max(0, Integer.parseInt(raw.trim()));
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
     }
 
     private OrderResponse toResponse(Order order) {

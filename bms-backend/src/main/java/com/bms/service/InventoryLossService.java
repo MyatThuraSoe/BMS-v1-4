@@ -23,9 +23,8 @@ import java.util.Set;
 @Transactional(readOnly = true)
 public class InventoryLossService {
 
-@Autowired
-    private ShopTimeService shopTimeService = new ShopTimeService(null, "UTC");
-
+    @Autowired
+    private ShopTimeService shopTimeService;
 
     /** Shared count/manual adjustment reasons, kept in sync across both workflows. */
     public static final List<String> ADJUSTMENT_REASONS = List.of(
