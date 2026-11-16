@@ -5,6 +5,7 @@ import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.SupplierResponse;
 import com.bms.entity.Supplier;
 import com.bms.entity.SupplierPhone;
+import com.bms.entity.User;
 import com.bms.service.SupplierService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -15,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.stream.Collectors;
@@ -79,8 +81,9 @@ public class SupplierController {
 
     @DeleteMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<Void>> deleteSupplier(@PathVariable Long id) {
-        supplierService.deleteSupplier(id);
+    public ResponseEntity<ApiResponse<Void>> deleteSupplier(@PathVariable Long id,
+                                                            @AuthenticationPrincipal User actor) {
+        supplierService.deleteSupplier(id, actor != null ? actor.getId() : null);
         return ResponseEntity.ok(new ApiResponse<>(true, "Supplier deleted successfully", null));
     }
 
