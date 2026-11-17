@@ -105,6 +105,24 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
     }
 
+    // A refusal a service threw because of the state the shop is in (an invoice that
+    // was voided cannot be reprinted, a drawer is still open). The thrower chose those
+    // words for the person at the counter, so they go through as they are instead of
+    // disappearing into the generic 500 this used to fall through to.
+    @ExceptionHandler(IllegalStateException.class)
+    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+        log.warn("Refused because of the state of the data: {}", ex.getMessage());
+        String message = ex.getMessage() == null || ex.getMessage().isBlank()
+            ? resolve("error.generic")
+            : resolve(ex.getMessage());
+        ErrorResponse error = new ErrorResponse(
+            HttpStatus.CONFLICT.value(),
+            message,
+            LocalDateTime.now()
+        );
+        return new ResponseEntity<>(error, HttpStatus.CONFLICT);
+    }
+
     @ExceptionHandler(org.springframework.orm.ObjectOptimisticLockingFailureException.class)
     public ResponseEntity<ErrorResponse> handleOptimisticLock(org.springframework.orm.ObjectOptimisticLockingFailureException ex) {
         ErrorResponse error = new ErrorResponse(

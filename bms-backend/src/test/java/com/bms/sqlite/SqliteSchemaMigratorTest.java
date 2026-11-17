@@ -329,6 +329,107 @@ class SqliteSchemaMigratorTest {
         }
     }
 
+    /** Copies an upgrade made on an earlier day, named the way the migrator names them. */
+    private static Path writeUpgradeBackup(Path dir, String stamp) throws IOException {
+        return Files.writeString(dir.resolve("lumipos.db.pre-upgrade-" + stamp + ".bak"),
+                "a database from " + stamp);
+    }
+
+    private static List<String> upgradeBackups(Path dir) throws IOException {
+        try (var stream = Files.list(dir)) {
+            return stream.map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith("lumipos.db.pre-upgrade-") && name.endsWith(".bak"))
+                    .sorted().toList();
+        }
+    }
+
+    /** Opens the ledger the enum-check rebuild is triggered by, with one posted row. */
+    private static void writeLegacyLedger(Path file) throws SQLException {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER);
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+        }
+    }
+
+    @Test
+    void aStartKeepsOnlyTheNewestUpgradeBackups(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        writeLegacyLedger(file);
+        for (String stamp : List.of("202601011200", "202601021200", "202601031200",
+                "202601041200", "202601051200")) {
+            writeUpgradeBackup(dir, stamp);
+        }
+        Path restoreCopy = Files.writeString(dir.resolve("lumipos.db.pre-restore-20260101120000"),
+                "another feature's file");
+
+        migrate(sqlite(file));
+
+        List<String> kept = upgradeBackups(dir);
+        assertEquals(3, kept.size(), "three copies is the default the setting does not override");
+        assertTrue(kept.contains("lumipos.db.pre-upgrade-202601051200.bak"),
+                "the newest copy from before this start must survive: " + kept);
+        assertTrue(kept.contains("lumipos.db.pre-upgrade-202601041200.bak"),
+                "the second newest must survive too: " + kept);
+        assertFalse(kept.contains("lumipos.db.pre-upgrade-202601031200.bak"),
+                "the third newest is the oldest one allowed to go: " + kept);
+        assertTrue(kept.get(kept.size() - 1).compareTo("lumipos.db.pre-upgrade-202601051200.bak") > 0,
+                "the copy made by this start must be the one that is still newest: " + kept);
+        assertTrue(Files.exists(restoreCopy), "the prune must not touch another feature's files");
+    }
+
+    @Test
+    void theNumberOfKeptUpgradeBackupsComesFromTheSetting(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        writeLegacyLedger(file);
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("create table system_settings (is_public boolean not null,"
+                    + " created_at timestamp not null, id integer, updated_at timestamp,"
+                    + " description varchar(1000), setting_value varchar(5000), data_type varchar(255) not null,"
+                    + " setting_key varchar(255) not null unique, primary key (id))");
+            statement.executeUpdate("insert into system_settings (is_public, created_at, id, setting_value,"
+                    + " data_type, setting_key) values (0,'2026-01-01 00:00:00',1,'1','INTEGER',"
+                    + "'sqlite.upgradeBackup.keep')");
+        }
+        writeUpgradeBackup(dir, "202601011200");
+        writeUpgradeBackup(dir, "202601021200");
+
+        migrate(sqlite(file));
+
+        List<String> kept = upgradeBackups(dir);
+        assertEquals(1, kept.size(), "one kept copy means the one made by this start");
+        assertTrue(kept.get(0).compareTo("lumipos.db.pre-upgrade-202601021200.bak") > 0,
+                "the shop's own copy is the one that stays: " + kept);
+    }
+
+    @Test
+    void aMigrationThatFailedDeletesNoBackups(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_PROFIT_LEDGER);
+            insertLedgerRow(statement, 1, "SALE", "PK-1");
+            // The name the rebuild has to create its replacement table under is taken, so the
+            // start gives up after it has already written this start's backup.
+            statement.execute("create table profit_ledger__new (id integer)");
+        }
+        List<String> fromEarlierStarts = List.of("lumipos.db.pre-upgrade-202601011200.bak",
+                "lumipos.db.pre-upgrade-202601021200.bak", "lumipos.db.pre-upgrade-202601031200.bak",
+                "lumipos.db.pre-upgrade-202601041200.bak", "lumipos.db.pre-upgrade-202601051200.bak");
+        for (String name : fromEarlierStarts) {
+            Files.writeString(dir.resolve(name), "a database worth going back to");
+        }
+
+        SQLException thrown = assertThrows(SQLException.class, () -> migrate(sqlite(file)));
+        assertTrue(thrown.getMessage().contains("profit_ledger"),
+                "the failure should name the table it could not rebuild: " + thrown.getMessage());
+
+        List<String> kept = upgradeBackups(dir);
+        assertTrue(kept.containsAll(fromEarlierStarts),
+                "a start that did not finish must leave every backup alone: " + kept);
+    }
+
     @Test
     void aTableAnotherTablePointsAtKeepsItsRowsAfterARebuild(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("lumipos.db");

@@ -37,4 +37,9 @@ export const userService = {
     const response = await apiClient.get(`/users/${id}/stats`);
     return response.data;
   },
+
+  unlockLogin: async (id) => {
+    const response = await apiClient.post(`/users/${id}/unlock-login`);
+    return response.data;
+  },
 };

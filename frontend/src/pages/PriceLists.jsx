@@ -4,7 +4,9 @@ import {
   FormControlLabel, Grid, IconButton, MenuItem, Paper, Stack, Switch, Table,
   TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
-import { Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon } from '@mui/icons-material';
+import {
+  Add as AddIcon, Delete as DeleteIcon, Edit as EditIcon, Restore as RestoreIcon,
+} from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { priceListService, productService } from '../api/services';
 import { formatCurrency } from '../utils/helpers';
@@ -188,6 +190,27 @@ const PriceLists = () => {
     onError: (err) => notifyError(err.friendlyMessage || 'Failed to deactivate price list'),
   });
 
+  // Reactivating sends the list back as it is with only the flag changed, because the update
+  // endpoint takes the whole list: a deleted list is brought back with its prices, not emptied.
+  const reactivateMutation = useMutation({
+    mutationFn: (list) => priceListService.update(list.id, {
+      name: list.name,
+      description: list.description ?? null,
+      validFrom: list.validFrom ?? null,
+      validTo: list.validTo ?? null,
+      active: true,
+      items: (list.items || []).map((item) => ({
+        productId: item.product?.id,
+        price: item.price,
+      })),
+    }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['price-lists'] });
+      notifySuccess('Price list reactivated');
+    },
+    onError: (err) => notifyError(err.friendlyMessage || 'Failed to reactivate price list'),
+  });
+
   return (
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
@@ -222,7 +245,19 @@ const PriceLists = () => {
               </Box>
               <Stack direction="row" spacing={1}>
                 <Button size="small" startIcon={<EditIcon />} onClick={() => { setEditing(list); setDialogOpen(true); }}>Edit</Button>
-                <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => deleteMutation.mutate(list.id)}>Deactivate</Button>
+                {list.isActive ? (
+                  <Button size="small" color="error" startIcon={<DeleteIcon />} onClick={() => deleteMutation.mutate(list.id)}>Deactivate</Button>
+                ) : (
+                  <Button
+                    size="small"
+                    color="success"
+                    startIcon={<RestoreIcon />}
+                    disabled={reactivateMutation.isPending}
+                    onClick={() => reactivateMutation.mutate(list)}
+                  >
+                    Reactivate
+                  </Button>
+                )}
               </Stack>
             </Stack>
             <TableContainer>

@@ -135,12 +135,14 @@ const ReceiptDocument = ({
   const discountAmount = isMockPreview  ? 0            : (receipt.discountAmount ?? 0);
   const totalAmount    = isMockPreview  ? mockTotal    : (receipt.totalAmount ?? 0);
   const amountPaid     = isMockPreview  ? mockPaid     : (receipt.amountPaid ?? 0);
+  const amountReturned = isMockPreview  ? 0            : Number(receipt.amountReturned ?? 0);
   const change         = amountPaid - totalAmount;
 
   // Credit sale info (shown for CREDIT sales only, when enabled in customization)
   const isCredit        = isMockPreview ? true : (receipt.saleType || receipt.paymentStatus) === 'CREDIT';
   const showCreditInfo_ = Boolean(showCreditInfo) && isCredit;
-  const balanceDue      = isMockPreview ? mockBalanceDue : (receipt.balanceDue ?? (Number(totalAmount) - Number(amountPaid)));
+  const balanceDue      = isMockPreview ? mockBalanceDue
+    : (receipt.balanceDue ?? (Number(totalAmount) - Number(amountPaid) - amountReturned));
   const dueDate         = isMockPreview ? mockDueDate     : receipt.dueDate;
   const dueDateLabel    = dueDate ? String(dueDate).slice(0, 10) : '';
 
@@ -306,6 +308,12 @@ const ReceiptDocument = ({
             <span>{formatCurrency(change)}</span>
           </Box>
         )}
+        {amountReturned > 0 && (
+          <Box sx={rowStyle}>
+            <span>Returned:</span>
+            <span>{formatCurrency(amountReturned)}</span>
+          </Box>
+        )}
       </Box>
 
       {/* ===== CREDIT INFO ===== */}
@@ -401,6 +409,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   const discountAmount = receipt.discountAmount ?? 0;
   const totalAmount    = receipt.totalAmount ?? 0;
   const amountPaid     = receipt.amountPaid ?? 0;
+  const amountReturned = Number(receipt.amountReturned ?? 0);
   const change         = amountPaid - totalAmount;
   const customerName   = receipt.customerName;
 
@@ -408,7 +417,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
   const showCreditInfo_ = Boolean(showCreditInfo) && isCredit;
   const balanceDue      = receipt.balanceDue != null
     ? receipt.balanceDue
-    : (Number(receipt.totalAmount ?? 0) - Number(receipt.amountPaid ?? 0));
+    : (Number(receipt.totalAmount ?? 0) - Number(receipt.amountPaid ?? 0) - amountReturned);
   const dueDateLabel    = receipt.dueDate ? String(receipt.dueDate).slice(0, 10) : '';
 
   const alignStyle = `text-align:${headerAlign};`;
@@ -480,6 +489,7 @@ export function generatePrintHtml(receipt = {}, shopInfo = {}, customization = {
       <div style="display:flex;justify-content:space-between;font-weight:700;"><span>TOTAL:</span><span>${escHtml(formatCurrency(totalAmount))}</span></div>
       <div style="display:flex;justify-content:space-between;"><span>Paid:</span><span>${escHtml(formatCurrency(amountPaid))}</span></div>
       ${change > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Change:</span><span>${escHtml(formatCurrency(change))}</span></div>` : ''}
+      ${amountReturned > 0 ? `<div style="display:flex;justify-content:space-between;"><span>Returned:</span><span>${escHtml(formatCurrency(amountReturned))}</span></div>` : ''}
     </div>`;
 
   let creditHtml = showCreditInfo_

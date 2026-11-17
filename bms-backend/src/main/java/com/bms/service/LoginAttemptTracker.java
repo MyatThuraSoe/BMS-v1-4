@@ -27,7 +27,7 @@ public class LoginAttemptTracker {
 
     private static final Logger log = LoggerFactory.getLogger(LoginAttemptTracker.class);
 
-    /** How the login endpoint behaves, and now how an approval against that username does too. */
+    /** How the login endpoint behaves. Only {@code AuthService} writes these keys. */
     public static final Policy LOGIN = new Policy(5, Duration.ofMinutes(15), Duration.ofMinutes(15));
 
     private final Map<String, AttemptRecord> attempts = new ConcurrentHashMap<>();
@@ -47,6 +47,17 @@ public class LoginAttemptTracker {
     /** The key an approving cashier is tracked under, separate from the manager they typed. */
     public static String cashierKey(Long cashierId) {
         return "cashier:" + cashierId;
+    }
+
+    /**
+     * The key for one cashier guessing at one manager's password at the till.
+     *
+     * <p>Approval counters are namespaced so they can never be the same string as a login
+     * key: a cashier working through guesses must not be able to shut a manager out of the
+     * login page, and a manager who locked the login page must not be shut out of approvals.
+     */
+    public static String pairKey(Long cashierId, String managerUsername) {
+        return "approval:" + cashierId + ":" + keyOf(managerUsername);
     }
 
     public boolean isLocked(String key) {

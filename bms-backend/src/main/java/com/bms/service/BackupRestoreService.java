@@ -17,17 +17,24 @@ import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.SecureRandom;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.HexFormat;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * Restore path for a shop that lost its database, plus raw database snapshots
@@ -56,9 +63,26 @@ public class BackupRestoreService {
     @Autowired
     private ShopTimeService shopTimeService;
 
+    @Autowired
+    private AuditLogService auditLogService;
+
     private static final Logger log = LoggerFactory.getLogger(BackupRestoreService.class);
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MAX_RETAINED_JOBS = 20;
+
+    /**
+     * What a raw database has to contain before it is allowed to replace a shop's
+     * live data. {@code PRAGMA quick_check} alone passes an empty file or a
+     * database from another program, and after the next start the shop would see
+     * an app with no users, no products and no sales.
+     */
+    static final List<String> REQUIRED_TABLES =
+            List.of("users", "roles", "products", "sales", "system_settings", "shop_info");
+
+    /** A SQLite file under one page is not a database someone actually used. */
+    static final long MINIMUM_DATABASE_BYTES = 4096L;
+
+    static final String NOT_LUMIPOS_BACKUP = "That file is a database, but not a LumiPOS backup.";
 
     /** Staged raw database, applied by SqliteDataDirMigration on the next start. */
     public static final String PENDING_RESTORE_FILE = "lumipos-restored.db";
@@ -232,8 +256,10 @@ public class BackupRestoreService {
     /**
      * Downloads a raw database from Drive and stages it for the next start.
      * The caller must restart the app (or the shop can do it later).
+     *
+     * @param actorUserId the admin who pressed the button, for the audit trail
      */
-    public String startDatabaseRestore(String fileId, long sizeBytes) {
+    public String startDatabaseRestore(String fileId, long sizeBytes, Long actorUserId) {
         String jobId = newJobId();
         jobs.put(jobId, new RestoreJob(jobId, "db-restore", "RUNNING", 0,
                 "Starting database restore...", null, Instant.now().toString(), null));
@@ -255,21 +281,14 @@ public class BackupRestoreService {
                     }
                 });
 
-                update(jobId, 90, "Checking the downloaded database...");
-                assertUsableSqlite(staged);
+                update(jobId, 88, "Checking the downloaded database...");
+                StagedDatabase result = stageDatabase(
+                        staged, Paths.get(resolveDataDir()), fileId, sizeBytes, actorUserId);
+                update(jobId, 96, result.checkStep());
 
-                update(jobId, 96, "Preparing the database for the next start...");
-                Path target = resolvePendingRestore();
-                Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
-                // Sidecars must not survive: a -wal from the old machine would be
-                // replayed onto the new file and corrupt it.
-                Files.deleteIfExists(target.resolveSibling("lumipos.db-wal"));
-                Files.deleteIfExists(target.resolveSibling("lumipos.db-shm"));
-                Files.writeString(resolvePendingMarker(),
-                        "restored-from-drive=" + Instant.now() + System.lineSeparator());
-
-                finish(jobId, "SUCCESS", 100,
-                        "Database downloaded and staged. Restart LumiPOS to finish the restore.", null);
+                finish(jobId, "SUCCESS", 100, "Database downloaded and staged. "
+                        + "Restart LumiPOS to finish the restore."
+                        + (result.schemaWarning() == null ? "" : " " + result.schemaWarning()), null);
             } catch (Exception ex) {
                 log.error("Database restore job {} failed", jobId, ex);
                 fail(jobId, friendlyMessage(ex));
@@ -286,19 +305,188 @@ public class BackupRestoreService {
         return jobId;
     }
 
-    /** Rejects a file that is not a working SQLite database before it is staged. */
-    private void assertUsableSqlite(Path file) throws IOException {
-        try (Connection c = java.sql.DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
-             Statement s = c.createStatement();
-             java.sql.ResultSet rs = s.executeQuery("PRAGMA quick_check")) {
-            if (!rs.next() || !"ok".equalsIgnoreCase(rs.getString(1))) {
-                throw new IOException("That backup is not a valid LumiPOS database.");
+    /**
+     * Proves a downloaded file really is a LumiPOS backup and parks it next to
+     * the live database for {@code SqliteDataDirMigration} to swap in. Nothing in
+     * the data directory is touched until every check has passed, so a refused
+     * file can never take effect on the next start.
+     *
+     * @param dataDir where the staged file goes; passed in so a check can be run
+     *                without pointing at the shop's real folder
+     * @return what the shop should be told about the file
+     */
+    StagedDatabase stageDatabase(Path downloaded, Path dataDir, String fileId, long sizeBytes,
+                                 Long actorUserId) throws IOException {
+        assertUsableSqlite(downloaded);
+
+        String warning = null;
+        List<String> unknown;
+        try {
+            unknown = unknownTables(downloaded, liveTables());
+        } catch (Exception ex) {
+            // Not being able to compare schemas is a missing answer, not a failed
+            // check: the file has already been proved to be a LumiPOS backup.
+            log.warn("The backup's schema could not be compared with this installation", ex);
+            unknown = List.of();
+        }
+        if (!unknown.isEmpty()) {
+            log.warn("Backup {} carries tables this app does not know: {}", fileId, unknown);
+            warning = "This backup was made by a newer LumiPOS. It carries tables this version does "
+                    + "not know (" + String.join(", ", unknown) + "), which will be left alone.";
+        }
+
+        Path target = dataDir.resolve(PENDING_RESTORE_FILE);
+        Files.copy(downloaded, target, StandardCopyOption.REPLACE_EXISTING);
+        // Only the main file is staged. The live database's own -wal is left where
+        // it is, because the DataSource has that file open and deleting it from
+        // underneath a running shop is how recent sales disappear. It is dealt with
+        // at the next start, by SqliteDataDirMigration, once nothing holds it.
+        Files.writeString(dataDir.resolve(PENDING_RESTORE_MARKER),
+                "restored-from-drive=" + Instant.now() + System.lineSeparator());
+
+        auditLogService.logAction(actorUserId, "DB_RESTORE_STAGED",
+                "Raw database staged for the next start from Drive file " + fileId
+                        + " (" + sizeBytes + " bytes)",
+                "Database", null, null, null);
+
+        return new StagedDatabase("Checking the database... ok", warning);
+    }
+
+    /**
+     * Rejects anything that is not a workable LumiPOS database before it is
+     * staged. The message deliberately does not name the missing table: the shop
+     * cannot act on that, and a precise list invites someone to hand-edit a
+     * database to get past the check. The reason goes to the log.
+     */
+    void assertUsableSqlite(Path file) throws IOException {
+        long size = Files.size(file);
+        if (size < MINIMUM_DATABASE_BYTES) {
+            log.warn("Restore candidate {} rejected: {} bytes is not a database anyone has used.",
+                    file.getFileName(), size);
+            throw new IOException(NOT_LUMIPOS_BACKUP);
+        }
+
+        try (Connection connection = openForInspection(file)) {
+            String verdict;
+            try (Statement statement = connection.createStatement();
+                 java.sql.ResultSet rs = statement.executeQuery("PRAGMA quick_check")) {
+                verdict = rs.next() ? rs.getString(1) : null;
+            }
+            if (!"ok".equalsIgnoreCase(verdict)) {
+                // Not a working database at all, so it deserves a different answer
+                // from one that is fine but belongs to another program.
+                log.warn("Restore candidate {} rejected: quick_check said '{}'.",
+                        file.getFileName(), verdict);
+                throw new IOException("That file could not be opened as a LumiPOS database: " + verdict);
+            }
+
+            Set<String> tables = tableNames(connection);
+            for (String required : REQUIRED_TABLES) {
+                if (!tables.contains(required)) {
+                    log.warn("Restore candidate {} rejected: the table '{}' is missing.",
+                            file.getFileName(), required);
+                    throw new IOException(NOT_LUMIPOS_BACKUP);
+                }
+            }
+
+            if (livingUserCount(connection) < 1) {
+                log.warn("Restore candidate {} rejected: nobody could sign in afterwards.",
+                        file.getFileName());
+                throw new IOException(NOT_LUMIPOS_BACKUP);
             }
         } catch (IOException ex) {
             throw ex;
         } catch (Exception ex) {
-            throw new IOException("That file could not be opened as a LumiPOS database: " + ex.getMessage(), ex);
+            throw new IOException("That file could not be opened as a LumiPOS database: "
+                    + ex.getMessage(), ex);
         }
+    }
+
+    /**
+     * Opens a downloaded database without writing to it.
+     *
+     * <p>The read-only request can legitimately fail: a file flagged as WAL needs
+     * its {@code -wal} and {@code -shm} beside it, and a single-file backup downloaded
+     * from Drive never brings them. That is not a bad backup, so the open falls back to
+     * the ordinary one. The download is a temp copy this process owns and deletes, and
+     * everything run against it is a read.
+     */
+    private Connection openForInspection(Path file) throws SQLException {
+        org.sqlite.SQLiteConfig readOnly = new org.sqlite.SQLiteConfig();
+        readOnly.setReadOnly(true);
+        try {
+            return DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath(),
+                    readOnly.toProperties());
+        } catch (SQLException ex) {
+            log.debug("Could not open {} read-only ({}); inspecting it normally instead.",
+                    file.getFileName(), ex.getMessage());
+            return DriverManager.getConnection("jdbc:sqlite:" + file.toAbsolutePath());
+        }
+    }
+
+    private Set<String> tableNames(Connection connection) throws SQLException {
+        Set<String> names = new HashSet<>();
+        try (Statement statement = connection.createStatement();
+             java.sql.ResultSet rs = statement.executeQuery(
+                     "SELECT name FROM sqlite_master WHERE type='table'")) {
+            while (rs.next()) {
+                String name = rs.getString(1);
+                if (name != null && !name.toLowerCase(Locale.ROOT).startsWith("sqlite_")) {
+                    names.add(name.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return names;
+    }
+
+    /**
+     * Rows in {@code users} somebody could actually sign in with. A backup whose
+     * accounts are all soft-deleted restores a shop nobody can open.
+     */
+    private long livingUserCount(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement();
+             java.sql.ResultSet rs = statement.executeQuery(
+                     "SELECT count(*) FROM users WHERE deleted_at IS NULL")) {
+            return rs.next() ? rs.getLong(1) : 0L;
+        } catch (SQLException ex) {
+            // A backup old enough to predate soft deletion still holds real
+            // accounts, so counting every row is the honest reading of the check.
+            try (Statement statement = connection.createStatement();
+                 java.sql.ResultSet rs = statement.executeQuery("SELECT count(*) FROM users")) {
+                return rs.next() ? rs.getLong(1) : 0L;
+            }
+        }
+    }
+
+    /** Tables in the backup this installation has never seen, sorted for the message. */
+    List<String> unknownTables(Path file, Set<String> appTables) throws IOException {
+        Set<String> known = appTables.stream()
+                .map(name -> name.toLowerCase(Locale.ROOT))
+                .collect(Collectors.toSet());
+        try (Connection connection = openForInspection(file)) {
+            List<String> extra = new ArrayList<>(tableNames(connection));
+            extra.removeAll(known);
+            Collections.sort(extra);
+            return extra;
+        } catch (SQLException ex) {
+            throw new IOException("The backup's table list could not be read: " + ex.getMessage(), ex);
+        }
+    }
+
+    /** The tables this app was built with, read from its own live database. */
+    private Set<String> liveTables() throws SQLException {
+        Set<String> names = new HashSet<>();
+        try (Connection connection = dataSource.getConnection();
+             java.sql.ResultSet rs = connection.getMetaData()
+                     .getTables(null, null, "%", new String[]{"TABLE"})) {
+            while (rs.next()) {
+                String name = rs.getString("TABLE_NAME");
+                if (name != null && !name.toLowerCase(Locale.ROOT).startsWith("sqlite_")) {
+                    names.add(name.toLowerCase(Locale.ROOT));
+                }
+            }
+        }
+        return names;
     }
 
     // ------------------------------------------------------------- job state
@@ -374,6 +562,16 @@ public class BackupRestoreService {
             return Paths.get(localAppData, "LumiPOS", "data").toAbsolutePath().toString();
         }
         return Paths.get(System.getProperty("user.home"), ".lumipos", "data").toAbsolutePath().toString();
+    }
+
+    /**
+     * What a staged database is worth telling the shop about.
+     *
+     * @param checkStep     the line the job shows once the file passed its checks
+     * @param schemaWarning null when the backup matches this app, otherwise the
+     *                      note about a backup from a newer version
+     */
+    public record StagedDatabase(String checkStep, String schemaWarning) {
     }
 
     /**

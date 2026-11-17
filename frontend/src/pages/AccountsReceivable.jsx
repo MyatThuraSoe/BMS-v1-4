@@ -140,9 +140,11 @@ const AccountsReceivable = () => {
       const html = generatePrintHtml(receipt, shopInfo, customization, logoDataUrl, qrDataUrl);
       if (win) writeHtmlAndPrint(win, html);
       else notifyError(t('print_blocked'));
-    } catch {
+    } catch (err) {
       if (win) win.close();
-      notifyError(t('print_failed'));
+      // The server says why it refused (a voided invoice, for one) — that is the
+      // message the person at the counter needs, not a generic print failure.
+      notifyError(err?.friendlyMessage || t('print_failed'));
     }
   };
 
@@ -152,9 +154,9 @@ const AccountsReceivable = () => {
       const html = await arService.getPaymentPrintHtml(paymentId);
       if (win) writeHtmlAndPrint(win, html);
       else notifyError(t('print_blocked'));
-    } catch {
+    } catch (err) {
       if (win) win.close();
-      notifyError(t('print_failed'));
+      notifyError(err?.friendlyMessage || t('print_failed'));
     }
   };
 

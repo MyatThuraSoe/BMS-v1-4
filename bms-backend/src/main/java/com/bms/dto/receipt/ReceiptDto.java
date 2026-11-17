@@ -18,6 +18,11 @@ public class ReceiptDto {
     private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private BigDecimal amountPaid;
+    /**
+     * The value of the goods handed back against this invoice. Part of the balance
+     * the customer owes, so the receipt has to show it: the AR screens already do.
+     */
+    private BigDecimal amountReturned = BigDecimal.ZERO;
     private BigDecimal changeGiven;
     private String paymentMethod;
     private String saleType;
@@ -166,6 +171,14 @@ public class ReceiptDto {
 
     public void setAmountPaid(BigDecimal amountPaid) {
         this.amountPaid = amountPaid;
+    }
+
+    public BigDecimal getAmountReturned() {
+        return amountReturned != null ? amountReturned : BigDecimal.ZERO;
+    }
+
+    public void setAmountReturned(BigDecimal amountReturned) {
+        this.amountReturned = amountReturned;
     }
 
 

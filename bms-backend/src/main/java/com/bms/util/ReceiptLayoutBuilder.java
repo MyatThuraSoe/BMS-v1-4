@@ -136,6 +136,11 @@ public class ReceiptLayoutBuilder {
         if (receipt.getChangeGiven() != null && receipt.getChangeGiven().compareTo(BigDecimal.ZERO) > 0) {
             addTotalLine("Change", receipt.getChangeGiven());
         }
+        // Goods handed back reduce what is owed exactly like a payment does, so the
+        // balance below only adds up on paper if the customer can see this line too.
+        if (receipt.getAmountReturned().compareTo(BigDecimal.ZERO) > 0) {
+            addTotalLine("Returned", receipt.getAmountReturned());
+        }
 
         // Credit info (credit sales only, respects the show/hide toggle)
         boolean showCreditInfo = customization.getShowCreditInfo() == null || customization.getShowCreditInfo();

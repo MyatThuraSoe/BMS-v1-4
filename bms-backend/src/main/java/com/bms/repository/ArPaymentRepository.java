@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -29,4 +30,14 @@ public interface ArPaymentRepository extends JpaRepository<ArPayment, Long> {
         """)
     List<ArPayment> findForJournal(@Param("startDate") LocalDateTime startDate,
                                    @Param("endDate") LocalDateTime endDate);
+
+    // What was collected on this invoice after the given row, for the balance shown
+    // on a reprinted collection receipt. A reversed collection went straight back
+    // over the counter, so it never reduced what the customer owed and does not count.
+    @Query("""
+        SELECT COALESCE(SUM(p.amount), 0) FROM ArPayment p
+        WHERE p.invoice.id = :invoiceId AND p.id > :paymentId AND p.reversedAt IS NULL
+        """)
+    BigDecimal sumAmountByInvoiceIdAndIdGreaterThanExcludingReversed(
+            @Param("invoiceId") Long invoiceId, @Param("paymentId") Long paymentId);
 }

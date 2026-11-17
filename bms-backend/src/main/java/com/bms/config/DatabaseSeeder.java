@@ -162,6 +162,10 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Failed manager approvals a cashier may enter before their approvals lock", "INTEGER"});
         defaults.put("auth.approval.lockMinutes", new String[]{"10",
                 "Minutes a cashier's manager approvals stay locked after too many failures", "INTEGER"});
+        defaults.put("sqlite.restoreBackup.keep", new String[]{"3",
+                "How many pre-restore copies of the SQLite database to keep", "INTEGER"});
+        defaults.put("sqlite.upgradeBackup.keep", new String[]{"3",
+                "How many pre-upgrade copies of the SQLite database to keep", "INTEGER"});
 
         for (Map.Entry<String, String[]> entry : defaults.entrySet()) {
             if (systemSettingRepository.findBySettingKey(entry.getKey()).isEmpty()) {

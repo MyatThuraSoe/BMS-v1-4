@@ -18,7 +18,12 @@ import {
   DialogContent,
   DialogActions,
 } from '@mui/material';
-import { Edit as EditIcon, Delete as DeleteIcon, PersonAdd as PersonAddIcon } from '@mui/icons-material';
+import {
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  PersonAdd as PersonAddIcon,
+  LockOpen as LockOpenIcon,
+} from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { userService } from '../api/services';
 import { useAuth } from '../context/AuthContext';
@@ -33,7 +38,7 @@ const Users = () => {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const { t } = useTranslation('users');
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, isAdmin } = useAuth();
 
   const { data: usersData, isLoading, isError } = useQuery({
     queryKey: ['users', page, size],
@@ -60,6 +65,12 @@ const Users = () => {
     setSelectedUser(user);
     setDeleteDialogOpen(true);
   };
+
+  const unlockMutation = useMutation({
+    mutationFn: (id) => userService.unlockLogin(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['users'] }),
+    onError: (err) => notifyError(err.friendlyMessage || t('unlock_failed')),
+  });
 
   const confirmDelete = () => {
     if (selectedUser) {
@@ -145,8 +156,25 @@ const Users = () => {
                     color={user.isActive ? 'success' : 'default'}
                     size="small"
                   />
+                  {user.loginLocked && (
+                    <Chip
+                      label={t('locked_for', { minutes: user.loginLockedMinutes })}
+                      color="error"
+                      size="small"
+                      sx={{ ml: 0.5 }}
+                    />
+                  )}
                 </TableCell>
                 <TableCell>
+                  {isAdmin() && user.loginLocked && (
+                    <IconButton
+                      size="small"
+                      title={t('unlock')}
+                      onClick={(e) => { e.stopPropagation(); unlockMutation.mutate(user.id); }}
+                    >
+                      <LockOpenIcon color="primary" />
+                    </IconButton>
+                  )}
                   <IconButton
                     size="small"
                     onClick={(e) => { e.stopPropagation(); navigate(`/users/${user.id}`); }}

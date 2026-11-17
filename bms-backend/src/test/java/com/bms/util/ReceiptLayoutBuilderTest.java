@@ -181,4 +181,61 @@ class ReceiptLayoutBuilderTest {
         assertTrue(output.contains("TOTAL:"), "the receipt should still be produced");
         assertFalse(output.contains("Tax:"), "no tax line should appear when there is no tax");
     }
+
+    /** A credit sale the customer has part-paid and partly returned goods against. */
+    private static ReceiptDto creditReceipt(String total, String paid, String returned) {
+        ReceiptDto receipt = new ReceiptDto();
+        receipt.setInvoiceNumber("INV-CREDIT");
+        receipt.setSaleDate(LocalDateTime.of(2026, 3, 4, 10, 30));
+        receipt.setItems(List.of());
+        receipt.setSubtotal(new BigDecimal(total));
+        receipt.setTotalAmount(new BigDecimal(total));
+        receipt.setAmountPaid(new BigDecimal(paid));
+        receipt.setSaleType("CREDIT");
+        receipt.setBalanceDue(new BigDecimal(total).subtract(new BigDecimal(paid))
+                .subtract(returned == null ? BigDecimal.ZERO : new BigDecimal(returned)));
+        if (returned != null) {
+            receipt.setAmountReturned(new BigDecimal(returned));
+        }
+        return receipt;
+    }
+
+    private static String printed(ReceiptDto receipt) {
+        ShopInfoResponse shop = new ShopInfoResponse();
+        shop.setShopName("Corner Store");
+        shop.setCurrency("USD");
+        ReceiptCustomization customization = new ReceiptCustomization();
+        customization.setPaperSize("80");
+        return String.join("\n", new ReceiptLayoutBuilder(receipt, shop, customization).build());
+    }
+
+    @Test
+    void goodsHandedBackGetTheirOwnLineAndReduceThePrintedBalance() {
+        String output = printed(creditReceipt("100.00", "30.00", "20.00"));
+
+        boolean returnedLine = false;
+        boolean balanceLine = false;
+        for (String line : output.split("\n")) {
+            String text = line.trim();
+            if (text.startsWith("Returned")) {
+                returnedLine = true;
+                assertTrue(text.contains("20.00"), "the line carries the amount: " + text);
+            }
+            if (text.startsWith("Balance Due")) {
+                balanceLine = true;
+                assertTrue(text.contains("50.00"),
+                        "the printed balance is the one the AR screen shows, not 70.00: " + text);
+            }
+        }
+        assertTrue(returnedLine, "the customer must see the 20.00 that came back: " + output);
+        assertTrue(balanceLine, "a credit receipt still prints what is still owed: " + output);
+    }
+
+    @Test
+    void aReceiptOfAnInvoiceNobodyReturnedCarriesNoReturnedLine() {
+        assertFalse(printed(creditReceipt("100.00", "30.00", "0.00")).contains("Returned"),
+                "a zero line is noise on a narrow roll");
+        assertFalse(printed(creditReceipt("100.00", "30.00", null)).contains("Returned"),
+                "and an invoice from before the column existed must not print one either");
+    }
 }
