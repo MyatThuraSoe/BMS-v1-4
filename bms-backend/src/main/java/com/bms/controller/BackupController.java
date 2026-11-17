@@ -5,6 +5,7 @@ import com.bms.repository.BackupSettingRepository;
 import com.bms.service.BackupService;
 import com.bms.service.DataExportService;
 import com.bms.service.GoogleDriveService;
+import com.bms.service.ShopTimeService;
 import com.bms.dto.response.ApiResponse;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -37,25 +38,30 @@ public class BackupController {
     private final BackupService backupService;
     private final GoogleDriveService googleDriveService;
     private final DataExportService dataExportService;
+    private final ShopTimeService shopTimeService;
     private final Map<String, Instant> pendingOAuthStates = new ConcurrentHashMap<>();
 
-    @Value("${google.oauth.client-id}")
+    // Defaults rather than requirements: a shop that never connects Google Drive sets
+    // none of these, and the app still has to start.
+    @Value("${google.oauth.client-id:}")
     private String clientId;
 
-    @Value("${google.oauth.redirect-uri}")
+    @Value("${google.oauth.redirect-uri:http://127.0.0.1:17234/api/backups/google/callback}")
     private String redirectUri;
 
-    @Value("${google.oauth.frontend-redirect-base}")
+    @Value("${google.oauth.frontend-redirect-base:http://127.0.0.1:17234}")
     private String frontendRedirectBase;
 
     public BackupController(BackupSettingRepository backupSettingRepository,
                             BackupService backupService,
                             GoogleDriveService googleDriveService,
-                            DataExportService dataExportService) {
+                            DataExportService dataExportService,
+                            ShopTimeService shopTimeService) {
         this.backupSettingRepository = backupSettingRepository;
         this.backupService = backupService;
         this.googleDriveService = googleDriveService;
         this.dataExportService = dataExportService;
+        this.shopTimeService = shopTimeService;
     }
 
     @GetMapping("/settings")
@@ -74,11 +80,16 @@ public class BackupController {
         masked.setCustomCronExpression(source.getCustomCronExpression());
         masked.setLastBackupDate(source.getLastBackupDate());
         masked.setNextBackupDate(source.getNextBackupDate());
+        masked.setScheduledTime(source.getScheduledTime());
+        masked.setRetentionCount(source.getRetentionCount());
         masked.setBackupStatus(source.getBackupStatus());
         masked.setLastErrorMessage(source.getLastErrorMessage());
         masked.setLastBackupAttempt(source.getLastBackupAttempt());
         masked.setGoogleRefreshToken(maskSecret(source.getGoogleRefreshToken()));
         masked.setGoogleAccessToken(maskSecret(source.getGoogleAccessToken()));
+        masked.setBackupFormat(backupService.resolveBackupFormat());
+        masked.setSnapshotSupported(backupService.isRawSnapshotSupported());
+        masked.setEncryptionEnabled(backupService.isEncryptionEnabled());
         return masked;
     }
 
@@ -96,14 +107,37 @@ public class BackupController {
         existing.setEnabled(setting.isEnabled());
         existing.setFrequency(setting.getFrequency());
         existing.setCustomCronExpression(setting.getCustomCronExpression());
+        if (setting.getScheduledTime() != null) {
+            existing.setScheduledTime(setting.getScheduledTime());
+        }
+        // Optional: a client that knows nothing about retention leaves the shop's
+        // own number alone rather than resetting it to the default on every save.
+        if (setting.getRetentionCount() != null) {
+            existing.setRetentionCount(Math.max(BackupService.MINIMUM_RETENTION_COUNT,
+                    setting.getRetentionCount()));
+        }
+        // Optional like retention: a client from before encryption existed does not
+        // send the switch, so an upgrade cannot quietly turn a shop's seals on or off.
+        if (setting.getEncryptionEnabled() != null) {
+            backupService.setEncryptionEnabled(setting.getEncryptionEnabled());
+        }
 
         if (existing.isEnabled()) {
+            // A shop that never picked an hour is anchored to the hour automation was
+            // switched on at, which is the time of day the schedule keeps from now on.
+            LocalDateTime now = shopTimeService.now();
+            if (existing.getScheduledTime() == null) {
+                existing.setScheduledTime(now.toLocalTime());
+            }
+
             // Recompute the next run from the (possibly new) schedule, honoring
             // CUSTOM cron expressions. If a run is already scheduled in the future
-            // it is kept to avoid jumping the queue when unrelated fields change.
-            LocalDateTime now = LocalDateTime.now();
+            // it is kept to avoid jumping the queue when unrelated fields change —
+            // but a new hour is not an unrelated field, so that run is moved.
             LocalDateTime next = existing.getNextBackupDate();
-            if (next == null || !next.isAfter(now)) {
+            boolean hourChanged = next != null && existing.getScheduledTime() != null
+                    && !next.toLocalTime().equals(existing.getScheduledTime());
+            if (next == null || !next.isAfter(now) || hourChanged) {
                 existing.setNextBackupDate(backupService.calculateNextBackupDate(existing, now));
             }
         } else {
@@ -261,18 +295,37 @@ public class BackupController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<String>> runBackupNow(
             @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate endDate) {
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestBody(required = false) Map<String, String> body) {
+        char[] passphrase = passphraseOf(body);
         try {
             // Date-range filtering was only meaningful for the old spreadsheet
             // export; backups are now generated by the restorable JSON exporter,
             // which always produces a complete backup. So startDate/endDate are
             // accepted for backwards compatibility but ignored.
-            String link = backupService.runBackupNow(null, null);
+            String link = backupService.runBackupNow(null, null, passphrase);
             return ResponseEntity.ok(new ApiResponse<>(true, "Backup completed successfully!", link));
         } catch (Exception e) {
             String message = e.getMessage();
             return ResponseEntity.internalServerError().body(new ApiResponse<>(false, message != null && !message.isBlank() ? message : "Backup failed", null));
+        } finally {
+            if (passphrase != null) {
+                java.util.Arrays.fill(passphrase, (char) 0);
+            }
         }
+    }
+
+    /**
+     * The secret this run seals its files with, or null to leave them plain.
+     *
+     * <p>It comes in the body rather than the query string because a passphrase in
+     * a URL is copied into every access log and browser history that sees the
+     * request. A scheduler run has nobody to type it, which is the whole reason
+     * automatic backups stay unencrypted.
+     */
+    private static char[] passphraseOf(Map<String, String> body) {
+        String value = body == null ? null : body.get("passphrase");
+        return value == null || value.isEmpty() ? null : value.toCharArray();
     }
 
     // Local restore-able JSON download of all business data (no Google Drive needed)

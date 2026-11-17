@@ -16,11 +16,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -335,6 +337,13 @@ class SqliteSchemaMigratorTest {
                 "a database from " + stamp);
     }
 
+    /** The same, aged to {@code minutes} past the epoch so the clock orders it, not the name. */
+    private static Path writeUpgradeBackup(Path dir, String stamp, long minutes) throws IOException {
+        Path copy = writeUpgradeBackup(dir, stamp);
+        Files.setLastModifiedTime(copy, FileTime.from(Instant.EPOCH.plusSeconds(minutes * 60L)));
+        return copy;
+    }
+
     private static List<String> upgradeBackups(Path dir) throws IOException {
         try (var stream = Files.list(dir)) {
             return stream.map(path -> path.getFileName().toString())
@@ -401,6 +410,37 @@ class SqliteSchemaMigratorTest {
         assertEquals(1, kept.size(), "one kept copy means the one made by this start");
         assertTrue(kept.get(0).compareTo("lumipos.db.pre-upgrade-202601021200.bak") > 0,
                 "the shop's own copy is the one that stays: " + kept);
+    }
+
+    @Test
+    void aSameMinuteCopyIsKeptByItsTimeAndNotByItsName(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("create table system_settings (setting_key varchar(255) not null unique,"
+                    + " setting_value varchar(5000), data_type varchar(255))");
+            statement.executeUpdate("insert into system_settings (setting_key, setting_value, data_type)"
+                    + " values ('sqlite.upgradeBackup.keep', '2', 'INTEGER')");
+        }
+
+        // The oldest minute holds two copies: the second is named ...-2.bak, and '-'
+        // sorts before '.', so "-2.bak" comes BEFORE the ".bak" it was made after. A
+        // name order therefore calls the newest copy the oldest one there is.
+        writeUpgradeBackup(dir, "202601011200", 1);
+        writeUpgradeBackup(dir, "202601011200-2", 4);
+        writeUpgradeBackup(dir, "202601021200", 2);
+        writeUpgradeBackup(dir, "202601031200", 3);
+
+        DataSource dataSource = sqlite(file);
+        try (Connection connection = dataSource.getConnection()) {
+            new SqliteSchemaMigrator(dataSource, new DefaultResourceLoader())
+                    .pruneOldUpgradeBackups(connection, null);
+        }
+
+        List<String> kept = upgradeBackups(dir);
+        assertEquals(List.of("lumipos.db.pre-upgrade-202601011200-2.bak",
+                        "lumipos.db.pre-upgrade-202601031200.bak"), kept,
+                "the two newest by the clock on the file are the two that stay");
     }
 
     @Test

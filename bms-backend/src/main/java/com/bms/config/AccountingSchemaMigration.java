@@ -72,6 +72,8 @@ public class AccountingSchemaMigration implements ApplicationRunner {
         ensureNullableColumn(dialect, "expenses", "updated_by", "BIGINT");
         ensureNullableColumn(dialect, "expenses", "updated_at", "TIMESTAMP");
         ensureNullableColumn(dialect, "stock_movements", "source_transfer_id", "BIGINT");
+        ensureNullableColumn(dialect, "backup_settings", "scheduled_time", "TIME");
+        ensureColumn(dialect, "backup_settings", "retention_count", "INTEGER", "30");
         migrateUserIdentity();
         ensureUniqueIndex(dialect, "uq_count_sheets_sync_key", "count_sheets", "sync_key");
     }
@@ -283,6 +285,11 @@ public class AccountingSchemaMigration implements ApplicationRunner {
                     + " WHERE " + column + " IS NULL");
             return;
         }
+        if (!tableExists(dialect, table)) {
+            // A feature this database never had gets its whole table from the schema
+            // the app creates, already carrying the column — there is nothing to widen.
+            return;
+        }
         jdbcTemplate.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type
                 + " DEFAULT " + defaultValue);
         jdbcTemplate.update("UPDATE " + table + " SET " + column + " = " + defaultValue
@@ -291,9 +298,27 @@ public class AccountingSchemaMigration implements ApplicationRunner {
     }
 
     private void ensureNullableColumn(Dialect dialect, String table, String column, String type) {
-        if (columnExists(dialect, table, column)) return;
+        if (columnExists(dialect, table, column) || !tableExists(dialect, table)) return;
         jdbcTemplate.execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + type);
         log.info("Added {}.{} {}", table, column, type);
+    }
+
+    /** Whether this database has the table at all — an ALTER on one it lacks is a startup failure. */
+    private boolean tableExists(Dialect dialect, String table) {
+        if (dialect == Dialect.SQLITE) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    Integer.class, table);
+            return count != null && count > 0;
+        }
+        String predicate = dialect == Dialect.H2
+                ? "TABLE_SCHEMA = CURRENT_SCHEMA() AND UPPER(TABLE_NAME) = ?"
+                : "TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?";
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE " + predicate,
+                Integer.class,
+                dialect == Dialect.H2 ? table.toUpperCase(Locale.ROOT) : table);
+        return count != null && count > 0;
     }
 
     private boolean columnExists(Dialect dialect, String table, String column) {

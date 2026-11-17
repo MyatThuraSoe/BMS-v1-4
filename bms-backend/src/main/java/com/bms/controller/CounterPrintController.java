@@ -2,6 +2,8 @@ package com.bms.controller;
 
 import com.bms.dto.response.ApiResponse;
 import com.bms.service.CounterPrintService;
+import com.bms.service.PrintAgentAccess;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -12,15 +14,22 @@ import java.util.Map;
  * Counter (server-side) printing: lets ANY device — browser, phone, tablet,
  * or the desktop app — fire a receipt at the printer attached to the LumiPOS
  * server computer. No per-device installs required.
+ *
+ * Firing a print is for any signed-in role that may print. Taking a job off the
+ * queue and reporting what happened to it is not: that is the print agent's work,
+ * and {@link PrintAgentAccess} is what keeps everyone else out of it.
  */
 @RestController
 @RequestMapping("/api/counter-print")
 public class CounterPrintController {
 
     private final CounterPrintService counterPrintService;
+    private final PrintAgentAccess printAgentAccess;
 
-    public CounterPrintController(CounterPrintService counterPrintService) {
+    public CounterPrintController(CounterPrintService counterPrintService,
+                                  PrintAgentAccess printAgentAccess) {
         this.counterPrintService = counterPrintService;
+        this.printAgentAccess = printAgentAccess;
     }
 
     /** List printers installed on the server computer (default first). */
@@ -66,19 +75,30 @@ public class CounterPrintController {
                 "Receipt queued for the main POS printer", counterPrintService.enqueueReceipt(invoiceNumber)));
     }
 
-    /** Poll endpoint used only by the Electron POS client on this server. */
+    /** Poll endpoint used only by the print agent, so only this server may call it. */
     @GetMapping("/receipt-jobs/next")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
-    public ResponseEntity<ApiResponse<Map<String, String>>> claimNextReceipt() {
+    public ResponseEntity<ApiResponse<Map<String, String>>> claimNextReceipt(HttpServletRequest httpRequest) {
+        printAgentAccess.assertMayUseQueue(httpRequest);
         return ResponseEntity.ok(new ApiResponse<>(true, "Print job retrieved", counterPrintService.claimNextReceipt()));
     }
 
-    /** Acknowledge the result after Electron prints the receipt. */
+    /** Acknowledge the result after the print agent printed the receipt. */
     @PostMapping("/receipt-jobs/{jobId}/complete")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
     public ResponseEntity<ApiResponse<Void>> completeReceipt(@PathVariable String jobId,
-                                                              @RequestBody Map<String, Boolean> body) {
+                                                             @RequestBody Map<String, Boolean> body,
+                                                             HttpServletRequest httpRequest) {
+        printAgentAccess.assertMayUseQueue(httpRequest);
         counterPrintService.completeReceipt(jobId, Boolean.TRUE.equals(body.get("success")));
         return ResponseEntity.ok(new ApiResponse<>(true, "Print job completed", null));
+    }
+
+    /** What the POS shows as "printing" or "failed" for a receipt it queued itself. */
+    @GetMapping("/receipt-jobs/{jobId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER', 'CASHIER')")
+    public ResponseEntity<ApiResponse<Map<String, String>>> jobStatus(@PathVariable String jobId) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Print job status retrieved",
+                counterPrintService.jobStatus(jobId)));
     }
 }

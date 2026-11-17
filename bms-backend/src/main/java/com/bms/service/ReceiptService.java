@@ -8,6 +8,7 @@ import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.User;
 import com.bms.exception.ResourceNotFoundException;
+import com.bms.exception.StateConflictException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
@@ -70,7 +71,7 @@ public class ReceiptService {
      */
     private static Sale refuseVoided(Sale sale) {
         if (Boolean.TRUE.equals(sale.getIsVoided())) {
-            throw new IllegalStateException("Invoice was voided: " + sale.getInvoiceNumber());
+            throw new StateConflictException("Invoice was voided: " + sale.getInvoiceNumber());
         }
         return sale;
     }

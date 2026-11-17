@@ -46,6 +46,25 @@ public class DataImportService {
     private final JdbcTemplate jdbcTemplate;
     private final Environment env;
 
+    private final InvoiceSequenceRepository invoiceSequenceRepository;
+    private final PurchaseSequenceRepository purchaseSequenceRepository;
+    private final CustomerSequenceRepository customerSequenceRepository;
+    private final TransferSequenceRepository transferSequenceRepository;
+    private final LocationRepository locationRepository;
+    private final LocationStockRepository locationStockRepository;
+    private final StockMovementRepository stockMovementRepository;
+    private final StockTransferRepository stockTransferRepository;
+    private final PriceListRepository priceListRepository;
+    private final PromotionRepository promotionRepository;
+    private final ProductPriceHistoryRepository productPriceHistoryRepository;
+    private final PurchasePaymentRepository purchasePaymentRepository;
+    private final CashDrawerRepository cashDrawerRepository;
+    private final CashDrawerSessionRepository cashDrawerSessionRepository;
+    private final CashDrawerMovementRepository cashDrawerMovementRepository;
+    private final CountSheetRepository countSheetRepository;
+    private final GlAccountRepository glAccountRepository;
+    private final GlMappingRepository glMappingRepository;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -70,14 +89,21 @@ public class DataImportService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode) {
         periodGuard.lock();
-        if (mode == ImportMode.REPLACE_ALL && (periodCloseRepository.count() > 0
+
+        Map<String, Object> rawData = (Map<String, Object>) backup.get("data");
+        if (rawData == null) throw new IllegalArgumentException("Invalid backup file: missing 'data' section");
+
+        // A JSON file that carries both journals IS a complete backup, so it may
+        // replace the closed periods and the ledgers with itself. A business-only
+        // file never may: swapping rows underneath a closed period would leave the
+        // books disagreeing with the shop's history.
+        boolean carriesLedgers = hasRows(rawData, "inventoryLedger") && hasRows(rawData, "profitLedger");
+
+        if (mode == ImportMode.REPLACE_ALL && !carriesLedgers && (periodCloseRepository.count() > 0
                 || inventoryLedgerRepository.count() > 0 || profitLedgerRepository.count() > 0)) {
             throw new com.bms.exception.BusinessException(
                     "Cannot replace business rows independently of accounting ledgers. Use a complete database restore instead.");
         }
-
-        Map<String, Object> rawData = (Map<String, Object>) backup.get("data");
-        if (rawData == null) throw new IllegalArgumentException("Invalid backup file: missing 'data' section");
 
         ObjectMapper mapper = new ObjectMapper()
                 .registerModule(new JavaTimeModule())
@@ -93,8 +119,8 @@ public class DataImportService {
         List<ReceiptCustomization> receiptCustomizations =
                 readList(mapper, rawData.get("receiptCustomizations"), ReceiptCustomization.class);
 
-        // AR payments are stored flattened (invoiceId / recordedById only) in the
-        // backup — re-attach the associations by id after deserialization.
+        // AR payments are stored flattened (invoice / recorder / shift / drawer
+        // movement by id) in the backup — re-attach the associations after reading.
         List<ArPayment> arPayments = readArPayments(mapper, rawData.get("arPayments"));
 
         // Orders are stored flattened (customerId / productId only) — re-attach the
@@ -122,6 +148,113 @@ public class DataImportService {
             throw new com.bms.exception.BusinessException("Backup setting IDs conflict with internal accounting settings");
         }
 
+        // 1b Sections added by later backup versions. Every one of them is
+        //     optional: a file written by an older version simply has no key for
+        //     it, and restoring that file must not empty tables it never described.
+        List<InvoiceSequence> invoiceSequences = readList(mapper, rawData.get("invoiceSequences"), InvoiceSequence.class);
+        List<PurchaseSequence> purchaseSequences = readList(mapper, rawData.get("purchaseSequences"), PurchaseSequence.class);
+        List<CustomerSequence> customerSequences = readList(mapper, rawData.get("customerSequences"), CustomerSequence.class);
+        List<TransferSequence> transferSequences = readList(mapper, rawData.get("transferSequences"), TransferSequence.class);
+        List<Location> locations = readList(mapper, rawData.get("locations"), Location.class);
+        List<GlAccount> glAccounts = readList(mapper, rawData.get("glAccounts"), GlAccount.class);
+        List<CashDrawer> cashDrawers = readList(mapper, rawData.get("cashDrawers"), CashDrawer.class);
+        List<PeriodClose> periodCloses = readList(mapper, rawData.get("periodCloses"), PeriodClose.class);
+        List<InventoryLedger> inventoryLedger = readList(mapper, rawData.get("inventoryLedger"), InventoryLedger.class);
+        List<ProfitLedger> profitLedger = readList(mapper, rawData.get("profitLedger"), ProfitLedger.class);
+
+        List<GlMapping> glMappings = readFlat(mapper, rawData.get("glMappings"), GlMapping.class,
+                (mapping, row) -> mapping.setAccount(reference(row.get("glAccountId"), GlAccount.class)));
+
+        List<LocationStock> locationStock = readFlat(mapper, rawData.get("locationStock"), LocationStock.class,
+                (stock, row) -> {
+                    stock.setLocation(reference(row.get("locationId"), Location.class));
+                    stock.setProduct(reference(row.get("productId"), Product.class));
+                });
+
+        List<StockMovement> stockMovements = readFlat(mapper, rawData.get("stockMovements"), StockMovement.class,
+                (movement, row) -> {
+                    movement.setProduct(reference(row.get("productId"), Product.class));
+                    movement.setCreatedBy(reference(row.get("createdById"), User.class));
+                });
+
+        List<StockTransfer> stockTransfers = readFlat(mapper, rawData.get("stockTransfers"), StockTransfer.class,
+                (transfer, row) -> {
+                    transfer.setFromLocation(reference(row.get("fromLocationId"), Location.class));
+                    transfer.setToLocation(reference(row.get("toLocationId"), Location.class));
+                    transfer.getItems().clear();
+                    for (Object itemRow : maps(row.get("items"))) {
+                        Map<String, Object> ir = mapOf(itemRow);
+                        StockTransferItem item = mapper.convertValue(itemRow, StockTransferItem.class);
+                        item.setProduct(reference(ir.get("productId"), Product.class));
+                        item.setTransfer(transfer);
+                        transfer.getItems().add(item);
+                    }
+                });
+
+        List<PriceList> priceLists = readFlat(mapper, rawData.get("priceLists"), PriceList.class,
+                (priceList, row) -> {
+                    priceList.getItems().clear();
+                    for (Object itemRow : maps(row.get("items"))) {
+                        Map<String, Object> ir = mapOf(itemRow);
+                        PriceListItem item = mapper.convertValue(itemRow, PriceListItem.class);
+                        item.setProduct(reference(ir.get("productId"), Product.class));
+                        item.setPriceList(priceList);
+                        priceList.getItems().add(item);
+                    }
+                });
+
+        List<Promotion> promotions = readFlat(mapper, rawData.get("promotions"), Promotion.class,
+                (promotion, row) -> {
+                    promotion.setProduct(reference(row.get("productId"), Product.class));
+                    promotion.setCategory(reference(row.get("categoryId"), Category.class));
+                    promotion.getTiers().clear();
+                    for (Object tierRow : maps(row.get("tiers"))) {
+                        PromotionTier tier = mapper.convertValue(tierRow, PromotionTier.class);
+                        tier.setPromotion(promotion);
+                        promotion.getTiers().add(tier);
+                    }
+                });
+
+        List<ProductPriceHistory> priceHistory = readFlat(mapper, rawData.get("productPriceHistory"),
+                ProductPriceHistory.class, (entry, row) -> {
+                    entry.setProduct(reference(row.get("productId"), Product.class));
+                    entry.setChangedBy(reference(row.get("changedById"), User.class));
+                });
+
+        List<PurchasePayment> purchasePayments = readFlat(mapper, rawData.get("purchasePayments"),
+                PurchasePayment.class, (payment, row) -> {
+                    payment.setPurchase(reference(row.get("purchaseId"), Purchase.class));
+                    payment.setEmployeeShift(reference(row.get("employeeShiftId"), CashShift.class));
+                    payment.setDrawerMovement(reference(row.get("drawerMovementId"), CashDrawerMovement.class));
+                    payment.setRecordedBy(reference(row.get("recordedById"), User.class));
+                });
+
+        List<CashDrawerSession> drawerSessions = readFlat(mapper, rawData.get("cashDrawerSessions"),
+                CashDrawerSession.class, (session, row) -> {
+                    session.setDrawer(reference(row.get("drawerId"), CashDrawer.class));
+                    session.setOpenedBy(reference(row.get("openedById"), User.class));
+                    session.setClosedBy(reference(row.get("closedById"), User.class));
+                });
+
+        List<CashDrawerMovement> drawerMovements = readFlat(mapper, rawData.get("cashDrawerMovements"),
+                CashDrawerMovement.class, (movement, row) -> {
+                    movement.setDrawerSession(reference(row.get("drawerSessionId"), CashDrawerSession.class));
+                    movement.setPerformedBy(reference(row.get("performedById"), User.class));
+                    movement.setEmployeeShift(reference(row.get("employeeShiftId"), CashShift.class));
+                });
+
+        List<CountSheet> countSheets = readFlat(mapper, rawData.get("countSheets"), CountSheet.class,
+                (sheet, row) -> {
+                    sheet.getItems().clear();
+                    for (Object itemRow : maps(row.get("items"))) {
+                        Map<String, Object> ir = mapOf(itemRow);
+                        CountSheetItem item = mapper.convertValue(itemRow, CountSheetItem.class);
+                        item.setProduct(reference(ir.get("productId"), Product.class));
+                        item.setCountSheet(sheet);
+                        sheet.getItems().add(item);
+                    }
+                });
+
         // 2️⃣ REPLACE mode: wipe existing data with FK checks disabled so child
         //    tables (stock_movements, refunds, *_items, product_images, ...) never
         //    block the delete or get orphaned. Tables added in newer backup
@@ -129,15 +262,23 @@ public class DataImportService {
         //    backup actually contains their data — a restore from an old file can
         //    never lock you out by replacing everything else with nothing.
         if (mode == ImportMode.REPLACE_ALL) {
-            for (Sale sale : sales) periodGuard.assertOpen(sale.getSaleDate());
-            for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
-            for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
-            for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
+            // A file that carries its own journals also carries the closes that
+            // froze them: its history is exactly the history those closes
+            // describe, so the period checks are its own business.
+            if (!carriesLedgers) {
+                for (Sale sale : sales) periodGuard.assertOpen(sale.getSaleDate());
+                for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
+                for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
+                for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
+            }
             wipeAllData(rawData);
         }
 
         // 3️⃣ Re-link children (back-refs were stripped by @JsonIgnore)
-        sales.forEach(s -> { if (s.getItems() != null) s.getItems().forEach(i -> i.setSale(s)); });
+        sales.forEach(s -> {
+            if (s.getItems() != null) s.getItems().forEach(i -> i.setSale(s));
+            if (s.getPayments() != null) s.getPayments().forEach(p -> p.setSale(s));
+        });
         purchases.forEach(p -> { if (p.getItems() != null) p.getItems().forEach(i -> i.setPurchase(p)); });
 
         // 4️⃣ MERGE = insert-only for records we do NOT already have. Existing IDs
@@ -160,42 +301,98 @@ public class DataImportService {
             cashShifts = keepOnlyNew(cashShifts, cashShiftRepository::findAll);
             shopInfoRows = keepOnlyNew(shopInfoRows, shopInfoRepository::findAll);
             systemSettings = keepOnlyNew(systemSettings, systemSettingRepository::findAll);
+            locations = keepOnlyNew(locations, locationRepository::findAll);
+            locationStock = keepOnlyNew(locationStock, locationStockRepository::findAll);
+            glAccounts = keepOnlyNew(glAccounts, glAccountRepository::findAll);
+            glMappings = keepOnlyNew(glMappings, glMappingRepository::findAll);
+            cashDrawers = keepOnlyNew(cashDrawers, cashDrawerRepository::findAll);
+            drawerSessions = keepOnlyNew(drawerSessions, cashDrawerSessionRepository::findAll);
+            drawerMovements = keepOnlyNew(drawerMovements, cashDrawerMovementRepository::findAll);
+            purchasePayments = keepOnlyNew(purchasePayments, purchasePaymentRepository::findAll);
+            stockMovements = keepOnlyNew(stockMovements, stockMovementRepository::findAll);
+            stockTransfers = keepOnlyNew(stockTransfers, stockTransferRepository::findAll);
+            priceLists = keepOnlyNew(priceLists, priceListRepository::findAll);
+            promotions = keepOnlyNew(promotions, promotionRepository::findAll);
+            priceHistory = keepOnlyNew(priceHistory, productPriceHistoryRepository::findAll);
+            countSheets = keepOnlyNew(countSheets, countSheetRepository::findAll);
+            invoiceSequences = keepOnlyNew(invoiceSequences, invoiceSequenceRepository::findAll);
+            purchaseSequences = keepOnlyNew(purchaseSequences, purchaseSequenceRepository::findAll);
+            customerSequences = keepOnlyNew(customerSequences, customerSequenceRepository::findAll);
+            transferSequences = keepOnlyNew(transferSequences, transferSequenceRepository::findAll);
+            // period_close is keyed by the period itself, not an id column.
+            java.util.Set<String> alreadyClosed = periodCloseRepository.findAll().stream()
+                    .map(PeriodClose::getPeriod).collect(java.util.stream.Collectors.toSet());
+            periodCloses = periodCloses.stream()
+                    .filter(c -> c.getPeriod() == null || !alreadyClosed.contains(c.getPeriod()))
+                    .toList();
+            inventoryLedger = keepOnlyNew(inventoryLedger, inventoryLedgerRepository::findAll);
+            profitLedger = keepOnlyNew(profitLedger, profitLedgerRepository::findAll);
         }
 
-        if (ledgerReadService.isActive() && (!products.isEmpty() || !sales.isEmpty()
+        if (!carriesLedgers && ledgerReadService.isActive() && (!products.isEmpty() || !sales.isEmpty()
                 || !saleReturns.isEmpty() || !purchases.isEmpty() || !expenses.isEmpty()
                 || !arPayments.isEmpty() || !customers.isEmpty())) {
             throw new com.bms.exception.BusinessException(
                     "Business-only imports cannot append reconciled accounting history. Use a complete database restore instead.");
         }
 
-        for (Sale sale : sales) {
-            periodGuard.assertOpen(sale.getSaleDate());
-            if (sale.getVoidedAt() != null) periodGuard.assertOpen(sale.getVoidedAt());
+        // A backup that carries its own journals also carries the closes that
+        // froze them, so the period checks are its own business: the restored
+        // history is exactly the history those closes describe.
+        if (!carriesLedgers) {
+            for (Sale sale : sales) {
+                periodGuard.assertOpen(sale.getSaleDate());
+                if (sale.getVoidedAt() != null) periodGuard.assertOpen(sale.getVoidedAt());
+            }
+            for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
+            for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
+            for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
         }
-        for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
-        for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
-        for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
 
-        // 5️⃣ Save (parents first, FK-safe order). IDs are preserved so
-        //    REPLACE_ALL re-inserts the exact rows and MERGE inserts new ones.
+        // 5️⃣ Save (FK-safe order, parents first). Every row is an INSERT: REPLACE
+        //    mode has just emptied these tables and MERGE mode dropped the rows the
+        //    shop already has, so the ids the file carries name nothing to update.
+        //    Places, drawers, shifts and price lists come before the transactions
+        //    that point into them: with generated ids every row reaches the database
+        //    the moment it is saved, so a link to a row not inserted yet is refused.
         Map<String, Integer> counts = new LinkedHashMap<>();
-        counts.put("users", userRepository.saveAll(users).size());
-        counts.put("categories", categoryRepository.saveAll(categories).size());
-        counts.put("customers",  customerRepository.saveAll(customers).size());
-        counts.put("suppliers",  supplierRepository.saveAll(suppliers).size());
-        counts.put("products",   productRepository.saveAll(products).size());
-        counts.put("purchases",  purchaseRepository.saveAll(purchases).size());
-        counts.put("sales",      saleRepository.saveAll(sales).size());
-        counts.put("saleReturns", saleReturnRepository.saveAll(saleReturns).size());
-        counts.put("receiptCustomizations", receiptCustomizationRepository.saveAll(receiptCustomizations).size());
-        counts.put("arPayments", arPaymentRepository.saveAll(arPayments).size());
-        counts.put("orders", orderRepository.saveAll(orders).size());
-        counts.put("orderSequences", orderSequenceRepository.saveAll(orderSequences).size());
-        counts.put("cashShifts", cashShiftRepository.saveAll(cashShifts).size());
-        counts.put("expenses", expenseRepository.saveAll(expenses).size());
-        counts.put("shopInfo", shopInfoRepository.saveAll(shopInfoRows).size());
-        counts.put("systemSettings", systemSettingRepository.saveAll(systemSettings).size());
+        counts.put("users", insertAll(users));
+        counts.put("categories", insertAll(categories));
+        counts.put("customers",  insertAll(customers));
+        counts.put("suppliers",  insertAll(suppliers));
+        counts.put("glAccounts", insertAll(glAccounts));
+        counts.put("locations", insertAll(locations));
+        counts.put("cashDrawers", insertAll(cashDrawers));
+        counts.put("cashDrawerSessions", insertAll(drawerSessions));
+        counts.put("cashShifts", insertAll(cashShifts));
+        counts.put("cashDrawerMovements", insertAll(drawerMovements));
+        counts.put("products",   insertAll(products));
+        counts.put("priceLists", insertAll(priceLists));
+        counts.put("locationStock", insertAll(locationStock));
+        counts.put("purchases",  insertAll(purchases));
+        counts.put("sales",      insertAll(sales));
+        counts.put("saleReturns", insertAll(saleReturns));
+        counts.put("receiptCustomizations", insertAll(receiptCustomizations));
+        counts.put("arPayments", insertAll(arPayments));
+        counts.put("purchasePayments", insertAll(purchasePayments));
+        counts.put("orders", insertAll(orders));
+        counts.put("orderSequences", insertAll(orderSequences));
+        counts.put("expenses", insertAll(expenses));
+        counts.put("shopInfo", insertAll(shopInfoRows));
+        counts.put("systemSettings", insertAll(systemSettings));
+        counts.put("stockMovements", insertAll(stockMovements));
+        counts.put("stockTransfers", insertAll(stockTransfers));
+        counts.put("promotions", insertAll(promotions));
+        counts.put("productPriceHistory", insertAll(priceHistory));
+        counts.put("countSheets", insertAll(countSheets));
+        counts.put("glMappings", insertAll(glMappings));
+        counts.put("invoiceSequences", insertAll(invoiceSequences));
+        counts.put("purchaseSequences", insertAll(purchaseSequences));
+        counts.put("customerSequences", insertAll(customerSequences));
+        counts.put("transferSequences", insertAll(transferSequences));
+        counts.put("periodCloses", insertAll(periodCloses));
+        counts.put("inventoryLedger", insertAll(inventoryLedger));
+        counts.put("profitLedger", insertAll(profitLedger));
 
         // 6️⃣ Reset auto-increment counters so NEW records don't collide
         resetIdentityCounters();
@@ -205,6 +402,76 @@ public class DataImportService {
         result.put("mode", mode.name());
         result.put("counts", counts);
         return result;
+    }
+
+    /**
+     * Puts one section's rows in as new records. The repository's save() would
+     * merge instead, which asks Hibernate for a row this very restore has just
+     * deleted — and a parent that owns a collection cannot be re-born that way:
+     * the session keys its children by an identifier the insert has not produced
+     * yet. So the exported ids are dropped and the database numbers the rows again
+     * (step 6 then puts the counters ahead of them).
+     */
+    private <T> int insertAll(List<T> rows) {
+        for (T row : rows) {
+            restoreAsNew(row);
+            entityManager.persist(row);
+        }
+        return rows.size();
+    }
+
+    /**
+     * Makes one parsed row look like something this shop has never seen: the id it
+     * carried (and its children carried) is dropped, and a parent the file pointed
+     * at is asked of the session again. The wipe empties the session, so a
+     * reference built while parsing no longer belongs to it — and Hibernate cannot
+     * tell a row this restore is about to insert from one that never existed.
+     */
+    private void restoreAsNew(Object row) {
+        for (Class<?> type = row.getClass(); type.getSuperclass() != null; type = type.getSuperclass()) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                field.setAccessible(true);
+                try {
+                    if (field.isAnnotationPresent(jakarta.persistence.Id.class)
+                            && field.isAnnotationPresent(jakarta.persistence.GeneratedValue.class)) {
+                        field.set(row, null);
+                    }
+                    else if ((field.isAnnotationPresent(jakarta.persistence.OneToMany.class)
+                            || field.isAnnotationPresent(jakarta.persistence.ManyToMany.class))
+                            && field.get(row) instanceof java.util.Collection<?> children) {
+                        children.forEach(this::restoreAsNew);
+                    }
+                    else if ((field.isAnnotationPresent(jakarta.persistence.ManyToOne.class)
+                            || field.isAnnotationPresent(jakarta.persistence.OneToOne.class))
+                            && field.get(row) != null && !entityManager.contains(field.get(row))) {
+                        Object parent = identifierOf(field.get(row));
+                        if (parent != null) {
+                            field.set(row, entityManager.getReference(field.getType(), parent));
+                        }
+                    }
+                } catch (ReflectiveOperationException impossibleOnOurOwnEntities) {
+                    throw new IllegalStateException("Cannot restore a " + type.getSimpleName(), impossibleOnOurOwnEntities);
+                }
+            }
+        }
+    }
+
+    /** The value of a row's {@code @Id} field, or null when it has none yet. */
+    private static Object identifierOf(Object row) {
+        for (Class<?> type = row.getClass(); type.getSuperclass() != null; type = type.getSuperclass()) {
+            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
+                if (field.isAnnotationPresent(jakarta.persistence.Id.class)) {
+                    field.setAccessible(true);
+                    try {
+                        return field.get(row);
+                    } catch (IllegalAccessException impossibleOnOurOwnEntities) {
+                        throw new IllegalStateException("Cannot read the id of a " + type.getSimpleName(),
+                                impossibleOnOurOwnEntities);
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     /** In MERGE mode, drops records whose ID already exists in the destination. */
@@ -277,8 +544,8 @@ public class DataImportService {
         List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
-            "sale_items", "sales",
-            "purchase_items", "purchases",
+            "sale_items", "sale_payments", "sales",
+            "purchase_items", "purchase_expenses", "purchases",
             "order_items", "orders", "order_sequences",
             "stock_movements",
             "product_price_history", "product_images",
@@ -299,6 +566,34 @@ public class DataImportService {
         wipeIfPresent(tables, "shop_info", rawData.get("shopInfo"));
         wipeIfPresent(tables, "system_settings", rawData.get("systemSettings"));
 
+        // Everything a complete backup describes is cleared in the same pass, and
+        // only when the file actually carries that section — otherwise a restore
+        // from an older file would delete the shop's drawers, counts and ledgers
+        // and put nothing back.
+        wipeIfPresent(tables, "purchase_payments", rawData.get("purchasePayments"));
+        wipeIfPresent(tables, "cash_drawer_movements", rawData.get("cashDrawerMovements"));
+        wipeIfPresent(tables, "cash_drawer_sessions", rawData.get("cashDrawerSessions"));
+        wipeIfPresent(tables, "cash_drawers", rawData.get("cashDrawers"));
+        wipeIfPresent(tables, "stock_transfer_items", rawData.get("stockTransfers"));
+        wipeIfPresent(tables, "stock_transfers", rawData.get("stockTransfers"));
+        wipeIfPresent(tables, "location_stock", rawData.get("locationStock"));
+        wipeIfPresent(tables, "locations", rawData.get("locations"));
+        wipeIfPresent(tables, "price_list_items", rawData.get("priceLists"));
+        wipeIfPresent(tables, "price_lists", rawData.get("priceLists"));
+        wipeIfPresent(tables, "promotion_tiers", rawData.get("promotions"));
+        wipeIfPresent(tables, "promotions", rawData.get("promotions"));
+        wipeIfPresent(tables, "count_sheet_items", rawData.get("countSheets"));
+        wipeIfPresent(tables, "count_sheets", rawData.get("countSheets"));
+        wipeIfPresent(tables, "gl_mappings", rawData.get("glMappings"));
+        wipeIfPresent(tables, "gl_accounts", rawData.get("glAccounts"));
+        wipeIfPresent(tables, "invoice_sequences", rawData.get("invoiceSequences"));
+        wipeIfPresent(tables, "purchase_sequences", rawData.get("purchaseSequences"));
+        wipeIfPresent(tables, "customer_sequences", rawData.get("customerSequences"));
+        wipeIfPresent(tables, "transfer_sequences", rawData.get("transferSequences"));
+        wipeIfPresent(tables, "period_close", rawData.get("periodCloses"));
+        wipeIfPresent(tables, "inventory_ledger", rawData.get("inventoryLedger"));
+        wipeIfPresent(tables, "profit_ledger", rawData.get("profitLedger"));
+
         jdbcTemplate.execute(disableFk);
         try {
             for (String table : tables) {
@@ -315,6 +610,7 @@ public class DataImportService {
         } finally {
             jdbcTemplate.execute(enableFk);
         }
+        restartCountersFromOne();
         // Drop any JPA entities currently cached; SQL deletes bypass the
         // persistence context and stale state would corrupt the upcoming saveAll.
         entityManager.clear();
@@ -330,6 +626,46 @@ public class DataImportService {
         if (raw == null) return List.of();
         return mapper.convertValue(raw,
                 mapper.getTypeFactory().constructCollectionType(List.class, type));
+    }
+
+    /**
+     * Reads a section whose rows were flattened — association ids where the
+     * entity has associations — and hands each entity to {@code link} so the
+     * caller can put those associations back as id-only proxies. Sections the
+     * backup does not contain read as empty lists, never as nulls.
+     */
+    @SuppressWarnings("unchecked")
+    private <T> List<T> readFlat(ObjectMapper mapper, Object raw, Class<T> type,
+                                 java.util.function.BiConsumer<T, Map<String, Object>> link) {
+        if (!(raw instanceof List<?> list)) return List.of();
+        List<T> result = new ArrayList<>();
+        for (Object item : list) {
+            T entity = mapper.convertValue(item, type);
+            link.accept(entity, (Map<String, Object>) item);
+            result.add(entity);
+        }
+        return result;
+    }
+
+    /** An id-only stand-in for an association, or null when the row carries none. */
+    private <R> R reference(Object id, Class<R> type) {
+        Long numeric = numericOrNull(id);
+        return numeric == null ? null : entityManager.getReference(type, numeric);
+    }
+
+    /** The nested rows of a flattened parent, in the order they were written. */
+    private static List<Object> maps(Object rawItems) {
+        return rawItems instanceof List<?> list ? new ArrayList<>(list) : List.of();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> mapOf(Object row) {
+        return row instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
+    }
+
+    /** True when the backup carries at least one row for the section. */
+    private static boolean hasRows(Map<String, Object> rawData, String section) {
+        return rawData.get(section) instanceof List<?> list && !list.isEmpty();
     }
 
     /** Rebuilds ArPayment rows from the flattened backup format and re-attaches
@@ -349,6 +685,11 @@ public class DataImportService {
             if (recordedById != null) {
                 payment.setRecordedBy(entityManager.getReference(User.class, recordedById));
             }
+            // The drawer links are what let the shop reconcile the payment against
+            // the shift it was taken in; a file from before they were written simply
+            // has no keys for them.
+            payment.setEmployeeShift(reference(row.get("employeeShiftId"), CashShift.class));
+            payment.setDrawerMovement(reference(row.get("drawerMovementId"), CashDrawerMovement.class));
             result.add(payment);
         }
         return result;
@@ -406,6 +747,10 @@ public class DataImportService {
             if (returnedById != null) {
                 saleReturn.setReturnedBy(entityManager.getReference(User.class, returnedById));
             }
+            // A refund paid from the drawer has to find that movement again, or the
+            // restored shift no longer reconciles. Older files simply omit the keys.
+            saleReturn.setEmployeeShift(reference(row.get("employeeShiftId"), CashShift.class));
+            saleReturn.setDrawerMovement(reference(row.get("drawerMovementId"), CashDrawerMovement.class));
             saleReturn.getItems().clear();
             Object rawItems = row.get("items");
             if (rawItems instanceof List<?> itemRows) {
@@ -436,6 +781,13 @@ public class DataImportService {
             Map<String, Object> clean = new LinkedHashMap<>(row);
             clean.remove("roleName");
             User user = mapper.convertValue(clean, User.class);
+            // The hash sits behind @JsonIgnore, so Jackson reads every other field
+            // of the row and drops that one: the restored shop would have nobody
+            // who can log in.
+            Object password = row.get("password");
+            if (password != null) {
+                user.setPassword(password.toString());
+            }
             Object roleName = row.get("roleName");
             if (roleName != null) {
                 try {
@@ -456,15 +808,25 @@ public class DataImportService {
         try { return Long.parseLong(value.toString()); } catch (NumberFormatException e) { return null; }
     }
 
+    /** Every table whose rows the restore re-inserts under an id of its own. */
+    private static final String[] COUNTER_TABLES = {"users", "categories", "customers", "suppliers", "products",
+            "sales", "sale_items", "sale_payments", "purchases", "purchase_items", "purchase_expenses",
+            "ar_payments", "receipt_customizations",
+            "orders", "order_items", "order_sequences", "sale_returns", "sale_return_items",
+            "expenses", "cash_shifts", "shop_info", "system_settings",
+            "locations", "location_stock", "stock_movements", "stock_transfers",
+            "stock_transfer_items", "price_lists", "price_list_items", "promotions",
+            "promotion_tiers", "product_price_history", "purchase_payments",
+            "cash_drawers", "cash_drawer_sessions", "cash_drawer_movements",
+            "count_sheets", "count_sheet_items", "gl_accounts", "gl_mappings",
+            "invoice_sequences", "purchase_sequences", "customer_sequences",
+            "transfer_sequences", "inventory_ledger", "profit_ledger"};
+
     private void resetIdentityCounters() {
         String url = env.getProperty("spring.datasource.url", "");
         boolean isH2 = url.contains(":h2:");
         boolean isSqlite = url.contains(":sqlite:");
-        String[] tables = {"users", "categories", "customers", "suppliers", "products",
-                "sales", "sale_items", "purchases", "purchase_items", "ar_payments", "receipt_customizations",
-                "orders", "order_items", "order_sequences", "sale_returns", "sale_return_items",
-                "expenses", "cash_shifts", "shop_info", "system_settings"};
-        for (String table : tables) {
+        for (String table : COUNTER_TABLES) {
             try {
                 if (isSqlite) {
                     // SQLite INTEGER PRIMARY KEY is a rowid alias — inserts after a
@@ -478,6 +840,27 @@ public class DataImportService {
                         ? "ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH " + (max + 1)
                         : "ALTER TABLE " + table + " AUTO_INCREMENT = " + (max + 1);
                 jdbcTemplate.execute(sql);
+            } catch (Exception ignored) {
+                // Table name may differ in your schema — safe to skip
+            }
+        }
+    }
+
+    /**
+     * After the wipe each table numbers from 1 again, so a restored row carries the
+     * number the file gave it and the rows that point at it — children, journal
+     * lines, drawer movements — still point at the right one. SQLite does this on
+     * its own: without AUTOINCREMENT a rowid alias restarts once the table is empty.
+     */
+    private void restartCountersFromOne() {
+        String url = env.getProperty("spring.datasource.url", "");
+        boolean isH2 = url.contains(":h2:");
+        if (url.contains(":sqlite:")) return;
+        for (String table : COUNTER_TABLES) {
+            try {
+                jdbcTemplate.execute(isH2
+                        ? "ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH 1"
+                        : "ALTER TABLE " + table + " AUTO_INCREMENT = 1");
             } catch (Exception ignored) {
                 // Table name may differ in your schema — safe to skip
             }

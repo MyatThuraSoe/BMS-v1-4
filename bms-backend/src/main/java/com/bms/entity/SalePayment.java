@@ -1,5 +1,7 @@
 package com.bms.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 
 import java.math.BigDecimal;
@@ -11,6 +13,7 @@ import java.time.LocalDateTime;
  * never touch the drawer.
  */
 @Entity
+@JsonIgnoreProperties({"hibernateLazyInitializer", "handler"})
 @Table(name = "sale_payments", indexes = {
     @Index(name = "idx_sale_payment_sale", columnList = "sale_id"),
     @Index(name = "idx_sale_payment_method", columnList = "payment_method"),
@@ -24,6 +27,7 @@ public class SalePayment {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "sale_id", nullable = false)
+    @JsonIgnore
     private Sale sale;
 
     @Enumerated(EnumType.STRING)

@@ -4,7 +4,10 @@ import com.bms.dto.receipt.ReceiptDto;
 import com.bms.entity.ReceiptCustomization;
 import com.bms.entity.SystemSetting;
 import com.bms.exception.BusinessException;
+import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.SystemSettingRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,6 +21,8 @@ import java.awt.print.Paper;
 import java.awt.print.Printable;
 import java.awt.print.PrinterException;
 import java.awt.print.PrinterJob;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +30,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.function.Supplier;
 
 /**
  * Prints receipts on printers attached to the SERVER computer.
@@ -37,9 +43,23 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *
  * The chosen printer name is stored in system_settings under
  * {@link #CONFIG_KEY}; blank means "use the server's default printer".
+ *
+ * The print queue and the job statuses live in memory, so receipts that were queued but
+ * not yet handed to a print agent are lost when LumiPOS restarts. That is deliberate: a
+ * restart is an admin action at a closed till, and the invoice can be printed again from
+ * the screen it came from. Claims are not indefinite — see {@link #requeueAbandonedClaims}.
  */
 @Service
 public class CounterPrintService {
+
+    private static final Logger log = LoggerFactory.getLogger(CounterPrintService.class);
+
+    /** How long a job may stay claimed and silent before it counts as an abandoned claim. */
+    private static final Duration ABANDONED_CLAIM = Duration.ofSeconds(60);
+    /** Extra times a receipt may be handed out after its first claim went quiet. */
+    private static final int MAX_RETRIES = 2;
+    /** How long a finished job stays answerable, after which its status is dropped. */
+    private static final Duration FINISHED_STATUS_AGE = Duration.ofHours(1);
 
     @Autowired
     private ShopTimeService shopTimeService;
@@ -51,7 +71,10 @@ public class CounterPrintService {
     private final ReceiptCustomizationService receiptCustomizationService;
     private final SystemSettingRepository systemSettingRepository;
     private final ConcurrentLinkedQueue<PrintJob> pendingJobs = new ConcurrentLinkedQueue<>();
-    private final ConcurrentHashMap<String, PrintJobStatus> jobStatuses = new ConcurrentHashMap<>();
+    /** What the print agents hold right now. A claim leaves the queue, so it needs its own book. */
+    private final ConcurrentHashMap<String, PrintJob> claims = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, JobState> jobStatuses = new ConcurrentHashMap<>();
+    private Supplier<Instant> clock = Instant::now;
 
     public CounterPrintService(ReceiptService receiptService,
                                ShopInfoService shopInfoService,
@@ -102,30 +125,104 @@ public class CounterPrintService {
                 .orElse("");
     }
 
-    /** Queue a receipt for the Electron client running on this server. */
+    /**
+     * Queue a receipt for the print agent on this server.
+     *
+     * @throws com.bms.exception.ResourceNotFoundException the invoice has no receipt to print
+     * @throws com.bms.exception.StateConflictException    the invoice was voided
+     */
     public Map<String, String> enqueueReceipt(String invoiceNumber) {
-        String jobId = UUID.randomUUID().toString();
-        pendingJobs.add(new PrintJob(jobId, invoiceNumber, getConfiguredPrinterName()));
-        jobStatuses.put(jobId, PrintJobStatus.QUEUED);
-        return Map.of("jobId", jobId, "invoiceNumber", invoiceNumber, "status", PrintJobStatus.QUEUED.name());
+        // Asked for here, in front of whoever pressed print. A receipt the queue would have
+        // to fail on later is not worth a job entry, and by then nobody is left to tell.
+        receiptService.getReceiptByInvoiceNumber(invoiceNumber);
+
+        String printerName = getConfiguredPrinterName();
+        PrintJob job = new PrintJob(UUID.randomUUID().toString(), invoiceNumber, printerName);
+        pendingJobs.add(job);
+        mark(job.id, PrintJobStatus.QUEUED);
+        dropFinishedStatusesOlderThan(FINISHED_STATUS_AGE);
+        return Map.of("jobId", job.id, "invoiceNumber", invoiceNumber,
+                "status", PrintJobStatus.QUEUED.name());
     }
 
-    /** Claim the next queued receipt; only the Electron client should call this. */
+    /** Claim the next queued receipt; only the print agent may ask, see {@link PrintAgentAccess}. */
     public Map<String, String> claimNextReceipt() {
+        requeueAbandonedClaims();
+
         PrintJob job = pendingJobs.poll();
         if (job == null) {
             return Map.of("status", "EMPTY");
         }
-        jobStatuses.put(job.id(), PrintJobStatus.PRINTING);
-        return Map.of("jobId", job.id(), "invoiceNumber", job.invoiceNumber(),
-            "printerName", job.printerName(), "status", PrintJobStatus.PRINTING.name());
+        job.claims++;
+        job.claimedAt = clock.get();
+        claims.put(job.id, job);
+        mark(job.id, PrintJobStatus.PRINTING);
+        return Map.of("jobId", job.id, "invoiceNumber", job.invoiceNumber,
+            "printerName", job.printerName, "status", PrintJobStatus.PRINTING.name());
     }
 
-    /** Record the Electron client's final print result. */
+    /** Record the print agent's final print result. */
     public void completeReceipt(String jobId, boolean success) {
-        if (jobId != null && jobStatuses.containsKey(jobId)) {
-            jobStatuses.put(jobId, success ? PrintJobStatus.COMPLETED : PrintJobStatus.FAILED);
+        if (jobId == null) {
+            return;
         }
+        claims.remove(jobId);
+        if (jobStatuses.containsKey(jobId)) {
+            mark(jobId, success ? PrintJobStatus.COMPLETED : PrintJobStatus.FAILED);
+        }
+    }
+
+    /** What the POS shows while a receipt is at the printer, and after it failed. */
+    public Map<String, String> jobStatus(String jobId) {
+        JobState state = jobStatuses.get(jobId);
+        if (state == null) {
+            throw new ResourceNotFoundException("Print job not found: " + jobId);
+        }
+        return Map.of("jobId", jobId, "status", state.status.name());
+    }
+
+    /**
+     * A claim that never came back means the agent holding it died or hung, and the receipt
+     * it was carrying would stay unprinted with a status of PRINTING for the life of the
+     * process. So an abandoned claim is handed to whoever asks next, {@link #MAX_RETRIES}
+     * times, and then declared failed rather than retried forever.
+     */
+    private void requeueAbandonedClaims() {
+        Instant now = clock.get();
+        for (PrintJob job : new ArrayList<>(claims.values())) {
+            if (job.claimedAt == null || Duration.between(job.claimedAt, now).compareTo(ABANDONED_CLAIM) < 0) {
+                continue;
+            }
+            claims.remove(job.id);
+            if (job.claims > MAX_RETRIES) {
+                mark(job.id, PrintJobStatus.FAILED);
+                log.warn("Invoice {} was claimed {} times and never printed; giving up on the job",
+                        job.invoiceNumber, job.claims);
+            } else {
+                job.claimedAt = null;
+                pendingJobs.add(job);
+                mark(job.id, PrintJobStatus.QUEUED);
+            }
+        }
+    }
+
+    /**
+     * Finished jobs are only worth remembering while somebody could still be asking about
+     * one, and nothing else removes them: the queue is drained by claims, the status book
+     * is not.
+     */
+    private void dropFinishedStatusesOlderThan(Duration age) {
+        Instant cutoff = clock.get().minus(age);
+        jobStatuses.entrySet().removeIf(entry -> entry.getValue().finished()
+                && entry.getValue().changedAt.isBefore(cutoff));
+    }
+
+    private void mark(String jobId, PrintJobStatus status) {
+        jobStatuses.put(jobId, new JobState(status, clock.get()));
+    }
+
+    void setClock(Supplier<Instant> clock) {
+        this.clock = clock;
     }
 
     /** Prints a short test page so admins can verify wiring in seconds. */
@@ -173,7 +270,35 @@ public class CounterPrintService {
 
     private enum PrintJobStatus { QUEUED, PRINTING, COMPLETED, FAILED }
 
-    private record PrintJob(String id, String invoiceNumber, String printerName) {}
+    /** A receipt waiting to be, or busy being, printed. {@code claimedAt} is null while queued. */
+    private static final class PrintJob {
+        private final String id;
+        private final String invoiceNumber;
+        private final String printerName;
+        private int claims;
+        private Instant claimedAt;
+
+        private PrintJob(String id, String invoiceNumber, String printerName) {
+            this.id = id;
+            this.invoiceNumber = invoiceNumber;
+            this.printerName = printerName;
+        }
+    }
+
+    /** A status and the moment it changed, which is what makes an old one droppable. */
+    private static final class JobState {
+        private final PrintJobStatus status;
+        private final Instant changedAt;
+
+        private JobState(PrintJobStatus status, Instant changedAt) {
+            this.status = status;
+            this.changedAt = changedAt;
+        }
+
+        private boolean finished() {
+            return status == PrintJobStatus.COMPLETED || status == PrintJobStatus.FAILED;
+        }
+    }
 
     private String getDefaultPrinterName() {
         javax.print.PrintService def = javax.print.PrintServiceLookup.lookupDefaultPrintService();

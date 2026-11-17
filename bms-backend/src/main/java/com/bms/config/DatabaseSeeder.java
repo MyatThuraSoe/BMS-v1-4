@@ -162,10 +162,20 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Failed manager approvals a cashier may enter before their approvals lock", "INTEGER"});
         defaults.put("auth.approval.lockMinutes", new String[]{"10",
                 "Minutes a cashier's manager approvals stay locked after too many failures", "INTEGER"});
+        defaults.put("auth.ipMaxFailures", new String[]{"20",
+                "Failed sign-ins one computer may cause across any accounts before it is locked out", "INTEGER"});
+        defaults.put("auth.trustForwardedFor", new String[]{"false",
+                "Read the client address from X-Forwarded-For, because LumiPOS sits behind a proxy", "BOOLEAN"});
+        defaults.put("print.agent.allowRemote", new String[]{"false",
+                "Let the counter print agent claim print jobs from another computer than this server", "BOOLEAN"});
         defaults.put("sqlite.restoreBackup.keep", new String[]{"3",
                 "How many pre-restore copies of the SQLite database to keep", "INTEGER"});
+        defaults.put("sqlite.corruptBackup.keep", new String[]{"3",
+                "How many copies of a damaged SQLite database to keep after restoring over it", "INTEGER"});
         defaults.put("sqlite.upgradeBackup.keep", new String[]{"3",
                 "How many pre-upgrade copies of the SQLite database to keep", "INTEGER"});
+        defaults.put("backup.encryption.enabled", new String[]{"false",
+                "Encrypt manual backups with a passphrase before uploading them to Google Drive", "BOOLEAN"});
 
         for (Map.Entry<String, String[]> entry : defaults.entrySet()) {
             if (systemSettingRepository.findBySettingKey(entry.getKey()).isEmpty()) {

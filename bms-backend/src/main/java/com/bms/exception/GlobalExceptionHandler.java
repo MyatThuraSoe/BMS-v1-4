@@ -107,10 +107,12 @@ public class GlobalExceptionHandler {
 
     // A refusal a service threw because of the state the shop is in (an invoice that
     // was voided cannot be reprinted, a drawer is still open). The thrower chose those
-    // words for the person at the counter, so they go through as they are instead of
-    // disappearing into the generic 500 this used to fall through to.
-    @ExceptionHandler(IllegalStateException.class)
-    public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex) {
+    // words for the person at the counter, so they go through as they are.
+    // IllegalStateException is deliberately not mapped here: Spring, Hibernate and the
+    // JDK throw it for faults inside this process, and their text must not be handed out
+    // as though the shop's own data conflicted. It falls to the generic 500 below.
+    @ExceptionHandler(StateConflictException.class)
+    public ResponseEntity<ErrorResponse> handleStateConflict(StateConflictException ex) {
         log.warn("Refused because of the state of the data: {}", ex.getMessage());
         String message = ex.getMessage() == null || ex.getMessage().isBlank()
             ? resolve("error.generic")

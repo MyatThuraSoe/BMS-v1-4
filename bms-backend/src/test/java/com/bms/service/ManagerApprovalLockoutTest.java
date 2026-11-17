@@ -70,6 +70,9 @@ class ManagerApprovalLockoutTest {
     @Mock private JwtUtil jwtUtil;
 
     private LoginAttemptTracker tracker;
+
+    /** The login page counts a username per address, so the counter has to be named that way. */
+    private final String loginKeyOfTheManager = LoginAttemptTracker.loginKey("manager", null);
     private ManagerApprovalService approvals;
     private AuthService auth;
     private final List<String> auditTexts = new ArrayList<>();
@@ -87,6 +90,7 @@ class ManagerApprovalLockoutTest {
         ReflectionTestUtils.setField(auth, "jwtUtil", jwtUtil);
         ReflectionTestUtils.setField(auth, "auditLogService", auditLogService);
         ReflectionTestUtils.setField(auth, "attemptTracker", tracker);
+        ReflectionTestUtils.setField(auth, "loginPolicy", new LoginAttemptPolicy(systemSettingRepository));
         lenient().when(systemSettingRepository.findBySettingKey(anyString())).thenReturn(Optional.empty());
         lenient().when(userRepository.findActiveByUsernameIgnoreCase("manager"))
                 .thenReturn(Optional.of(user(3L, "manager", Role.RoleName.ROLE_MANAGER)));
@@ -147,7 +151,7 @@ class ManagerApprovalLockoutTest {
     /** Failures typed at the login page, which is the only place the login counter moves. */
     private void mistypeLogin(int times) {
         for (int attempt = 1; attempt <= times; attempt++) {
-            tracker.recordFailure("manager", LoginAttemptTracker.LOGIN);
+            tracker.recordFailure(loginKeyOfTheManager, LoginAttemptTracker.LOGIN);
         }
     }
 
@@ -170,7 +174,7 @@ class ManagerApprovalLockoutTest {
                 "the cashier-manager pair that was guessed at must be shut");
         assertTrue(tracker.isLocked(LoginAttemptTracker.cashierKey(CASHIER)),
                 "the cashier who typed it must be locked out of asking as well");
-        assertFalse(tracker.isLocked("manager"), "and that must not be the manager's login counter");
+        assertFalse(tracker.isLocked(loginKeyOfTheManager), "and that must not be the manager's login counter");
         BusinessException sixth = assertThrows(BusinessException.class,
                 () -> approvals.verify("manager", "hunter2",
                         ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER));
@@ -191,7 +195,7 @@ class ManagerApprovalLockoutTest {
     @Test
     void aManagerWhoLockedTheirOwnLoginStillApprovesSales() {
         mistypeLogin(5);
-        assertTrue(tracker.isLocked("manager"), "the login page did its own locking");
+        assertTrue(tracker.isLocked(loginKeyOfTheManager), "the login page did its own locking");
 
         assertTrue(approvals.verify("manager", "hunter2", ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER),
                 "a login lock is about the login page only, and the till has its own counter");
@@ -206,7 +210,7 @@ class ManagerApprovalLockoutTest {
         // One failure is already spent, so four more are enough to lock. Had the approval
         // cleared the login counter, the fifth would leave the manager free to sign in.
         mistypeLogin(4);
-        assertTrue(tracker.isLocked("manager"), "the approval must not wipe what the login page counted");
+        assertTrue(tracker.isLocked(loginKeyOfTheManager), "the approval must not wipe what the login page counted");
     }
 
     @Test
@@ -352,7 +356,7 @@ class ManagerApprovalLockoutTest {
         approve("manager", "wrong-4");
         approve("manager", "wrong-5");
         assertTrue(tracker.isLocked(pair), "the fifth failure locks regardless of purpose");
-        assertFalse(tracker.isLocked("manager"), "and it locks the till, not the manager's login");
+        assertFalse(tracker.isLocked(loginKeyOfTheManager), "and it locks the till, not the manager's login");
     }
 
     @Test

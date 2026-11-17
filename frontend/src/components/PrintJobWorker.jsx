@@ -88,7 +88,9 @@ const PrintJobWorker = () => {
       } catch (error) {
         // 401 = session expired; apiClient is handling the redirect + draft
         // save, this worker should just stop polling to avoid the 3s spam.
-        if (error.response?.status === 401) {
+        // 403 = this device is not the print agent (the server only lets its own
+        // machine claim jobs), so it has no business asking again every 3s.
+        if (error.response?.status === 401 || error.response?.status === 403) {
           stopped = true;
           return;
         }
