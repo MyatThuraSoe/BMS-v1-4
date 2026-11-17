@@ -19,4 +19,7 @@ public interface PriceListRepository extends JpaRepository<PriceList, Long> {
     Optional<PriceList> findWithItemsById(@org.springframework.data.repository.query.Param("id") Long id);
 
     boolean existsByNameIgnoreCase(String name);
+
+    /** The name is taken by a different list, which is what a rename has to be measured against. */
+    boolean existsByNameIgnoreCaseAndIdNot(String name, Long id);
 }

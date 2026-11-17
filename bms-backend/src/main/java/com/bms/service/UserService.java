@@ -40,6 +40,10 @@ public class UserService implements UserDetailsService {
     @Autowired
     private com.bms.config.JwtUtil jwtUtil;
 
+    /** Who may not sign in right now. In memory, so an admin can clear it without a restart. */
+    @Autowired
+    private LoginAttemptTracker attemptTracker;
+
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final SaleRepository saleRepository;
@@ -229,6 +233,35 @@ public class UserService implements UserDetailsService {
         auditLogService.logAction(actingUserId != null ? actingUserId : user.getId(), "USER_DELETE",
             "User deleted: " + user.getUsername(),
             "User", user.getId(), user.toString(), null);
+    }
+
+    /**
+     * Clears a failed-login lock. The lock is only ever in memory, so this is the remedy for
+     * the person who mistyped their own password five times, and it is deliberately not
+     * available to anyone but an admin on someone else's account.
+     */
+    public User unlockLogin(Long userId, Long actingUserId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        attemptTracker.clear(LoginAttemptTracker.keyOf(user.getUsername()));
+
+        auditLogService.logAction(actingUserId != null ? actingUserId : user.getId(),
+            "USER_LOGIN_UNLOCKED",
+            "Login lock cleared for user: " + user.getUsername()
+                    + " by acting user " + actingUserId,
+            "User", user.getId(), null, null);
+        return user;
+    }
+
+    /** Whether signing in is currently refused for this account, whatever the password is. */
+    public boolean isLoginLocked(User user) {
+        return attemptTracker.isLocked(LoginAttemptTracker.keyOf(user.getUsername()));
+    }
+
+    /** Minutes left on that refusal, at least one, and zero when there is no lock. */
+    public long loginLockedMinutes(User user) {
+        return attemptTracker.minutesRemaining(LoginAttemptTracker.keyOf(user.getUsername()));
     }
 
     public User findById(Long id) {

@@ -1,5 +1,7 @@
 package com.bms.service;
 
+import com.bms.config.JwtUtil;
+import com.bms.dto.request.LoginRequest;
 import com.bms.entity.Role;
 import com.bms.entity.SystemSetting;
 import com.bms.entity.User;
@@ -14,11 +16,15 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -27,8 +33,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +48,11 @@ import static org.mockito.Mockito.when;
  * own with no counter behind it, so the till was an unlimited guessing machine that left no
  * trace. These tests pin the four things that replaced that: the guesses stop, the guessing
  * is written down, the cashier who asked is counted too, and a refusal never explains itself.
+ *
+ * <p>P1 adds the other half: the counting at the till and the counting at the login page are
+ * two different books. Whoever guesses stands at the till, so it is the till that gets shut;
+ * a manager must never lose their own sign-in because somebody else was wrong five times, and
+ * a manager who locked their own sign-in must still be able to approve a sale.
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
@@ -53,9 +66,12 @@ class ManagerApprovalLockoutTest {
     @Mock private SystemSettingRepository systemSettingRepository;
     @Mock private AuditLogService auditLogService;
     @Mock private PlatformTransactionManager transactionManager;
+    @Mock private AuthenticationManager authenticationManager;
+    @Mock private JwtUtil jwtUtil;
 
     private LoginAttemptTracker tracker;
     private ManagerApprovalService approvals;
+    private AuthService auth;
     private final List<String> auditTexts = new ArrayList<>();
     private final List<String> auditActions = new ArrayList<>();
 
@@ -64,6 +80,13 @@ class ManagerApprovalLockoutTest {
         tracker = new LoginAttemptTracker();
         approvals = new ManagerApprovalService(userRepository, passwordEncoder, systemSettingRepository,
                 auditLogService, tracker, transactionManager);
+        auth = new AuthService();
+        ReflectionTestUtils.setField(auth, "authenticationManager", authenticationManager);
+        ReflectionTestUtils.setField(auth, "userRepository", userRepository);
+        ReflectionTestUtils.setField(auth, "passwordEncoder", passwordEncoder);
+        ReflectionTestUtils.setField(auth, "jwtUtil", jwtUtil);
+        ReflectionTestUtils.setField(auth, "auditLogService", auditLogService);
+        ReflectionTestUtils.setField(auth, "attemptTracker", tracker);
         lenient().when(systemSettingRepository.findBySettingKey(anyString())).thenReturn(Optional.empty());
         lenient().when(userRepository.findActiveByUsernameIgnoreCase("manager"))
                 .thenReturn(Optional.of(user(3L, "manager", Role.RoleName.ROLE_MANAGER)));
@@ -82,6 +105,7 @@ class ManagerApprovalLockoutTest {
         user.setId(id);
         user.setUsername(username);
         user.setPassword(HASH);
+        user.setIsActive(true);
         if (role != null) {
             Role entity = new Role();
             entity.setName(role);
@@ -106,6 +130,27 @@ class ManagerApprovalLockoutTest {
         }
     }
 
+    /** The login page against the same tracker, which is the half P1 had never been proved against. */
+    private void signIn(String username, String password) {
+        User account = user(3L, username, Role.RoleName.ROLE_MANAGER);
+        Authentication authentication = mock(Authentication.class);
+        lenient().when(authentication.getPrincipal()).thenReturn(account);
+        lenient().when(authenticationManager.authenticate(any())).thenReturn(authentication);
+        lenient().when(jwtUtil.generateToken(any())).thenReturn("jwt");
+
+        LoginRequest request = new LoginRequest();
+        request.setUsername(username);
+        request.setPassword(password);
+        auth.authenticateUser(request);
+    }
+
+    /** Failures typed at the login page, which is the only place the login counter moves. */
+    private void mistypeLogin(int times) {
+        for (int attempt = 1; attempt <= times; attempt++) {
+            tracker.recordFailure("manager", LoginAttemptTracker.LOGIN);
+        }
+    }
+
     @Test
     void nothingEnteredIsNotAnAttempt() {
         assertFalse(approvals.verify(null, null, ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER));
@@ -121,16 +166,69 @@ class ManagerApprovalLockoutTest {
                     "attempt " + attempt);
         }
 
-        assertTrue(tracker.isLocked("manager"), "the manager account must be locked");
+        assertTrue(tracker.isLocked(LoginAttemptTracker.pairKey(CASHIER, "manager")),
+                "the cashier-manager pair that was guessed at must be shut");
         assertTrue(tracker.isLocked(LoginAttemptTracker.cashierKey(CASHIER)),
                 "the cashier who typed it must be locked out of asking as well");
-        // Login uses the same tracker, so a manager the till locked cannot sign in either.
+        assertFalse(tracker.isLocked("manager"), "and that must not be the manager's login counter");
         BusinessException sixth = assertThrows(BusinessException.class,
                 () -> approvals.verify("manager", "hunter2",
                         ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER));
-        assertTrue(sixth.getMessage().contains("Invalid manager credentials")
-                        || sixth.getMessage().contains("Too many failed manager approvals"),
+        assertTrue(sixth.getMessage().contains("Too many failed manager approvals"),
                 "the right password must still not get through: " + sixth.getMessage());
+    }
+
+    @Test
+    void fiveWrongApprovalsNeverLockTheManagerOutOfSigningIn() {
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            assertEquals("Invalid manager credentials", approve("manager", "guess-" + attempt),
+                    "attempt " + attempt);
+        }
+
+        signIn("manager", "hunter2");
+    }
+
+    @Test
+    void aManagerWhoLockedTheirOwnLoginStillApprovesSales() {
+        mistypeLogin(5);
+        assertTrue(tracker.isLocked("manager"), "the login page did its own locking");
+
+        assertTrue(approvals.verify("manager", "hunter2", ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER),
+                "a login lock is about the login page only, and the till has its own counter");
+    }
+
+    @Test
+    void aGoodApprovalLeavesTheManagersLoginFailuresAlone() {
+        mistypeLogin(1);
+
+        assertTrue(approvals.verify("manager", "hunter2", ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER));
+
+        // One failure is already spent, so four more are enough to lock. Had the approval
+        // cleared the login counter, the fifth would leave the manager free to sign in.
+        mistypeLogin(4);
+        assertTrue(tracker.isLocked("manager"), "the approval must not wipe what the login page counted");
+    }
+
+    @Test
+    void thePairLockShutsOneManagerAndNoOther() {
+        // In real use the cashier's own counter reaches the limit at the same moment as the
+        // pair's, so prime the pair alone to show which answer belongs to which lock.
+        LoginAttemptTracker.Policy pairPolicy =
+                new LoginAttemptTracker.Policy(5, Duration.ofMinutes(10), Duration.ofMinutes(10));
+        for (int attempt = 1; attempt <= 5; attempt++) {
+            tracker.recordFailure(LoginAttemptTracker.pairKey(CASHIER, "manager"), pairPolicy);
+        }
+        assertFalse(tracker.isLocked(LoginAttemptTracker.cashierKey(CASHIER)),
+                "the till itself is still allowed to ask");
+        when(userRepository.findActiveByUsernameIgnoreCase("boss"))
+                .thenReturn(Optional.of(user(5L, "boss", Role.RoleName.ROLE_MANAGER)));
+
+        assertEquals("Invalid manager credentials", approve("manager", "hunter2"),
+                "a locked pair says nothing more than the wrong password does");
+        assertEquals("MANAGER_APPROVAL_FAILED", auditActions.get(auditActions.size() - 1),
+                "and it is still written down");
+        assertTrue(approvals.verify("boss", "hunter2", ManagerApprovalService.Purpose.SALE_DISCOUNT, CASHIER),
+                "and the other managers are still there for this cashier");
     }
 
     @Test
@@ -244,15 +342,17 @@ class ManagerApprovalLockoutTest {
     void anOverShipmentApprovalCountsAgainstTheSameManagerAndCashier() {
         // Two purposes share one budget: guessing at a manager is guessing, whatever gate
         // the cashier is standing in front of.
+        String pair = LoginAttemptTracker.pairKey(CASHIER, "manager");
         approve("manager", "wrong-1");
         assertThrows(BusinessException.class, () -> approvals.verify("manager", "wrong-2",
                 ManagerApprovalService.Purpose.OVER_SHIPMENT, CASHIER));
-        assertFalse(tracker.isLocked("manager"));
+        assertFalse(tracker.isLocked(pair));
 
         approve("manager", "wrong-3");
         approve("manager", "wrong-4");
         approve("manager", "wrong-5");
-        assertTrue(tracker.isLocked("manager"), "the fifth failure locks regardless of purpose");
+        assertTrue(tracker.isLocked(pair), "the fifth failure locks regardless of purpose");
+        assertFalse(tracker.isLocked("manager"), "and it locks the till, not the manager's login");
     }
 
     @Test

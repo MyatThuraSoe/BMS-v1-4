@@ -10,6 +10,11 @@ public class ArPaymentReceiptDto {
     private String customerName;
     private BigDecimal amount;
     private BigDecimal balanceAfter;
+    /**
+     * What the customer has handed back against this invoice so far. It reduces
+     * the balance, so a receipt that hides it disagrees with the AR screen.
+     */
+    private BigDecimal amountReturned = BigDecimal.ZERO;
     private LocalDateTime paymentDate;
     private String recordedByName;
     private String notes;
@@ -31,6 +36,11 @@ public class ArPaymentReceiptDto {
 
     public BigDecimal getBalanceAfter() { return balanceAfter; }
     public void setBalanceAfter(BigDecimal balanceAfter) { this.balanceAfter = balanceAfter; }
+
+    public BigDecimal getAmountReturned() {
+        return amountReturned != null ? amountReturned : BigDecimal.ZERO;
+    }
+    public void setAmountReturned(BigDecimal amountReturned) { this.amountReturned = amountReturned; }
 
     public LocalDateTime getPaymentDate() { return paymentDate; }
     public void setPaymentDate(LocalDateTime paymentDate) { this.paymentDate = paymentDate; }

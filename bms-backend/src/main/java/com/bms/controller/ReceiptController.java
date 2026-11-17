@@ -285,6 +285,9 @@ public class ReceiptController {
         lines.add("");
         lines.add(repeatChar("-", lineWidth));
         lines.add(totalLine("Amount Paid", payment.getAmount(), lineWidth, currency));
+        if (payment.getAmountReturned().compareTo(BigDecimal.ZERO) > 0) {
+            lines.add(totalLine("Returned", payment.getAmountReturned(), lineWidth, currency));
+        }
         lines.add(totalLine("Remaining Credit", payment.getBalanceAfter(), lineWidth, currency));
         if (payment.getNotes() != null && !payment.getNotes().isBlank()) {
             lines.add(repeatChar("-", lineWidth));

@@ -16,8 +16,13 @@ import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -45,6 +50,10 @@ import java.util.Optional;
  *       alone would silently lose the most recent sales.</li>
  *   <li>A marker file records that the copy happened, so a later start does not
  *       repeat it and cannot clobber the live database with a stale legacy one.</li>
+ *   <li>Every staged restore names its safety copy with a time stamp, so a second
+ *       restore cannot destroy the copy the first one made, and the number kept is
+ *       capped by {@code sqlite.restoreBackup.keep} so the data folder does not
+ *       grow by the size of the database every time the shop restores.</li>
  *   <li>Startup is refused if the copy cannot be verified, leaving the legacy
  *       data untouched for the shop owner to recover by hand.</li>
  * </ul>
@@ -57,7 +66,15 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
     private static final String PROPERTY_SOURCE_NAME = "lumipos-sqlite-datadir";
     private static final String DB_FILE_NAME = "lumipos.db";
     private static final String MARKER_FILE_NAME = ".lumipos-migrated";
+    private static final String PENDING_RESTORE_FILE = "lumipos-restored.db";
+    private static final String PENDING_RESTORE_MARKER = ".lumipos-pending-restore";
     private static final String LEGACY_DIR = "C:/LumiPOS";
+
+    /** Safety copy names have to sort the way they sort by time, so the width is fixed. */
+    private static final DateTimeFormatter SAFETY_STAMP =
+            DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    private static final String RESTORE_KEEP_SETTING = "sqlite.restoreBackup.keep";
+    private static final int DEFAULT_RESTORE_BACKUPS_KEPT = 3;
     private static final Log log = org.apache.commons.logging.LogFactory.getLog(SqliteDataDirMigration.class);
 
     @Override
@@ -194,23 +211,48 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
      * directly: it is the one method that overwrites a live database.
      */
     void applyPendingRestore(Path targetDir, Path target) throws IOException {
-        Path staged = targetDir.resolve("lumipos-restored.db");
-        Path pendingMarker = targetDir.resolve(".lumipos-pending-restore");
+        Path staged = targetDir.resolve(PENDING_RESTORE_FILE);
+        Path pendingMarker = targetDir.resolve(PENDING_RESTORE_MARKER);
         if (!Files.exists(staged) || !Files.exists(pendingMarker)) {
             return;
         }
 
         log.warn("Applying a database restore staged by BackupRestoreService.");
-        Path safety = targetDir.resolve("lumipos.db.pre-restore");
+
+        // Fold the write-ahead log into the main file first: a copy of the main
+        // file alone would miss the sales that are only in the -wal.
+        boolean foldedIn = false;
         if (Files.exists(target)) {
-            Files.copy(target, safety, StandardCopyOption.REPLACE_EXISTING);
-            log.warn("The database in use was copied to " + safety);
+            foldedIn = checkpointWal(target);
         }
+
+        Path safety = safetyCopyPath(targetDir);
+        if (Files.exists(target)) {
+            Files.copy(target, safety);
+            // Verify before anything else is touched. A safety copy that cannot be
+            // opened is not a safety copy, and overwriting a database nobody can
+            // fall back to is how a shop loses everything twice.
+            try {
+                verify(null, safety);
+            } catch (IOException ex) {
+                throw new IOException("LumiPOS will not restore over this database: the safety copy of "
+                        + "it could not be read (" + ex.getMessage() + "). Nothing was replaced; the "
+                        + "database still in use is " + target + " and its unreadable copy is " + safety
+                        + ". The staged restore is still waiting at " + staged
+                        + ". Clear up those files, or remove " + pendingMarker.getFileName()
+                        + " to start without restoring, and try again.", ex);
+            }
+            if (!foldedIn) {
+                carryWalAside(targetDir, target, safety);
+            }
+            pruneSafetyCopies(targetDir, safety, restoreBackupsToKeep(target));
+        }
+
         Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
 
         // Never let a -wal from either machine replay onto the new file.
-        Files.deleteIfExists(target.resolveSibling(DB_FILE_NAME + "-wal"));
-        Files.deleteIfExists(target.resolveSibling(DB_FILE_NAME + "-shm"));
+        Files.deleteIfExists(targetDir.resolve(DB_FILE_NAME + "-wal"));
+        Files.deleteIfExists(targetDir.resolve(DB_FILE_NAME + "-shm"));
 
         // Verify while the staged file is still available as the reference, so
         // a truncated copy is caught before the source of truth is deleted.
@@ -220,6 +262,144 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
         Files.deleteIfExists(pendingMarker);
 
         log.warn("Database restore applied. Restart-safe copy of the previous database: " + safety);
+    }
+
+    /**
+     * Moves the uncheckpointed log out of the live database's way, named after the
+     * safety copy it belongs to. It is kept rather than deleted because it holds
+     * committed work, but kept where SQLite cannot mistake it for a sidecar of the
+     * copy and refuse to open that.
+     */
+    private void carryWalAside(Path targetDir, Path target, Path safety) {
+        String stamp = safety.getFileName().toString().substring(DB_FILE_NAME.length());
+        for (String suffix : new String[]{"-wal", "-shm"}) {
+            Path sidecar = targetDir.resolve(DB_FILE_NAME + suffix);
+            if (!Files.exists(sidecar)) {
+                continue;
+            }
+            Path kept = targetDir.resolve(DB_FILE_NAME + suffix + stamp);
+            try {
+                Files.move(sidecar, kept, StandardCopyOption.REPLACE_EXISTING);
+                log.warn("The live " + sidecar.getFileName() + " could not be folded into the database "
+                        + "and was kept as " + kept.getFileName() + " so that nothing written before the "
+                        + "crash is thrown away.");
+            } catch (IOException ex) {
+                log.warn("The live " + sidecar.getFileName() + " could not be kept alongside the safety "
+                        + "copy " + safety.getFileName() + ": " + ex.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Checkpoints the live database so its main file holds everything committed.
+     *
+     * <p>A plain JDBC connection is enough and is the only safe one here: this runs
+     * before the Spring DataSource exists, so nothing else has the file open, and a
+     * checkpoint through the pool would need the pool. Package-private so the test
+     * suite can prove the fold-in on its own.
+     *
+     * @return true when the main file is complete on its own afterwards
+     */
+    boolean checkpointWal(Path target) {
+        if (!Files.exists(targetDirOf(target).resolve(DB_FILE_NAME + "-wal"))) {
+            return true;
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + target.toAbsolutePath());
+             Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("PRAGMA wal_checkpoint(TRUNCATE)")) {
+            // Columns are busy, log size, checkpointed size; busy 0 means it worked.
+            return !rs.next() || rs.getInt(1) == 0;
+        } catch (SQLException ex) {
+            log.warn("Could not checkpoint the live database before restoring over it: "
+                    + ex.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * The stamped name of the safety copy. Two restores inside the same second are
+     * possible - a shop working through a bad backup and trying the next one - so a
+     * colliding name is numbered rather than reused; replacing a safety copy is the
+     * exact loss this whole path is trying to prevent.
+     */
+    private Path safetyCopyPath(Path targetDir) {
+        String stamp = LocalDateTime.now().format(SAFETY_STAMP);
+        Path candidate = targetDir.resolve(DB_FILE_NAME + ".pre-restore-" + stamp);
+        int collision = 2;
+        while (Files.exists(candidate)) {
+            candidate = targetDir.resolve(DB_FILE_NAME + ".pre-restore-" + stamp + "-" + collision++);
+        }
+        return candidate;
+    }
+
+    /**
+     * Keeps the newest {@code sqlite.restoreBackup.keep} safety copies and deletes
+     * the rest, never the one just taken. The setting is read straight from the live
+     * database with plain JDBC because this runs before the DataSource exists, and
+     * the shop's own number has to be honoured before anything is deleted.
+     */
+    private void pruneSafetyCopies(Path targetDir, Path justMade, int keep) {
+        List<Path> older;
+        try (var files = Files.list(targetDir)) {
+            older = files
+                    .map(path -> (Path) path)
+                    .filter(path -> !path.equals(justMade))
+                    .filter(path -> path.getFileName().toString().startsWith(DB_FILE_NAME + ".pre-restore-"))
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return !name.endsWith("-wal") && !name.endsWith("-shm");
+                    })
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                    .toList();
+        } catch (IOException ex) {
+            log.warn("The old pre-restore copies could not be listed, so none were deleted: "
+                    + ex.getMessage());
+            return;
+        }
+
+        // The copy just made is one of the kept ones.
+        int excess = older.size() - Math.max(0, keep - 1);
+        for (int i = 0; i < excess; i++) {
+            Path stale = older.get(i);
+            String infix = stale.getFileName().toString().substring(DB_FILE_NAME.length());
+            for (String suffix : new String[]{"", "-wal", "-shm"}) {
+                Path sidecar = targetDir.resolve(DB_FILE_NAME + suffix + infix);
+                try {
+                    if (Files.deleteIfExists(sidecar)) {
+                        log.info("Removed old pre-restore file: " + sidecar.getFileName());
+                    }
+                } catch (IOException ex) {
+                    log.warn("Could not remove " + sidecar.getFileName() + ": " + ex.getMessage());
+                }
+            }
+        }
+    }
+
+    /** How many pre-restore copies this shop asked to keep; three when it never said. */
+    private int restoreBackupsToKeep(Path target) {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + target.toAbsolutePath());
+             Statement statement = connection.createStatement();
+             ResultSet rs = statement.executeQuery("SELECT setting_value FROM system_settings "
+                     + "WHERE setting_key = '" + RESTORE_KEEP_SETTING + "'")) {
+            if (rs.next()) {
+                int kept = Integer.parseInt(String.valueOf(rs.getString(1)).trim());
+                if (kept >= 1) {
+                    return kept;
+                }
+                log.warn(RESTORE_KEEP_SETTING + " is '" + rs.getString(1)
+                        + "'; at least one safety copy has to be kept, using "
+                        + DEFAULT_RESTORE_BACKUPS_KEPT + ".");
+            }
+        } catch (Exception ex) {
+            // A database with no settings table yet is a first install, not a problem.
+            log.debug("No " + RESTORE_KEEP_SETTING + " setting readable: " + ex.getMessage());
+        }
+        return DEFAULT_RESTORE_BACKUPS_KEPT;
+    }
+
+    private static Path targetDirOf(Path file) {
+        Path parent = file.toAbsolutePath().getParent();
+        return parent != null ? parent : Paths.get(".");
     }
 
     /**

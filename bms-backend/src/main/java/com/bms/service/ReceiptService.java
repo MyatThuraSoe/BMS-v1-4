@@ -19,11 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class ReceiptService {
+
+    /** A balance of nothing is still money with two decimals on the paper. */
+    private static final BigDecimal ZERO_MONEY = BigDecimal.ZERO.setScale(2);
 
     @Autowired
     private ShopTimeService shopTimeService;
@@ -49,44 +53,7 @@ public class ReceiptService {
         Sale sale = saleRepository.findByInvoiceNumber(invoiceNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found with invoice number: " + invoiceNumber));
 
-        if (sale.getIsVoided()) {
-            throw new IllegalStateException("Cannot generate receipt for voided sale: " + invoiceNumber);
-        }
-
-        String cashierName = "Unknown";
-        if (sale.getCashierId() != null) {
-            User cashier = userRepository.findById(sale.getCashierId()).orElse(null);
-            if (cashier != null) {
-                cashierName = cashier.getUsername();
-            }
-        }
-
-        String customerName = resolveCustomerName(sale);
-
-        List<ReceiptItemDto> items = sale.getItems().stream()
-                .map(this::toReceiptItemDto)
-                .toList();
-
-        return new ReceiptDto(
-                sale.getInvoiceNumber(),
-                sale.getId(),
-                sale.getSaleDate(),
-                cashierName,
-                customerName,
-                items,
-                sale.getSubtotal(),
-                sale.getTaxAmount(),
-                sale.getDiscountAmount(),
-                sale.getTotalAmount(),
-                sale.getAmountPaid(),
-                sale.getChangeGiven(),
-                sale.getPaymentMethod().name(),
-                sale.getSaleType() != null ? sale.getSaleType().name() : "CASH",
-                sale.getPaymentStatus() != null ? sale.getPaymentStatus().name() : "PAID",
-                sale.getDueDate(),
-                sale.getTotalAmount().subtract(
-                        sale.getAmountPaid() != null ? sale.getAmountPaid() : java.math.BigDecimal.ZERO)
-        );
+        return toReceiptDto(refuseVoided(sale));
     }
 
     @Transactional(readOnly = true)
@@ -94,10 +61,21 @@ public class ReceiptService {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found with id: " + id));
 
-        if (sale.getIsVoided()) {
-            throw new IllegalStateException("Cannot generate receipt for voided sale");
-        }
+        return toReceiptDto(refuseVoided(sale));
+    }
 
+    /**
+     * A voided invoice is not a sale anyone can be handed paper for, and both
+     * receipts have to refuse it the same way: whoever asked gets to read which.
+     */
+    private static Sale refuseVoided(Sale sale) {
+        if (Boolean.TRUE.equals(sale.getIsVoided())) {
+            throw new IllegalStateException("Invoice was voided: " + sale.getInvoiceNumber());
+        }
+        return sale;
+    }
+
+    private ReceiptDto toReceiptDto(Sale sale) {
         String cashierName = "Unknown";
         if (sale.getCashierId() != null) {
             User cashier = userRepository.findById(sale.getCashierId()).orElse(null);
@@ -112,7 +90,7 @@ public class ReceiptService {
                 .map(this::toReceiptItemDto)
                 .toList();
 
-        return new ReceiptDto(
+        ReceiptDto dto = new ReceiptDto(
                 sale.getInvoiceNumber(),
                 sale.getId(),
                 sale.getSaleDate(),
@@ -129,9 +107,31 @@ public class ReceiptService {
                 sale.getSaleType() != null ? sale.getSaleType().name() : "CASH",
                 sale.getPaymentStatus() != null ? sale.getPaymentStatus().name() : "PAID",
                 sale.getDueDate(),
-                sale.getTotalAmount().subtract(
-                        sale.getAmountPaid() != null ? sale.getAmountPaid() : java.math.BigDecimal.ZERO)
+                balanceOf(sale)
         );
+        dto.setAmountReturned(amount(sale.getAmountReturned()));
+        return dto;
+    }
+
+    /**
+     * What is still owed on the invoice: the total less what was paid and less the
+     * goods handed back, which is the same arithmetic the AR screens use. A return
+     * that overshoots what is left is money the shop owes the customer, so it stops
+     * at zero rather than printing a negative debt.
+     */
+    private static BigDecimal balanceOf(Sale sale) {
+        return nonNegative(sale.getTotalAmount()
+                .subtract(amount(sale.getAmountPaid()))
+                .subtract(amount(sale.getAmountReturned())));
+    }
+
+    private static BigDecimal amount(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private static BigDecimal nonNegative(BigDecimal value) {
+        BigDecimal rounded = value.setScale(2, RoundingMode.HALF_UP);
+        return rounded.compareTo(BigDecimal.ZERO) < 0 ? ZERO_MONEY : rounded;
     }
 
     private String resolveCustomerName(Sale sale) {
@@ -167,13 +167,15 @@ public class ReceiptService {
 
     /**
      * Builds the data for an AR payment receipt (a payment made against a
-     * credit invoice). Used by the "print payment receipt" action.
+     * credit invoice). Used by the "print payment receipt" action. The balance it
+     * carries is the one that stood right after this collection, so reprinting an
+     * old slip does not hand the customer today's number.
      */
     @Transactional(readOnly = true)
     public ArPaymentReceiptDto getArPaymentReceipt(Long paymentId) {
         ArPayment payment = arPaymentRepository.findById(paymentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Payment not found: " + paymentId));
-        Sale sale = payment.getInvoice();
+        Sale sale = refuseVoided(payment.getInvoice());
 
         ArPaymentReceiptDto dto = new ArPaymentReceiptDto();
         dto.setPaymentId(payment.getId());
@@ -190,9 +192,19 @@ public class ReceiptService {
         }
         dto.setNotes(payment.getNotes());
 
-        BigDecimal paid = sale.getAmountPaid() != null ? sale.getAmountPaid() : BigDecimal.ZERO;
-        BigDecimal balanceAfter = sale.getTotalAmount().subtract(paid);
-        dto.setBalanceAfter(balanceAfter.compareTo(BigDecimal.ZERO) < 0 ? BigDecimal.ZERO : balanceAfter);
+        // What the customer owed when this receipt was first printed: today's paid
+        // total less every collection recorded after this one. Reprints are asked for
+        // at the counter to prove what was settled that day, not to show today's book.
+        BigDecimal collectedSince = amount(arPaymentRepository
+                .sumAmountByInvoiceIdAndIdGreaterThanExcludingReversed(sale.getId(), payment.getId()));
+        BigDecimal paidAtThatTime = amount(sale.getAmountPaid()).subtract(collectedSince);
+
+        dto.setAmountReturned(amount(sale.getAmountReturned()));
+        // Returns are counted whole, whenever they happened: the invoice the customer
+        // is holding has that much less on it, and hiding it would disagree with the AR screen.
+        dto.setBalanceAfter(nonNegative(sale.getTotalAmount()
+                .subtract(dto.getAmountReturned())
+                .subtract(paidAtThatTime)));
         return dto;
     }
 }

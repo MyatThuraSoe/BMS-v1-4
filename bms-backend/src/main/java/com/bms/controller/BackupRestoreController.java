@@ -1,10 +1,12 @@
 package com.bms.controller;
 
 import com.bms.dto.response.ApiResponse;
+import com.bms.entity.User;
 import com.bms.service.BackupRestoreService;
 import com.bms.service.DataImportService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -73,10 +75,11 @@ public class BackupRestoreController {
      */
     @PostMapping("/drive/restore-database")
     public ResponseEntity<ApiResponse<Map<String, Object>>> restoreDatabaseFromDrive(
-            @RequestBody DriveRestoreRequest request) {
+            @RequestBody DriveRestoreRequest request,
+            @AuthenticationPrincipal User actor) {
 
         String jobId = backupRestoreService.startDatabaseRestore(
-                request.fileId(), request.sizeBytes());
+                request.fileId(), request.sizeBytes(), actor != null ? actor.getId() : null);
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jobId", jobId);

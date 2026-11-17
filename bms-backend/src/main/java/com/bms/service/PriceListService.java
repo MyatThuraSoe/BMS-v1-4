@@ -20,8 +20,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -70,6 +72,12 @@ public class PriceListService {
     public PriceList update(Long id, PriceListRequest request) {
         PriceList priceList = priceListRepository.findWithItemsById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Price list not found: " + id));
+        // The name is unique, and a rename is the one edit that can collide with a list the
+        // shop is not looking at. Comparing case-insensitively because the create path does, so
+        // "Wholesale" and "wholesale" cannot both exist and one of them cannot be renamed in.
+        if (priceListRepository.existsByNameIgnoreCaseAndIdNot(request.getName().trim(), id)) {
+            throw new BusinessException("A price list with this name already exists");
+        }
         apply(priceList, request);
         return priceListRepository.save(priceList);
     }
@@ -87,7 +95,14 @@ public class PriceListService {
         priceList.setDescription(request.getDescription());
         priceList.setValidFrom(request.getValidFrom());
         priceList.setValidTo(request.getValidTo());
-        priceList.setIsActive(request.getActive() == null || request.getActive());
+        // P3: an update that says nothing about activity means "leave that alone", so a list
+        // somebody deleted cannot be brought back by editing its prices. Only a new list, which
+        // has nothing to keep, takes the default of being active.
+        if (priceList.getId() == null) {
+            priceList.setIsActive(request.getActive() == null || request.getActive());
+        } else if (request.getActive() != null) {
+            priceList.setIsActive(request.getActive());
+        }
 
         if (request.getValidFrom() != null && request.getValidTo() != null
                 && request.getValidTo().isBefore(request.getValidFrom())) {
@@ -95,11 +110,21 @@ public class PriceListService {
         }
 
         List<String> warnings = new ArrayList<>();
-        priceList.getItems().clear();
+        // P2: the lines that stay are kept as they are, with only the price changed. Emptying
+        // the collection and filling it again made Hibernate write the new row for a product
+        // before it deleted the old one, and the unique rule over (price list, product) refused
+        // the pair - so an ordinary edit that kept most of the products failed.
+        Map<Long, PriceListItem> byProduct = new HashMap<>();
+        for (PriceListItem item : priceList.getItems()) {
+            if (item.getProduct() != null && item.getProduct().getId() != null) {
+                byProduct.put(item.getProduct().getId(), item);
+            }
+        }
+
+        Set<Long> requestedProductIds = new HashSet<>();
         if (request.getItems() != null) {
-            Set<Long> seen = new HashSet<>();
             for (PriceListRequest.Item itemRequest : request.getItems()) {
-                if (!seen.add(itemRequest.getProductId())) {
+                if (!requestedProductIds.add(itemRequest.getProductId())) {
                     throw new BusinessException("A product can only appear once in a price list");
                 }
                 Product product = productRepository.findById(itemRequest.getProductId())
@@ -116,13 +141,18 @@ public class PriceListService {
                             itemRequest.getPrice().setScale(2, RoundingMode.HALF_UP),
                             product.getCostPrice().setScale(2, RoundingMode.HALF_UP)));
                 }
-                PriceListItem item = new PriceListItem();
-                item.setPriceList(priceList);
-                item.setProduct(product);
+                PriceListItem item = byProduct.get(itemRequest.getProductId());
+                if (item == null) {
+                    item = new PriceListItem();
+                    item.setPriceList(priceList);
+                    item.setProduct(product);
+                    priceList.getItems().add(item);
+                }
                 item.setPrice(itemRequest.getPrice());
-                priceList.getItems().add(item);
             }
         }
+        priceList.getItems().removeIf(item -> !requestedProductIds.contains(
+                item.getProduct() == null ? null : item.getProduct().getId()));
         priceList.setBelowCostWarnings(warnings);
     }
 

@@ -44,5 +44,8 @@
   "sales_performance_total_sales": "Total Sales",
   "sales_performance_total_revenue": "Total Revenue",
   "sales_performance_today_sales": "Today's Sales",
-  "sales_performance_today_revenue": "Today's Revenue"
+  "sales_performance_today_revenue": "Today's Revenue",
+  "locked_for": "Locked {{minutes}} min",
+  "unlock": "Unlock login",
+  "unlock_failed": "Failed to unlock login"
 }

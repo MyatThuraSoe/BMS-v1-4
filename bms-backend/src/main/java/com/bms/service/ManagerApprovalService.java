@@ -31,6 +31,10 @@ import java.util.Locale;
  * with a sale screen open was the cheapest way to work through guesses about a manager's
  * password. Counting here, and writing down what happened, closes that.
  *
+ * <p>The counting is kept apart from the login page's counters, not shared with them. Whoever
+ * is guessing stands at the till, so it is their own approvals that get shut; a manager cannot
+ * be locked out of signing in by somebody else typing their password wrong five times.
+ *
  * <p>Nothing about the outcome distinguishes an account that does not exist from a password
  * that is wrong from a cashier who is not a manager, because the difference between those is
  * exactly what a person guessing wants to know.
@@ -86,6 +90,7 @@ public class ManagerApprovalService {
         }
         String managerKey = LoginAttemptTracker.keyOf(username);
         String cashierKey = LoginAttemptTracker.cashierKey(cashierId);
+        String pairKey = LoginAttemptTracker.pairKey(cashierId, managerKey);
 
         if (attemptTracker.isLocked(cashierKey)) {
             long minutes = attemptTracker.minutesRemaining(cashierKey);
@@ -94,8 +99,9 @@ public class ManagerApprovalService {
             throw new BusinessException("Too many failed manager approvals from this cashier."
                     + " Try again in " + minutes + " minute(s).");
         }
-        if (attemptTracker.isLocked(managerKey)) {
-            audit(cashierId, managerKey, purpose, false, "the manager account is locked");
+        if (attemptTracker.isLocked(pairKey)) {
+            audit(cashierId, managerKey, purpose, false,
+                    "this cashier has been refused against that manager too often");
             throw new BusinessException(INVALID);
         }
 
@@ -103,18 +109,27 @@ public class ManagerApprovalService {
         Role.RoleName role = manager != null && manager.getRole() != null ? manager.getRole().getName() : null;
         boolean privileged = role == Role.RoleName.ROLE_ADMIN || role == Role.RoleName.ROLE_MANAGER;
         if (manager == null || !privileged || !passwordEncoder.matches(password, manager.getPassword())) {
-            reject(managerKey, cashierId, purpose, username);
+            reject(cashierKey, pairKey, managerKey, cashierId, purpose);
         }
 
-        attemptTracker.clear(managerKey);
         attemptTracker.clear(cashierKey);
-        audit(cashierId, LoginAttemptTracker.keyOf(username), purpose, true, null);
+        attemptTracker.clear(pairKey);
+        audit(cashierId, managerKey, purpose, true, null);
         return true;
     }
 
-    private void reject(String managerKey, Long cashierId, Purpose purpose, String username) {
-        attemptTracker.recordFailure(managerKey, LoginAttemptTracker.LOGIN);
-        attemptTracker.recordFailure(LoginAttemptTracker.cashierKey(cashierId), approvalPolicy());
+    /**
+     * Counting is what stops the guessing, and it is counted where the guessing happens: on
+     * the cashier with the sale screen open, and on that cashier against that manager. The
+     * manager's own login counter is left alone, because otherwise five wrong passwords typed
+     * by a till would keep a manager out of the system for a quarter of an hour, and a cashier
+     * whose own lock has expired could do it again as often as they like.
+     */
+    private void reject(String cashierKey, String pairKey, String managerKey, Long cashierId,
+                        Purpose purpose) {
+        LoginAttemptTracker.Policy policy = approvalPolicy();
+        attemptTracker.recordFailure(cashierKey, policy);
+        attemptTracker.recordFailure(pairKey, policy);
         audit(cashierId, managerKey, purpose, false, "the credentials were not accepted");
         throw new BusinessException(INVALID);
     }

@@ -96,6 +96,14 @@ public class UserController {
         );
     }
 
+    @PostMapping("/{id}/unlock-login")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<UserResponse>> unlockLogin(@PathVariable Long id,
+                                                                @AuthenticationPrincipal User actor) {
+        User user = userService.unlockLogin(id, actor != null ? actor.getId() : null);
+        return ResponseEntity.ok(new ApiResponse<>(true, "Login unlocked", convertToResponse(user)));
+    }
+
     private UserResponse convertToResponse(User user) {
         UserResponse response = new UserResponse();
         response.setId(user.getId());
@@ -109,6 +117,8 @@ public class UserController {
         response.setPreferredLanguage(user.getPreferredLanguage());
         response.setCreatedAt(user.getCreatedAt());
         response.setUpdatedAt(user.getUpdatedAt());
+        response.setLoginLocked(userService.isLoginLocked(user));
+        response.setLoginLockedMinutes(userService.loginLockedMinutes(user));
         return response;
     }
 }

@@ -17,7 +17,12 @@ public class PriceListRequest {
     private String description;
     private LocalDate validFrom;
     private LocalDate validTo;
-    private Boolean active = true;
+    /**
+     * Null means the caller said nothing about activity. A new list then starts active, and an
+     * existing one keeps whatever it was - which is what stops an edit of the prices from
+     * bringing back a list somebody deleted.
+     */
+    private Boolean active;
     private List<Item> items = new ArrayList<>();
 
     public String getName() { return name; }

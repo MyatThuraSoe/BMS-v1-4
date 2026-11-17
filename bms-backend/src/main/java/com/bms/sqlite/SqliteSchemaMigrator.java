@@ -15,12 +15,14 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -74,6 +76,14 @@ public class SqliteSchemaMigrator implements InitializingBean {
 
     private static final DateTimeFormatter BACKUP_STAMP = DateTimeFormatter.ofPattern("yyyyMMddHHmm");
 
+    /** Marks the copies this class wrote, so pruning matches nothing else in the folder. */
+    private static final String UPGRADE_BACKUP_INFIX = ".pre-upgrade-";
+
+    /** How many of those copies a shop keeps. */
+    static final String UPGRADE_KEEP_SETTING = "sqlite.upgradeBackup.keep";
+
+    static final int DEFAULT_UPGRADE_BACKUPS_KEPT = 3;
+
     private final DataSource dataSource;
     private final Resource script;
 
@@ -104,8 +114,11 @@ public class SqliteSchemaMigrator implements InitializingBean {
             // column's index created until the column itself has been added. A widened enum
             // also has to be refreshed before them, because that rebuild drops the table and
             // carries its own indexes across with it.
-            refreshCheckConstraints(connection, expected, alreadyCreated);
+            Path backup = refreshCheckConstraints(connection, expected, alreadyCreated);
             execute(connection, indexes);
+            // Pruning comes after everything that can still fail, so a start that gave up
+            // halfway leaves every copy of the shop's database where it was.
+            pruneOldUpgradeBackups(connection, backup);
         }
     }
 
@@ -178,8 +191,10 @@ public class SqliteSchemaMigrator implements InitializingBean {
      * <p>Only columns that carry a list on both sides are compared. A table whose old
      * definition had no list at all is left alone: it already accepts everything, and adding
      * a check could reject rows that are already stored.
+     *
+     * @return the copy written before the first rebuild, or {@code null} when nothing was rebuilt
      */
-    private void refreshCheckConstraints(Connection connection, Map<String, Table> expected,
+    private Path refreshCheckConstraints(Connection connection, Map<String, Table> expected,
                                          Set<String> alreadyCreated) throws SQLException, IOException {
         Map<String, Map<String, String>> widenings = new LinkedHashMap<>();
         try (Statement statement = connection.createStatement()) {
@@ -202,7 +217,7 @@ public class SqliteSchemaMigrator implements InitializingBean {
             }
         }
         if (widenings.isEmpty()) {
-            return;
+            return null;
         }
         log.info("SQLite schema: {} table(s) still hold an older enum value list: {}",
                 widenings.size(), widenings.keySet());
@@ -227,6 +242,7 @@ public class SqliteSchemaMigrator implements InitializingBean {
             log.warn("SQLite schema: the database was copied to {} before those tables were rebuilt",
                     backup.getFileName());
         }
+        return backup;
     }
 
     /**
@@ -400,6 +416,33 @@ public class SqliteSchemaMigrator implements InitializingBean {
      * that is guarded, and one copy per start is enough to get back to.
      */
     private static Path backUpDatabaseFile(Connection connection) throws SQLException, IOException {
+        Path source = databaseFile(connection);
+        if (source == null) {
+            log.warn("SQLite schema: no database file on disk behind this connection; rebuilding without a copy");
+            return null;
+        }
+        String file = source.toString();
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: the write-ahead log of '{}' was not folded into the copy: {}",
+                    file, ex.getMessage());
+        }
+        Path copy = source.resolveSibling(source.getFileName() + UPGRADE_BACKUP_INFIX
+                + LocalDateTime.now().format(BACKUP_STAMP) + ".bak");
+        for (int attempt = 2; Files.exists(copy); attempt++) {
+            copy = source.resolveSibling(source.getFileName() + UPGRADE_BACKUP_INFIX
+                    + LocalDateTime.now().format(BACKUP_STAMP) + "-" + attempt + ".bak");
+        }
+        Files.copy(source, copy);
+        return copy;
+    }
+
+    /**
+     * The file the connection's main database lives in, or {@code null} when it is not a file
+     * on disk (an in-memory database, or a driver that will not say).
+     */
+    private static Path databaseFile(Connection connection) {
         String file = null;
         try (Statement statement = connection.createStatement();
              ResultSet rs = statement.executeQuery("PRAGMA database_list")) {
@@ -408,30 +451,73 @@ public class SqliteSchemaMigrator implements InitializingBean {
                     file = rs.getString(3);
                 }
             }
+        } catch (SQLException ex) {
+            log.warn("SQLite schema: the database file could not be identified: {}", ex.getMessage());
+            return null;
         }
         if (file == null || file.isBlank()) {
-            log.warn("SQLite schema: no database file to back up; rebuilding without a copy");
             return null;
         }
-        Path source = Path.of(file);
-        if (!Files.isRegularFile(source)) {
-            log.warn("SQLite schema: '{}' is not a file on disk; rebuilding without a copy", file);
-            return null;
+        Path path = Path.of(file);
+        return Files.isRegularFile(path) ? path : null;
+    }
+
+    /**
+     * Forgets the copies of the database that older starts made, keeping the newest
+     * {@code sqlite.upgradeBackup.keep} of them. Every rebuild costs a full copy of the
+     * shop's database next to the original, so without this the data folder grows by that
+     * size each time the schema widens. The copy made by the running start is never a
+     * candidate, because it is the one a rebuild that went wrong would be restored from.
+     *
+     * @param madeThisStart the backup this start wrote, or {@code null} when it wrote none
+     */
+    void pruneOldUpgradeBackups(Connection connection, Path madeThisStart) {
+        Path database = databaseFile(connection);
+        if (database == null) {
+            return;
         }
-        try (Statement statement = connection.createStatement()) {
-            statement.execute("PRAGMA wal_checkpoint(TRUNCATE)");
-        } catch (SQLException ex) {
-            log.warn("SQLite schema: the write-ahead log of '{}' was not folded into the copy: {}",
-                    file, ex.getMessage());
+        String prefix = database.getFileName() + UPGRADE_BACKUP_INFIX;
+        String ownName = madeThisStart == null ? null : madeThisStart.getFileName().toString();
+        List<Path> earlier;
+        try (var files = Files.list(database.toAbsolutePath().getParent())) {
+            earlier = files.filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.startsWith(prefix) && name.endsWith(".bak") && !name.equals(ownName);
+                    })
+                    .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                    .toList();
+        } catch (IOException ex) {
+            log.warn("SQLite schema: the old upgrade backups could not be listed: {}", ex.getMessage());
+            return;
         }
-        Path copy = source.resolveSibling(source.getFileName() + ".pre-upgrade-"
-                + LocalDateTime.now().format(BACKUP_STAMP) + ".bak");
-        for (int attempt = 2; Files.exists(copy); attempt++) {
-            copy = source.resolveSibling(source.getFileName() + ".pre-upgrade-"
-                    + LocalDateTime.now().format(BACKUP_STAMP) + "-" + attempt + ".bak");
+        // One of the kept slots belongs to the copy made here, when there is one.
+        int surplus = earlier.size() - Math.max(0, upgradesToKeep(connection) - (madeThisStart == null ? 0 : 1));
+        for (int i = 0; i < surplus; i++) {
+            Path stale = earlier.get(i);
+            try {
+                Files.delete(stale);
+                log.info("SQLite schema: removed old upgrade backup {}", stale.getFileName());
+            } catch (IOException ex) {
+                log.warn("SQLite schema: the old upgrade backup {} could not be removed: {}",
+                        stale.getFileName(), ex.getMessage());
+            }
         }
-        Files.copy(source, copy);
-        return copy;
+    }
+
+    private static int upgradesToKeep(Connection connection) {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "select setting_value from system_settings where setting_key = ?")) {
+            statement.setString(1, UPGRADE_KEEP_SETTING);
+            try (ResultSet rs = statement.executeQuery()) {
+                if (rs.next()) {
+                    return Math.max(1, Integer.parseInt(rs.getString(1).trim()));
+                }
+            }
+        } catch (SQLException | NumberFormatException ex) {
+            log.debug("SQLite schema: {} is not readable, keeping {} upgrade backups",
+                    UPGRADE_KEEP_SETTING, DEFAULT_UPGRADE_BACKUPS_KEPT);
+        }
+        return DEFAULT_UPGRADE_BACKUPS_KEPT;
     }
 
     /**
