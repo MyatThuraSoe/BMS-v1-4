@@ -1,11 +1,14 @@
 package com.bms.service;
 
 import com.bms.entity.*;
+import com.bms.exception.StateConflictException;
 import com.bms.repository.*;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,7 +20,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -30,6 +35,18 @@ public class BackupService {
 
     private static final DateTimeFormatter DATETIME_FMT = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ISO_LOCAL_DATE;
+    private static final DateTimeFormatter JSON_STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss");
+
+    private static final Logger log = LoggerFactory.getLogger(BackupService.class);
+
+    /**
+     * How many backups of each kind a shop keeps in Google Drive. Thirty nights of
+     * history is enough to recover from a mistake noticed late without the folder
+     * growing until the Google account is full, which is how a shop loses its
+     * safety net silently. Anything under three is not a history worth having.
+     */
+    public static final int DEFAULT_RETENTION_COUNT = 30;
+    public static final int MINIMUM_RETENTION_COUNT = 3;
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -47,6 +64,8 @@ public class BackupService {
     private final BackupSettingRepository backupSettingRepository;
     private final GoogleDriveService googleDriveService;
     private final DataExportService dataExportService;
+    private final SystemSettingRepository systemSettingRepository;
+    private final DatabaseSnapshotService snapshotService;
 
     public BackupService(
             ProductRepository productRepository,
@@ -63,7 +82,9 @@ public class BackupService {
             OrderRepository orderRepository,
             BackupSettingRepository backupSettingRepository,
             GoogleDriveService googleDriveService,
-            DataExportService dataExportService) {
+            DataExportService dataExportService,
+            SystemSettingRepository systemSettingRepository,
+            DatabaseSnapshotService snapshotService) {
         this.productRepository = productRepository;
         this.categoryRepository = categoryRepository;
         this.customerRepository = customerRepository;
@@ -79,6 +100,8 @@ public class BackupService {
         this.backupSettingRepository = backupSettingRepository;
         this.googleDriveService = googleDriveService;
         this.dataExportService = dataExportService;
+        this.systemSettingRepository = systemSettingRepository;
+        this.snapshotService = snapshotService;
     }
 
     @Transactional(readOnly = true)
@@ -403,8 +426,17 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
      * for the caller without rolling back the recorded outcome.
      */
     public String runBackupNow(LocalDate startDate, LocalDate endDate) throws Exception {
+        return runBackupNow(startDate, endDate, null);
+    }
+
+    /**
+     * @param passphrase opens the file this run writes; see {@link BackupEncryption}.
+     *                   Only a person at the keyboard has it, which is why the
+     *                   scheduler calls the two-argument version with none.
+     */
+    public String runBackupNow(LocalDate startDate, LocalDate endDate, char[] passphrase) throws Exception {
         try {
-            String link = executeGoogleDriveBackup(startDate, endDate);
+            String link = executeGoogleDriveBackup(startDate, endDate, passphrase);
             return link;
         } catch (Exception e) {
             BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
@@ -446,70 +478,250 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
     }
 
     // --- SINGLE, CONSOLIDATED METHOD FOR BOTH FULL AND SCHEDULED BACKUPS ---
+
+    /** {@code DB} / {@code JSON} / {@code BOTH}; see {@link #resolveBackupFormat()}. */
+    static final String BACKUP_FORMAT_SETTING = "backup.format";
+    private static final Set<String> BACKUP_FORMATS = Set.of("DB", "JSON", "BOTH");
+
+    /**
+     * Whether manual backups get sealed before they reach Google Drive. The switch
+     * lives here; the passphrase it seals with never does — see
+     * {@link BackupEncryption}.
+     */
+    static final String BACKUP_ENCRYPTION_SETTING = "backup.encryption.enabled";
+
+    /**
+     * Which backup the scheduler writes.
+     *
+     * <p>A raw database snapshot is the only backup that carries the accounting
+     * ledgers, the closed periods and the invoice counters, so a shop on SQLite
+     * gets one by default. Engines without {@code VACUUM INTO} cannot produce it,
+     * so they fall back to the JSON export instead of failing every night.
+     */
+    public String resolveBackupFormat() {
+        String configured = systemSettingRepository.findBySettingKey(BACKUP_FORMAT_SETTING)
+                .map(SystemSetting::getSettingValue)
+                .map(String::trim)
+                .map(String::toUpperCase)
+                .orElse(null);
+        if (configured != null && BACKUP_FORMATS.contains(configured)) {
+            return configured;
+        }
+        return snapshotService.isSupported() ? "DB" : "JSON";
+    }
+
+    /**
+     * Whether this shop could take a whole-database backup at all. The settings
+     * page needs it to tell the difference between "JSON is enough here" and
+     * "JSON is all you are getting, and that is a loss".
+     */
+    public boolean isRawSnapshotSupported() {
+        return snapshotService.isSupported();
+    }
+
     @Transactional
     public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate) throws Exception {
+        return executeGoogleDriveBackup(startDate, endDate, null);
+    }
+
+    /**
+     * Writes this shop's backup to Google Drive and records the outcome.
+     *
+     * @param passphrase the secret to seal the files with, or null for an
+     *                   unencrypted copy — see {@link #shouldEncrypt(char[])}
+     */
+    @Transactional
+    public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate,
+                                          char[] passphrase) throws Exception {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> backupSettingRepository.save(new BackupSetting()));
 
         if (setting.getGoogleRefreshToken() == null || setting.getGoogleRefreshToken().isEmpty()) {
-            throw new IllegalStateException("Google Drive is not connected. Please authorize first.");
+            throw new StateConflictException("Google Drive is not connected. Please authorize first.");
         }
 
-        // 1. Restorable JSON backup (same format the Replace Everything restore
-        //    accepts), not the spreadsheet that couldn't be imported back.
-        String dateStr = shopTimeService.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        String fileName = "LumiPOS_Backup_" + dateStr + ".json";
+        // Read before anything is uploaded: the next slot is counted from this, so however
+        // long Drive takes today, the schedule keeps the hour it promised.
+        LocalDateTime planned = setting.getNextBackupDate();
 
-        Path tempFile = Files.createTempFile("lumipos_backup_", ".json");
+        String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
+        String format = resolveBackupFormat();
+        LocalDateTime takenAt = shopTimeService.now();
+        boolean encrypt = shouldEncrypt(passphrase);
 
+        List<GoogleDriveService.DriveUpload> uploads = new ArrayList<>();
+        List<String> failed = new ArrayList<>();
+
+        if (!format.equals("JSON")) {
+            try {
+                uploads.add(snapshotService.uploadSnapshotToDrive(
+                        googleDriveService, folderId, takenAt, encrypt ? passphrase : null));
+            } catch (Exception ex) {
+                failed.add("database snapshot: " + friendlyError(new Exception(ex)));
+                // BOTH still owes the shop the export; DB alone has nothing left
+                // to fall back to, so the failure is the backup's result.
+                if (uploads.isEmpty() && !format.equals("BOTH")) {
+                    throw ex;
+                }
+            }
+        }
+        if (!format.equals("DB")) {
+            try {
+                uploads.add(uploadJsonBackup(folderId, takenAt, encrypt ? passphrase : null));
+            } catch (Exception ex) {
+                failed.add("data export: " + friendlyError(new Exception(ex)));
+                if (uploads.isEmpty()) {
+                    throw ex;
+                }
+            }
+        }
+
+        setting.setLastBackupDate(takenAt);
+        setting.setLastBackupAttempt(takenAt);
+        setting.setBackupStatus(failed.isEmpty() ? "SUCCESS" : "PARTIAL");
+        setting.setLastErrorMessage(failed.isEmpty() ? null : String.join("; ", failed));
+        setting.setNextBackupDate(calculateNextBackupDate(setting, planned == null ? takenAt : planned));
+        backupSettingRepository.save(setting);
+
+        // The folder is tidied after the result is recorded, not before: nothing a
+        // shop cannot act on tonight should turn a backup that worked into one
+        // that is reported as failed.
+        List<String> written = uploads.stream().map(GoogleDriveService.DriveUpload::id).toList();
         try {
-            Files.write(tempFile, dataExportService.exportAllAsJson());
+            googleDriveService.pruneOldBackups(folderId, retentionCountOf(setting), written);
+        } catch (Exception ex) {
+            log.warn("The old backups in Google Drive could not be listed for cleanup: {}",
+                    friendlyError(new Exception(ex)));
+        }
 
-            // 2. Get or Create the dedicated folder
-            String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
+        return uploads.get(0).link();
+    }
 
-            // 3. Upload to Google Drive inside that folder
-            String mimeType = "application/json";
-            String driveLink = googleDriveService.uploadFile(tempFile.toFile(), mimeType, folderId, fileName);
+    /**
+     * The number of Drive backups of each kind this shop keeps: its own choice
+     * when it made one, the default when it never did, and never so small that
+     * the history stops being one.
+     */
+    public static int retentionCountOf(BackupSetting setting) {
+        Integer configured = setting.getRetentionCount();
+        return configured == null ? DEFAULT_RETENTION_COUNT
+                : Math.max(MINIMUM_RETENTION_COUNT, configured);
+    }
 
-            // 4. Record the outcome so the UI can show a real status.
-            setting.setLastBackupDate(shopTimeService.now());
-            setting.setLastBackupAttempt(shopTimeService.now());
-            setting.setBackupStatus("SUCCESS");
-            setting.setLastErrorMessage(null);
-            setting.setNextBackupDate(calculateNextBackupDate(setting, shopTimeService.now()));
-            backupSettingRepository.save(setting);
-
-            return driveLink;
-
+    /**
+     * The restorable JSON export, streamed to a temp file and uploaded as one
+     * verified file.
+     *
+     * <p>The name carries the time as well as the date, because a shop that backs
+     * up twice on the same day — once by hand before a change, once on the
+     * schedule — must be able to tell the two apart in the restore list instead of
+     * finding one of them quietly overwrote the other.
+     */
+    private GoogleDriveService.DriveUpload uploadJsonBackup(String folderId, LocalDateTime takenAt,
+                                                           char[] passphrase) throws Exception {
+        String fileName = GoogleDriveService.JSON_BACKUP_PREFIX + takenAt.format(JSON_STAMP) + ".json";
+        Path tempFile = dataExportService.exportAllToJsonFile();
+        try {
+            if (passphrase == null) {
+                return googleDriveService.uploadVerified(tempFile.toFile(), "application/json", folderId, fileName);
+            }
+            Path sealed = BackupEncryption.encrypt(tempFile, passphrase);
+            try {
+                return googleDriveService.uploadVerified(sealed.toFile(), "application/octet-stream", folderId,
+                        fileName + BackupEncryption.ENCRYPTED_SUFFIX);
+            } finally {
+                Files.deleteIfExists(sealed);
+            }
         } finally {
-            // 5. Always clean up the temp file, even if upload fails
             Files.deleteIfExists(tempFile);
         }
     }
 
     /**
+     * Whether this run writes sealed files.
+     *
+     * <p>Both halves of the decision are needed. The switch says the shop wants
+     * encryption; the passphrase says somebody is actually here to type it, which
+     * an automatic run never has — the secret is not in the database, so a backup
+     * taken by the scheduler at 02:00 is a plain one. That is the trade the
+     * settings page spells out rather than a bug: an encrypted nightly backup
+     * nobody can open is no backup at all.
+     */
+    public boolean shouldEncrypt(char[] passphrase) {
+        return isEncryptionEnabled() && passphrase != null && passphrase.length > 0;
+    }
+
+    /** {@code true} when the shop wants the files it uploads sealed. */
+    public boolean isEncryptionEnabled() {
+        return systemSettingRepository.findBySettingKey(BACKUP_ENCRYPTION_SETTING)
+                .map(SystemSetting::getSettingValue)
+                .map(value -> "true".equalsIgnoreCase(value == null ? null : value.trim()))
+                .orElse(false);
+    }
+
+    @Transactional
+    public void setEncryptionEnabled(boolean enabled) {
+        SystemSetting setting = systemSettingRepository.findBySettingKey(BACKUP_ENCRYPTION_SETTING)
+                .orElseGet(() -> {
+                    SystemSetting created = new SystemSetting();
+                    created.setSettingKey(BACKUP_ENCRYPTION_SETTING);
+                    created.setDataType(SystemSetting.DataType.BOOLEAN);
+                    created.setDescription("Whether manual backups are encrypted before upload to Google Drive");
+                    return created;
+                });
+        setting.setSettingValue(Boolean.toString(enabled));
+        systemSettingRepository.save(setting);
+    }
+
+    /**
      * Computes the next scheduled backup time. CUSTOM uses the cron expression
-     * when it parses, otherwise it falls back to +1 day so automation always
-     * keeps running.
+     * when it parses, otherwise it falls back to +1 day so automation always keeps running.
+     *
+     * <p>The other frequencies count from the slot that was PLANNED, never from the moment
+     * a run finished: the scheduler only looks every ten minutes and a backup takes time of
+     * its own, so counting from the finish slid a daily 02:00 backup later every single day
+     * until it ran during opening hours. A slot already behind the clock — the server was
+     * off — is moved forward in whole periods, so three days switched off costs one
+     * catch-up run rather than three, and a monthly on the 31st lands at the end of a short
+     * month because the period is added to the planned date and not to a previous result.
+     *
+     * @param from the planned slot of the run that just happened, or the moment automation
+     *             was switched on when there is no plan to count from
      */
     public LocalDateTime calculateNextBackupDate(BackupSetting setting, LocalDateTime from) {
         String frequency = setting.getFrequency() == null ? "WEEKLY" : setting.getFrequency().toUpperCase();
-        switch (frequency) {
-            case "DAILY": return from.plusDays(1);
-            case "WEEKLY": return from.plusWeeks(1);
-            case "MONTHLY": return from.plusMonths(1);
-            case "YEARLY": return from.plusYears(1);
-            case "CUSTOM":
-                try {
-                    return org.springframework.scheduling.support.CronExpression
-                            .parse(setting.getCustomCronExpression())
-                            .next(from);
-                } catch (Exception e) {
-                    return from.plusDays(1);
-                }
-            default: return from.plusDays(1);
+        if ("CUSTOM".equals(frequency)) {
+            try {
+                return org.springframework.scheduling.support.CronExpression
+                        .parse(setting.getCustomCronExpression())
+                        .next(from);
+            } catch (Exception e) {
+                return from.plusDays(1);
+            }
         }
+
+        LocalDateTime slot = atScheduledTime(setting, from);
+        LocalDateTime next = plusPeriods(slot, frequency, 1);
+        LocalDateTime now = shopTimeService.now();
+        while (!next.isAfter(now)) {
+            next = plusPeriods(next, frequency, 1);
+        }
+        return next;
+    }
+
+    /** The hour the shop chose, or the hour automation started at when it chose none. */
+    private static LocalDateTime atScheduledTime(BackupSetting setting, LocalDateTime slot) {
+        LocalTime scheduled = setting.getScheduledTime();
+        return scheduled == null ? slot : slot.with(scheduled);
+    }
+
+    private static LocalDateTime plusPeriods(LocalDateTime slot, String frequency, int periods) {
+        return switch (frequency) {
+            case "WEEKLY" -> slot.plusWeeks(periods);
+            case "MONTHLY" -> slot.plusMonths(periods);
+            case "YEARLY" -> slot.plusYears(periods);
+            default -> slot.plusDays(periods);
+        };
     }
 
     /**

@@ -42,7 +42,13 @@ const BackupSettings = () => {
     isEnabled: false,
     frequency: 'WEEKLY',
     customCronExpression: '',
+    scheduledTime: '02:00',
+    retentionCount: 30,
+    encryptionEnabled: false,
   });
+
+  // Typed, never saved, never sent except with the one backup it opens.
+  const [passphrase, setPassphrase] = useState('');
 
   // 1. Fetch current settings
   const { data: settingsData, isLoading } = useQuery({
@@ -60,6 +66,11 @@ const BackupSettings = () => {
         isEnabled: settingsData.data.isEnabled ?? settingsData.data.enabled ?? false,
         frequency: settingsData.data.frequency ?? 'WEEKLY',
         customCronExpression: settingsData.data.customCronExpression ?? '',
+        // A shop that never picked an hour has none on the server; the field
+        // shows the hour the feature defaults to so what is saved is what is seen.
+        scheduledTime: settingsData.data.scheduledTime ?? '02:00',
+        retentionCount: settingsData.data.retentionCount ?? 30,
+        encryptionEnabled: settingsData.data.encryptionEnabled === true,
       });
     }
   }, [settingsData]);
@@ -191,10 +202,16 @@ const BackupSettings = () => {
 
   // Backups are always full restorable copies, so run-now needs no date range.
   const handleRunNow = async () => {
+    // Encryption is a promise about the file on Drive. Running the backup without
+    // the phrase would quietly break that promise, so ask instead of uploading.
+    if (settings.encryptionEnabled && !passphrase) {
+      setMessage({ type: 'warning', text: t('passphrase_needed_to_encrypt') });
+      return;
+    }
     setIsRunning(true);
     setMessage(null);
     try {
-      const res = await backupService.runNow();
+      const res = await backupService.runNow(null, null, settings.encryptionEnabled ? passphrase : null);
       const { message: msg, data: link } = res.data || {};
       setMessage({ type: 'success', text: `${msg || t('backup_completed')} ${link ? t('backup_saved_to', { location: link }) : ''}` });
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
@@ -215,6 +232,8 @@ const BackupSettings = () => {
   const lastBackup = settingsData?.data?.lastBackupDate;
   const nextBackup = settingsData?.data?.nextBackupDate;
   const backupStatus = settingsData?.data?.backupStatus || 'IDLE';
+  const backupFormat = settingsData?.data?.backupFormat;
+  const canSnapshotWholeDatabase = settingsData?.data?.snapshotSupported === true;
   const lastBackupAttempt = settingsData?.data?.lastBackupAttempt;
   const lastError = settingsData?.data?.lastErrorMessage;
 
@@ -317,6 +336,34 @@ const BackupSettings = () => {
             />
           )}
 
+          {settings.frequency !== 'CUSTOM' && (
+            <TextField
+              type="time"
+              label={t('backup_time')}
+              value={settings.scheduledTime}
+              onChange={(e) => setSettings({ ...settings, scheduledTime: e.target.value })}
+              disabled={!settings.isEnabled || !isConnected}
+              sx={{ mb: 3, maxWidth: 200 }}
+              helperText={t('backup_time_helper')}
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
+
+          <TextField
+            type="number"
+            label={t('retention_count')}
+            value={settings.retentionCount}
+            onChange={(e) => setSettings({
+              ...settings,
+              retentionCount: e.target.value === '' ? null : Number(e.target.value),
+            })}
+            inputProps={{ min: 3, max: 500, step: 1 }}
+            disabled={!isConnected}
+            sx={{ mb: 3, maxWidth: 200 }}
+            helperText={t('retention_count_helper')}
+            InputLabelProps={{ shrink: true }}
+          />
+
           <Divider sx={{ my: 3 }} />
 
           <Box sx={{ display: 'flex', gap: 2, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -341,6 +388,50 @@ const BackupSettings = () => {
         </CardContent>
       </Card>
 
+      {/* Backup encryption */}
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <Typography variant="h6" gutterBottom>
+            {t('backup_encryption')}
+          </Typography>
+          <Divider sx={{ mb: 3 }} />
+
+          <FormControlLabel
+            control={
+              <Switch
+                checked={settings.encryptionEnabled}
+                onChange={(e) => setSettings({ ...settings, encryptionEnabled: e.target.checked })}
+                disabled={!isConnected}
+              />
+            }
+            label={<Typography variant="subtitle1">{t('encrypt_manual_backups')}</Typography>}
+            sx={{ mb: 2 }}
+          />
+
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            {t('encryption_explanation')}
+          </Typography>
+
+          {settings.encryptionEnabled && (
+            <TextField
+              type="password"
+              label={t('backup_passphrase')}
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              disabled={!isConnected}
+              sx={{ mb: 2, maxWidth: 360 }}
+              helperText={t('backup_passphrase_helper')}
+              InputLabelProps={{ shrink: true }}
+            />
+          )}
+
+          {/* The honest limit: nothing in the shop can type the phrase at 02:00. */}
+          <Alert severity="info" sx={{ mt: 1 }}>
+            {t('encryption_night_backup_note')}
+          </Alert>
+        </CardContent>
+      </Card>
+
       {/* Status Card */}
       <Card>
         <CardContent>
@@ -352,8 +443,9 @@ const BackupSettings = () => {
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="body2" color="text.secondary">{t('last_attempt_status')}</Typography>
             {backupStatus === 'SUCCESS' && <Chip label={t('status_ok')} color="success" size="small" />}
+            {backupStatus === 'PARTIAL' && <Chip label={t('status_partial')} color="warning" size="small" />}
             {backupStatus === 'FAILED' && <Chip label={t('status_failed')} color="error" size="small" />}
-            {backupStatus !== 'SUCCESS' && backupStatus !== 'FAILED' && <Chip label={t('status_idle')} size="small" variant="outlined" />}
+            {!['SUCCESS', 'PARTIAL', 'FAILED'].includes(backupStatus) && <Chip label={t('status_idle')} size="small" variant="outlined" />}
           </Box>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
             <Typography variant="body2" color="text.secondary">{t('last_successful_backup')}</Typography>
@@ -373,6 +465,20 @@ const BackupSettings = () => {
                 {lastError || t('backup_failed_generic')}
               </Alert>
             </>
+          )}
+          {backupStatus === 'PARTIAL' && (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              {lastError || t('backup_partial_generic')}
+            </Alert>
+          )}
+          {/* The automatic backup is the shop's only safety net, and on this
+              engine a whole database could be uploaded but is not: a JSON export
+              cannot bring back the accounting ledgers, the closed periods or the
+              invoice counters. */}
+          {backupFormat === 'JSON' && canSnapshotWholeDatabase && (
+            <Alert severity="warning" sx={{ mt: 2 }}>
+              {t('backup_json_only_warning')}
+            </Alert>
           )}
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography variant="body2" color="text.secondary">{t('next_scheduled_backup')}</Typography>
@@ -396,7 +502,10 @@ const BackupSettings = () => {
       </Card>
 
       {/* Recover from Google Drive after data loss / new PC */}
-      <DriveRestoreCard isConnected={isConnected} />
+      <DriveRestoreCard
+        isConnected={isConnected}
+        encryption={{ enabled: settings.encryptionEnabled, passphrase }}
+      />
 
       {/* Remote-admin guidance: Google returns to the server PC, not this device */}
       <Dialog open={Boolean(remoteAuth)} onClose={() => setRemoteAuth(null)} maxWidth="sm" fullWidth>

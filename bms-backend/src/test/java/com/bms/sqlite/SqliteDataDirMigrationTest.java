@@ -9,15 +9,18 @@ import java.lang.reflect.Method;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
+import java.time.Instant;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -242,26 +245,84 @@ class SqliteDataDirMigrationTest {
         }
     }
 
+    /**
+     * Stand-in for a copy interrupted on the way: the live database is genuinely
+     * readable, so the only thing that went wrong is the fallback itself.
+     */
+    private static class UnreadableCopy extends SqliteDataDirMigration {
+        @Override
+        void copyLiveAside(Path target, Path safety) throws IOException {
+            Files.writeString(safety, "half-written, the way a full disk leaves it");
+        }
+    }
+
     @Test
-    void anUnreadableSafetyCopyStopsTheRestoreAndLeavesTheLiveDatabaseAlone(@TempDir Path dataDir)
-            throws Exception {
+    void aHealthyLiveDatabaseWithAnUnreadableCopyRefusesTheRestore(@TempDir Path dataDir) throws Exception {
         Path target = dataDir.resolve(DB);
-        // The live file is not a database SQLite can read, so the copy taken of it
-        // cannot be proved. Without proof the restore has to stop.
-        Files.writeString(target, "not a database, and far too short to look like one");
+        writeDatabase(target, "LIVE-SALE");
         Path staged = stage(dataDir, "RESTORED-SALE");
         byte[] liveContents = Files.readAllBytes(target);
 
         Exception ex = assertThrows(Exception.class,
-                () -> new SqliteDataDirMigration().applyPendingRestore(dataDir, target));
+                () -> new UnreadableCopy().applyPendingRestore(dataDir, target));
 
         assertTrue(ex.getMessage().toLowerCase().contains("safety")
                         || ex.getMessage().toLowerCase().contains("restore"),
                 "the shop must be told what stopped it: " + ex.getMessage());
         assertArrayEquals(liveContents, Files.readAllBytes(target),
-                "nothing may overwrite a database whose safety copy could not be proved");
+                "nothing may overwrite a healthy database whose copy could not be proved");
         assertTrue(Files.exists(staged), "the restore stays staged for an operator to deal with");
         assertTrue(Files.exists(dataDir.resolve(".lumipos-pending-restore")));
+        assertTrue(corruptCopies(dataDir).isEmpty(),
+                "the live file opened, so there is no damage to tell the shop about");
+        assertNull(damagedNotice(dataDir));
+    }
+
+    @Test
+    void aDamagedLiveDatabaseIsRestoredOverAndKeptUnderItsOwnName(@TempDir Path dataDir) throws Exception {
+        Path target = dataDir.resolve(DB);
+        // The state the shop is actually in when it reaches for a backup: the
+        // database it was selling on no longer opens. Refusing to restore there
+        // would leave it with nothing.
+        Files.writeString(target, "not a database, and far too short to look like one");
+        Path staged = stage(dataDir, "RESTORED-SALE");
+        byte[] damaged = Files.readAllBytes(target);
+
+        new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+
+        List<Path> corrupt = corruptCopies(dataDir);
+        assertEquals(1, corrupt.size(), "the damaged file has to be kept, not thrown away: " + corrupt);
+        assertArrayEquals(damaged, Files.readAllBytes(corrupt.get(0)),
+                "what was kept is the damaged database exactly as it was");
+        assertTrue(safetyCopies(dataDir).isEmpty(),
+                "a copy of an unreadable database is not a safety copy and must not be named as one");
+        assertEquals(corrupt.get(0).getFileName().toString(), damagedNotice(dataDir),
+                "the app can only name the file the shop is told about if it was written down");
+
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + target);
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT invoice FROM sale")) {
+            assertTrue(rs.next());
+            assertEquals("RESTORED-SALE", rs.getString(1),
+                    "the staged backup is the shop's way back to selling, so it has to land");
+        }
+        assertFalse(Files.exists(staged), "the staged file should be consumed");
+        assertFalse(Files.exists(dataDir.resolve(".lumipos-pending-restore")), "marker should be cleared");
+    }
+
+    @Test
+    void aMissingLiveDatabaseRestoresWithoutAnyCopy(@TempDir Path dataDir) throws Exception {
+        Path target = dataDir.resolve(DB);
+        Path staged = stage(dataDir, "RESTORED-SALE");
+
+        new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+
+        assertTrue(safetyCopies(dataDir).isEmpty(), "there was nothing to copy");
+        assertTrue(corruptCopies(dataDir).isEmpty(), "a first install is not damage");
+        assertNull(damagedNotice(dataDir), "the shop must not be told its database was damaged");
+        assertTrue(Files.exists(target));
+        assertEquals("RESTORED-SALE", singleInvoice(target));
+        assertFalse(Files.exists(staged));
     }
 
     @Test
@@ -296,6 +357,127 @@ class SqliteDataDirMigrationTest {
         assertEquals(1, remaining.size(), "was: " + remaining);
         assertEquals("SALE-4", singleInvoice(remaining.get(0)),
                 "the copy just taken is the one that must be kept");
+    }
+
+    @Test
+    void theFourthDamagedCopyRemovesOnlyTheOldest(@TempDir Path dataDir) throws Exception {
+        Path target = dataDir.resolve(DB);
+        for (int i = 1; i <= 4; i++) {
+            Files.writeString(target, "DAMAGED-DATABASE-" + i);
+            stage(dataDir, "RESTORED");
+            new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+        }
+
+        List<Path> remaining = corruptCopies(dataDir);
+        assertEquals(3, remaining.size(), "the default is to keep three: " + remaining);
+        assertEquals("DAMAGED-DATABASE-4", Files.readString(remaining.get(remaining.size() - 1)),
+                "the copy taken by the restore just applied must always survive");
+        List<String> kept = new java.util.ArrayList<>();
+        for (Path path : remaining) {
+            kept.add(Files.readString(path));
+        }
+        assertFalse(kept.contains("DAMAGED-DATABASE-1"), "the oldest damaged copy is the one that goes: " + kept);
+        assertTrue(safetyCopies(dataDir).isEmpty(),
+                "damaged copies are not safety copies, and the safety pruning must not reach them");
+    }
+
+    @Test
+    void theNumberOfKeptDamagedCopiesComesFromTheSetting(@TempDir Path dataDir) throws Exception {
+        Path target = dataDir.resolve(DB);
+        for (int i = 1; i <= 3; i++) {
+            Files.writeString(target, "DAMAGED-DATABASE-" + i);
+            stage(dataDir, "RESTORED");
+            new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+        }
+        assertEquals(3, corruptCopies(dataDir).size(), "before the setting is changed");
+
+        // The number comes with the backup being restored, because the file the
+        // shop is leaving behind is the one that cannot be read to ask it.
+        Files.writeString(target, "DAMAGED-DATABASE-4");
+        stageWithSetting(dataDir, "RESTORED", "sqlite.corruptBackup.keep", "1");
+        new SqliteDataDirMigration().applyPendingRestore(dataDir, target);
+
+        List<Path> remaining = corruptCopies(dataDir);
+        assertEquals(1, remaining.size(), "was: " + remaining);
+        assertEquals("DAMAGED-DATABASE-4", Files.readString(remaining.get(0)),
+                "the copy just taken is the one that must be kept");
+    }
+
+    @Test
+    void theNewestSafetyCopyIsKeptByItsTimeEvenWhenItsNameSaysOtherwise(@TempDir Path dataDir)
+            throws Exception {
+        Path justMade = dataDir.resolve(DB + ".pre-restore-20260105120000");
+        writeDatabase(justMade, "JUST-MADE");
+        // A second restore inside the same minute is numbered, and a shop whose clock
+        // went backwards stamps a newer copy with an older minute. Then the text order
+        // of the names no longer matches the order they were made in.
+        writeSafetyCopy(dataDir, "20260101120000", "OLD-A", 1);
+        writeSafetyCopy(dataDir, "20260102120000", "OLD-B", 2);
+        writeSafetyCopy(dataDir, "20260103120000", "OLD-C", 3);
+        Path newest = writeSafetyCopy(dataDir, "20260101120000-2", "NUMBERED-NEWEST", 4);
+
+        invoke(new SqliteDataDirMigration(), "pruneSafetyCopies",
+                new Class<?>[]{Path.class, Path.class, int.class},
+                new Object[]{dataDir, justMade, 2});
+
+        List<String> kept = invoicesOf(safetyCopies(dataDir));
+        assertEquals(2, kept.size(), "keep = 2 means the copy just made and one other: " + kept);
+        assertTrue(kept.contains("NUMBERED-NEWEST"),
+                "the newest copy by the clock on the file must survive, whatever its name: " + kept);
+        assertTrue(kept.contains("JUST-MADE"), "the copy this restore made is never a candidate: " + kept);
+        assertFalse(kept.contains("OLD-C"),
+                "a name order would have kept this one instead and deleted the newer: " + kept);
+        assertTrue(Files.exists(newest));
+    }
+
+    @Test
+    void theNewestDamagedCopyIsKeptByItsTimeEvenWhenItsNameSaysOtherwise(@TempDir Path dataDir)
+            throws Exception {
+        Path justMade = dataDir.resolve(DB + ".corrupt-20260105120000");
+        Files.writeString(justMade, "JUST-MADE");
+        writeDamagedCopy(dataDir, "20260101120000", "DAMAGED-A", 1);
+        writeDamagedCopy(dataDir, "20260102120000", "DAMAGED-B", 2);
+        writeDamagedCopy(dataDir, "20260103120000", "DAMAGED-C", 3);
+        writeDamagedCopy(dataDir, "20260101120000-2", "NUMBERED-NEWEST", 4);
+
+        invoke(new SqliteDataDirMigration(), "pruneDamagedCopies",
+                new Class<?>[]{Path.class, Path.class, int.class},
+                new Object[]{dataDir, justMade, 2});
+
+        List<String> kept = new java.util.ArrayList<>();
+        for (Path path : corruptCopies(dataDir)) {
+            kept.add(Files.readString(path));
+        }
+        assertEquals(2, kept.size(), "keep = 2 means the copy just made and one other: " + kept);
+        assertTrue(kept.contains("NUMBERED-NEWEST"),
+                "the newest record of what was lost must survive, whatever its name: " + kept);
+        assertTrue(kept.contains("JUST-MADE"), "the copy this restore made is never a candidate: " + kept);
+    }
+
+    /** A safety copy from an earlier day, aged to {@code minutes} past the epoch. */
+    private Path writeSafetyCopy(Path dataDir, String stamp, String invoice, long minutes)
+            throws Exception {
+        Path copy = dataDir.resolve(DB + ".pre-restore-" + stamp);
+        writeDatabase(copy, invoice);
+        Files.setLastModifiedTime(copy, FileTime.from(Instant.EPOCH.plusSeconds(minutes * 60L)));
+        return copy;
+    }
+
+    /** A damaged copy from an earlier day, aged to {@code minutes} past the epoch. */
+    private Path writeDamagedCopy(Path dataDir, String stamp, String content, long minutes)
+            throws Exception {
+        Path copy = Files.writeString(dataDir.resolve(DB + ".corrupt-" + stamp), content);
+        Files.setLastModifiedTime(copy, FileTime.from(Instant.EPOCH.plusSeconds(minutes * 60L)));
+        return copy;
+    }
+
+    /** What each of these databases holds, in the order the caller listed them. */
+    private List<String> invoicesOf(List<Path> files) throws Exception {
+        List<String> invoices = new java.util.ArrayList<>();
+        for (Path file : files) {
+            invoices.add(singleInvoice(file));
+        }
+        return invoices;
     }
 
     /** One restore applied at startup, optionally with a keep-count setting in the live database. */
@@ -374,6 +556,36 @@ class SqliteDataDirMigrationTest {
         writeDatabase(staged, invoice);
         Files.writeString(dataDir.resolve(".lumipos-pending-restore"), "restored-from-drive\n");
         return staged;
+    }
+
+    /** The same, with one setting carried by the backup being restored. */
+    private Path stageWithSetting(Path dataDir, String invoice, String key, String value) throws Exception {
+        Path staged = stage(dataDir, invoice);
+        try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + staged);
+             Statement s = c.createStatement()) {
+            s.execute("CREATE TABLE system_settings "
+                    + "(setting_key TEXT PRIMARY KEY, setting_value TEXT)");
+            s.execute("INSERT INTO system_settings (setting_key, setting_value) VALUES ('" + key + "', '" + value + "')");
+        }
+        return staged;
+    }
+
+    /** Copies of databases that could not be read, oldest first. */
+    private List<Path> corruptCopies(Path dataDir) throws Exception {
+        try (var stream = Files.list(dataDir)) {
+            return stream.map(path -> path.getFileName().toString())
+                    .filter(name -> name.startsWith(DB + ".corrupt-"))
+                    .filter(name -> !name.endsWith("-wal") && !name.endsWith("-shm"))
+                    .sorted()
+                    .map(name -> dataDir.resolve(name))
+                    .toList();
+        }
+    }
+
+    /** The file name left behind for the app to show, or null when nothing is to tell. */
+    private String damagedNotice(Path dataDir) throws IOException {
+        Path marker = dataDir.resolve(".lumipos-damaged-database");
+        return Files.exists(marker) ? Files.readString(marker).trim() : null;
     }
 
     /** Safety copies, oldest first, as their timestamps name them. */

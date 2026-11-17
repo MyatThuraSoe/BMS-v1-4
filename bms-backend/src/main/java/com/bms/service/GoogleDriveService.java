@@ -1,6 +1,7 @@
 package com.bms.service;
 
 import com.bms.entity.BackupSetting;
+import com.bms.exception.StateConflictException;
 import com.bms.repository.BackupSettingRepository;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
@@ -19,46 +20,49 @@ import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.LongConsumer;
+import java.util.regex.Pattern;
 
 @Service
 public class GoogleDriveService {
 
+    /** The two names this app gives its own backups; anything else is the shop's file. */
+    public static final String JSON_BACKUP_PREFIX = "LumiPOS_Backup_";
+    public static final String SNAPSHOT_PREFIX = "LumiPOS_DB_";
+
+    /** Drive's page size, and the ceiling on how far a folder is walked. */
+    private static final int BACKUP_PAGE_SIZE = 100;
+    private static final int MAX_LISTED_BACKUPS = 500;
+
+    /** The characters Drive itself uses in a file id, and the only ones accepted here. */
+    private static final Pattern DRIVE_ID = Pattern.compile("[A-Za-z0-9_-]+");
+
     @Autowired
     private ShopTimeService shopTimeService;
 
-    @Value("${google.oauth.client-id}")
+    // Every Google property carries a default: a shop that never touches cloud backup
+    // has none of them set, and the app still has to start.
+    @Value("${google.oauth.client-id:}")
     private String clientId;
 
-    @Value("${google.oauth.client-secret}")
+    @Value("${google.oauth.client-secret:}")
     private String clientSecret;
 
-    @Value("${google.oauth.redirect-uri}")
+    @Value("${google.oauth.redirect-uri:http://127.0.0.1:17234/api/backups/google/callback}")
     private String redirectUri;
 
     private final BackupSettingRepository backupSettingRepository;
 
     public GoogleDriveService(BackupSettingRepository backupSettingRepository) {
         this.backupSettingRepository = backupSettingRepository;
-    }
-
-    public String getAuthorizationUrl() {
-        try {
-            GoogleAuthorizationCodeFlow flow = new GoogleAuthorizationCodeFlow.Builder(
-                    GoogleNetHttpTransport.newTrustedTransport(),
-                    GsonFactory.getDefaultInstance(),
-                    clientId,
-                    clientSecret,
-                    Collections.singleton(DriveScopes.DRIVE_FILE))
-                    .setAccessType("offline") // Crucial for refresh token
-                    .setApprovalPrompt("force")
-                    .build();
-            return flow.newAuthorizationUrl().setRedirectUri(redirectUri).build();
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to generate Google authorization URL", e);
-        }
     }
 
     public void handleCallback(String code) {
@@ -91,10 +95,10 @@ public class GoogleDriveService {
     public Drive getDriveService() {
         try {
             BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
-                    .orElseThrow(() -> new IllegalStateException("Backup settings not found"));
+                    .orElseThrow(() -> new StateConflictException("Backup settings not found"));
 
             if (setting.getGoogleRefreshToken() == null || setting.getGoogleRefreshToken().isEmpty()) {
-                throw new IllegalStateException("Google Drive is not connected. Please authorize first.");
+                throw new StateConflictException("Google Drive is not connected. Please authorize first.");
             }
 
             // Use modern UserCredentials (replaces deprecated GoogleCredential)
@@ -112,7 +116,7 @@ public class GoogleDriveService {
                 // clear, actionable error instead of a stack-trace soup.
                 String msg = nestedMessages(refreshError);
                 if (msg.contains("invalid_grant")) {
-                    throw new IllegalStateException("Google access was revoked or expired. Reconnect Google Drive in Settings — automatic backups are paused.");
+                    throw new StateConflictException("Google access was revoked or expired. Reconnect Google Drive in Settings — automatic backups are paused.");
                 }
                 throw refreshError;
             }
@@ -129,8 +133,8 @@ public class GoogleDriveService {
                     .build();
 
         } catch (Exception e) {
-            if (e instanceof IllegalStateException ise) {
-                throw ise;
+            if (e instanceof StateConflictException sce) {
+                throw sce;
             }
             throw new RuntimeException("Failed to initialize Google Drive service", e);
         }
@@ -175,7 +179,7 @@ public class GoogleDriveService {
 
         // Search for existing folder
         FileList result = service.files().list()
-                .setQ("mimeType='application/vnd.google-apps.folder' and name='" + folderName + "' and trashed=false")
+                .setQ(folderSearchQuery(folderName))
                 .setSpaces("drive")
                 .setFields("files(id, name)")
                 .execute();
@@ -212,12 +216,29 @@ public class GoogleDriveService {
     }
 
     public String uploadFile(java.io.File fileToUpload, String mimeType, String folderId, String fileName) throws Exception {
+        return uploadVerified(fileToUpload, mimeType, folderId, fileName).link();
+    }
+
+    /**
+     * Uploads a backup and then asks Drive what it actually got, because a backup
+     * that silently arrived truncated is worse than no backup at all: the shop
+     * believes it can be restored and finds out on the worst day of its life that
+     * the file is useless.
+     *
+     * <p>The proof is size plus MD5. Drive stopped publishing {@code md5Checksum}
+     * for large files, so when it answers without one the size is still compared
+     * and the missing hash is reported rather than treated as a mismatch.
+     *
+     * @throws IOException when Drive holds something other than what was sent; the
+     *                     bad remote file is deleted before the throw so the
+     *                     restore list cannot offer it
+     */
+    public DriveUpload uploadVerified(java.io.File fileToUpload, String mimeType, String folderId,
+                                      String fileName) throws Exception {
         Drive service = getDriveService();
 
         File fileMetadata = new File();
         fileMetadata.setName(uploadName(fileToUpload, fileName));
-
-        // Save inside the specific folder
         if (folderId != null && !folderId.isEmpty()) {
             fileMetadata.setParents(Collections.singletonList(folderId));
         }
@@ -227,7 +248,90 @@ public class GoogleDriveService {
                 .setFields("id, name, webViewLink")
                 .execute();
 
-        return uploadedFile.getWebViewLink();
+        String id = uploadedFile.getId();
+        long localSize = fileToUpload.length();
+        String localMd5 = md5Of(fileToUpload);
+
+        File stamp = service.files().get(id).setFields("id, size, md5Checksum").execute();
+        String problem = verificationFailure(fileMetadata.getName(), localSize, localMd5,
+                stamp.getSize(), stamp.getMd5Checksum());
+        if (stamp.getMd5Checksum() == null || stamp.getMd5Checksum().isBlank()) {
+            org.slf4j.LoggerFactory.getLogger(GoogleDriveService.class)
+                    .info("Drive returned no checksum for {}; only its size was verified", id);
+        }
+        if (problem != null) {
+            deleteQuietly(service, id);
+            throw new IOException(problem);
+        }
+
+        return new DriveUpload(id, uploadedFile.getName(), uploadedFile.getWebViewLink());
+    }
+
+    /**
+     * Compares what Drive says it stored with what was sent.
+     *
+     * @param remoteMd5 may be null or blank: Drive stopped publishing checksums
+     *                  for large files, and a size match is then the best proof
+     *                  available — not a reason to throw the backup away
+     * @return the message for the shop, or null when the copy is sound
+     */
+    static String verificationFailure(String name, long localSize, String localMd5,
+                                      Long remoteSize, String remoteMd5) {
+        if (remoteSize != null && remoteSize != localSize) {
+            return "Google Drive stored " + remoteSize + " of the " + localSize
+                    + " bytes of " + name + ". The backup was discarded.";
+        }
+        if (remoteMd5 == null || remoteMd5.isBlank()) {
+            return null;
+        }
+        if (!remoteMd5.equalsIgnoreCase(localMd5)) {
+            return "Google Drive's copy of " + name
+                    + " does not match the file that was sent. The backup was discarded.";
+        }
+        return null;
+    }
+
+    /** Deletes a Drive file; used to take a proved-bad backup out of the restore list. */
+    public void deleteFile(String fileId) throws Exception {
+        getDriveService().files().delete(fileId).execute();
+    }
+
+    /**
+     * Deletes a file and reports whether Drive did it, because a delete that keeps
+     * failing quietly is the difference between a folder that stays small and one
+     * that fills the account.
+     */
+    private boolean deleteQuietly(Drive service, String fileId) {
+        try {
+            service.files().delete(fileId).execute();
+            return true;
+        } catch (Exception ex) {
+            org.slf4j.LoggerFactory.getLogger(GoogleDriveService.class)
+                    .warn("The Drive file {} could not be deleted: {}", fileId, ex.getMessage());
+            return false;
+        }
+    }
+
+    /** MD5 of the file as sent — the same value Drive reports back for it. */
+    static String md5Of(java.io.File file) throws IOException {
+        try (java.io.InputStream in = new java.io.BufferedInputStream(
+                new java.io.FileInputStream(file), 64 * 1024)) {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("MD5");
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                digest.update(buffer, 0, read);
+            }
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (java.security.NoSuchAlgorithmException ex) {
+            throw new IOException("MD5 is unavailable on this JVM: " + ex.getMessage(), ex);
+        }
+    }
+
+    /**
+     * What came back from an upload: enough to delete or re-fetch the file later.
+     */
+    public record DriveUpload(String id, String name, String link) {
     }
 
     /**
@@ -239,37 +343,188 @@ public class GoogleDriveService {
      *
      * <p>Trashed files are excluded so a deleted backup cannot be restored by
      * accident, and only files are returned (no sub-folders).
+     *
+     * <p>Drive answers a page at a time, so a shop with more history than one page
+     * would otherwise only ever see its last fifty backups — and the cleanup that
+     * counts from this list would leave the rest to grow forever.
      */
     public List<DriveBackupFile> listBackupFiles(String folderId) throws Exception {
         Drive service = getDriveService();
 
-        String query = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
-        if (folderId != null && !folderId.isBlank()) {
-            query = "'" + folderId + "' in parents and " + query;
-        }
-
-        FileList result = service.files().list()
-                .setQ(query)
+        return readAllPages(pageToken -> service.files().list()
+                .setQ(backupListQuery(folderId))
                 .setSpaces("drive")
                 .setOrderBy("modifiedTime desc")
-                .setPageSize(50)
-                .setFields("files(id, name, size, modifiedTime, mimeType)")
-                .execute();
+                .setPageSize(BACKUP_PAGE_SIZE)
+                .setPageToken(pageToken)
+                .setFields("nextPageToken, files(id, name, size, modifiedTime, mimeType)")
+                .execute());
+    }
 
+    /** Drive's answer to "which folder holds the backups", with the name quoted safely. */
+    static String folderSearchQuery(String folderName) {
+        return "mimeType='application/vnd.google-apps.folder' and name='" + escapeQuery(folderName)
+                + "' and trashed=false";
+    }
+
+    /**
+     * The search that lists the shop's backups, scoped to its folder when there is
+     * one. An id that is not an id is refused before it reaches Drive: the only way
+     * a stored one stops looking like Drive's own characters is that somebody, or
+     * something, put it there.
+     */
+    static String backupListQuery(String folderId) {
+        String query = "trashed=false and mimeType!='application/vnd.google-apps.folder'";
+        String folder = folderId == null || folderId.isBlank() ? null : validatedFolderId(folderId);
+        return folder == null ? query : "'" + folder + "' in parents and " + query;
+    }
+
+    private static String validatedFolderId(String folderId) {
+        if (!DRIVE_ID.matcher(folderId).matches()) {
+            // The value is not repeated back: it is whatever ended up in the settings
+            // row, and that is not something to write into a log line or a screen.
+            throw new IllegalArgumentException("The saved Google Drive backup folder id is not a folder id");
+        }
+        return escapeQuery(folderId);
+    }
+
+    /**
+     * Drive's search language takes values inside single quotes, so a value holding
+     * a quote ends the string it sits in and the rest of it becomes the query. The
+     * backslash goes first, because escaping the quote would otherwise escape the
+     * backslash of its own escape.
+     */
+    static String escapeQuery(String value) {
+        return value == null ? null : value.replace("\\", "\\\\").replace("'", "\\'");
+    }
+
+    /**
+     * Reads a folder listing page by page until Drive has nothing left to hand
+     * over, or until the agreed ceiling of files is reached.
+     *
+     * @param page reads the page after {@code pageToken}, or the first page when
+     *             the token is null; Drive's own token, never a guess
+     */
+    static List<DriveBackupFile> readAllPages(BackupPageReader page) throws Exception {
         List<DriveBackupFile> files = new ArrayList<>();
-        if (result.getFiles() == null) {
-            return files;
-        }
-        for (File f : result.getFiles()) {
-            files.add(new DriveBackupFile(
-                    f.getId(),
-                    f.getName(),
-                    f.getSize() == null ? 0L : f.getSize(),
-                    f.getModifiedTime() == null ? null : f.getModifiedTime().toString(),
-                    f.getMimeType()));
-        }
+        String pageToken = null;
+        do {
+            FileList result = page.read(pageToken);
+            if (result.getFiles() != null) {
+                for (File f : result.getFiles()) {
+                    files.add(new DriveBackupFile(
+                            f.getId(),
+                            f.getName(),
+                            f.getSize() == null ? 0L : f.getSize(),
+                            f.getModifiedTime() == null ? null : f.getModifiedTime().toString(),
+                            f.getMimeType()));
+                }
+            }
+            if (files.size() >= MAX_LISTED_BACKUPS) {
+                break;
+            }
+            pageToken = result.getNextPageToken();
+        } while (pageToken != null && !pageToken.isBlank());
         return files;
     }
+
+    /** One page of a folder listing, asked for by the token of the page before it. */
+    @FunctionalInterface
+    interface BackupPageReader {
+        FileList read(String pageToken) throws Exception;
+    }
+
+    /**
+     * Thins the backup folder down to the newest {@code keepPerKind} files of each
+     * kind, deleting what is left over.
+     *
+     * <p>Files this app did not name are never touched: the folder is the shop's
+     * and the admin may keep anything else in it. The copies uploaded by this run
+     * are protected by their ids rather than by where the listing happened to
+     * sort them, because Drive stamps files with its own clock.
+     *
+     * @param justUploaded ids of the files this backup has only now written
+     * @return the ids to delete, oldest first
+     */
+    static List<String> filesToPrune(List<DriveBackupFile> files, int keepPerKind, Set<String> justUploaded) {
+        List<DriveBackupFile> newestFirst = new ArrayList<>(files);
+        newestFirst.sort(Comparator.comparing(DriveBackupFile::modifiedTime,
+                Comparator.nullsFirst(Comparator.naturalOrder())).reversed());
+
+        Map<String, Integer> counted = new HashMap<>();
+        List<String> doomed = new ArrayList<>();
+        for (DriveBackupFile file : newestFirst) {
+            String kind = backupKindOf(file);
+            if (kind == null) {
+                continue;
+            }
+            // Today's copy counts toward the count it is keeping: excluding it
+            // would throw one of the shop's backups away for nothing.
+            if (counted.merge(kind, 1, Integer::sum) > keepPerKind
+                    && !justUploaded.contains(file.id())) {
+                doomed.add(file.id());
+            }
+        }
+        Collections.reverse(doomed);
+        return doomed;
+    }
+
+    /** Which kind of backup this is, or null when the app did not name the file. */
+    private static String backupKindOf(DriveBackupFile file) {
+        String name = stripEncryptionSuffix(file.name());
+        if (name == null) {
+            return null;
+        }
+        // A sealed backup is still the same kind of backup: the ".enc" is a wrapper
+        // on the outside of it, so retention counts and thins it exactly as it
+        // would the plain copy it replaced.
+        String lower = name.toLowerCase();
+        if (name.startsWith(JSON_BACKUP_PREFIX) && lower.endsWith(".json")) {
+            return "json";
+        }
+        if (name.startsWith(SNAPSHOT_PREFIX) && lower.endsWith(".db")) {
+            return "db";
+        }
+        return null;
+    }
+
+    /** Drops the encryption marker so the real kind of file shows through. */
+    private static String stripEncryptionSuffix(String name) {
+        if (name == null) {
+            return null;
+        }
+        String lower = name.toLowerCase();
+        return lower.endsWith(BackupEncryption.ENCRYPTED_SUFFIX)
+                ? name.substring(0, name.length() - BackupEncryption.ENCRYPTED_SUFFIX.length())
+                : name;
+    }
+
+    /**
+     * Deletes everything in the backup folder beyond the newest {@code keepPerKind}
+     * files of each kind.
+     *
+     * @return how many files were actually removed
+     */
+    public int pruneOldBackups(String folderId, int keepPerKind, Collection<String> justUploaded) throws Exception {
+        List<String> doomed = filesToPrune(listBackupFiles(folderId), keepPerKind, Set.copyOf(justUploaded));
+        if (doomed.isEmpty()) {
+            return 0;
+        }
+        Drive service = getDriveService();
+        int deleted = 0;
+        for (String id : doomed) {
+            if (deleteQuietly(service, id)) {
+                deleted++;
+            }
+        }
+        if (deleted != doomed.size()) {
+            org.slf4j.LoggerFactory.getLogger(GoogleDriveService.class)
+                    .warn("Only {} of the {} old backups in Google Drive could be deleted",
+                            deleted, doomed.size());
+        }
+        return deleted;
+    }
+
 
     /**
      * Downloads a Drive file to a local file, reporting progress as it goes.
@@ -333,11 +588,13 @@ public class GoogleDriveService {
     public record DriveBackupFile(String id, String name, long sizeBytes,
                                   String modifiedTime, String mimeType) {
         public boolean isJsonBackup() {
-            return name != null && name.toLowerCase().endsWith(".json");
+            String base = stripEncryptionSuffix(name);
+            return base != null && base.toLowerCase().endsWith(".json");
         }
 
         public boolean isDatabaseSnapshot() {
-            return name != null && name.toLowerCase().endsWith(".db");
+            String base = stripEncryptionSuffix(name);
+            return base != null && base.toLowerCase().endsWith(".db");
         }
     }
 }

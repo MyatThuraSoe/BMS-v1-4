@@ -18,12 +18,17 @@ export const backupService = {
     return response.data;
   },
 
-  runNow: async (startDate = null, endDate = null) => {
+  runNow: async (startDate = null, endDate = null, passphrase = null) => {
     const params = new URLSearchParams();
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
-    
-    const response = await apiClient.post(`/backups/run-now?${params.toString()}`);
+
+    // The passphrase travels in the body, never the query string: a URL ends up in
+    // server access logs and browser history, and this one opens the shop's backups.
+    const response = await apiClient.post(
+      `/backups/run-now?${params.toString()}`,
+      passphrase ? { passphrase } : {}
+    );
     return response.data;
   },
 
@@ -48,9 +53,13 @@ export const backupRestoreService = {
     return response.data.data;
   },
 
-  /** Restores a JSON backup. Returns a job id to poll. */
-  restoreFromDrive: async (fileId, sizeBytes, mode) => {
-    const response = await apiClient.post('/backups/drive/restore', { fileId, sizeBytes, mode });
+  /**
+   * Restores a JSON backup. Returns a job id to poll.
+   * `passphrase` is only needed for a file whose name ends in .enc.
+   */
+  restoreFromDrive: async (fileId, sizeBytes, mode, passphrase = null) => {
+    const response = await apiClient.post('/backups/drive/restore',
+      { fileId, sizeBytes, mode, passphrase: passphrase || undefined });
     return response.data.data.jobId;
   },
 
@@ -58,13 +67,16 @@ export const backupRestoreService = {
    * Downloads a raw database snapshot and stages it for the next start.
    * The app must be restarted afterwards.
    */
-  restoreDatabaseFromDrive: async (fileId, sizeBytes) => {
-    const response = await apiClient.post('/backups/drive/restore-database', { fileId, sizeBytes });
+  restoreDatabaseFromDrive: async (fileId, sizeBytes, passphrase = null) => {
+    const response = await apiClient.post('/backups/drive/restore-database',
+      { fileId, sizeBytes, passphrase: passphrase || undefined });
     return response.data.data.jobId;
   },
 
-  createDatabaseSnapshot: async () => {
-    const response = await apiClient.post('/backups/drive/snapshot');
+  /** `passphrase` seals the snapshot before it is uploaded, when one was typed. */
+  createDatabaseSnapshot: async (passphrase = null) => {
+    const response = await apiClient.post('/backups/drive/snapshot',
+      passphrase ? { passphrase } : {});
     return response.data.data.jobId;
   },
 
@@ -73,9 +85,14 @@ export const backupRestoreService = {
     return response.data.data;
   },
 
-  isRestorePending: async () => {
+  /** { pending, damagedDatabase }: a restart still owed, and damage already replaced. */
+  getRestoreStatus: async () => {
     const response = await apiClient.get('/backups/restore-pending');
-    return response.data.data.pending;
+    return response.data.data;
+  },
+
+  dismissDamagedDatabase: async () => {
+    await apiClient.delete('/backups/restore-pending/damaged-database');
   }
 };
 

@@ -68,7 +68,8 @@ class BackupRestoreSqliteGuardTest {
         drive = mock(GoogleDriveService.class);
         importer = mock(DataImportService.class);
         liveDb = mock(DataSource.class);
-        service = new BackupRestoreService(drive, importer, liveDb);
+        service = new BackupRestoreService(drive, importer, liveDb,
+                mock(DatabaseSnapshotService.class));
         auditLogService = mock(AuditLogService.class);
         ReflectionTestUtils.setField(service, "auditLogService", auditLogService);
     }

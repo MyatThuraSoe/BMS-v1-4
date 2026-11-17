@@ -32,10 +32,13 @@ public class AuthService {
     @Autowired
     private LoginAttemptTracker attemptTracker;
 
+    @Autowired
+    private LoginAttemptPolicy loginPolicy;
+
     private final Object firstAdminLock = new Object();
 
-    private String attemptKey(String username) {
-        return LoginAttemptTracker.keyOf(username);
+    private String attemptKey(String username, String clientAddress) {
+        return LoginAttemptTracker.loginKey(username, clientAddress);
     }
 
 
@@ -58,10 +61,28 @@ public class AuthService {
     private AuditLogService auditLogService;
 
     public LoginResponse authenticateUser(LoginRequest loginRequest) {
-        String key = attemptKey(loginRequest.getUsername());
+        return authenticateUser(loginRequest, null);
+    }
+
+    /**
+     * @param clientAddress where the attempt came from, resolved by
+     *                      {@link LoginAttemptPolicy}. {@code null} when no HTTP request is
+     *                      behind the call: the username is then counted against a key of
+     *                      its own and no address is counted at all.
+     */
+    public LoginResponse authenticateUser(LoginRequest loginRequest, String clientAddress) {
+        String key = attemptKey(loginRequest.getUsername(), clientAddress);
+        String addressKey = LoginAttemptTracker.addressKey(clientAddress);
+
+        // The address is asked first. Its refusal is about the machine, and answering it
+        // with the account's own lock would confirm that the username is real.
+        if (attemptTracker.isLocked(addressKey)) {
+            log.warn("Login refused from a locked address: {}", clientAddress);
+            throw new BusinessException("auth.login.failed");
+        }
 
         if (attemptTracker.isLocked(key)) {
-            log.warn("Login rejected for locked account: username={}", key);
+            log.warn("Login rejected for locked account: username={} from {}", key, clientAddress);
             throw new BusinessException("auth.login.locked");
         }
 
@@ -112,7 +133,7 @@ public class AuthService {
             // Inactive-account rejection is not a password failure — don't count it
             // toward the lockout, otherwise a deactivated user could lock themselves in.
             if (!"auth.login.inactive".equals(be.getMessage())) {
-                attemptTracker.recordFailure(key, LoginAttemptTracker.LOGIN);
+                countFailure(loginRequest.getUsername(), clientAddress);
             }
             // Preserve our intentional business error messages
             throw be;
@@ -124,7 +145,7 @@ public class AuthService {
             log.warn("Login rejected for inactive account: username={}", key);
             throw new BusinessException("auth.login.inactive");
         } catch (Exception e) {
-            attemptTracker.recordFailure(key, LoginAttemptTracker.LOGIN);
+            countFailure(loginRequest.getUsername(), clientAddress);
             log.error("Login failed due to unexpected error. username={}", loginRequest.getUsername(), e);
 
             // Best-effort audit log; do not mask the root exception with audit issues
@@ -145,6 +166,20 @@ public class AuthService {
 
             // Keep frontend behavior consistent
             throw new BusinessException("auth.login.failed");
+        }
+    }
+
+    /**
+     * Counts one failed sign-in. The address always pays, because that is what stops
+     * somebody from walking through the username list from another machine; the username
+     * only pays when it belongs to an account, so a script of invented names cannot buy
+     * keys in the tracker and never shuts a real account.
+     */
+    private void countFailure(String username, String clientAddress) {
+        attemptTracker.recordFailure(LoginAttemptTracker.addressKey(clientAddress),
+                loginPolicy.addressPolicy());
+        if (userRepository.findByUsernameIgnoreCase(username).isPresent()) {
+            attemptTracker.recordFailure(attemptKey(username, clientAddress), LoginAttemptTracker.LOGIN);
         }
     }
 

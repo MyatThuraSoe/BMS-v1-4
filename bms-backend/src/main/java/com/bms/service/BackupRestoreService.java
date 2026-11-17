@@ -88,9 +88,13 @@ public class BackupRestoreService {
     public static final String PENDING_RESTORE_FILE = "lumipos-restored.db";
     public static final String PENDING_RESTORE_MARKER = ".lumipos-pending-restore";
 
+    /** Written by SqliteDataDirMigration when the database it replaced could not be read. */
+    public static final String DAMAGED_DATABASE_NOTICE = ".lumipos-damaged-database";
+
     private final GoogleDriveService googleDriveService;
     private final DataImportService dataImportService;
     private final DataSource dataSource;
+    private final DatabaseSnapshotService snapshotService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     private final Map<String, RestoreJob> jobs = new ConcurrentHashMap<>();
@@ -102,10 +106,12 @@ public class BackupRestoreService {
 
     public BackupRestoreService(GoogleDriveService googleDriveService,
                                 DataImportService dataImportService,
-                                DataSource dataSource) {
+                                DataSource dataSource,
+                                DatabaseSnapshotService snapshotService) {
         this.googleDriveService = googleDriveService;
         this.dataImportService = dataImportService;
         this.dataSource = dataSource;
+        this.snapshotService = snapshotService;
     }
 
     public List<DriveBackupFile> listDriveBackups() throws Exception {
@@ -125,33 +131,80 @@ public class BackupRestoreService {
         return Files.exists(resolvePendingRestore()) && Files.exists(resolvePendingMarker());
     }
 
+    /**
+     * The name of the file a damaged database was kept as by the restore that just
+     * ran, or null when the database being replaced opened normally.
+     *
+     * <p>Only {@link com.bms.sqlite.SqliteDataDirMigration} can tell damage from an
+     * ordinary restore, and it does that work before this process has a database to
+     * keep the answer in, so the name is handed over as a file in the data directory
+     * and survives the restart that applies the restore.
+     */
+    public String getDamagedDatabaseName() {
+        try {
+            Path notice = Paths.get(resolveDataDir()).resolve(DAMAGED_DATABASE_NOTICE);
+            if (!Files.exists(notice)) {
+                return null;
+            }
+            String name = Files.readString(notice, StandardCharsets.UTF_8).trim();
+            return name.isBlank() ? null : name;
+        } catch (IOException ex) {
+            log.warn("The damaged database notice could not be read: " + ex.getMessage());
+            return null;
+        }
+    }
+
+    /** Acknowledges the notice, so the banner does not outlive the message. */
+    public void dismissDamagedDatabase() {
+        try {
+            Files.deleteIfExists(Paths.get(resolveDataDir()).resolve(DAMAGED_DATABASE_NOTICE));
+        } catch (IOException ex) {
+            log.warn("The damaged database notice could not be dismissed: " + ex.getMessage());
+        }
+    }
+
     // ------------------------------------------------------------------ jobs
 
     public String startJsonRestore(String fileId, long sizeBytes, DataImportService.ImportMode mode) {
+        return startJsonRestore(fileId, sizeBytes, mode, null);
+    }
+
+    /**
+     * @param passphrase opens the file when it was uploaded encrypted; null for
+     *                   the plain backups this shop took before it switched
+     *                   encryption on, which still restore exactly as they did
+     */
+    public String startJsonRestore(String fileId, long sizeBytes, DataImportService.ImportMode mode,
+                                   char[] passphrase) {
         String jobId = newJobId();
         RestoreJob job = new RestoreJob(jobId, "json-restore", "RUNNING", 0,
                 "Starting restore...", null, Instant.now().toString(), null);
         jobs.put(jobId, job);
         evictOldJobs();
 
-        executor.submit(() -> runJsonRestore(jobId, fileId, sizeBytes, mode));
+        executor.submit(() -> runJsonRestore(jobId, fileId, sizeBytes, mode, passphrase));
         return jobId;
     }
 
     public String startDatabaseSnapshot() {
+        return startDatabaseSnapshot(null);
+    }
+
+    public String startDatabaseSnapshot(char[] passphrase) {
         String jobId = newJobId();
         RestoreJob job = new RestoreJob(jobId, "db-snapshot", "RUNNING", 0,
                 "Preparing database snapshot...", null, Instant.now().toString(), null);
         jobs.put(jobId, job);
         evictOldJobs();
 
-        executor.submit(() -> runDatabaseSnapshot(jobId));
+        executor.submit(() -> runDatabaseSnapshot(jobId, passphrase));
         return jobId;
     }
 
     private void runJsonRestore(String jobId, String fileId, long sizeBytes,
-                                DataImportService.ImportMode mode) {
+                                DataImportService.ImportMode mode, char[] passphrase) {
         Path temp = null;
+        Path opened = null;
         try {
             // Phase 1: download (0-40%). Byte-accurate, and for a Drive restore
             // this is the only phase the user actually waits on.
@@ -170,9 +223,11 @@ public class BackupRestoreService {
                 }
             });
 
-            // Phase 2: validate (40-50%).
+            // Phase 2: validate (40-50%). An encrypted file is opened first, so
+            // every check below runs on the same bytes a plain backup would give.
             update(jobId, 42, "Checking the backup file...");
-            String json = Files.readString(temp, StandardCharsets.UTF_8);
+            opened = BackupEncryption.openIfNeeded(temp, passphrase);
+            String json = Files.readString(opened, StandardCharsets.UTF_8);
             Map<String, Object> parsed = objectMapper.readValue(json, Map.class);
             if (parsed.get("data") == null) {
                 throw new IllegalArgumentException(
@@ -192,65 +247,36 @@ public class BackupRestoreService {
             log.error("JSON restore job {} failed", jobId, ex);
             fail(jobId, friendlyMessage(ex));
         } finally {
-            if (temp != null) {
-                try {
-                    Files.deleteIfExists(temp);
-                } catch (IOException ignored) {
-                    // A leftover temp file is harmless.
-                }
+            deleteQuietly(temp);
+            deleteQuietly(opened);
+        }
+    }
+
+    private static void deleteQuietly(Path file) {
+        if (file != null) {
+            try {
+                Files.deleteIfExists(file);
+            } catch (IOException ignored) {
+                // A leftover temp file is harmless.
             }
         }
     }
 
-    private void runDatabaseSnapshot(String jobId) {
-        Path snapshot = null;
+    private void runDatabaseSnapshot(String jobId, char[] passphrase) {
         try {
             // VACUUM INTO writes a consistent snapshot even with concurrent
             // writers, which a plain file copy of a WAL database does not.
             update(jobId, 10, "Creating a consistent database snapshot...");
-            snapshot = createConsistentSnapshot();
-
             update(jobId, 60, "Uploading snapshot to Google Drive...");
             String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
-            String name = "LumiPOS_DB_" + shopTimeService.now()
-                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd_HHmmss")) + ".db";
-            googleDriveService.uploadFile(snapshot.toFile(), "application/x-sqlite3", folderId, name);
+            GoogleDriveService.DriveUpload upload = snapshotService.uploadSnapshotToDrive(
+                    googleDriveService, folderId, shopTimeService.now(), passphrase);
 
-            finish(jobId, "SUCCESS", 100, "Database snapshot uploaded as " + name, null);
+            finish(jobId, "SUCCESS", 100, "Database snapshot uploaded as " + upload.name(), null);
         } catch (Exception ex) {
             log.error("Database snapshot job {} failed", jobId, ex);
             fail(jobId, friendlyMessage(ex));
-        } finally {
-            if (snapshot != null) {
-                try {
-                    Files.deleteIfExists(snapshot);
-                } catch (IOException ignored) {
-                    // Best effort.
-                }
-            }
         }
-    }
-
-    /**
-     * Takes a consistent copy of the live SQLite database using
-     * {@code VACUUM INTO}, which is safe while other connections are writing.
-     * Returns null for a non-SQLite engine, where a raw snapshot makes no sense.
-     */
-    public Path createConsistentSnapshot() throws SQLException, IOException {
-        Path target = Files.createTempFile("lumipos_snapshot_", ".db");
-        Files.deleteIfExists(target);
-
-        try (Connection connection = dataSource.getConnection();
-             Statement statement = connection.createStatement()) {
-            String url = connection.getMetaData().getURL();
-            if (url == null || !url.contains(":sqlite:")) {
-                throw new IllegalStateException(
-                        "Raw database snapshots are only available with the SQLite engine. "
-                                + "Use a JSON backup instead for MySQL installs.");
-            }
-            statement.execute("VACUUM INTO '" + target.toAbsolutePath().toString().replace("'", "''") + "'");
-        }
-        return target;
     }
 
     /**
@@ -260,20 +286,30 @@ public class BackupRestoreService {
      * @param actorUserId the admin who pressed the button, for the audit trail
      */
     public String startDatabaseRestore(String fileId, long sizeBytes, Long actorUserId) {
+        return startDatabaseRestore(fileId, sizeBytes, actorUserId, null);
+    }
+
+    /**
+     * @param passphrase opens the snapshot when it was uploaded encrypted; null
+     *                   leaves an encrypted file to be refused with a message
+     *                   that asks for it
+     */
+    public String startDatabaseRestore(String fileId, long sizeBytes, Long actorUserId, char[] passphrase) {
         String jobId = newJobId();
         jobs.put(jobId, new RestoreJob(jobId, "db-restore", "RUNNING", 0,
                 "Starting database restore...", null, Instant.now().toString(), null));
         evictOldJobs();
 
         executor.submit(() -> {
+            Path downloaded = null;
             Path staged = null;
             try {
                 update(jobId, 2, "Downloading database from Google Drive...");
-                staged = Files.createTempFile("lumipos_dbrestore_", ".db");
+                downloaded = Files.createTempFile("lumipos_dbrestore_", ".db");
                 final String jid = jobId;
                 final long total = sizeBytes;
                 final int[] last = {0};
-                googleDriveService.downloadFile(fileId, staged.toFile(), written -> {
+                googleDriveService.downloadFile(fileId, downloaded.toFile(), written -> {
                     int pct = total > 0 ? (int) Math.min(85, (written * 85) / total) : 40;
                     if (pct - last[0] >= 3 || pct >= 85) {
                         last[0] = pct;
@@ -281,7 +317,11 @@ public class BackupRestoreService {
                     }
                 });
 
+                // The checks below only ever see a database, encrypted or not:
+                // opening first means a sealed snapshot is proved to be one by
+                // the same VACUUM-integrity test an unsealed one has to pass.
                 update(jobId, 88, "Checking the downloaded database...");
+                staged = BackupEncryption.openIfNeeded(downloaded, passphrase);
                 StagedDatabase result = stageDatabase(
                         staged, Paths.get(resolveDataDir()), fileId, sizeBytes, actorUserId);
                 update(jobId, 96, result.checkStep());
@@ -293,13 +333,8 @@ public class BackupRestoreService {
                 log.error("Database restore job {} failed", jobId, ex);
                 fail(jobId, friendlyMessage(ex));
             } finally {
-                if (staged != null) {
-                    try {
-                        Files.deleteIfExists(staged);
-                    } catch (IOException ignored) {
-                        // Best effort.
-                    }
-                }
+                deleteQuietly(downloaded);
+                deleteQuietly(staged);
             }
         });
         return jobId;

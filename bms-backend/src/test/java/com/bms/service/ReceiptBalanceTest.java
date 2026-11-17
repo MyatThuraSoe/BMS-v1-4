@@ -4,6 +4,7 @@ import com.bms.dto.receipt.ArPaymentReceiptDto;
 import com.bms.dto.receipt.ReceiptDto;
 import com.bms.entity.ArPayment;
 import com.bms.entity.Sale;
+import com.bms.exception.StateConflictException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
@@ -169,7 +170,7 @@ class ReceiptBalanceTest {
         sale.setIsVoided(true);
         paymentIs(collection(11L, "30.00", sale));
 
-        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+        StateConflictException thrown = assertThrows(StateConflictException.class,
                 () -> receiptService.getArPaymentReceipt(11L));
 
         assertEquals("Invoice was voided: " + INVOICE, thrown.getMessage());
@@ -181,7 +182,7 @@ class ReceiptBalanceTest {
         sale.setIsVoided(true);
         receiptOf(sale);
 
-        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+        StateConflictException thrown = assertThrows(StateConflictException.class,
                 () -> receiptService.getReceiptByInvoiceNumber(INVOICE));
 
         assertEquals("Invoice was voided: " + INVOICE, thrown.getMessage());

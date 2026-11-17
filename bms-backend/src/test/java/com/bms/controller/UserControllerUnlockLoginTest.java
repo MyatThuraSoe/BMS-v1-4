@@ -89,7 +89,10 @@ class UserControllerUnlockLoginTest {
     /** Five wrong passwords at the login page is what shuts an account. */
     private void lockLoginOf(String username) {
         for (int attempt = 1; attempt <= 5; attempt++) {
-            tracker.recordFailure(LoginAttemptTracker.keyOf(username), LoginAttemptTracker.LOGIN);
+            tracker.recordFailure(LoginAttemptTracker.loginKey(username, "192.168.1.50"),
+                    LoginAttemptTracker.LOGIN);
+            tracker.recordFailure(LoginAttemptTracker.loginKey(username, "192.168.1.51"),
+                    LoginAttemptTracker.LOGIN);
         }
     }
 
@@ -123,7 +126,8 @@ class UserControllerUnlockLoginTest {
 
         controller.unlockLogin(MANAGER_ID, admin);
 
-        assertFalse(tracker.isLocked(MANAGER), "the lock is gone now, not at the next restart");
+        assertFalse(tracker.isLockedForUsername(MANAGER),
+                "the lock is gone now, not at the next restart, and gone from every address it was shut at");
         assertEquals(Boolean.FALSE, listedUsers().get(1).getLoginLocked());
 
         ArgumentCaptor<String> description = ArgumentCaptor.forClass(String.class);

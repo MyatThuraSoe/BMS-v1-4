@@ -13,11 +13,13 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -54,8 +56,13 @@ import java.util.Optional;
  *       restore cannot destroy the copy the first one made, and the number kept is
  *       capped by {@code sqlite.restoreBackup.keep} so the data folder does not
  *       grow by the size of the database every time the shop restores.</li>
- *   <li>Startup is refused if the copy cannot be verified, leaving the legacy
- *       data untouched for the shop owner to recover by hand.</li>
+ *   <li>Startup is refused if the copy of a <b>readable</b> database cannot be
+ *       verified, leaving the legacy data untouched for the shop owner to recover
+ *       by hand. A database that cannot be read at all is the opposite case: the
+ *       shop is restoring because of it, so its copy is kept as
+ *       {@code lumipos.db.corrupt-<stamp>}, the restore goes ahead, and the file
+ *       name is written down for the app to show. Those copies are never mixed with
+ *       safety copies and are capped by {@code sqlite.corruptBackup.keep}.</li>
  * </ul>
  *
  * <p>Only active on the {@code sqlite} profile. MySQL and H2 installs are
@@ -75,6 +82,19 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
     private static final String RESTORE_KEEP_SETTING = "sqlite.restoreBackup.keep";
     private static final int DEFAULT_RESTORE_BACKUPS_KEPT = 3;
+    private static final String PRE_RESTORE_PREFIX = DB_FILE_NAME + ".pre-restore-";
+
+    /**
+     * What the copy of a database SQLite could not open is renamed to. It is kept
+     * rather than deleted - it is the only record of the shop's last sales - but it
+     * is never called a safety copy, because it cannot be restored from.
+     */
+    private static final String DAMAGED_PREFIX = DB_FILE_NAME + ".corrupt-";
+    private static final String DAMAGED_KEEP_SETTING = "sqlite.corruptBackup.keep";
+    private static final int DEFAULT_DAMAGED_BACKUPS_KEPT = 3;
+
+    /** The name of that file, written down so the app can tell the shop after a restart. */
+    private static final String DAMAGED_DATABASE_NOTICE = ".lumipos-damaged-database";
     private static final Log log = org.apache.commons.logging.LogFactory.getLog(SqliteDataDirMigration.class);
 
     @Override
@@ -207,6 +227,11 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
      * timestamped backup. If anything goes wrong the original file is left
      * exactly where it was.
      *
+     * <p>One case does not stop: a live database that SQLite itself cannot read.
+     * That is the case the shop is restoring <i>because</i> of, so refusing to
+     * continue would leave it with a damaged file and no way back to selling. Its
+     * copy is kept under a name that says what it is and the restore goes ahead.
+     *
      * <p>Package-private rather than private so the test suite can drive this
      * directly: it is the one method that overwrites a live database.
      */
@@ -228,24 +253,40 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
 
         Path safety = safetyCopyPath(targetDir);
         if (Files.exists(target)) {
-            Files.copy(target, safety);
-            // Verify before anything else is touched. A safety copy that cannot be
-            // opened is not a safety copy, and overwriting a database nobody can
-            // fall back to is how a shop loses everything twice.
-            try {
-                verify(null, safety);
-            } catch (IOException ex) {
-                throw new IOException("LumiPOS will not restore over this database: the safety copy of "
-                        + "it could not be read (" + ex.getMessage() + "). Nothing was replaced; the "
-                        + "database still in use is " + target + " and its unreadable copy is " + safety
-                        + ". The staged restore is still waiting at " + staged
-                        + ". Clear up those files, or remove " + pendingMarker.getFileName()
-                        + " to start without restoring, and try again.", ex);
+            // Asked before anything is copied, because the answer decides what a
+            // copy that cannot be read means: damage the shop already knows about,
+            // or a fallback this app just failed to make.
+            boolean liveHealthy = isReadableDatabase(target);
+            copyLiveAside(target, safety);
+
+            if (!liveHealthy) {
+                safety = keepDamagedDatabase(targetDir, safety);
+                log.warn("The database being replaced could not be opened. What was copied of it is kept "
+                        + "as " + safety.getFileName() + " and the restore continued.");
+            } else {
+                // Verify before anything else is touched. A safety copy that cannot be
+                // opened is not a safety copy, and overwriting a database nobody can
+                // fall back to is how a shop loses everything twice.
+                String damage = damageReason(safety);
+                if (damage != null) {
+                    throw new IOException("LumiPOS will not restore over this database: the safety copy of "
+                            + "it could not be read (" + damage + "). Nothing was replaced; the "
+                            + "database still in use is " + target + " and its unreadable copy is " + safety
+                            + ". The staged restore is still waiting at " + staged
+                            + ". Clear up those files, or remove " + pendingMarker.getFileName()
+                            + " to start without restoring, and try again.");
+                }
             }
             if (!foldedIn) {
                 carryWalAside(targetDir, target, safety);
             }
-            pruneSafetyCopies(targetDir, safety, restoreBackupsToKeep(target));
+            if (liveHealthy) {
+                pruneSafetyCopies(targetDir, safety, restoreBackupsToKeep(target));
+            } else {
+                // The damaged file's own settings cannot be read, so the number of
+                // these copies to keep comes with the backup being restored.
+                pruneDamagedCopies(targetDir, safety, damagedBackupsToKeep(staged));
+            }
         }
 
         Files.copy(staged, target, StandardCopyOption.REPLACE_EXISTING);
@@ -261,7 +302,7 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
         Files.deleteIfExists(staged);
         Files.deleteIfExists(pendingMarker);
 
-        log.warn("Database restore applied. Restart-safe copy of the previous database: " + safety);
+        log.warn("Database restore applied. What the shop had before it is kept at " + safety);
     }
 
     /**
@@ -324,12 +365,61 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
      */
     private Path safetyCopyPath(Path targetDir) {
         String stamp = LocalDateTime.now().format(SAFETY_STAMP);
-        Path candidate = targetDir.resolve(DB_FILE_NAME + ".pre-restore-" + stamp);
+        Path candidate = targetDir.resolve(PRE_RESTORE_PREFIX + stamp);
         int collision = 2;
         while (Files.exists(candidate)) {
-            candidate = targetDir.resolve(DB_FILE_NAME + ".pre-restore-" + stamp + "-" + collision++);
+            candidate = targetDir.resolve(PRE_RESTORE_PREFIX + stamp + "-" + collision++);
         }
         return candidate;
+    }
+
+    /**
+     * Copies the live database aside. Package-private and overridable so a test can
+     * hand back a copy that is not what the live file was, which is the only way to
+     * prove the refusal: a plain copy of a readable database is readable.
+     */
+    void copyLiveAside(Path target, Path safety) throws IOException {
+        Files.copy(target, safety);
+    }
+
+    private boolean isReadableDatabase(Path file) {
+        return damageReason(file) == null;
+    }
+
+    /** Why this file is not a database SQLite can read, or null when it is one. */
+    private String damageReason(Path file) {
+        try {
+            verify(null, file);
+            return null;
+        } catch (IOException ex) {
+            return ex.getMessage();
+        }
+    }
+
+    /**
+     * Renames the copy of an unreadable database to a name that says what it is and
+     * writes that name down for the app to show after the restart. Kept under a
+     * safety-copy name it would be pruned like a working database, and would
+     * mislead whoever tried to restore from it.
+     */
+    private Path keepDamagedDatabase(Path targetDir, Path safetyCopy) throws IOException {
+        // The stamp is carried over so a damaged database, its write-ahead log and
+        // the notice about it all name the same moment.
+        String stamp = safetyCopy.getFileName().toString().substring(PRE_RESTORE_PREFIX.length());
+        Path damaged = targetDir.resolve(DAMAGED_PREFIX + stamp);
+        int collision = 2;
+        while (Files.exists(damaged)) {
+            damaged = targetDir.resolve(DAMAGED_PREFIX + stamp + "-" + collision++);
+        }
+        Files.move(safetyCopy, damaged);
+        try {
+            Files.writeString(targetDir.resolve(DAMAGED_DATABASE_NOTICE), damaged.getFileName().toString());
+        } catch (IOException ex) {
+            // Informational only: a notice the shop cannot read is not a reason to
+            // stop it from getting its data back.
+            log.warn("The app could not be told about the damaged database: " + ex.getMessage());
+        }
+        return damaged;
     }
 
     /**
@@ -339,20 +429,54 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
      * the shop's own number has to be honoured before anything is deleted.
      */
     private void pruneSafetyCopies(Path targetDir, Path justMade, int keep) {
+        pruneCopies(targetDir, justMade, keep, PRE_RESTORE_PREFIX, oldestFirst());
+    }
+
+    /**
+     * The damaged copies are deliberately outside {@link #pruneSafetyCopies}: a shop
+     * that lost its database wants the record of what was lost, not three working
+     * databases it already has. Past the cap the oldest goes, judged by the time on
+     * the file rather than by its name, which can be numbered.
+     */
+    private void pruneDamagedCopies(Path targetDir, Path justMade, int keep) {
+        pruneCopies(targetDir, justMade, keep, DAMAGED_PREFIX, oldestFirst());
+    }
+
+    /**
+     * Both kinds of copy carry the same problem: a second file made in the same
+     * minute is named {@code ...-2}, and {@code -2} sorts before the plain suffix
+     * it came after, so a name order calls the newer copy the older one. The clock
+     * on the file is the only honest answer, and the name only breaks a tie.
+     */
+    private static Comparator<Path> oldestFirst() {
+        return Comparator.comparing(SqliteDataDirMigration::lastModified, Comparator.naturalOrder())
+                .thenComparing(path -> path.getFileName().toString());
+    }
+
+    private static FileTime lastModified(Path file) {
+        try {
+            return Files.getLastModifiedTime(file);
+        } catch (IOException ex) {
+            return FileTime.from(Instant.EPOCH);
+        }
+    }
+
+    private void pruneCopies(Path targetDir, Path justMade, int keep, String prefix,
+                             Comparator<Path> oldestFirst) {
         List<Path> older;
         try (var files = Files.list(targetDir)) {
             older = files
                     .map(path -> (Path) path)
                     .filter(path -> !path.equals(justMade))
-                    .filter(path -> path.getFileName().toString().startsWith(DB_FILE_NAME + ".pre-restore-"))
+                    .filter(path -> path.getFileName().toString().startsWith(prefix))
                     .filter(path -> {
                         String name = path.getFileName().toString();
                         return !name.endsWith("-wal") && !name.endsWith("-shm");
                     })
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                    .sorted(oldestFirst)
                     .toList();
         } catch (IOException ex) {
-            log.warn("The old pre-restore copies could not be listed, so none were deleted: "
+            log.warn("The old " + prefix + " copies could not be listed, so none were deleted: "
                     + ex.getMessage());
             return;
         }
@@ -366,7 +490,7 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
                 Path sidecar = targetDir.resolve(DB_FILE_NAME + suffix + infix);
                 try {
                     if (Files.deleteIfExists(sidecar)) {
-                        log.info("Removed old pre-restore file: " + sidecar.getFileName());
+                        log.info("Removed old copy of a previous database: " + sidecar.getFileName());
                     }
                 } catch (IOException ex) {
                     log.warn("Could not remove " + sidecar.getFileName() + ": " + ex.getMessage());
@@ -377,24 +501,36 @@ public class SqliteDataDirMigration implements EnvironmentPostProcessor {
 
     /** How many pre-restore copies this shop asked to keep; three when it never said. */
     private int restoreBackupsToKeep(Path target) {
-        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + target.toAbsolutePath());
+        return backupsToKeep(target, RESTORE_KEEP_SETTING, DEFAULT_RESTORE_BACKUPS_KEPT);
+    }
+
+    /**
+     * How many copies of a damaged database to keep. Asked of the backup being
+     * restored rather than of the live file, because the live file is the one that
+     * cannot be read - and a shop's settings travel with its data.
+     */
+    private int damagedBackupsToKeep(Path staged) {
+        return backupsToKeep(staged, DAMAGED_KEEP_SETTING, DEFAULT_DAMAGED_BACKUPS_KEPT);
+    }
+
+    private int backupsToKeep(Path database, String setting, int fallback) {
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + database.toAbsolutePath());
              Statement statement = connection.createStatement();
              ResultSet rs = statement.executeQuery("SELECT setting_value FROM system_settings "
-                     + "WHERE setting_key = '" + RESTORE_KEEP_SETTING + "'")) {
+                     + "WHERE setting_key = '" + setting + "'")) {
             if (rs.next()) {
                 int kept = Integer.parseInt(String.valueOf(rs.getString(1)).trim());
                 if (kept >= 1) {
                     return kept;
                 }
-                log.warn(RESTORE_KEEP_SETTING + " is '" + rs.getString(1)
-                        + "'; at least one safety copy has to be kept, using "
-                        + DEFAULT_RESTORE_BACKUPS_KEPT + ".");
+                log.warn(setting + " is '" + rs.getString(1)
+                        + "'; at least one copy has to be kept, using " + fallback + ".");
             }
         } catch (Exception ex) {
             // A database with no settings table yet is a first install, not a problem.
-            log.debug("No " + RESTORE_KEEP_SETTING + " setting readable: " + ex.getMessage());
+            log.debug("No " + setting + " setting readable: " + ex.getMessage());
         }
-        return DEFAULT_RESTORE_BACKUPS_KEPT;
+        return fallback;
     }
 
     private static Path targetDirOf(Path file) {

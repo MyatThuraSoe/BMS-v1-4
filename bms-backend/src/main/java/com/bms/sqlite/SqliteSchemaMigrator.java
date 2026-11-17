@@ -14,11 +14,13 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -484,7 +486,7 @@ public class SqliteSchemaMigrator implements InitializingBean {
                         String name = path.getFileName().toString();
                         return name.startsWith(prefix) && name.endsWith(".bak") && !name.equals(ownName);
                     })
-                    .sorted(Comparator.comparing(path -> path.getFileName().toString()))
+                    .sorted(oldestFirst())
                     .toList();
         } catch (IOException ex) {
             log.warn("SQLite schema: the old upgrade backups could not be listed: {}", ex.getMessage());
@@ -501,6 +503,29 @@ public class SqliteSchemaMigrator implements InitializingBean {
                 log.warn("SQLite schema: the old upgrade backup {} could not be removed: {}",
                         stale.getFileName(), ex.getMessage());
             }
+        }
+    }
+
+    /**
+     * Oldest by the clock written on the file, with the name only breaking a tie.
+     *
+     * <p>Sorting by name alone throws away a newer backup: a second copy taken in
+     * the same minute is named {@code ...<minute>-2.bak}, and {@code -2} sorts
+     * before the plain {@code .bak} it came after, so the text order calls the
+     * newer file the older one.
+     */
+    private static Comparator<Path> oldestFirst() {
+        return Comparator.comparing(SqliteSchemaMigrator::lastModified, Comparator.naturalOrder())
+                .thenComparing(path -> path.getFileName().toString());
+    }
+
+    private static FileTime lastModified(Path file) {
+        try {
+            return Files.getLastModifiedTime(file);
+        } catch (IOException ex) {
+            // A file whose age cannot be read is treated as the oldest there is,
+            // which is the one the shop is least likely to miss.
+            return FileTime.from(Instant.EPOCH);
         }
     }
 

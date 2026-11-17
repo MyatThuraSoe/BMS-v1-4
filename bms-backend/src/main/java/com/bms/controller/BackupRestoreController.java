@@ -7,6 +7,7 @@ import com.bms.service.DataImportService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -61,7 +62,7 @@ public class BackupRestoreController {
         }
 
         String jobId = backupRestoreService.startJsonRestore(
-                request.fileId(), request.sizeBytes(), mode);
+                request.fileId(), request.sizeBytes(), mode, passphraseOf(request));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jobId", jobId);
@@ -79,7 +80,8 @@ public class BackupRestoreController {
             @AuthenticationPrincipal User actor) {
 
         String jobId = backupRestoreService.startDatabaseRestore(
-                request.fileId(), request.sizeBytes(), actor != null ? actor.getId() : null);
+                request.fileId(), request.sizeBytes(), actor != null ? actor.getId() : null,
+                passphraseOf(request));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jobId", jobId);
@@ -89,8 +91,12 @@ public class BackupRestoreController {
 
     /** Take a consistent snapshot of the live database and upload it to Drive. */
     @PostMapping("/drive/snapshot")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> createDatabaseSnapshot() {
-        String jobId = backupRestoreService.startDatabaseSnapshot();
+    public ResponseEntity<ApiResponse<Map<String, Object>>> createDatabaseSnapshot(
+            @RequestBody(required = false) Map<String, String> request) {
+
+        String passphrase = request == null ? null : request.get("passphrase");
+        String jobId = backupRestoreService.startDatabaseSnapshot(
+            passphrase == null || passphrase.isEmpty() ? null : passphrase.toCharArray());
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jobId", jobId);
@@ -116,9 +122,29 @@ public class BackupRestoreController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> restorePending() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("pending", backupRestoreService.isRestorePending());
+        // Set when the database this app replaced could not be opened: the name of
+        // the file its contents were kept as, so the shop can be told where they are.
+        body.put("damagedDatabase", backupRestoreService.getDamagedDatabaseName());
         return ResponseEntity.ok(new ApiResponse<>(true, "Pending restore status", body));
     }
 
-    public record DriveRestoreRequest(String fileId, long sizeBytes, String mode) {
+    /** Acknowledges the damaged-database notice so it stops being shown. */
+    @DeleteMapping("/restore-pending/damaged-database")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> dismissDamagedDatabase() {
+        backupRestoreService.dismissDamagedDatabase();
+        return ResponseEntity.ok(new ApiResponse<>(true, "Damaged database notice dismissed", null));
+    }
+
+    /**
+     * A restore request. {@code passphrase} is optional: it is only needed for the
+     * backups this shop sealed, and it is never stored server-side, so the person
+     * restoring has to be the one typing it.
+     */
+    public record DriveRestoreRequest(String fileId, long sizeBytes, String mode, String passphrase) {
+    }
+
+    private static char[] passphraseOf(DriveRestoreRequest request) {
+        String value = request.passphrase();
+        return value == null || value.isEmpty() ? null : value.toCharArray();
     }
 }

@@ -5,6 +5,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -21,6 +22,7 @@ import {
   ListItemText,
   Radio,
   RadioGroup,
+  TextField,
   FormControl,
   FormLabel,
   Typography
@@ -57,6 +59,32 @@ function formatWhen(iso) {
 }
 
 /**
+ * Which half of the shop a Drive row can put back: a .db row is the whole
+ * database, a .json row is the exported rows without the accounting ledgers, the
+ * closed periods or the invoice counters. The shop has to see that before it
+ * clicks restore, not afterwards.
+ *
+ * A sealed file is still the same kind of backup underneath, so the .enc marker
+ * comes off before the question is answered.
+ */
+function withoutEncryptionMarker(name) {
+  const lower = (name || '').toLowerCase();
+  return lower.endsWith('.enc') ? lower.slice(0, -'.enc'.length) : lower;
+}
+
+function backupKind(file) {
+  const name = withoutEncryptionMarker(file?.name);
+  if (name.endsWith('.db')) return 'database';
+  if (name.endsWith('.json')) return 'export';
+  return null;
+}
+
+/** Whether this row needs the passphrase it was made with before it can be read. */
+function isSealed(file) {
+  return (file?.name || '').toLowerCase().endsWith('.enc');
+}
+
+/**
  * Recovery: pull a backup down from Google Drive, or take a raw database
  * snapshot for the case where the whole PC is gone.
  *
@@ -64,7 +92,7 @@ function formatWhen(iso) {
  * restore that "finishes" while still copying is worse than a slow bar, because
  * the shop closes the app thinking the data is back.
  */
-export default function DriveRestoreCard({ isConnected }) {
+export default function DriveRestoreCard({ isConnected, encryption }) {
   const { t } = useTranslation(['settings', 'common']);
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -73,6 +101,10 @@ export default function DriveRestoreCard({ isConnected }) {
   const [job, setJob] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [restorePending, setRestorePending] = useState(false);
+  const [damagedDatabase, setDamagedDatabase] = useState(null);
+  // Typed, never stored: an encrypted backup has no other way open, so a lost
+  // passphrase is a file nobody can read, this app included.
+  const [passphrase, setPassphrase] = useState('');
   const pollRef = useRef(null);
 
   const stopPolling = useCallback(() => {
@@ -86,11 +118,22 @@ export default function DriveRestoreCard({ isConnected }) {
 
   const refreshPending = useCallback(async () => {
     try {
-      setRestorePending(await backupRestoreService.isRestorePending());
+      const status = await backupRestoreService.getRestoreStatus();
+      setRestorePending(Boolean(status.pending));
+      setDamagedDatabase(status.damagedDatabase || null);
     } catch (err) {
       // Non-fatal: the banner is informational.
     }
   }, []);
+
+  const dismissDamaged = async () => {
+    try {
+      await backupRestoreService.dismissDamagedDatabase();
+      setDamagedDatabase(null);
+    } catch (err) {
+      notifyError(err.response?.data?.message || t('restore_status_failed'));
+    }
+  };
 
   useEffect(() => {
     refreshPending();
@@ -140,10 +183,11 @@ export default function DriveRestoreCard({ isConnected }) {
   const startJsonRestore = () => {
     if (!selected) return;
     const file = selected;
+    const secret = passphrase;
     setConfirm(null);
     setJob({ percent: 0, step: t('restore_starting'), status: 'RUNNING' });
     backupRestoreService
-      .restoreFromDrive(file.id, file.sizeBytes, mode)
+      .restoreFromDrive(file.id, file.sizeBytes, mode, secret)
       .then((jobId) => startPolling(jobId))
       .catch((err) => {
         setJob(null);
@@ -154,10 +198,11 @@ export default function DriveRestoreCard({ isConnected }) {
   const startDatabaseRestore = () => {
     if (!selected) return;
     const file = selected;
+    const secret = passphrase;
     setConfirm(null);
     setJob({ percent: 0, step: t('restore_starting'), status: 'RUNNING' });
     backupRestoreService
-      .restoreDatabaseFromDrive(file.id, file.sizeBytes)
+      .restoreDatabaseFromDrive(file.id, file.sizeBytes, secret)
       .then((jobId) => startPolling(jobId))
       .catch((err) => {
         setJob(null);
@@ -168,7 +213,9 @@ export default function DriveRestoreCard({ isConnected }) {
   const startSnapshot = () => {
     setJob({ percent: 0, step: t('snapshot_starting'), status: 'RUNNING' });
     backupRestoreService
-      .createDatabaseSnapshot()
+      // Sealed when the shop switched encryption on and typed the passphrase on
+      // this page; an unsealed snapshot is what the nightly schedule always gives.
+      .createDatabaseSnapshot(encryption?.enabled ? encryption.passphrase : null)
       .then((jobId) => startPolling(jobId))
       .catch((err) => {
         setJob(null);
@@ -177,8 +224,9 @@ export default function DriveRestoreCard({ isConnected }) {
   };
 
   const running = job?.status === 'RUNNING';
-  const isJson = selected?.name?.toLowerCase().endsWith('.json');
-  const isDb = selected?.name?.toLowerCase().endsWith('.db');
+  const kind = backupKind(selected);
+  const isJson = kind === 'export';
+  const isDb = kind === 'database';
 
   return (
     <Card sx={{ mt: 3 }}>
@@ -195,6 +243,22 @@ export default function DriveRestoreCard({ isConnected }) {
         {restorePending && (
           <Alert severity="warning" icon={<InfoIcon />} sx={{ mb: 2 }}>
             {t('restore_pending_restart')}
+          </Alert>
+        )}
+
+        {/* The restore just applied replaced a database that no longer opened. */}
+        {damagedDatabase && (
+          <Alert
+            severity="error"
+            icon={<InfoIcon />}
+            sx={{ mb: 2 }}
+            action={(
+              <Button color="inherit" size="small" onClick={dismissDamaged}>
+                {t('common:close')}
+              </Button>
+            )}
+          >
+            {t('database_was_damaged', { file: damagedDatabase })}
           </Alert>
         )}
 
@@ -236,11 +300,31 @@ export default function DriveRestoreCard({ isConnected }) {
                   <ListItemButton
                     key={file.id}
                     selected={selected?.id === file.id}
-                    onClick={() => setSelected(file)}
+                    onClick={() => {
+                      setSelected(file);
+                      // The settings page may already hold the phrase this shop
+                      // types; starting a new selection starts from what is typed.
+                      setPassphrase(encryption?.passphrase || '');
+                    }}
                     disabled={running}
                   >
                     <ListItemText
-                      primary={file.name}
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                          <Typography variant="body2" noWrap>{file.name}</Typography>
+                          {backupKind(file) && (
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color={backupKind(file) === 'database' ? 'success' : 'default'}
+                              label={t(backupKind(file) === 'database' ? 'backup_kind_database' : 'backup_kind_export')}
+                            />
+                          )}
+                          {isSealed(file) && (
+                            <Chip size="small" variant="outlined" color="secondary" label={t('sealed_backup')} />
+                          )}
+                        </Box>
+                      }
                       secondary={`${formatWhen(file.modifiedTime)}${file.sizeBytes ? ' - ' + formatBytes(file.sizeBytes) : ''}`}
                     />
                   </ListItemButton>
@@ -334,12 +418,26 @@ export default function DriveRestoreCard({ isConnected }) {
           {confirm?.kind === 'json' && mode === 'REPLACE_ALL' && (
             <Alert severity="error" sx={{ mt: 2 }}>{t('restore_replace_warning')}</Alert>
           )}
+          {/* A sealed file cannot be checked, let alone restored, until it opens. */}
+          {isSealed(selected) && (
+            <TextField
+              autoFocus
+              fullWidth
+              type="password"
+              label={t('restore_passphrase')}
+              value={passphrase}
+              onChange={(e) => setPassphrase(e.target.value)}
+              sx={{ mt: 2 }}
+              helperText={t('restore_passphrase_hint')}
+            />
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirm(null)}>{t('cancel')}</Button>
           <Button
             color="error"
             variant="contained"
+            disabled={isSealed(selected) && !passphrase}
             onClick={confirm?.kind === 'database' ? startDatabaseRestore : startJsonRestore}
           >
             {t('yes_restore')}

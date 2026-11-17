@@ -7,7 +7,9 @@ import com.bms.dto.response.ApiResponse;
 import com.bms.dto.response.ChangePasswordResponse;
 import com.bms.dto.response.LoginResponse;
 import com.bms.service.AuthService;
+import com.bms.service.LoginAttemptPolicy;
 import com.bms.service.UserService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -26,9 +28,16 @@ public class AuthController {
     @Autowired
     private UserService userService;
 
+    @Autowired
+    private LoginAttemptPolicy loginAttemptPolicy;
+
     @PostMapping("/login")
-    public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest loginRequest) {
-        LoginResponse response = authService.authenticateUser(loginRequest);
+    public ResponseEntity<ApiResponse<LoginResponse>> login(@Valid @RequestBody LoginRequest loginRequest,
+                                                            HttpServletRequest httpRequest) {
+        // The address is what a failed password is counted against, so a person
+        // guessing on one machine cannot shut an account everywhere.
+        LoginResponse response = authService.authenticateUser(loginRequest,
+                loginAttemptPolicy.clientAddress(httpRequest));
         return ResponseEntity.ok(new ApiResponse<>(true, "Login successful", response));
     }
 

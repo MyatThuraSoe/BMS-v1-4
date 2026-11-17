@@ -239,12 +239,15 @@ public class UserService implements UserDetailsService {
      * Clears a failed-login lock. The lock is only ever in memory, so this is the remedy for
      * the person who mistyped their own password five times, and it is deliberately not
      * available to anyone but an admin on someone else's account.
+     *
+     * <p>Every address the account was locked at is freed, because the admin asking is not
+     * the machine that was guessing.
      */
     public User unlockLogin(Long userId, Long actingUserId) {
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        attemptTracker.clear(LoginAttemptTracker.keyOf(user.getUsername()));
+        attemptTracker.clearUsername(user.getUsername());
 
         auditLogService.logAction(actingUserId != null ? actingUserId : user.getId(),
             "USER_LOGIN_UNLOCKED",
@@ -254,14 +257,18 @@ public class UserService implements UserDetailsService {
         return user;
     }
 
-    /** Whether signing in is currently refused for this account, whatever the password is. */
+    /**
+     * Whether signing in is currently refused for this account from somewhere, whatever
+     * the password is. Which address is shut is not said: the answer is for an admin's
+     * list, and a lockout that names the attacker's machine is not worth a log line.
+     */
     public boolean isLoginLocked(User user) {
-        return attemptTracker.isLocked(LoginAttemptTracker.keyOf(user.getUsername()));
+        return attemptTracker.isLockedForUsername(user.getUsername());
     }
 
     /** Minutes left on that refusal, at least one, and zero when there is no lock. */
     public long loginLockedMinutes(User user) {
-        return attemptTracker.minutesRemaining(LoginAttemptTracker.keyOf(user.getUsername()));
+        return attemptTracker.minutesRemainingForUsername(user.getUsername());
     }
 
     public User findById(Long id) {
