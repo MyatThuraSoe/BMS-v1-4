@@ -9,7 +9,6 @@ import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
 import com.bms.entity.DrawerSessionStatus;
 import com.bms.entity.Role;
-import com.bms.entity.ShiftType;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
@@ -157,21 +156,10 @@ public class UserService implements UserDetailsService {
         if (deactivateRequested) {
             Optional<CashShift> openShift = cashShiftRepository.findByCashierIdAndStatus(userId, "OPEN");
             if (openShift.isPresent()) {
-                CashShift shift = openShift.get();
-                // A cash-drawer shift with an open drawer session cannot be
-                // force-closed during deactivation: there is no counted cash,
-                // so the drawer's money would be unattributable. Close the
-                // drawer first, then deactivate.
-                if (shift.getShiftType() == ShiftType.CASH_DRAWER
-                        && shift.getDrawerSession() != null
-                        && shift.getDrawerSession().getStatus() == DrawerSessionStatus.OPEN) {
-                    throw new BusinessException("Close the open cash drawer for shift " + shift.getId()
-                            + " before deactivating the user");
-                }
                 if (!Boolean.TRUE.equals(request.getCloseOpenShifts())) {
-                    throw new BusinessException("Open shift for user: " + shift.getId() + "; close it before deactivation");
+                    throw new BusinessException("Open shift for user: " + openShift.get().getId() + "; close it before deactivation");
                 }
-                closeUserOpenShift(shift.getId(), "User deactivated", currentUserId());
+                closeUserOpenShift(openShift.get().getId(), "User deactivated", currentUserId());
             }
         }
         if (Boolean.FALSE.equals(request.getIsActive()) && user.getUsername().equals(currentUsername())) {

@@ -14,7 +14,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -150,7 +153,7 @@ public class DataImportService {
         // 1️⃣ Parse JSON → Entities
         List<Category>  categories = readList(mapper, rawData.get("categories"), Category.class);
         List<Product>   products   = readList(mapper, rawData.get("products"),   Product.class);
-        List<Customer>  customers  = readList(mapper, rawData.get("customers"),  Customer.class);
+        List<Customer>  customers  = readCustomers(mapper, rawData.get("customers"));
         List<Supplier>  suppliers  = readList(mapper, rawData.get("suppliers"),  Supplier.class);
         List<Sale>      sales      = readList(mapper, rawData.get("sales"),      Sale.class);
         List<Purchase>  purchases  = readList(mapper, rawData.get("purchases"),  Purchase.class);
@@ -237,7 +240,6 @@ public class DataImportService {
 
         List<PriceList> priceLists = readFlat(mapper, rawData.get("priceLists"), PriceList.class,
                 (priceList, row) -> {
-                    priceList.getItems().clear();
                     for (Object itemRow : maps(row.get("items"))) {
                         Map<String, Object> ir = mapOf(itemRow);
                         PriceListItem item = mapper.convertValue(itemRow, PriceListItem.class);
@@ -479,7 +481,7 @@ public class DataImportService {
         sections.put("profitLedger", profitLedger);
 
         BackupEntityInserter inserter = new BackupEntityInserter(entityManager, jdbcTemplate, env, shopTimeService);
-        inserter.prepare(new ArrayList<>(sections.values()));
+        inserter.prepare(sections);
         periodGuard.lock();
         if (mode == ImportMode.REPLACE_ALL) {
             wipeAllData(rawData);
@@ -776,8 +778,56 @@ public class DataImportService {
 
     private <T> List<T> readList(ObjectMapper mapper, Object raw, Class<T> type) {
         if (raw == null) return List.of();
-        return mapper.convertValue(raw,
+        List<T> result = mapper.convertValue(raw,
                 mapper.getTypeFactory().constructCollectionType(List.class, type));
+        // Clear all bidirectional collections so Hibernate does not attempt to
+        // process child rows whose owner entity has no assigned ID yet during
+        // persist(). Child entities are deserialized in their own sections and
+        // re-linked below where needed.
+        for (T entity : result) {
+            clearCollections(entity);
+        }
+        return result;
+    }
+
+    /**
+     * Clears every {@link Collection}-typed field on the entity so Hibernate
+     * does not attempt to process child collections whose owner may not yet
+     * have an assigned ID.
+     */
+    private void clearCollections(Object entity) {
+        Class<?> clazz = entity.getClass();
+        while (clazz != null && clazz != Object.class) {
+            for (Field f : clazz.getDeclaredFields()) {
+                if (Collection.class.isAssignableFrom(f.getType())) {
+                    f.setAccessible(true);
+                    try {
+                        Collection<?> current = (Collection<?>) f.get(entity);
+                        if (current != null) {
+                            current.clear();
+                        }
+                    } catch (Exception ignored) {
+                    }
+                }
+            }
+            clazz = clazz.getSuperclass();
+        }
+    }
+
+    /**
+     * Reads customers while clearing their phone collections. Phones are
+     * re-attached from the {@code customer_phones} section; keeping them here
+     * creates bidirectional child rows whose owner (the customer) has no
+     * assigned ID yet, which Hibernate rejects during persist.
+     */
+    private List<Customer> readCustomers(ObjectMapper mapper, Object raw) {
+        if (raw == null) return List.of();
+        List<Customer> result = mapper.convertValue(raw,
+                mapper.getTypeFactory().constructCollectionType(List.class, Customer.class));
+        for (Customer c : result) {
+            c.getPhones().clear();
+        }
+        return result;
     }
 
     /**
@@ -794,6 +844,7 @@ public class DataImportService {
         for (Object item : list) {
             T entity = mapper.convertValue(item, type);
             link.accept(entity, (Map<String, Object>) item);
+            clearCollections(entity);
             result.add(entity);
         }
         return result;
