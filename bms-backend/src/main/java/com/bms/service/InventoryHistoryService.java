@@ -80,27 +80,6 @@ public class InventoryHistoryService {
         return result(history);
     }
 
-    /**
-     * Month-scoped reconciliation for period close: only issues and pending
-     * postings whose events fall inside {@code [start, end)} are counted. Older
-     * unreconciled history does not block closing a later period.
-     */
-    public Map<String, Object> reconcile(LocalDateTime start, LocalDateTime end) {
-        History history = history();
-        // Pending postings are dated events — filter to the period being closed.
-        long periodPending = history.pending().stream()
-                .filter(event -> {
-                    LocalDateTime occurred = event.getOccurredAt();
-                    return occurred != null && !occurred.isBefore(start) && occurred.isBefore(end);
-                }).count();
-        // Issues have no date; report them all (data problems block any close).
-        return Map.of("reconciled", history.issues().isEmpty() && periodPending == 0,
-                "products", history.products(), "issues", history.issues(),
-                "missingPostings", periodPending, "readOnly", true,
-                "correctionReason", "RECONCILIATION-" + shopTimeService.today(),
-                "roundingTolerance", "Value tolerance is 0.0000005 times the sum of replayed owned balances, minimum 0.000001.");
-    }
-
     @Transactional
     public Map<String, Object> backfill(boolean backupConfirmed, Long userId) {
         if (!backupConfirmed) {

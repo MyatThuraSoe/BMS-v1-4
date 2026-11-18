@@ -155,12 +155,13 @@ class OrderReservationExpiryTest {
 
         assertEquals(Order.OrderStatus.CANCELLED, order.getStatus());
         assertEquals("Reservation expired", order.getCancelReason());
-        assertNull(order.getCancelledBy());
+        assertEquals(0L, order.getCancelledBy(),
+                "the sweep records itself as the cancelling actor");
         assertEquals(0, order.getItems().get(0).getProduct().getReservedQuantity(),
                 "cancelling must give the reserved units back");
 
         ArgumentCaptor<String> description = ArgumentCaptor.forClass(String.class);
-        verify(auditLogService).logAction(isNull(), eq("ORDER_CANCEL"), description.capture(),
+        verify(auditLogService).logAction(eq(0L), eq("ORDER_CANCEL"), description.capture(),
                 eq("Order"), eq(11L), any(), any());
         assertEquals("Order cancelled: ORD-11. Reason: Reservation expired", description.getValue());
     }

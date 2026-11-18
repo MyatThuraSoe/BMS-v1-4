@@ -128,8 +128,7 @@ public class AccountingPeriodService {
 
         Map<String, Object> reconciliation = historyService.reconcile(month, month);
         if (!Boolean.TRUE.equals(reconciliation.get("reconciled"))
-                || !Boolean.TRUE.equals(inventoryHistoryService.reconcile(
-                        month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay()).get("reconciled"))) {
+                || !Boolean.TRUE.equals(inventoryHistoryService.reconcile().get("reconciled"))) {
             throw new BusinessException("Cannot close a period with missing inventory history or unexplained ledger differences");
         }
         BigDecimal[] totals = readService.totals(month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());
