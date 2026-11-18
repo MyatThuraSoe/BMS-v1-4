@@ -957,6 +957,28 @@ class PurchaseServiceCostIntegrityTest {
         assertEquals(0, po.getReturnedAmount().compareTo(new BigDecimal("105.00")));
     }
 
+    @Test
+    void d1_rtvCreditStaysInInvoiceCurrencyOnAForeignPurchase() {
+        product(10, "0.00");
+        Purchase po = receivedPurchase(10, "10.00");
+
+        // The supplier invoiced USD 100 at 2.00 base units per USD. baseUnitCost is
+        // the landed cost converted to base currency (20.00); landedUnitCost is the
+        // invoice-currency figure (10.00), which is what the payable is denominated in.
+        po.setExchangeRate(new BigDecimal("2.00"));
+        for (PurchaseItem item : po.getItems()) {
+            item.setBaseUnitCost(new BigDecimal("20.00"));
+            item.setLandedUnitCost(new BigDecimal("10.00"));
+            item.setExchangeRate(new BigDecimal("2.00"));
+        }
+
+        returnToVendor(po, po.getItems().get(0), 5);
+
+        // Five returned units credit half the invoice, not the whole of it.
+        assertEquals(0, po.getReturnedAmount().compareTo(new BigDecimal("50.00")));
+        assertEquals(0, po.getPayableAmount().compareTo(new BigDecimal("50.00")));
+    }
+
     /** A fully received PO built directly, for RTV-focused scenarios. */
     private Purchase receivedPurchase(int quantity, String baseUnitCost) {
         Purchase purchase = new Purchase();
