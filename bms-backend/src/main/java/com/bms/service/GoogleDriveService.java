@@ -47,9 +47,7 @@ public class GoogleDriveService {
      */
     public static final String MANUAL_MARKER = "_manual";
 
-    /** Drive's page size, and the ceiling on how far a folder is walked. */
     private static final int BACKUP_PAGE_SIZE = 100;
-    private static final int MAX_LISTED_BACKUPS = 500;
 
     /** The characters Drive itself uses in a file id, and the only ones accepted here. */
     private static final Pattern DRIVE_ID = Pattern.compile("[A-Za-z0-9_-]+");
@@ -407,13 +405,6 @@ public class GoogleDriveService {
         return value == null ? null : value.replace("\\", "\\\\").replace("'", "\\'");
     }
 
-    /**
-     * Reads a folder listing page by page until Drive has nothing left to hand
-     * over, or until the agreed ceiling of files is reached.
-     *
-     * @param page reads the page after {@code pageToken}, or the first page when
-     *             the token is null; Drive's own token, never a guess
-     */
     static List<DriveBackupFile> readAllPages(BackupPageReader page) throws Exception {
         List<DriveBackupFile> files = new ArrayList<>();
         String pageToken = null;
@@ -428,9 +419,6 @@ public class GoogleDriveService {
                             f.getModifiedTime() == null ? null : f.getModifiedTime().toString(),
                             f.getMimeType()));
                 }
-            }
-            if (files.size() >= MAX_LISTED_BACKUPS) {
-                break;
             }
             pageToken = result.getNextPageToken();
         } while (pageToken != null && !pageToken.isBlank());

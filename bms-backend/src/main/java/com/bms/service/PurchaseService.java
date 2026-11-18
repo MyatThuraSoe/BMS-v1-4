@@ -657,14 +657,19 @@ public class PurchaseService {
                 throw new BusinessException("Purchase item " + entry.getPurchaseItemId()
                         + " does not belong to this purchase");
             }
-            int available = item.getReceivedQuantity() - item.getReturnedQuantity();
-            if (entry.getQuantity() > available) {
-                throw new BusinessException("Only " + available + " unit(s) of "
-                        + item.getProduct().getName() + " can still be returned");
-            }
             Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + item.getProduct().getId()));
+
+            int available = item.getReceivedQuantity() - item.getReturnedQuantity();
+            // Received-but-not-returned units may already have been sold; current
+            // stock reflects reality, so cap availability at what is physically on hand.
+            int physicallyAvailable = Math.min(available,
+                    product.getStockQuantity() != null ? product.getStockQuantity() : 0);
+            if (entry.getQuantity() > physicallyAvailable) {
+                throw new BusinessException("Only " + physicallyAvailable + " unit(s) of "
+                        + item.getProduct().getName() + " can still be returned");
+            }
 
             int ownedBefore = locationService.totalOwnedUnits(product);
             BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
@@ -897,13 +902,18 @@ public class PurchaseService {
      * payable.
      */
     private BigDecimal rtvCreditAmount(Purchase purchase, PurchaseItem item, int quantity) {
-        BigDecimal lineValue = item.getUnitCost().multiply(BigDecimal.valueOf(quantity));
+        // Credit must match the inventory value removed (baseUnitCost includes
+        // exchange rate and landed cost allocation), so both sides of the RTV
+        // stay reconciled even on multi-currency POs.
+        BigDecimal lineValue = item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity));
         BigDecimal credit = lineValue;
         BigDecimal tax = purchase.getTaxAmount();
-        BigDecimal subtotal = purchase.getSubtotal();
-        if (tax != null && tax.signum() > 0 && subtotal != null && subtotal.signum() > 0) {
+        BigDecimal baseSubtotal = purchase.getItems().stream()
+                .map(i -> i.getBaseUnitCost().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (tax != null && tax.signum() > 0 && baseSubtotal != null && baseSubtotal.signum() > 0) {
             credit = credit.add(tax.multiply(lineValue)
-                    .divide(subtotal, 2, RoundingMode.HALF_UP));
+                    .divide(baseSubtotal, 2, RoundingMode.HALF_UP));
         }
         return credit.setScale(2, RoundingMode.HALF_UP);
     }

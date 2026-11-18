@@ -95,12 +95,14 @@ public class AccountingPeriodService {
                         + " day(s) of grace after month end; it can close from " + firstDayAfterGrace);
             }
         }
-        // T1: a drawer opened in the month is still taking sales and movements.
+        // T1: any drawer open at any point during the month could still be
+        // taking sales and movements. Checking only drawers opened in the month
+        // misses drawers opened earlier that never closed.
         if (booleanSetting("accounting.period.requireNoOpenDrawers", true)) {
-            List<CashDrawerSession> open = drawerSessionRepository.findOpenSessionsOpenedIn(
+            List<CashDrawerSession> open = drawerSessionRepository.findForReport(
                     month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());
             if (!open.isEmpty()) {
-                throw new BusinessException("Close the drawer sessions opened in " + month + " first: "
+                throw new BusinessException("Close the drawer sessions open during " + month + " first: "
                         + open.stream()
                                 .map(session -> "#" + session.getId() + " ("
                                         + session.getDrawer().getName() + ", opened " + session.getOpenedAt() + ")")
@@ -126,7 +128,8 @@ public class AccountingPeriodService {
 
         Map<String, Object> reconciliation = historyService.reconcile(month, month);
         if (!Boolean.TRUE.equals(reconciliation.get("reconciled"))
-                || !Boolean.TRUE.equals(inventoryHistoryService.reconcile().get("reconciled"))) {
+                || !Boolean.TRUE.equals(inventoryHistoryService.reconcile(
+                        month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay()).get("reconciled"))) {
             throw new BusinessException("Cannot close a period with missing inventory history or unexplained ledger differences");
         }
         BigDecimal[] totals = readService.totals(month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());

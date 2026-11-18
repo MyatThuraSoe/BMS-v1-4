@@ -459,8 +459,15 @@ public class SaleReturnService {
         if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0) {
             Customer customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
-            customer.setCreditBalance(customer.getCreditBalance()
-                    .add(refundDue).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal newCreditBalance = customer.getCreditBalance().add(refundDue).setScale(2, RoundingMode.HALF_UP);
+            // Cap store credit at the customer's credit limit so returns cannot
+            // create an unbounded liability beyond what the shop has approved.
+            if (customer.getCreditLimit() != null && customer.getCreditLimit().compareTo(BigDecimal.ZERO) > 0
+                    && newCreditBalance.compareTo(customer.getCreditLimit()) > 0) {
+                throw new BusinessException("Store credit would exceed credit limit of "
+                        + customer.getCreditLimit() + " for customer " + customer.getId());
+            }
+            customer.setCreditBalance(newCreditBalance);
             customerRepository.save(customer);
         }
 

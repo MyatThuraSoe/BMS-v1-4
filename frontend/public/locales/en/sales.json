@@ -105,6 +105,8 @@
   "disposition_write_off": "Write off",
   "refund_amount": "Refund Amount",
   "return_total": "Return Total",
+  "cash_due": "Cash Due",
+  "return_total_gross": "Return Total (Gross)",
   "net_after_returns": "Net After Returns",
   "return_history": "Return History",
   "total_returned": "Total Returned: {{amount}}",

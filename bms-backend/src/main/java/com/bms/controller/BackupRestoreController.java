@@ -59,7 +59,7 @@ public class BackupRestoreController {
             boolean deleted = backupRestoreService.deleteDriveBackup(fileId);
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("fileId", fileId);
-            return ResponseEntity.ok(new ApiResponse<>(deleted, deleted
+            return ResponseEntity.status(deleted ? 200 : 502).body(new ApiResponse<>(deleted, deleted
                     ? "Drive backup deleted" : "Google Drive did not confirm the delete", body));
         } catch (Exception ex) {
             if (ex instanceof com.bms.exception.StateConflictException conflict) {

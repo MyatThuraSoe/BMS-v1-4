@@ -604,7 +604,9 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
 
         setting.setLastBackupDate(takenAt);
         setting.setLastBackupAttempt(takenAt);
-        setting.setNextBackupDate(calculateNextBackupDate(setting, planned == null ? takenAt : planned));
+        if (!manual) {
+            setting.setNextBackupDate(calculateNextBackupDate(setting, planned == null ? takenAt : planned));
+        }
         // The next run is worked out before the result is written down because a
         // shop whose custom text was accepted before the settings page learned to
         // refuse it gets its plan AND a note saying the plan is a daily one.

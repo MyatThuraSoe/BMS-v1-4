@@ -709,6 +709,16 @@ public class ReportService {
                            WHERE p2.supplier_id = s.id
                            AND p2.is_active = true
                            AND p2.deleted_at IS NULL
+                           -- Only count revenue for products exclusively supplied by
+                           -- this supplier, so a multi-sourced product's sale revenue
+                           -- is not credited to every supplier (no double counting).
+                           AND pi2.product_id NOT IN (
+                               SELECT pi3.product_id FROM purchase_items pi3
+                               INNER JOIN purchases p3 ON pi3.purchase_id = p3.id
+                               WHERE p3.supplier_id <> s.id
+                               AND p3.is_active = true
+                               AND p3.deleted_at IS NULL
+                           )
                        )
                        AND sal.sale_date >= ? AND sal.sale_date < ?
                    ), 0) as estimated_revenue
