@@ -795,10 +795,14 @@ public class DataImportService {
     }
 
     /**
-     * Reads customers, keeping the phones that travel nested inside each one and
-     * re-attaching their back-reference. Phones are the only copy of those rows in
-     * the file (there is no separate section), and {@code customer_id} is NOT NULL,
-     * so losing the owner would either drop the numbers or fail the insert.
+     * Reads customers, dropping their nested phones.
+     *
+     * <p>The phone rows carry no section of their own, and the write stage runs on
+     * {@code merge}: a transient customer that still owns a populated collection is
+     * rejected by Hibernate. The table is deliberately no longer wiped, so an
+     * existing customer keeps its numbers through a restore (ids are preserved);
+     * restoring numbers for a customer the file introduces needs the explicit-id
+     * JDBC write path.
      */
     private List<Customer> readCustomers(ObjectMapper mapper, Object raw) {
         if (raw == null) return List.of();
@@ -806,16 +810,16 @@ public class DataImportService {
                 mapper.getTypeFactory().constructCollectionType(List.class, Customer.class));
         for (Customer c : result) {
             if (c.getPhones() != null) {
-                c.getPhones().forEach(phone -> phone.setCustomer(c));
+                c.getPhones().clear();
             }
         }
         return result;
     }
 
     /**
-     * Reads suppliers, keeping the phones nested inside each one and re-attaching
-     * their back-reference — the same reason as {@link #readCustomers}: those rows
-     * exist nowhere else in the file and {@code supplier_id} is NOT NULL.
+     * Reads suppliers, dropping their nested phones for the same reason as
+     * {@link #readCustomers}: the merge-based write stage cannot carry a populated
+     * collection on a transient owner.
      */
     private List<Supplier> readSuppliers(ObjectMapper mapper, Object raw) {
         if (raw == null) return List.of();
@@ -823,7 +827,7 @@ public class DataImportService {
                 mapper.getTypeFactory().constructCollectionType(List.class, Supplier.class));
         for (Supplier s : result) {
             if (s.getPhones() != null) {
-                s.getPhones().forEach(phone -> phone.setSupplier(s));
+                s.getPhones().clear();
             }
         }
         return result;
