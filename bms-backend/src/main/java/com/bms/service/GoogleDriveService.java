@@ -38,6 +38,15 @@ public class GoogleDriveService {
     public static final String JSON_BACKUP_PREFIX = "LumiPOS_Backup_";
     public static final String SNAPSHOT_PREFIX = "LumiPOS_DB_";
 
+    /**
+     * Marks the copies a person asked for, written before the extension:
+     * {@code LumiPOS_DB_2026-11-17_142000_manual.db.enc}. Retention never thins
+     * them and never counts them, because the shop keeps those by choice rather
+     * than by habit — it is the copy taken before the big change, and losing it a
+     * month of nightly backups later is the opposite of why it was made.
+     */
+    public static final String MANUAL_MARKER = "_manual";
+
     /** Drive's page size, and the ceiling on how far a folder is walked. */
     private static final int BACKUP_PAGE_SIZE = 100;
     private static final int MAX_LISTED_BACKUPS = 500;
@@ -455,7 +464,9 @@ public class GoogleDriveService {
         List<String> doomed = new ArrayList<>();
         for (DriveBackupFile file : newestFirst) {
             String kind = backupKindOf(file);
-            if (kind == null) {
+            if (kind == null || file.isManual()) {
+                // A hand-made copy is not part of the history being thinned, and it
+                // does not use up one of the nights either.
                 continue;
             }
             // Today's copy counts toward the count it is keeping: excluding it
@@ -471,7 +482,11 @@ public class GoogleDriveService {
 
     /** Which kind of backup this is, or null when the app did not name the file. */
     private static String backupKindOf(DriveBackupFile file) {
-        String name = stripEncryptionSuffix(file.name());
+        return backupKindOfName(file.name());
+    }
+
+    private static String backupKindOfName(String fileName) {
+        String name = stripEncryptionSuffix(fileName);
         if (name == null) {
             return null;
         }
@@ -497,6 +512,50 @@ public class GoogleDriveService {
         return lower.endsWith(BackupEncryption.ENCRYPTED_SUFFIX)
                 ? name.substring(0, name.length() - BackupEncryption.ENCRYPTED_SUFFIX.length())
                 : name;
+    }
+
+    /** Reads the hand-made marker out of a Drive file name. */
+    static boolean isManual(String name) {
+        return name != null && name.toLowerCase().contains(MANUAL_MARKER);
+    }
+
+    /**
+     * Whether a delete asked for by hand may take this file. The questions are the
+     * two the cleanup already asks — this app's folder, and a name this app gave a
+     * backup — because a file id in a URL is otherwise the shop's whole Drive to a
+     * wrong click.
+     */
+    static boolean isDeletableBackup(List<String> parents, String folderId, String name) {
+        if (folderId == null || parents == null || !parents.contains(folderId)) {
+            return false;
+        }
+        return backupKindOfName(name) != null;
+    }
+
+    /**
+     * Takes one named backup out of the shop's backup folder.
+     *
+     * <p>A manual copy is kept until the shop says otherwise, which is also the one
+     * way its space ever comes back: a Drive account that fills up fails every
+     * nightly upload, so a file nobody may delete is not a protected backup but a
+     * shop with no backups at all.
+     *
+     * @throws StateConflictException when the file is not one of this app's backups
+     *                                in this app's folder
+     * @return whether Drive confirmed the delete
+     */
+    public boolean deleteBackupOfThisApp(String fileId) throws Exception {
+        Drive service = getDriveService();
+        String folderId = getOrCreateBackupFolderId(service);
+        File metadata = service.files().get(fileId).setFields("id,name,parents").execute();
+        String name = metadata == null ? null : metadata.getName();
+        if (!isDeletableBackup(metadata == null ? null : metadata.getParents(), folderId, name)) {
+            org.slf4j.LoggerFactory.getLogger(GoogleDriveService.class)
+                    .warn("Refused to delete the Drive file {}, which is not a backup of this app", fileId);
+            throw new StateConflictException(
+                    "That file is not one of this app's backups in the LumiPOS backup folder.");
+        }
+        return deleteQuietly(service, fileId);
     }
 
     /**
@@ -595,6 +654,16 @@ public class GoogleDriveService {
         public boolean isDatabaseSnapshot() {
             String base = stripEncryptionSuffix(name);
             return base != null && base.toLowerCase().endsWith(".db");
+        }
+
+        /** True when a person asked for this copy, rather than the schedule. */
+        public boolean isManual() {
+            return GoogleDriveService.isManual(name);
+        }
+
+        /** True when the file only opens with the passphrase it was made with. */
+        public boolean isEncrypted() {
+            return name != null && name.toLowerCase().endsWith(BackupEncryption.ENCRYPTED_SUFFIX);
         }
     }
 }

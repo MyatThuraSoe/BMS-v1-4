@@ -24,6 +24,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -82,6 +83,7 @@ public class BackupController {
         masked.setNextBackupDate(source.getNextBackupDate());
         masked.setScheduledTime(source.getScheduledTime());
         masked.setRetentionCount(source.getRetentionCount());
+        masked.setAnchorDayOfMonth(source.getAnchorDayOfMonth());
         masked.setBackupStatus(source.getBackupStatus());
         masked.setLastErrorMessage(source.getLastErrorMessage());
         masked.setLastBackupAttempt(source.getLastBackupAttempt());
@@ -103,7 +105,19 @@ public class BackupController {
     @PutMapping("/settings")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<BackupSetting>> updateSettings(@RequestBody BackupSetting setting) {
+        // Custom text is refused before the stored row is touched, so a shop that
+        // mistypes a schedule keeps the one it had instead of quietly getting a
+        // daily backup it never asked for.
+        if ("CUSTOM".equalsIgnoreCase(setting.getFrequency())) {
+            String problem = BackupService.cronScheduleError(setting.getCustomCronExpression(),
+                    shopTimeService.now());
+            if (problem != null) {
+                return ResponseEntity.badRequest().body(new ApiResponse<>(false, problem, null));
+            }
+        }
+
         BackupSetting existing = backupSettingRepository.findFirstByOrderByIdAsc().orElse(new BackupSetting());
+        String previousFrequency = existing.getFrequency();
         existing.setEnabled(setting.isEnabled());
         existing.setFrequency(setting.getFrequency());
         existing.setCustomCronExpression(setting.getCustomCronExpression());
@@ -137,8 +151,21 @@ public class BackupController {
             LocalDateTime next = existing.getNextBackupDate();
             boolean hourChanged = next != null && existing.getScheduledTime() != null
                     && !next.toLocalTime().equals(existing.getScheduledTime());
-            if (next == null || !next.isAfter(now) || hourChanged) {
-                existing.setNextBackupDate(backupService.calculateNextBackupDate(existing, now));
+            boolean replan = next == null || !next.isAfter(now) || hourChanged;
+            LocalDateTime countingFrom = replan ? now : next;
+
+            if (BackupService.isAnchoredFrequency(existing.getFrequency())
+                    && (existing.getAnchorDayOfMonth() == null
+                            || !Objects.equals(previousFrequency, existing.getFrequency()))) {
+                // The day of the month a monthly or yearly run belongs to is written
+                // down before the first date is counted from it, not after: counted
+                // from Jan 31 the answer is Feb 28 because February has no 31st, and
+                // storing 28 would leave the shop on the 28th for good.
+                existing.setAnchorDayOfMonth(countingFrom.getDayOfMonth());
+            }
+
+            if (replan) {
+                existing.setNextBackupDate(backupService.calculateNextBackupDate(existing, countingFrom));
             }
         } else {
             existing.setNextBackupDate(null);

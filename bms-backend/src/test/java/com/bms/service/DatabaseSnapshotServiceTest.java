@@ -96,7 +96,9 @@ class DatabaseSnapshotServiceTest {
         DatabaseSnapshotService service =
                 new DatabaseSnapshotService(sqlite(dir.resolve("lumipos.db")), mock(ShopTimeService.class));
 
-        assertEquals("LumiPOS_DB_2026-11-17_020000.db", service.snapshotFileName(NOW));
+        assertEquals("LumiPOS_DB_2026-11-17_020000.db", service.snapshotFileName(NOW, false));
+        assertEquals("LumiPOS_DB_2026-11-17_020000_manual.db", service.snapshotFileName(NOW, true),
+                "a copy the shop asked for is marked before the extension, where retention can read it");
     }
 
     @Test

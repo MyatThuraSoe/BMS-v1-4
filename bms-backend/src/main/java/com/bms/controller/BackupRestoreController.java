@@ -48,6 +48,28 @@ public class BackupRestoreController {
         }
     }
 
+    /**
+     * Takes one backup out of the Drive folder by hand. Manual copies are kept
+     * until the shop deletes them, so this is the only way their space comes back —
+     * and a Drive account that fills up fails every nightly upload.
+     */
+    @DeleteMapping("/drive/files/{fileId}")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> deleteDriveFile(@PathVariable String fileId) {
+        try {
+            boolean deleted = backupRestoreService.deleteDriveBackup(fileId);
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("fileId", fileId);
+            return ResponseEntity.ok(new ApiResponse<>(deleted, deleted
+                    ? "Drive backup deleted" : "Google Drive did not confirm the delete", body));
+        } catch (Exception ex) {
+            if (ex instanceof com.bms.exception.StateConflictException conflict) {
+                throw conflict;
+            }
+            return ResponseEntity.status(502).body(new ApiResponse<>(false,
+                    "Could not reach Google Drive: " + ex.getMessage(), null));
+        }
+    }
+
     /** Restore a JSON backup, in either replace-everything or merge mode. */
     @PostMapping("/drive/restore")
     public ResponseEntity<ApiResponse<Map<String, Object>>> restoreFromDrive(
@@ -62,7 +84,8 @@ public class BackupRestoreController {
         }
 
         String jobId = backupRestoreService.startJsonRestore(
-                request.fileId(), request.sizeBytes(), mode, passphraseOf(request));
+                request.fileId(), request.sizeBytes(), mode, passphraseOf(request),
+                Boolean.TRUE.equals(request.confirmSameShop()));
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jobId", jobId);
@@ -140,7 +163,13 @@ public class BackupRestoreController {
      * backups this shop sealed, and it is never stored server-side, so the person
      * restoring has to be the one typing it.
      */
-    public record DriveRestoreRequest(String fileId, long sizeBytes, String mode, String passphrase) {
+    /**
+     * @param confirmSameShop only for a merge of a file that does not say this
+     *                        install's id: the shop's own answer to whether the
+     *                        file belongs here. Left out, it is no.
+     */
+    public record DriveRestoreRequest(String fileId, long sizeBytes, String mode, String passphrase,
+                                      Boolean confirmSameShop) {
     }
 
     private static char[] passphraseOf(DriveRestoreRequest request) {

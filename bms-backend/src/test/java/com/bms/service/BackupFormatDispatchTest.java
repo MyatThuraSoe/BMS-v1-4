@@ -30,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -87,7 +88,7 @@ class BackupFormatDispatchTest {
         when(backupSettings.save(any(BackupSetting.class))).thenAnswer(inv -> inv.getArgument(0));
         when(shopTime.now()).thenReturn(NOW);
         when(drive.getOrCreateBackupFolderId(any())).thenReturn("folder-1");
-        when(snapshots.uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any()))
+        when(snapshots.uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any(), anyBoolean()))
                 .thenReturn(new GoogleDriveService.DriveUpload("file-db",
                         "LumiPOS_DB_2026-11-17_020000.db", DB_LINK));
         when(drive.uploadVerified(any(), eq("application/json"), eq("folder-1"), any()))
@@ -146,7 +147,7 @@ class BackupFormatDispatchTest {
         String link = service.executeGoogleDriveBackup(null, null);
 
         assertEquals(JSON_LINK, link);
-        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any());
+        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean());
         assertEquals("SUCCESS", setting.getBackupStatus());
     }
 
@@ -158,7 +159,7 @@ class BackupFormatDispatchTest {
 
         service.executeGoogleDriveBackup(null, null);
 
-        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any());
+        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean());
         verify(drive).uploadVerified(any(), eq("application/json"), eq("folder-1"), any());
     }
 
@@ -169,7 +170,7 @@ class BackupFormatDispatchTest {
 
         service.executeGoogleDriveBackup(null, null);
 
-        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any());
+        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any(), anyBoolean());
     }
 
     // ---------------------------------------------------------------------- BOTH
@@ -182,7 +183,7 @@ class BackupFormatDispatchTest {
         String link = service.executeGoogleDriveBackup(null, null);
 
         assertEquals(DB_LINK, link);
-        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any());
+        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), any(), anyBoolean());
         verify(drive).uploadVerified(any(), eq("application/json"), eq("folder-1"), any());
         assertEquals("SUCCESS", setting.getBackupStatus());
         assertTrue(setting.getNextBackupDate().isAfter(NOW),
@@ -195,7 +196,7 @@ class BackupFormatDispatchTest {
         Path json = dir.resolve("backup.json");
         Files.write(json, "{\"data\":{}}".getBytes());
         when(exporter.exportAllToJsonFile()).thenReturn(json);
-        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any()))
+        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IOException("Google Drive stored 12 of the 4096 bytes. The backup was discarded."));
 
         String link = service.executeGoogleDriveBackup(null, null);
@@ -223,7 +224,7 @@ class BackupFormatDispatchTest {
     @Test
     void whenNeitherHalfWorksTheBackupFails() throws Exception {
         format("BOTH");
-        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any()))
+        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IOException("snapshot failed"));
         when(exporter.exportAllToJsonFile()).thenThrow(new IOException("export failed"));
 
@@ -247,6 +248,27 @@ class BackupFormatDispatchTest {
                 "a shop that backs up twice on one day must not have one copy land on the other");
     }
 
+    /**
+     * V6: the copy somebody pressed the button for is marked in its own name,
+     * because that marker is what retention reads. A shop that sealed a copy before
+     * a big change does not find it thinned away by a month of nightly backups.
+     */
+    @Test
+    void aCopyTakenAtTheKeyboardIsMarkedForRetention(@TempDir Path dir) throws Exception {
+        format("JSON");
+        Path json = dir.resolve("backup.json");
+        Files.write(json, "{\"data\":{}}".getBytes());
+        when(exporter.exportAllToJsonFile()).thenReturn(json);
+
+        service.runBackupNow(null, null, null);
+
+        ArgumentCaptor<String> handMade = ArgumentCaptor.forClass(String.class);
+        verify(drive).uploadVerified(eq(json.toFile()), eq("application/json"), eq("folder-1"),
+                handMade.capture());
+        assertEquals("LumiPOS_Backup_2026-11-17_020000_manual.json", handMade.getValue(),
+                "no passphrase is not the same thing as nobody asking");
+    }
+
     @Test
     void theExportFileIsCleanedUpEvenWhenTheUploadDies(@TempDir Path dir) throws Exception {
         format("JSON");
@@ -263,7 +285,7 @@ class BackupFormatDispatchTest {
     @Test
     void aDiscardedUploadIsRecordedAsFailedAndRetryable() throws Exception {
         when(snapshots.isSupported()).thenReturn(true);
-        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any()))
+        when(snapshots.uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean()))
                 .thenThrow(new IOException("Google Drive's copy does not match the file that was sent."));
 
         assertThrows(Exception.class, () -> service.runBackupNow(null, null));
@@ -282,7 +304,7 @@ class BackupFormatDispatchTest {
         assertThrows(StateConflictException.class, () -> service.executeGoogleDriveBackup(null, null));
 
         verifyNoInteractions(exporter);
-        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any());
+        verify(snapshots, never()).uploadSnapshotToDrive(any(), any(), any(), any(), anyBoolean());
     }
 
     // ------------------------------------------------------------------ retention
@@ -343,7 +365,7 @@ class BackupFormatDispatchTest {
 
         service.runBackupNow(null, null);
 
-        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), isNull());
+        verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(), isNull(), eq(false));
     }
 
     @Test
@@ -354,7 +376,7 @@ class BackupFormatDispatchTest {
         service.runBackupNow(null, null, "open-sesame".toCharArray());
 
         verify(snapshots).uploadSnapshotToDrive(eq(drive), eq("folder-1"), any(),
-                eq("open-sesame".toCharArray()));
+                eq("open-sesame".toCharArray()), eq(true));
     }
 
     @Test
@@ -368,7 +390,7 @@ class BackupFormatDispatchTest {
         service.runBackupNow(null, null, "open-sesame".toCharArray());
 
         verify(drive).uploadVerified(eq(json.toFile()), eq("application/json"), eq("folder-1"),
-                eq("LumiPOS_Backup_2026-11-17_020000.json"));
+                eq("LumiPOS_Backup_2026-11-17_020000_manual.json"));
     }
 
     @Test
@@ -387,8 +409,9 @@ class BackupFormatDispatchTest {
 
         ArgumentCaptor<String> name = ArgumentCaptor.forClass(String.class);
         verify(drive).uploadVerified(any(), eq("application/octet-stream"), eq("folder-1"), name.capture());
-        assertEquals("LumiPOS_Backup_2026-11-17_020000.json.enc", name.getValue(),
-                "a restore has to know to ask for a passphrase before it opens the file");
+        assertEquals("LumiPOS_Backup_2026-11-17_020000_manual.json.enc", name.getValue(),
+                "a restore has to know to ask for a passphrase before it opens the file, and retention "
+                        + "has to know this one was asked for by hand");
         assertTrue(Files.notExists(json), "no unsealed copy of the shop is left lying around");
     }
 }

@@ -40,6 +40,9 @@ public class DataExportService {
     @Autowired
     private ShopTimeService shopTimeService;
 
+    @Autowired
+    private InstallIdentity installIdentity;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -124,6 +127,11 @@ public class DataExportService {
             gen.writeStartObject();
             gen.writeStringField("app", "LumiPOS");
             gen.writeStringField("backupVersion", "1.0");
+            // Which shop this came out of. A merge is only safe when the ids in the
+            // file mean the ids here, and this is the one field that says so. Files
+            // written before it existed simply have no key, and a merge refuses
+            // them until somebody says the file is this shop's own.
+            gen.writeStringField("installId", installIdentity.currentId());
             gen.writeStringField("exportedAt", shopTimeService.now().toString());
             gen.writeFieldName("data");
             gen.writeStartObject();
@@ -145,7 +153,18 @@ public class DataExportService {
         writeEntities(gen, mapper, "cashShifts", cashShiftRepository);
         writeRows(gen, mapper, "users", userRepository, this::userRow);
         writeEntities(gen, mapper, "shopInfo", shopInfoRepository);
-        writeEntities(gen, mapper, "systemSettings", systemSettingRepository);
+        // The install id is written once, as the file's own field. As a setting it
+        // would be a second copy an import could disagree with, and it is not
+        // something a shop should be able to edit or carry from one install to
+        // another.
+        writeSection(gen, "systemSettings", systemSettingRepository, "id", setting -> {
+            // A secret that leaves in a backup file is a secret that lives on
+            // Google Drive; this install's print agent token is not exportable.
+            if (!InstallIdentity.SETTING_KEY.equals(setting.getSettingKey())
+                    && !SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey())) {
+                mapper.writeValue(gen, setting);
+            }
+        });
         writeRows(gen, mapper, "arPayments", arPaymentRepository, this::arPaymentRow);
         writeEntities(gen, mapper, "receiptCustomizations", receiptCustomizationRepository);
         writeRows(gen, mapper, "orders", orderRepository, this::orderRow);

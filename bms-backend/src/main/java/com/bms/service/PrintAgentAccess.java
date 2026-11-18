@@ -9,11 +9,11 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Component;
 
+import java.net.InetAddress;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.HexFormat;
-import java.util.Set;
 
 /**
  * The gate on the counter print queue. A print job is the shop's paper money: whoever
@@ -34,8 +34,14 @@ public class PrintAgentAccess {
 
     private static final Logger log = LoggerFactory.getLogger(PrintAgentAccess.class);
 
-    /** Java reports the local address either way depending on the stack and how it was reached. */
-    private static final Set<String> LOOPBACK_ADDRESSES = Set.of("127.0.0.1", "::1", "0:0:0:0:0:0:0:1");
+    /**
+     * Loopback is a property of the address, not of how it was written. The same
+     * machine reports itself as {@code 127.0.0.1}, as any other {@code 127.*} address,
+     * or as an IPv4 address wearing IPv6 parentheses ({@code ::ffff:127.0.0.1})
+     * depending on the stack and how the socket was reached, so a name-by-name list
+     * turned away the very agent this gate exists to let in.
+     */
+    private static final String IPV4_MAPPED_PREFIX = "::ffff:";
     private static final int TOKEN_BYTES = 32;
 
     private final SystemSettingRepository systemSettingRepository;
@@ -84,7 +90,26 @@ public class PrintAgentAccess {
     }
 
     private static boolean isLoopback(String address) {
-        return address != null && LOOPBACK_ADDRESSES.contains(address.trim());
+        if (address == null) {
+            return false;
+        }
+        String normalized = address.trim().toLowerCase();
+        // What the wrapper hides is what the shop means: a socket to 127.0.0.1
+        // reaches the parse below as an IPv4 address either way it was written.
+        if (normalized.startsWith(IPV4_MAPPED_PREFIX)) {
+            normalized = normalized.substring(IPV4_MAPPED_PREFIX.length());
+        }
+        // InetAddress reads an empty host as this machine, so a request whose
+        // address the container never recorded must be turned away before the parse.
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        try {
+            return InetAddress.getByName(normalized).isLoopbackAddress();
+        } catch (Exception e) {
+            // An address that cannot be read is not a machine this server can vouch for.
+            return false;
+        }
     }
 
     private static boolean isTrue(String value) {

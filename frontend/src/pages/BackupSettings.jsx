@@ -95,8 +95,10 @@ const BackupSettings = () => {
       queryClient.invalidateQueries({ queryKey: ['backupSettings'] });
       setMessage({ type: 'success', text: t('settings_saved') });
     },
-    onError: () => {
-      setMessage({ type: 'error', text: t('settings_save_failed') });
+    onError: (error) => {
+      // Whatever the server refused says in its own words: "That schedule text is
+      // not valid" is actionable and "Failed to save settings" is not.
+      setMessage({ type: 'error', text: error.response?.data?.message || t('settings_save_failed') });
     }
   });
 
@@ -425,10 +427,13 @@ const BackupSettings = () => {
             />
           )}
 
-          {/* The honest limit: nothing in the shop can type the phrase at 02:00. */}
-          <Alert severity="info" sx={{ mt: 1 }}>
-            {t('encryption_night_backup_note')}
-          </Alert>
+          {/* The honest limit, and only where it applies: with the switch off
+              nothing is encrypted, nightly or otherwise. */}
+          {settings.encryptionEnabled && (
+            <Alert severity="info" sx={{ mt: 1 }}>
+              {t('encryption_night_backup_note')}
+            </Alert>
+          )}
         </CardContent>
       </Card>
 
@@ -469,6 +474,14 @@ const BackupSettings = () => {
           {backupStatus === 'PARTIAL' && (
             <Alert severity="warning" sx={{ mt: 1 }}>
               {lastError || t('backup_partial_generic')}
+            </Alert>
+          )}
+          {/* A backup that worked and still left something to say: an old custom
+              schedule the server cannot read, which the shop is now told about
+              instead of quietly getting a nightly backup. */}
+          {backupStatus !== 'FAILED' && backupStatus !== 'PARTIAL' && lastError && (
+            <Alert severity="warning" sx={{ mt: 1 }}>
+              {lastError}
             </Alert>
           )}
           {/* The automatic backup is the shop's only safety net, and on this

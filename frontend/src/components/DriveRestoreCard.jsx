@@ -13,8 +13,8 @@ import {
   DialogContentText,
   DialogTitle,
   Divider,
+  Checkbox,
   FormControlLabel,
-  IconButton,
   LinearProgress,
   List,
   ListItem,
@@ -35,6 +35,7 @@ import {
 } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { backupRestoreService } from '../api/services';
+import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError } from '../utils/notify';
 import HelpTip from './HelpTip';
 
@@ -81,7 +82,12 @@ function backupKind(file) {
 
 /** Whether this row needs the passphrase it was made with before it can be read. */
 function isSealed(file) {
-  return (file?.name || '').toLowerCase().endsWith('.enc');
+  return Boolean(file?.encrypted);
+}
+
+/** Whether a person asked for this copy, which is what keeps it out of retention. */
+function isManual(file) {
+  return Boolean(file?.manual);
 }
 
 /**
@@ -94,12 +100,18 @@ function isSealed(file) {
  */
 export default function DriveRestoreCard({ isConnected, encryption }) {
   const { t } = useTranslation(['settings', 'common']);
+  const { isAdmin } = useAuth();
   const [files, setFiles] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(null);
   const [mode, setMode] = useState('REPLACE_ALL');
+  // A Drive file's install id is inside it, which this card cannot read before
+  // downloading it, so the merge here is confirmed by the person choosing.
+  const [sameShopChecked, setSameShopChecked] = useState(false);
   const [job, setJob] = useState(null);
   const [confirm, setConfirm] = useState(null);
+  const [deletion, setDeletion] = useState(null);
+  const [deleting, setDeleting] = useState(false);
   const [restorePending, setRestorePending] = useState(false);
   const [damagedDatabase, setDamagedDatabase] = useState(null);
   // Typed, never stored: an encrypted backup has no other way open, so a lost
@@ -187,7 +199,7 @@ export default function DriveRestoreCard({ isConnected, encryption }) {
     setConfirm(null);
     setJob({ percent: 0, step: t('restore_starting'), status: 'RUNNING' });
     backupRestoreService
-      .restoreFromDrive(file.id, file.sizeBytes, mode, secret)
+      .restoreFromDrive(file.id, file.sizeBytes, mode, secret, mode === 'MERGE' && sameShopChecked)
       .then((jobId) => startPolling(jobId))
       .catch((err) => {
         setJob(null);
@@ -227,6 +239,24 @@ export default function DriveRestoreCard({ isConnected, encryption }) {
   const kind = backupKind(selected);
   const isJson = kind === 'export';
   const isDb = kind === 'database';
+
+  // A manual copy is the one backup retention never touches, so this button is the
+  // only way its space ever comes back — and a full Drive fails every nightly upload.
+  const deleteSelectedCopy = () => {
+    const file = deletion;
+    if (!file) return;
+    setDeleting(true);
+    backupRestoreService
+      .deleteDriveFile(file.id)
+      .then(() => {
+        notifySuccess(t('drive_delete_done'));
+        setDeletion(null);
+        if (selected?.id === file.id) setSelected(null);
+        return loadFiles();
+      })
+      .catch((err) => notifyError(err.response?.data?.message || t('drive_delete_failed')))
+      .finally(() => setDeleting(false));
+  };
 
   return (
     <Card sx={{ mt: 3 }}>
@@ -296,39 +326,71 @@ export default function DriveRestoreCard({ isConnected, encryption }) {
 
             {files.length > 0 && (
               <List dense sx={{ maxHeight: 240, overflow: 'auto', border: 1, borderColor: 'divider', borderRadius: 1 }}>
-                {files.map((file) => (
-                  <ListItemButton
+                {files.map((file) => {
+                  const canDelete = isAdmin() && isManual(file);
+                  return (
+                  <ListItem
                     key={file.id}
-                    selected={selected?.id === file.id}
-                    onClick={() => {
-                      setSelected(file);
-                      // The settings page may already hold the phrase this shop
-                      // types; starting a new selection starts from what is typed.
-                      setPassphrase(encryption?.passphrase || '');
-                    }}
-                    disabled={running}
+                    disablePadding
+                    secondaryAction={canDelete && (
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteIcon />}
+                        disabled={running || deleting}
+                        onClick={() => setDeletion(file)}
+                        sx={{ mr: 1 }}
+                      >
+                        {t('drive_delete_backup')}
+                      </Button>
+                    )}
                   >
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
-                          <Typography variant="body2" noWrap>{file.name}</Typography>
-                          {backupKind(file) && (
+                    <ListItemButton
+                      selected={selected?.id === file.id}
+                      onClick={() => {
+                        setSelected(file);
+                        // The settings page may already hold the phrase this shop
+                        // types; starting a new selection starts from what is typed.
+                        setPassphrase(encryption?.passphrase || '');
+                      }}
+                      disabled={running}
+                      sx={{ pr: canDelete ? 13 : 2 }}
+                    >
+                      <ListItemText
+                        primary={
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                            <Typography variant="body2" noWrap>{file.name}</Typography>
+                            {backupKind(file) && (
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={backupKind(file) === 'database' ? 'success' : 'default'}
+                                sx={{ flexShrink: 0 }}
+                                label={t(backupKind(file) === 'database' ? 'backup_kind_database' : 'backup_kind_export')}
+                              />
+                            )}
                             <Chip
                               size="small"
                               variant="outlined"
-                              color={backupKind(file) === 'database' ? 'success' : 'default'}
-                              label={t(backupKind(file) === 'database' ? 'backup_kind_database' : 'backup_kind_export')}
+                              color={isManual(file) ? 'warning' : 'default'}
+                              sx={{ flexShrink: 0 }}
+                              label={t(isManual(file) ? 'backup_source_manual' : 'backup_source_auto')}
                             />
-                          )}
-                          {isSealed(file) && (
-                            <Chip size="small" variant="outlined" color="secondary" label={t('sealed_backup')} />
-                          )}
-                        </Box>
-                      }
-                      secondary={`${formatWhen(file.modifiedTime)}${file.sizeBytes ? ' - ' + formatBytes(file.sizeBytes) : ''}`}
-                    />
-                  </ListItemButton>
-                ))}
+                            <Chip
+                              size="small"
+                              variant="outlined"
+                              color={isSealed(file) ? 'secondary' : 'default'}
+                              sx={{ flexShrink: 0 }}
+                              label={t(isSealed(file) ? 'sealed_backup' : 'unsealed_backup')}
+                            />
+                          </Box>
+                        }
+                        secondary={`${formatWhen(file.modifiedTime)}${file.sizeBytes ? ' - ' + formatBytes(file.sizeBytes) : ''}`}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                  );
+                })}
               </List>
             )}
 
@@ -352,6 +414,22 @@ export default function DriveRestoreCard({ isConnected, encryption }) {
                     <Typography variant="caption" color="text.secondary">
                       {mode === 'REPLACE_ALL' ? t('restore_mode_replace_hint') : t('restore_mode_merge_hint')}
                     </Typography>
+                    {mode === 'MERGE' && (
+                      <Alert severity="warning" sx={{ mt: 1 }}>
+                        <Typography variant="body2" gutterBottom>
+                          {t('merge_drive_warning')}
+                        </Typography>
+                        <FormControlLabel
+                          control={
+                            <Checkbox
+                              checked={sameShopChecked}
+                              onChange={(e) => setSameShopChecked(e.target.checked)}
+                            />
+                          }
+                          label={t('merge_same_shop_confirm')}
+                        />
+                      </Alert>
+                    )}
                   </FormControl>
                 )}
 
@@ -441,6 +519,22 @@ export default function DriveRestoreCard({ isConnected, encryption }) {
             onClick={confirm?.kind === 'database' ? startDatabaseRestore : startJsonRestore}
           >
             {t('yes_restore')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirm before a kept-by-hand copy is thrown away for good. */}
+      <Dialog open={Boolean(deletion)} onClose={() => setDeletion(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('drive_delete_confirm_title')}</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {t('drive_delete_confirm_body', { file: deletion?.name })}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeletion(null)} disabled={deleting}>{t('cancel')}</Button>
+          <Button color="error" variant="contained" disabled={deleting} onClick={deleteSelectedCopy}>
+            {t('yes_delete_backup')}
           </Button>
         </DialogActions>
       </Dialog>
