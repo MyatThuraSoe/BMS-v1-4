@@ -376,28 +376,20 @@ public class SaleService {
                 sale.setAmountPaid(tendered);
                 sale.setChangeGiven(tendered.subtract(totalAmount));
             } else {
-                if (tendered != null && tendered.compareTo(totalAmount) < 0) {
+                // A non-cash sale collects exactly its payment lines, and
+                // resolvePayments/verifyForSale already forced those to totalAmount.
+                // An "amount paid" above the total is therefore money that was never
+                // taken: crediting it to the customer minted store credit out of
+                // nothing, and store credit offsets the credit limit, so a single
+                // request could both invent a liability and unlock unbounded credit.
+                // Change is a cash-only concept, so a mismatch is rejected.
+                if (tendered != null && tendered.compareTo(totalAmount) != 0) {
                     throw new BusinessException("Amount paid (" + tendered
-                            + ") is less than total amount (" + totalAmount + ")");
+                            + ") must equal the total (" + totalAmount
+                            + ") for a non-cash sale; change is only given on cash sales.");
                 }
-                if (tendered != null && tendered.compareTo(totalAmount) > 0) {
-                    if (sale.getCustomer() == null) {
-                        throw new BusinessException("Amount paid (" + tendered
-                                + ") exceeds total (" + totalAmount
-                                + ") for a non-cash sale with no customer to hold store credit.");
-                    }
-                    sale.setAmountPaid(totalAmount);
-                    sale.setChangeGiven(BigDecimal.ZERO);
-                    BigDecimal overTender = tendered.subtract(totalAmount);
-                    Customer overTenderCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
-                            .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
-                    overTenderCustomer.setCreditBalance(overTenderCustomer.getCreditBalance()
-                            .add(overTender).setScale(2, RoundingMode.HALF_UP));
-                    customerRepository.save(overTenderCustomer);
-                } else {
-                    sale.setAmountPaid(totalAmount);
-                    sale.setChangeGiven(BigDecimal.ZERO);
-                }
+                sale.setAmountPaid(totalAmount);
+                sale.setChangeGiven(BigDecimal.ZERO);
             }
         }
 
@@ -800,7 +792,7 @@ public class SaleService {
                 .map(ArPayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cashAlreadyRefunded = safeSum(
-                saleReturnRepository.sumCashRefundedBySaleId(sale.getId()));
+                saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
         BigDecimal cashToReturn = cashPaid.add(arCashPaid).subtract(cashAlreadyRefunded);
 
         CashShift voidShift = sale.getEmployeeShift();
@@ -897,9 +889,14 @@ public class SaleService {
             Product product = productRepository.findByIdForUpdate(lockedItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + lockedItem.getProduct().getId()));
 
+            // The profit reversal is unconditional: a voided sale must never keep
+            // its revenue or COGS in the ledgers, whatever sold afterwards. Only
+            // the inventory side depends on the units still being restorable.
+            ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
+
             // If this product was sold in a later sale, its units may already be
-            // gone — restoring them here would inflate stock. Skip stock restore
-            // and let the void post only the profit reversal.
+            // gone — restoring them here would inflate stock. Skip the stock and
+            // inventory-ledger restore; the profit reversal above has already run.
             if (saleRepository.productSoldAfter(lockedItem.getProduct().getId(), sale.getSaleDate())) {
                 continue;
             }
@@ -910,7 +907,6 @@ public class SaleService {
                     "SALE_VOID", sale.getId(), String.valueOf(lockedItem.getId()), quantityToRestore,
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(quantityToRestore)),
                     null, "Stock restored from voided sale " + sale.getInvoiceNumber(), sale.getVoidedAt(), userId);
-            ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
             product.setStockQuantity(product.getStockQuantity() + quantityToRestore);
             productRepository.save(product);
 
