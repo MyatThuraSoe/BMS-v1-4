@@ -102,7 +102,7 @@ class PeriodCloseGuardTest {
 
     @Test
     void anOpenDrawerInTheMonthBlocksTheCloseAndNamesTheSession() {
-        when(drawerSessionRepository.findOpenSessionsOpenedIn(any(), any()))
+        when(drawerSessionRepository.findForReport(any(), any()))
                 .thenReturn(List.of(openSession(12L, "Front counter")));
 
         BusinessException ex = assertThrows(BusinessException.class,
@@ -116,7 +116,7 @@ class PeriodCloseGuardTest {
     @Test
     void theOpenDrawerCheckCanBeSwitchedOff() {
         setting("accounting.period.requireNoOpenDrawers", "false");
-        when(drawerSessionRepository.findOpenSessionsOpenedIn(any(), any()))
+        when(drawerSessionRepository.findForReport(any(), any()))
                 .thenReturn(List.of(openSession(12L, "Front counter")));
 
         PeriodClose closed = periodService.close(lastMonth, USER_ID);

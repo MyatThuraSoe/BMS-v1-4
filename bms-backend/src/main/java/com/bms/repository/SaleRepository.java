@@ -344,4 +344,21 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
         ORDER BY s.saleDate DESC, s.id DESC
         """)
     Page<Sale> findArHistoryByCustomerId(@Param("customerId") Long customerId, Pageable pageable);
+
+    /**
+     * True if any non-voided, active sale of the given product occurred after
+     * {@code afterDate}. Used to detect stock that may have been resold before
+     * a void, so the void does not over-restore inventory.
+     */
+    @Query("""
+        SELECT COUNT(s) > 0
+        FROM Sale s
+        JOIN s.items i
+        WHERE i.product.id = :productId
+          AND s.saleDate > :afterDate
+          AND s.isActive = true
+          AND s.deletedAt IS NULL
+          AND s.isVoided = false
+        """)
+    boolean productSoldAfter(@Param("productId") Long productId, @Param("afterDate") LocalDateTime afterDate);
 }

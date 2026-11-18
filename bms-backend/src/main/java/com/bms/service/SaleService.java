@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -347,8 +348,12 @@ public class SaleService {
         sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
 
         if (saleType == Sale.SaleType.CREDIT) {
-            // Credit-limit check BEFORE persisting anything
-            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
+            // Credit-limit check BEFORE persisting anything.
+            // Store credit (money the shop owes the customer) offsets the debt,
+            // so the effective outstanding is currentBalance minus creditBalance.
+            BigDecimal creditBalance = creditCustomer.getCreditBalance();
+            BigDecimal effectiveBalance = creditCustomer.getCurrentBalance().subtract(creditBalance);
+            BigDecimal newBalance = effectiveBalance.add(totalAmount);
             if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
                 throw new InsufficientCreditException(
                     "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
@@ -375,8 +380,24 @@ public class SaleService {
                     throw new BusinessException("Amount paid (" + tendered
                             + ") is less than total amount (" + totalAmount + ")");
                 }
-                sale.setAmountPaid(totalAmount);
-                sale.setChangeGiven(BigDecimal.ZERO);
+                if (tendered != null && tendered.compareTo(totalAmount) > 0) {
+                    if (sale.getCustomer() == null) {
+                        throw new BusinessException("Amount paid (" + tendered
+                                + ") exceeds total (" + totalAmount
+                                + ") for a non-cash sale with no customer to hold store credit.");
+                    }
+                    sale.setAmountPaid(totalAmount);
+                    sale.setChangeGiven(BigDecimal.ZERO);
+                    BigDecimal overTender = tendered.subtract(totalAmount);
+                    Customer overTenderCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                            .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+                    overTenderCustomer.setCreditBalance(overTenderCustomer.getCreditBalance()
+                            .add(overTender).setScale(2, RoundingMode.HALF_UP));
+                    customerRepository.save(overTenderCustomer);
+                } else {
+                    sale.setAmountPaid(totalAmount);
+                    sale.setChangeGiven(BigDecimal.ZERO);
+                }
             }
         }
 
@@ -602,6 +623,26 @@ public class SaleService {
             item.setPromotionId(orderItem.getPromotionId());
             item.setPromotionName(orderItem.getPromotionName());
             sale.getItems().add(item);
+        }
+
+        // Below-cost check at fulfilment: cost may have changed since the order
+        // was created, so re-check against the cost in force now (P2).
+        BelowCostPolicy conversionBelowCostPolicy = getBelowCostPolicy();
+        boolean conversionBelowCostAllowed = conversionBelowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
+                || isManagerOrAdmin(cashierId);
+        for (SaleItem item : sale.getItems()) {
+            BigDecimal lineCost = item.getCostPriceAtSale();
+            BigDecimal linePrice = item.getUnitPrice();
+            if (lineCost != null && linePrice != null && linePrice.compareTo(lineCost) < 0) {
+                if (conversionBelowCostPolicy == BelowCostPolicy.BLOCK) {
+                    throw new BusinessException("Product '" + item.getProduct().getName()
+                            + "' is priced below cost at fulfilment; below-cost sales are blocked");
+                }
+                if (conversionBelowCostPolicy == BelowCostPolicy.REQUIRE_MANAGER && !conversionBelowCostAllowed) {
+                    throw new BusinessException("Product '" + item.getProduct().getName()
+                            + "' is priced below cost at fulfilment; manager approval is required");
+                }
+            }
         }
 
         sale.setSubtotal(subtotal);
@@ -855,6 +896,14 @@ public class SaleService {
 
             Product product = productRepository.findByIdForUpdate(lockedItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + lockedItem.getProduct().getId()));
+
+            // If this product was sold in a later sale, its units may already be
+            // gone — restoring them here would inflate stock. Skip stock restore
+            // and let the void post only the profit reversal.
+            if (saleRepository.productSoldAfter(lockedItem.getProduct().getId(), sale.getSaleDate())) {
+                continue;
+            }
+
             // P1/O8: void restores inventory at costPriceAtSale, dated on the void.
             BigDecimal costAtSale = lockedItem.getCostPriceAtSale() != null ? lockedItem.getCostPriceAtSale() : BigDecimal.ZERO;
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.VOID,

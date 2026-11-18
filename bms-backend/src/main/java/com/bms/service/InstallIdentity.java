@@ -60,7 +60,9 @@ public class InstallIdentity {
     public String currentId() {
         String stored = storedId();
         if (!stored.isBlank()) {
-            startedWith = stored;
+            if (!org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+                startedWith = stored;
+            }
             return stored;
         }
         if (startedWith != null) {
@@ -81,12 +83,19 @@ public class InstallIdentity {
      * businesses.
      */
     public void adopt(String fileId) {
-        if (fileId == null || fileId.isBlank() || fileId.equals(currentId())) {
-            return;
+        String target = fileId == null || fileId.isBlank() ? currentId() : fileId;
+        if (!target.equals(storedId())) save(target);
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isActualTransactionActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCommit() {
+                            startedWith = target;
+                        }
+                    });
+        } else {
+            startedWith = target;
         }
-        save(fileId);
-        startedWith = fileId;
-        log.info("This install now carries the id of the database that replaced it: {}", fileId);
     }
 
     private String storedId() {

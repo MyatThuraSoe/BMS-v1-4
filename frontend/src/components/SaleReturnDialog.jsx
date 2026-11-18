@@ -149,7 +149,9 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
       })),
     };
     if (showRefundMethodSelector && activeRefundMethod) {
-      payload.refundMethod = activeRefundMethod;
+      // DEBT_REDUCTION is a frontend-only label; the backend expects CREDIT
+      // for balance-only returns on credit invoices.
+      payload.refundMethod = activeRefundMethod === 'DEBT_REDUCTION' ? 'CREDIT' : activeRefundMethod;
     }
     if (!payload.reason || payload.items.length === 0) return;
     mutation.mutate(payload);
@@ -259,6 +261,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
               >
                 <option value="">Default</option>
                 <option value="CASH">CASH</option>
+                <option value="DEBT_REDUCTION">Debt Reduction Only</option>
                 {hasCustomer && <option value="STORE_CREDIT">STORE_CREDIT</option>}
               </TextField>
             )}
@@ -284,8 +287,14 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
                 </Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography fontWeight={600}>{t('return_total')}</Typography>
+                <Typography fontWeight={600}>{t('cash_due')}</Typography>
                 <Typography fontWeight={700} color="warning.main" sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
+                  {formatCurrency(estimate.refund)}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">{t('return_total_gross')}</Typography>
+                <Typography sx={{ fontFamily: '"IBM Plex Mono", monospace' }}>
                   {formatCurrency(returnTotal)}
                 </Typography>
               </Box>
@@ -294,7 +303,7 @@ const SaleReturnDialog = ({ open, onClose, saleId }) => {
         ) : (
           <>
             <Alert severity="warning" icon={<ReturnIcon />} sx={{ mb: 2 }}>
-              {t('return_confirm_message', { amount: formatCurrency(returnTotal), count: selectedLines.reduce((s, l) => s + l.qty, 0) })}
+              {t('return_confirm_message', { amount: formatCurrency(estimate.refund), count: selectedLines.reduce((s, l) => s + l.qty, 0) })}
             </Alert>
             <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 2 }}>
               <Table size="small">

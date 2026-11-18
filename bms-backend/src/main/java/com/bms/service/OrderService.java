@@ -280,7 +280,7 @@ public class OrderService {
     // ------------------------------------------------------------------
 
     /** O8: the sweep runs with no cashier behind it, so its audit rows are system-authored. */
-    static final Long SYSTEM_USER = null;
+    static final Long SYSTEM_USER = 0L;
 
     /**
      * Frees the stock a pre-order is holding after the shop's reservation window.

@@ -115,6 +115,7 @@ public class DataImportService {
     @SuppressWarnings("unchecked")
     public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode,
                                          boolean confirmSameShop) {
+        holdImportConnection();
         periodGuard.lock();
 
         Map<String, Object> rawData = (Map<String, Object>) backup.get("data");
@@ -133,7 +134,8 @@ public class DataImportService {
         // replace the closed periods and the ledgers with itself. A business-only
         // file never may: swapping rows underneath a closed period would leave the
         // books disagreeing with the shop's history.
-        boolean carriesLedgers = hasRows(rawData, "inventoryLedger") && hasRows(rawData, "profitLedger");
+        boolean carriesLedgers = rawData.get("inventoryLedger") instanceof List<?>
+                && rawData.get("profitLedger") instanceof List<?>;
 
         if (mode == ImportMode.REPLACE_ALL && !carriesLedgers && (periodCloseRepository.count() > 0
                 || inventoryLedgerRepository.count() > 0 || profitLedgerRepository.count() > 0)) {
@@ -175,8 +177,7 @@ public class DataImportService {
         List<CashShift> cashShifts = readList(mapper, rawData.get("cashShifts"), CashShift.class);
         List<ShopInfo> shopInfoRows = readList(mapper, rawData.get("shopInfo"), ShopInfo.class);
         List<Long> internalSettingIds = systemSettingRepository.findAll().stream()
-                .filter(setting -> setting.getSettingKey().startsWith("accounting."))
-                .map(SystemSetting::getId).toList();
+                .filter(this::isLocalSetting).map(SystemSetting::getId).toList();
         List<SystemSetting> systemSettings = readList(mapper, rawData.get("systemSettings"), SystemSetting.class).stream()
                 .filter(setting -> !setting.getSettingKey().startsWith("accounting."))
                 // Each install has its own id, and the one in the file is already
@@ -188,9 +189,8 @@ public class DataImportService {
                 // would point this install's queue at that other shop's agent.
                 .filter(setting -> !SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey()))
                 .toList();
-        if (systemSettings.stream().anyMatch(setting -> internalSettingIds.contains(setting.getId()))) {
-            throw new com.bms.exception.BusinessException("Backup setting IDs conflict with internal accounting settings");
-        }
+        systemSettings.stream().filter(setting -> internalSettingIds.contains(setting.getId()))
+                .forEach(setting -> setting.setId(null));
 
         // 1b Sections added by later backup versions. Every one of them is
         //     optional: a file written by an older version simply has no key for
@@ -315,7 +315,6 @@ public class DataImportService {
                 for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
                 for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
             }
-            wipeAllData(rawData);
         }
 
         // 3️⃣ Re-link children (back-refs were stripped by @JsonIgnore)
@@ -330,6 +329,14 @@ public class DataImportService {
         //    by a "safe" merge. A file that is not this install's own is held to
         //    more than that: its rows have to say they are the same rows.
         if (mode == ImportMode.MERGE) {
+            boolean changedBalances = stateDiffers(products, productRepository)
+                    || stateDiffers(customers, customerRepository)
+                    || stateDiffers(sales, saleRepository)
+                    || stateDiffers(purchases, purchaseRepository)
+                    || stateDiffers(orders, orderRepository)
+                    || stateDiffers(locationStock, locationStockRepository)
+                    || stateDiffers(cashShifts, cashShiftRepository)
+                    || stateDiffers(drawerSessions, cashDrawerSessionRepository);
             MergeGate gate = new MergeGate(!fromThisInstall);
             users = keepOnlyNewUsers(users);
             categories = gate.keepOnlyNew("categories", categories, categoryRepository::findAll, null);
@@ -392,6 +399,14 @@ public class DataImportService {
             profitLedger = gate.keepOnlyNew("profitLedger", profitLedger,
                     profitLedgerRepository::findAll, null);
             gate.refuseRowsThatDoNotMatch();
+            if (changedBalances && (!sales.isEmpty() || !purchases.isEmpty() || !saleReturns.isEmpty()
+                    || !arPayments.isEmpty() || !purchasePayments.isEmpty() || !stockMovements.isEmpty()
+                    || !drawerMovements.isEmpty() || !inventoryLedger.isEmpty() || !profitLedger.isEmpty()
+                    || !orders.isEmpty() || !stockTransfers.isEmpty() || !countSheets.isEmpty())) {
+                throw new com.bms.exception.StateConflictException(
+                        "Nothing was merged. The backup's transaction balances differ from this shop. "
+                                + "Use Replace everything to restore transactions and balances together.");
+            }
         }
 
         if (!carriesLedgers && ledgerReadService.isActive() && (!products.isEmpty() || !sales.isEmpty()
@@ -401,10 +416,11 @@ public class DataImportService {
                     "Business-only imports cannot append reconciled accounting history. Use a complete database restore instead.");
         }
 
-        // A backup that carries its own journals also carries the closes that
-        // froze them, so the period checks are its own business: the restored
-        // history is exactly the history those closes describe.
-        if (!carriesLedgers) {
+        if (mode == ImportMode.MERGE && !periodCloses.isEmpty()) {
+            throw new com.bms.exception.StateConflictException(
+                    "Merge cannot import period closures. Restore the complete backup or close periods locally.");
+        }
+        if (mode == ImportMode.MERGE || !carriesLedgers) {
             for (Sale sale : sales) {
                 periodGuard.assertOpen(sale.getSaleDate());
                 if (sale.getVoidedAt() != null) periodGuard.assertOpen(sale.getVoidedAt());
@@ -412,52 +428,66 @@ public class DataImportService {
             for (SaleReturn saleReturn : saleReturns) periodGuard.assertOpen(saleReturn.getReturnDate());
             for (Purchase purchase : purchases) periodGuard.assertOpen(purchase.getPurchaseDate());
             for (Expense expense : expenses) periodGuard.assertOpen(expense.getExpenseDate());
+            for (ArPayment payment : arPayments) {
+                periodGuard.assertOpen(payment.getPaymentDate());
+                if (payment.getReversedAt() != null) periodGuard.assertOpen(payment.getReversedAt());
+            }
+            for (PurchasePayment payment : purchasePayments) periodGuard.assertOpen(payment.getPaymentDate());
+            for (CashDrawerMovement movement : drawerMovements) periodGuard.assertOpen(movement.getOccurredAt());
+            for (StockMovement movement : stockMovements) periodGuard.assertOpen(movement.getMovementDate());
+            for (InventoryLedger entry : inventoryLedger) periodGuard.assertOpen(entry.getOccurredAt());
+            for (ProfitLedger entry : profitLedger) periodGuard.assertOpen(entry.getOccurredAt());
         }
 
-        // 5️⃣ Save (FK-safe order, parents first). Every row is an INSERT: REPLACE
-        //    mode has just emptied these tables and MERGE mode dropped the rows the
-        //    shop already has, so the ids the file carries name nothing to update.
-        //    Places, drawers, shifts and price lists come before the transactions
-        //    that point into them: with generated ids every row reaches the database
-        //    the moment it is saved, so a link to a row not inserted yet is refused.
+        Map<String, List<?>> sections = new LinkedHashMap<>();
+        sections.put("users", users);
+        sections.put("categories", categories);
+        sections.put("customers", customers);
+        sections.put("suppliers", suppliers);
+        sections.put("glAccounts", glAccounts);
+        sections.put("locations", locations);
+        sections.put("cashDrawers", cashDrawers);
+        sections.put("cashDrawerSessions", drawerSessions);
+        sections.put("cashShifts", cashShifts);
+        sections.put("cashDrawerMovements", drawerMovements);
+        sections.put("products", products);
+        sections.put("priceLists", priceLists);
+        sections.put("locationStock", locationStock);
+        sections.put("purchases", purchases);
+        sections.put("sales", sales);
+        sections.put("saleReturns", saleReturns);
+        sections.put("receiptCustomizations", receiptCustomizations);
+        sections.put("arPayments", arPayments);
+        sections.put("purchasePayments", purchasePayments);
+        sections.put("orders", orders);
+        sections.put("orderSequences", orderSequences);
+        sections.put("expenses", expenses);
+        sections.put("shopInfo", shopInfoRows);
+        sections.put("systemSettings", systemSettings);
+        sections.put("stockMovements", stockMovements);
+        sections.put("stockTransfers", stockTransfers);
+        sections.put("promotions", promotions);
+        sections.put("productPriceHistory", priceHistory);
+        sections.put("countSheets", countSheets);
+        sections.put("glMappings", glMappings);
+        sections.put("invoiceSequences", invoiceSequences);
+        sections.put("purchaseSequences", purchaseSequences);
+        sections.put("customerSequences", customerSequences);
+        sections.put("transferSequences", transferSequences);
+        sections.put("periodCloses", periodCloses);
+        sections.put("inventoryLedger", inventoryLedger);
+        sections.put("profitLedger", profitLedger);
+
+        BackupEntityInserter inserter = new BackupEntityInserter(entityManager, jdbcTemplate, env, shopTimeService);
+        inserter.prepare(new ArrayList<>(sections.values()));
+        periodGuard.lock();
+        if (mode == ImportMode.REPLACE_ALL) {
+            wipeAllData(rawData);
+        }
+        entityManager.clear();
+        inserter.insertAll();
         Map<String, Integer> counts = new LinkedHashMap<>();
-        counts.put("users", insertAll(users));
-        counts.put("categories", insertAll(categories));
-        counts.put("customers",  insertAll(customers));
-        counts.put("suppliers",  insertAll(suppliers));
-        counts.put("glAccounts", insertAll(glAccounts));
-        counts.put("locations", insertAll(locations));
-        counts.put("cashDrawers", insertAll(cashDrawers));
-        counts.put("cashDrawerSessions", insertAll(drawerSessions));
-        counts.put("cashShifts", insertAll(cashShifts));
-        counts.put("cashDrawerMovements", insertAll(drawerMovements));
-        counts.put("products",   insertAll(products));
-        counts.put("priceLists", insertAll(priceLists));
-        counts.put("locationStock", insertAll(locationStock));
-        counts.put("purchases",  insertAll(purchases));
-        counts.put("sales",      insertAll(sales));
-        counts.put("saleReturns", insertAll(saleReturns));
-        counts.put("receiptCustomizations", insertAll(receiptCustomizations));
-        counts.put("arPayments", insertAll(arPayments));
-        counts.put("purchasePayments", insertAll(purchasePayments));
-        counts.put("orders", insertAll(orders));
-        counts.put("orderSequences", insertAll(orderSequences));
-        counts.put("expenses", insertAll(expenses));
-        counts.put("shopInfo", insertAll(shopInfoRows));
-        counts.put("systemSettings", insertAll(systemSettings));
-        counts.put("stockMovements", insertAll(stockMovements));
-        counts.put("stockTransfers", insertAll(stockTransfers));
-        counts.put("promotions", insertAll(promotions));
-        counts.put("productPriceHistory", insertAll(priceHistory));
-        counts.put("countSheets", insertAll(countSheets));
-        counts.put("glMappings", insertAll(glMappings));
-        counts.put("invoiceSequences", insertAll(invoiceSequences));
-        counts.put("purchaseSequences", insertAll(purchaseSequences));
-        counts.put("customerSequences", insertAll(customerSequences));
-        counts.put("transferSequences", insertAll(transferSequences));
-        counts.put("periodCloses", insertAll(periodCloses));
-        counts.put("inventoryLedger", insertAll(inventoryLedger));
-        counts.put("profitLedger", insertAll(profitLedger));
+        sections.forEach((name, rows) -> counts.put(name, rows.size()));
 
         // 6️⃣ A replace took the file's history whole, so it takes the identity of
         //    the install that wrote it too: the next backup of these books is then
@@ -467,9 +497,6 @@ public class DataImportService {
             installIdentity.adopt(fileId);
         }
 
-        // 7️⃣ Reset auto-increment counters so NEW records don't collide
-        resetIdentityCounters();
-
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", true);
         result.put("mode", mode.name());
@@ -477,74 +504,46 @@ public class DataImportService {
         return result;
     }
 
-    /**
-     * Puts one section's rows in as new records. The repository's save() would
-     * merge instead, which asks Hibernate for a row this very restore has just
-     * deleted — and a parent that owns a collection cannot be re-born that way:
-     * the session keys its children by an identifier the insert has not produced
-     * yet. So the exported ids are dropped and the database numbers the rows again
-     * (step 6 then puts the counters ahead of them).
-     */
-    private <T> int insertAll(List<T> rows) {
-        for (T row : rows) {
-            restoreAsNew(row);
-            entityManager.persist(row);
+    private <T> boolean stateDiffers(List<T> incoming,
+                                     org.springframework.data.jpa.repository.JpaRepository<T, Long> repository) {
+        var session = entityManager.unwrap(org.hibernate.engine.spi.SessionImplementor.class);
+        for (T row : incoming) {
+            var persister = session.getEntityPersister(null, row);
+            Object id = persister.getIdentifier(row, session);
+            if (id == null) continue;
+            T existing = repository.findById(((Number) id).longValue()).orElse(null);
+            if (existing == null) continue;
+            Object[] left = persister.getPropertyValues(row);
+            Object[] right = persister.getPropertyValues(existing);
+            String[] names = persister.getPropertyNames();
+            org.hibernate.type.Type[] types = persister.getPropertyTypes();
+            for (int i = 0; i < names.length; i++) {
+                if (types[i].isCollectionType() || names[i].equals("version")
+                        || names[i].equals("createdAt") || names[i].equals("updatedAt")) continue;
+                if (!types[i].isEqual(left[i], right[i], session.getFactory())) return true;
+            }
         }
-        return rows.size();
+        return false;
     }
 
-    /**
-     * Makes one parsed row look like something this shop has never seen: the id it
-     * carried (and its children carried) is dropped, and a parent the file pointed
-     * at is asked of the session again. The wipe empties the session, so a
-     * reference built while parsing no longer belongs to it — and Hibernate cannot
-     * tell a row this restore is about to insert from one that never existed.
-     */
-    private void restoreAsNew(Object row) {
-        for (Class<?> type = row.getClass(); type.getSuperclass() != null; type = type.getSuperclass()) {
-            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
-                field.setAccessible(true);
-                try {
-                    if (field.isAnnotationPresent(jakarta.persistence.Id.class)
-                            && field.isAnnotationPresent(jakarta.persistence.GeneratedValue.class)) {
-                        field.set(row, null);
-                    }
-                    else if ((field.isAnnotationPresent(jakarta.persistence.OneToMany.class)
-                            || field.isAnnotationPresent(jakarta.persistence.ManyToMany.class))
-                            && field.get(row) instanceof java.util.Collection<?> children) {
-                        children.forEach(this::restoreAsNew);
-                    }
-                    else if ((field.isAnnotationPresent(jakarta.persistence.ManyToOne.class)
-                            || field.isAnnotationPresent(jakarta.persistence.OneToOne.class))
-                            && field.get(row) != null && !entityManager.contains(field.get(row))) {
-                        Object parent = identifierOf(field.get(row));
-                        if (parent != null) {
-                            field.set(row, entityManager.getReference(field.getType(), parent));
+    private void holdImportConnection() {
+        if (!env.getProperty("spring.datasource.url", "").contains(":h2:")) return;
+        entityManager.unwrap(org.hibernate.Session.class).doWork(connection -> {
+            try (java.sql.Statement statement = connection.createStatement()) {
+                statement.execute("SET EXCLUSIVE 1");
+            }
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                    new org.springframework.transaction.support.TransactionSynchronization() {
+                        @Override
+                        public void afterCompletion(int status) {
+                            try (java.sql.Statement statement = connection.createStatement()) {
+                                statement.execute("SET EXCLUSIVE 0");
+                            } catch (java.sql.SQLException failure) {
+                                throw new IllegalStateException("Cannot release the restore connection", failure);
+                            }
                         }
-                    }
-                } catch (ReflectiveOperationException impossibleOnOurOwnEntities) {
-                    throw new IllegalStateException("Cannot restore a " + type.getSimpleName(), impossibleOnOurOwnEntities);
-                }
-            }
-        }
-    }
-
-    /** The value of a row's {@code @Id} field, or null when it has none yet. */
-    private static Object identifierOf(Object row) {
-        for (Class<?> type = row.getClass(); type.getSuperclass() != null; type = type.getSuperclass()) {
-            for (java.lang.reflect.Field field : type.getDeclaredFields()) {
-                if (field.isAnnotationPresent(jakarta.persistence.Id.class)) {
-                    field.setAccessible(true);
-                    try {
-                        return field.get(row);
-                    } catch (IllegalAccessException impossibleOnOurOwnEntities) {
-                        throw new IllegalStateException("Cannot read the id of a " + type.getSimpleName(),
-                                impossibleOnOurOwnEntities);
-                    }
-                }
-            }
-        }
-        return null;
+                    });
+        });
     }
 
     /**
@@ -676,22 +675,6 @@ public class DataImportService {
     }
 
     private void wipeAllData(Map<String, Object> rawData) {
-        String url = env.getProperty("spring.datasource.url", "");
-        boolean isH2 = url.contains(":h2:");
-        boolean isSqlite = url.contains(":sqlite:");
-        String disableFk;
-        String enableFk;
-        if (isH2) {
-            disableFk = "SET REFERENTIAL_INTEGRITY FALSE";
-            enableFk = "SET REFERENTIAL_INTEGRITY TRUE";
-        } else if (isSqlite) {
-            disableFk = "PRAGMA foreign_keys = OFF";
-            enableFk = "PRAGMA foreign_keys = ON";
-        } else {
-            disableFk = "SET FOREIGN_KEY_CHECKS = 0";
-            enableFk = "SET FOREIGN_KEY_CHECKS = 1";
-        }
-
         List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
@@ -745,59 +728,48 @@ public class DataImportService {
         wipeIfPresent(tables, "inventory_ledger", rawData.get("inventoryLedger"));
         wipeIfPresent(tables, "profit_ledger", rawData.get("profitLedger"));
 
-        // A replace cannot bring this install's own key back from the file — a
-        // secret never travels in a backup — so the wipe takes the row out with
-        // everything else and these few lines put it back afterwards.
-        List<SystemSetting> secretsOfThisInstall = secretsOfThisInstall();
-
-        jdbcTemplate.execute(disableFk);
-        try {
-            for (String table : tables) {
-                try {
-                    if (table.equals("system_settings")) {
-                        jdbcTemplate.execute("DELETE FROM system_settings WHERE setting_key NOT LIKE 'accounting.%'");
-                    } else {
-                        jdbcTemplate.execute("DELETE FROM " + table);
-                    }
-                } catch (Exception ignored) {
-                    // Table may not exist in an older installation — safe to skip
-                }
+        java.util.Set<String> existingTables = new java.util.HashSet<>();
+        entityManager.unwrap(org.hibernate.Session.class).doWork(connection -> {
+            try (java.sql.ResultSet rows = connection.getMetaData().getTables(
+                    connection.getCatalog(), null, "%", new String[]{"TABLE"})) {
+                while (rows.next()) existingTables.add(rows.getString("TABLE_NAME").toLowerCase(java.util.Locale.ROOT));
             }
-        } finally {
-            jdbcTemplate.execute(enableFk);
+        });
+        List<String> deleteOrder = List.of(
+                "gl_mappings", "ar_payments", "purchase_payments", "receipt_customizations",
+                "sale_return_items", "sale_returns", "refund_items", "refunds", "sale_items", "sale_payments",
+                "sales", "order_items", "orders", "stock_movements", "product_price_history",
+                "stock_transfer_items", "stock_transfers", "count_sheet_items", "count_sheets",
+                "location_stock", "promotion_tiers", "promotions", "price_list_items",
+                "purchase_items", "purchase_expenses", "purchases", "customer_phones", "supplier_phones",
+                "customers", "product_images", "products", "categories", "suppliers", "price_lists",
+                "cash_drawer_movements", "cash_shifts", "cash_drawer_sessions", "cash_drawers",
+                "locations", "expenses", "users", "gl_accounts", "shop_info", "system_settings",
+                "order_sequences", "invoice_sequences", "purchase_sequences", "customer_sequences",
+                "transfer_sequences", "period_close", "inventory_ledger", "profit_ledger");
+        for (String table : deleteOrder) {
+            if (!tables.contains(table) || !existingTables.contains(table)) continue;
+            if (table.equals("system_settings")) {
+                List<Long> protectedIds = systemSettingRepository.findAll().stream()
+                        .filter(this::isLocalSetting).map(SystemSetting::getId).toList();
+                String condition = protectedIds.isEmpty() ? "" : " WHERE id NOT IN ("
+                        + String.join(",", java.util.Collections.nCopies(protectedIds.size(), "?")) + ")";
+                jdbcTemplate.update("DELETE FROM system_settings" + condition, protectedIds.toArray());
+            } else {
+                jdbcTemplate.update("DELETE FROM " + table);
+            }
         }
-        restartCountersFromOne();
-        // Drop any JPA entities currently cached; SQL deletes bypass the
-        // persistence context and stale state would corrupt the upcoming saveAll.
         entityManager.clear();
-        secretsOfThisInstall.forEach(entityManager::persist);
     }
 
-    /**
-     * The secret rows this install holds, copied out so the copy survives both the
-     * SQL delete and the persistence-context clear. Handing the print agent a
-     * stranger's key would point the counter queue at another shop's printer, and
-     * handing it no key at all would stop this shop printing until its next
-     * restart, so the value it was given when this install started is the one that
-     * stays.
-     */
-    private List<SystemSetting> secretsOfThisInstall() {
-        return systemSettingRepository.findAll().stream()
-                .filter(setting -> SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey()))
-                .map(setting -> {
-                    SystemSetting copy = new SystemSetting();
-                    copy.setSettingKey(setting.getSettingKey());
-                    copy.setSettingValue(setting.getSettingValue());
-                    copy.setDescription(setting.getDescription());
-                    copy.setDataType(setting.getDataType());
-                    copy.setIsPublic(setting.getIsPublic());
-                    return copy;
-                })
-                .toList();
+    private boolean isLocalSetting(SystemSetting setting) {
+        return setting.getSettingKey().startsWith("accounting.")
+                || InstallIdentity.SETTING_KEY.equals(setting.getSettingKey())
+                || SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey());
     }
 
     private void wipeIfPresent(List<String> tables, String table, Object raw) {
-        if (raw instanceof List<?> list && !list.isEmpty()) {
+        if (raw instanceof List<?>) {
             tables.add(table);
         }
     }
@@ -841,11 +813,6 @@ public class DataImportService {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> mapOf(Object row) {
         return row instanceof Map<?, ?> map ? (Map<String, Object>) map : Map.of();
-    }
-
-    /** True when the backup carries at least one row for the section. */
-    private static boolean hasRows(Map<String, Object> rawData, String section) {
-        return rawData.get(section) instanceof List<?> list && !list.isEmpty();
     }
 
     /** Rebuilds ArPayment rows from the flattened backup format and re-attaches
@@ -988,62 +955,4 @@ public class DataImportService {
         try { return Long.parseLong(value.toString()); } catch (NumberFormatException e) { return null; }
     }
 
-    /** Every table whose rows the restore re-inserts under an id of its own. */
-    private static final String[] COUNTER_TABLES = {"users", "categories", "customers", "suppliers", "products",
-            "sales", "sale_items", "sale_payments", "purchases", "purchase_items", "purchase_expenses",
-            "ar_payments", "receipt_customizations",
-            "orders", "order_items", "order_sequences", "sale_returns", "sale_return_items",
-            "expenses", "cash_shifts", "shop_info", "system_settings",
-            "locations", "location_stock", "stock_movements", "stock_transfers",
-            "stock_transfer_items", "price_lists", "price_list_items", "promotions",
-            "promotion_tiers", "product_price_history", "purchase_payments",
-            "cash_drawers", "cash_drawer_sessions", "cash_drawer_movements",
-            "count_sheets", "count_sheet_items", "gl_accounts", "gl_mappings",
-            "invoice_sequences", "purchase_sequences", "customer_sequences",
-            "transfer_sequences", "inventory_ledger", "profit_ledger"};
-
-    private void resetIdentityCounters() {
-        String url = env.getProperty("spring.datasource.url", "");
-        boolean isH2 = url.contains(":h2:");
-        boolean isSqlite = url.contains(":sqlite:");
-        for (String table : COUNTER_TABLES) {
-            try {
-                if (isSqlite) {
-                    // SQLite INTEGER PRIMARY KEY is a rowid alias — inserts after a
-                    // restored explicit max id automatically continue from there.
-                    continue;
-                }
-                Long max = jdbcTemplate.queryForObject(
-                        "SELECT COALESCE(MAX(id), 0) FROM " + table, Long.class);
-                if (max == null || max == 0) continue;
-                String sql = isH2
-                        ? "ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH " + (max + 1)
-                        : "ALTER TABLE " + table + " AUTO_INCREMENT = " + (max + 1);
-                jdbcTemplate.execute(sql);
-            } catch (Exception ignored) {
-                // Table name may differ in your schema — safe to skip
-            }
-        }
-    }
-
-    /**
-     * After the wipe each table numbers from 1 again, so a restored row carries the
-     * number the file gave it and the rows that point at it — children, journal
-     * lines, drawer movements — still point at the right one. SQLite does this on
-     * its own: without AUTOINCREMENT a rowid alias restarts once the table is empty.
-     */
-    private void restartCountersFromOne() {
-        String url = env.getProperty("spring.datasource.url", "");
-        boolean isH2 = url.contains(":h2:");
-        if (url.contains(":sqlite:")) return;
-        for (String table : COUNTER_TABLES) {
-            try {
-                jdbcTemplate.execute(isH2
-                        ? "ALTER TABLE " + table + " ALTER COLUMN id RESTART WITH 1"
-                        : "ALTER TABLE " + table + " AUTO_INCREMENT = 1");
-            } catch (Exception ignored) {
-                // Table name may differ in your schema — safe to skip
-            }
-        }
-    }
 }

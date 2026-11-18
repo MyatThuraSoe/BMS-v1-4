@@ -657,14 +657,19 @@ public class PurchaseService {
                 throw new BusinessException("Purchase item " + entry.getPurchaseItemId()
                         + " does not belong to this purchase");
             }
-            int available = item.getReceivedQuantity() - item.getReturnedQuantity();
-            if (entry.getQuantity() > available) {
-                throw new BusinessException("Only " + available + " unit(s) of "
-                        + item.getProduct().getName() + " can still be returned");
-            }
             Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + item.getProduct().getId()));
+
+            int available = item.getReceivedQuantity() - item.getReturnedQuantity();
+            // Received-but-not-returned units may already have been sold; cap at
+            // every unit the business still owns (shop + all locations), not just
+            // shop stock — quarantined units are still owned and returnable.
+            int physicallyAvailable = Math.min(available, locationService.totalOwnedUnits(product));
+            if (entry.getQuantity() > physicallyAvailable) {
+                throw new BusinessException("Only " + physicallyAvailable + " unit(s) of "
+                        + item.getProduct().getName() + " can still be returned");
+            }
 
             int ownedBefore = locationService.totalOwnedUnits(product);
             BigDecimal oldCostPrice = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
@@ -897,13 +902,21 @@ public class PurchaseService {
      * payable.
      */
     private BigDecimal rtvCreditAmount(Purchase purchase, PurchaseItem item, int quantity) {
-        BigDecimal lineValue = item.getUnitCost().multiply(BigDecimal.valueOf(quantity));
-        BigDecimal credit = lineValue;
-        BigDecimal tax = purchase.getTaxAmount();
-        BigDecimal subtotal = purchase.getSubtotal();
-        if (tax != null && tax.signum() > 0 && subtotal != null && subtotal.signum() > 0) {
-            credit = credit.add(tax.multiply(lineValue)
-                    .divide(subtotal, 2, RoundingMode.HALF_UP));
+        // baseUnitCost includes exchange rate and landed cost allocation.
+        // Non-recoverable tax is already inside baseUnitCost; recoverable tax
+        // is not, so it must be added pro-rata by line value.
+        BigDecimal credit = item.getBaseUnitCost()
+                .multiply(BigDecimal.valueOf(quantity));
+        if (Boolean.TRUE.equals(purchase.isTaxRecoverable())) {
+            BigDecimal tax = purchase.getTaxAmount();
+            BigDecimal baseSubtotal = purchase.getItems().stream()
+                    .map(i -> i.getBaseUnitCost().multiply(BigDecimal.valueOf(i.getQuantity())))
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (tax != null && tax.signum() > 0 && baseSubtotal != null && baseSubtotal.signum() > 0) {
+                BigDecimal lineValue = item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity));
+                credit = credit.add(tax.multiply(lineValue)
+                        .divide(baseSubtotal, 2, RoundingMode.HALF_UP));
+            }
         }
         return credit.setScale(2, RoundingMode.HALF_UP);
     }
