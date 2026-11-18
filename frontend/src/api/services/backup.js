@@ -57,9 +57,10 @@ export const backupRestoreService = {
    * Restores a JSON backup. Returns a job id to poll.
    * `passphrase` is only needed for a file whose name ends in .enc.
    */
-  restoreFromDrive: async (fileId, sizeBytes, mode, passphrase = null) => {
+  restoreFromDrive: async (fileId, sizeBytes, mode, passphrase = null, confirmSameShop = false) => {
     const response = await apiClient.post('/backups/drive/restore',
-      { fileId, sizeBytes, mode, passphrase: passphrase || undefined });
+      { fileId, sizeBytes, mode, passphrase: passphrase || undefined,
+        confirmSameShop: confirmSameShop || undefined });
     return response.data.data.jobId;
   },
 
@@ -93,6 +94,16 @@ export const backupRestoreService = {
 
   dismissDamagedDatabase: async () => {
     await apiClient.delete('/backups/restore-pending/damaged-database');
+  },
+
+  /**
+   * Deletes one backup from the Drive folder. Manual copies are kept until the
+   * shop deletes them, so this is how their space comes back. The server only
+   * allows a file of this app's own naming inside the backup folder.
+   */
+  deleteDriveFile: async (fileId) => {
+    const response = await apiClient.delete(`/backups/drive/files/${fileId}`);
+    return response.data;
   }
 };
 
@@ -104,5 +115,18 @@ export const googleDriveService = {
 
 export const dataService = {
     exportAll: () => apiClient.get('/data/export', { responseType: 'blob' }),
-    importAll: (backupJson, mode) => apiClient.post(`/data/import?mode=${mode}`, backupJson),
+    /**
+     * @param confirmSameShop the user's own answer to "is this file ours?". Only
+     *                        a tick may send true; the server still checks the
+     *                        rows before it merges anything.
+     */
+    importAll: (backupJson, mode, confirmSameShop = false) => apiClient.post(
+        `/data/import?mode=${mode}&confirmSameShop=${confirmSameShop}`,
+        backupJson,
+    ),
+    /**
+     * The id of the install standing here, so the import page can tell a file
+     * made by it from a file made somewhere else before merging anything.
+     */
+    installId: async () => (await apiClient.get('/data/install-id')).data.data.installId || '',
 };

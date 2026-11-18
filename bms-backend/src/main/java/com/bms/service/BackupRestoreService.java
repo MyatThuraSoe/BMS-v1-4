@@ -119,6 +119,17 @@ public class BackupRestoreService {
         return googleDriveService.listBackupFiles(folderId);
     }
 
+    /**
+     * Throws one backup away by hand, which is the only way the space a protected
+     * manual copy holds ever comes back.
+     *
+     * @throws com.bms.exception.StateConflictException when the file is not one of
+     *         this app's backups in the shop's backup folder
+     */
+    public boolean deleteDriveBackup(String fileId) throws Exception {
+        return googleDriveService.deleteBackupOfThisApp(fileId);
+    }
+
     public RestoreJob getJob(String jobId) {
         return jobs.get(jobId);
     }
@@ -176,13 +187,23 @@ public class BackupRestoreService {
      */
     public String startJsonRestore(String fileId, long sizeBytes, DataImportService.ImportMode mode,
                                    char[] passphrase) {
+        return startJsonRestore(fileId, sizeBytes, mode, passphrase, false);
+    }
+
+    /**
+     * @param confirmSameShop the shop's answer for a merge of a file that does not
+     *                        name this install — see
+     *                        {@link DataImportService#OTHER_SHOP_MESSAGE}
+     */
+    public String startJsonRestore(String fileId, long sizeBytes, DataImportService.ImportMode mode,
+                                   char[] passphrase, boolean confirmSameShop) {
         String jobId = newJobId();
         RestoreJob job = new RestoreJob(jobId, "json-restore", "RUNNING", 0,
                 "Starting restore...", null, Instant.now().toString(), null);
         jobs.put(jobId, job);
         evictOldJobs();
 
-        executor.submit(() -> runJsonRestore(jobId, fileId, sizeBytes, mode, passphrase));
+        executor.submit(() -> runJsonRestore(jobId, fileId, sizeBytes, mode, passphrase, confirmSameShop));
         return jobId;
     }
 
@@ -202,7 +223,8 @@ public class BackupRestoreService {
     }
 
     private void runJsonRestore(String jobId, String fileId, long sizeBytes,
-                                DataImportService.ImportMode mode, char[] passphrase) {
+                                DataImportService.ImportMode mode, char[] passphrase,
+                                boolean confirmSameShop) {
         Path temp = null;
         Path opened = null;
         try {
@@ -239,7 +261,7 @@ public class BackupRestoreService {
             // importAll is one transaction and gives no per-table signal, and
             // instrumenting that method would put the shop's data at risk for a
             // cosmetic progress bar.
-            Map<String, Object> summary = dataImportService.importAll(parsed, mode);
+            Map<String, Object> summary = dataImportService.importAll(parsed, mode, confirmSameShop);
             update(jobId, 97, "Finishing up...");
 
             finish(jobId, "SUCCESS", 100, describeSummary(summary, mode), null);
@@ -270,7 +292,7 @@ public class BackupRestoreService {
             update(jobId, 60, "Uploading snapshot to Google Drive...");
             String folderId = googleDriveService.getOrCreateBackupFolderId(googleDriveService.getDriveService());
             GoogleDriveService.DriveUpload upload = snapshotService.uploadSnapshotToDrive(
-                    googleDriveService, folderId, shopTimeService.now(), passphrase);
+                    googleDriveService, folderId, shopTimeService.now(), passphrase, true);
 
             finish(jobId, "SUCCESS", 100, "Database snapshot uploaded as " + upload.name(), null);
         } catch (Exception ex) {

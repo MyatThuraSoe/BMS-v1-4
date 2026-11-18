@@ -80,7 +80,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DataJpaTest
 @ContextConfiguration(classes = BackupJsonRoundTripTest.JpaConfig.class)
-@Import({DataExportService.class, DataImportService.class, ShopTimeService.class})
+@Import({DataExportService.class, DataImportService.class, ShopTimeService.class, InstallIdentity.class})
 class BackupJsonRoundTripTest {
 
     @SpringBootConfiguration
@@ -141,6 +141,21 @@ class BackupJsonRoundTripTest {
     private long rowsOf(Class<?> entity) {
         return em.getEntityManager()
                 .createQuery("select count(e) from " + entity.getSimpleName() + " e", Long.class)
+                .getSingleResult();
+    }
+
+    /**
+     * Rows of a section as the backup itself carries them. The install id is not
+     * one of those rows: it travels as a field of the file, and Replace everything
+     * adopts it, so the shop gains a settings row the file never listed.
+     */
+    private long rowsOfSection(Class<?> entity) {
+        if (!SystemSetting.class.equals(entity)) {
+            return rowsOf(entity);
+        }
+        return em.getEntityManager().createQuery(
+                        "select count(s) from SystemSetting s where s.settingKey <> :installId", Long.class)
+                .setParameter("installId", InstallIdentity.SETTING_KEY)
                 .getSingleResult();
     }
 
@@ -523,7 +538,7 @@ class BackupJsonRoundTripTest {
         Map<String, Object> backup = document();
 
         for (Map.Entry<String, Class<?>> section : sections.entrySet()) {
-            long live = rowsOf(section.getValue());
+            long live = rowsOfSection(section.getValue());
             assertTrue(live > 0, section.getKey() + " was never seeded, so this test proves nothing");
             assertEquals(live, rows(backup, section.getKey()).size(),
                     section.getKey() + " is not fully written to the backup");
@@ -541,7 +556,7 @@ class BackupJsonRoundTripTest {
         em.clear();
 
         for (Map.Entry<String, Class<?>> section : sections.entrySet()) {
-            assertEquals(rows(backup, section.getKey()).size(), rowsOf(section.getValue()),
+            assertEquals(rows(backup, section.getKey()).size(), rowsOfSection(section.getValue()),
                     section.getKey() + " did not come back with the rows the backup carried");
         }
         assertEquals("Rice 5kg", em.find(Product.class, product.getId()).getName(),
@@ -634,7 +649,7 @@ class BackupJsonRoundTripTest {
         assertEquals("2026-10", only(PeriodClose.class).getPeriod());
         assertEquals(1, rowsOf(InventoryLedger.class));
         assertEquals(1, rowsOf(ProfitLedger.class));
-        assertEquals("BOTH", only(SystemSetting.class).getSettingValue(),
+        assertEquals("BOTH", onlyRealSetting().getSettingValue(),
                 "the shop's backup choice survives a restore of itself");
     }
 
@@ -671,6 +686,15 @@ class BackupJsonRoundTripTest {
     private <T> T only(Class<T> entity) {
         return em.getEntityManager()
                 .createQuery("select e from " + entity.getSimpleName() + " e", entity)
+                .getSingleResult();
+    }
+
+    /** The shop's own setting, with the install id the restore adopted left out. */
+    private SystemSetting onlyRealSetting() {
+        return em.getEntityManager()
+                .createQuery("select s from SystemSetting s where s.settingKey <> :installId",
+                        SystemSetting.class)
+                .setParameter("installId", InstallIdentity.SETTING_KEY)
                 .getSingleResult();
     }
 }

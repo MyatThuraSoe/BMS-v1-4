@@ -43,6 +43,18 @@ public class SystemSettingService {
             "receipt_print_enabled",
             "shop.order.reservationHours");
 
+    /**
+     * Keys whose value is a key rather than a preference. The counter print agent
+     * proves it is the print agent with {@code print.agent.token}, so anybody who
+     * can read a settings list could take the receipts off the queue: the value
+     * comes back as dots unless an administrator asks for it and is written down
+     * doing so, and it never travels into or out of a backup file.
+     */
+    public static final Set<String> SECRET_KEYS = Set.of(PrintAgentAccess.TOKEN_KEY);
+
+    /** What a secret looks like to a reader who did not ask to reveal it. */
+    public static final String MASKED_VALUE = "********";
+
     @Autowired
     private ShopTimeService shopTimeService;
 
@@ -100,20 +112,74 @@ public class SystemSettingService {
     @Cacheable(cacheNames = "systemSettings")
     public List<SystemSettingResponse> getAllSettings() {
         return systemSettingRepository.findAll().stream()
-                .map(this::convertToResponse)
+                .map(setting -> hideSecret(convertToResponse(setting)))
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * The list with its secrets intact. Asking for it is an event: every secret
+     * this hands over is written to the audit log, and the row that records it
+     * holds the key that was read rather than the value, because an audit log a
+     * shop can no longer open is no better than a backup it can no longer restore.
+     */
+    public List<SystemSettingResponse> getAllSettings(boolean reveal, Long userId) {
+        if (!reveal) {
+            return getAllSettings();
+        }
+        List<SystemSetting> settings = systemSettingRepository.findAll();
+        List<SystemSetting> secrets = settings.stream()
+                .filter(setting -> SECRET_KEYS.contains(setting.getSettingKey()))
+                .toList();
+        if (!secrets.isEmpty()) {
+            assertMayReveal(userId);
+            secrets.forEach(setting -> auditReveal(userId, setting));
+        }
+        return settings.stream().map(this::convertToResponse).collect(Collectors.toList());
     }
 
     public SystemSettingResponse getSettingById(Long id) {
         SystemSetting setting = systemSettingRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + id));
-        return convertToResponse(setting);
+        return hideSecret(convertToResponse(setting));
     }
 
     public SystemSettingResponse getSettingByKey(String key) {
-        SystemSetting setting = systemSettingRepository.findBySettingKey(key)
-                .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
+        return hideSecret(convertToResponse(findByKey(key)));
+    }
+
+    /**
+     * One setting with its value, for a caller named here. Only an administrator
+     * is ever that caller, and only a secret is worth writing down.
+     */
+    public SystemSettingResponse getSettingByKey(String key, boolean reveal, Long userId) {
+        if (!reveal) {
+            return getSettingByKey(key);
+        }
+        SystemSetting setting = findByKey(key);
+        if (SECRET_KEYS.contains(key)) {
+            assertMayReveal(userId);
+            auditReveal(userId, setting);
+        }
         return convertToResponse(setting);
+    }
+
+    private SystemSetting findByKey(String key) {
+        return systemSettingRepository.findBySettingKey(key)
+                .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
+    }
+
+    private void assertMayReveal(Long userId) {
+        if (userId == null || !isAdmin(userId)) {
+            log.warn("User {} asked to read a stored secret without the administrator seat", userId);
+            throw new org.springframework.security.access.AccessDeniedException(
+                    "Only an administrator may read a stored secret");
+        }
+    }
+
+    private void auditReveal(Long userId, SystemSetting setting) {
+        auditLogService.logAction(userId, "SETTING_REVEALED",
+                "System setting value revealed: " + setting.getSettingKey(),
+                "SystemSetting", setting.getId(), null, null);
     }
 
     @CacheEvict(cacheNames = "systemSettings", allEntries = true)
@@ -209,9 +275,7 @@ public class SystemSettingService {
     }
 
     public SystemSettingResponse getSettingValue(String key) {
-        SystemSetting setting = systemSettingRepository.findBySettingKey(key)
-                .orElseThrow(() -> new ResourceNotFoundException("System setting not found: " + key));
-        return convertToResponse(setting);
+        return hideSecret(convertToResponse(findByKey(key)));
     }
 
     private void assertEditable(String key) {
@@ -288,6 +352,18 @@ public class SystemSettingService {
         response.setIsPublic(setting.getIsPublic());
         response.setCreatedAt(setting.getCreatedAt());
         response.setUpdatedAt(setting.getUpdatedAt());
+        return response;
+    }
+
+    /**
+     * The same row with a secret turned into dots, so a settings page shows the
+     * shop that it has a print agent token — and what it ends in is not even
+     * offered. Revealing it is a separate, named, audited read.
+     */
+    private SystemSettingResponse hideSecret(SystemSettingResponse response) {
+        if (SECRET_KEYS.contains(response.getSettingKey())) {
+            response.setSettingValue(MASKED_VALUE);
+        }
         return response;
     }
 }

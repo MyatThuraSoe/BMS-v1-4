@@ -115,4 +115,25 @@ class PrintAgentAccessTest {
 
         access.assertMayUseQueue(local);
     }
+
+    @Test
+    void everyFormOfThisMachineIsThisMachine() {
+        // A socket to 127.0.0.1 is reported as ::ffff:127.0.0.1 by some Java
+        // stacks, and the whole 127.0.0.0/8 block loops back rather than only
+        // .1 — a shop whose printer PC talks to 127.0.0.5 must not be told it is
+        // a stranger.
+        access.assertMayUseQueue(from("::ffff:127.0.0.1"));
+        access.assertMayUseQueue(from("::FFFF:127.0.0.1"));
+        access.assertMayUseQueue(from("127.0.0.5"));
+        access.assertMayUseQueue(from("127.1.2.3"));
+        access.assertMayUseQueue(from(" 127.0.0.1 "));
+    }
+
+    @Test
+    void anAddressWrittenInsideIPv6IsStillJudgedOnWhatItMeans() {
+        assertThrows(AccessDeniedException.class,
+                () -> access.assertMayUseQueue(from("::ffff:192.168.1.20")),
+                "the mapped form of a LAN address is not the server speaking");
+        assertThrows(AccessDeniedException.class, () -> access.assertMayUseQueue(from(null)));
+    }
 }

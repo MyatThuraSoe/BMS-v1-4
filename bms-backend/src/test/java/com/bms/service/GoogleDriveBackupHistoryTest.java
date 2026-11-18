@@ -51,6 +51,12 @@ class GoogleDriveBackupHistoryTest {
         return backup("db-" + day, "LumiPOS_DB_2026-11-" + pad(day) + "_020000.db", time(day, "03"));
     }
 
+    /** A copy somebody asked for before a change, in the name form the app writes. */
+    private static DriveBackupFile keptByHand(int day) {
+        return backup("hand-json-" + day,
+                "LumiPOS_Backup_2026-11-" + pad(day) + "_142000_manual.json", time(day, "14"));
+    }
+
     private static String pad(int day) {
         return String.format("%02d", day);
     }
@@ -199,8 +205,54 @@ class GoogleDriveBackupHistoryTest {
                 "the restore list shows a sealed snapshot as a snapshot, not as something unknown");
     }
 
-    // ---- the values that go inside a Drive search ----
+    // ------------------------------------------------------------------ keep forever
 
+    @Test
+    void aBackupTakenByHandIsNeverPruned() {
+        // The copy a shop made on purpose before a big change is the one it comes
+        // back for, and it comes back for it a month later. Retention is about the
+        // nightly history, so a hand-made copy leaves the counting entirely.
+        List<DriveBackupFile> files = new ArrayList<>();
+        for (int day = 1; day <= 35; day++) {
+            files.add(exported(day));
+        }
+        files.add(keptByHand(2));
+        files.add(backup("hand-db", "LumiPOS_DB_2026-11-09_142000_manual.db.enc", time(9, "14")));
+
+        List<String> doomed = GoogleDriveService.filesToPrune(files, 30, Set.of("json-35"));
+
+        assertEquals(List.of("json-1", "json-2", "json-3", "json-4", "json-5"), doomed,
+                "the nightly history thins exactly as it did before the hand-made copies arrived");
+    }
+
+    @Test
+    void aKeptByHandCopyDoesNotUseUpASlotOfItsOwnKind() {
+        List<DriveBackupFile> files = List.of(
+                exported(4), keptByHand(3), exported(3), exported(2), exported(1));
+
+        List<String> doomed = GoogleDriveService.filesToPrune(files, 3, Set.of());
+
+        assertEquals(List.of("json-1"), doomed,
+                "protecting one copy must not cost the shop a night of its ordinary history");
+    }
+
+    @Test
+    void theRestoreListSaysWhoAskedForACopyAndWhetherItIsSealed() throws Exception {
+        DriveBackupFile handSealed = backup("hand", "LumiPOS_DB_2026-11-17_142000_manual.db.enc", time(17, "14"));
+        DriveBackupFile nightly = exported(17);
+
+        assertTrue(handSealed.isManual());
+        assertFalse(nightly.isManual());
+        assertTrue(handSealed.isEncrypted());
+        assertFalse(nightly.isEncrypted());
+        assertTrue(handSealed.isDatabaseSnapshot(), "the marker sits before the extension, not after it");
+
+        String listed = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(List.of(handSealed));
+        assertTrue(listed.contains("\"manual\":true"), listed);
+        assertTrue(listed.contains("\"encrypted\":true"), listed);
+    }
+
+    // ---- the values that go inside a Drive search ----
     @Test
     void aFolderNameHoldingAQuoteIsStillOnlyAName() {
         assertEquals("mimeType='application/vnd.google-apps.folder' and name='BMS\\'Backups'"

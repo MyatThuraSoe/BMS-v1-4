@@ -26,9 +26,18 @@ public class SystemSettingController {
 
     @GetMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<List<SystemSettingResponse>>> getAllSettings() {
-        List<SystemSettingResponse> settings = systemSettingService.getAllSettings();
-        return ResponseEntity.ok(new ApiResponse<>(true, "Settings retrieved successfully", settings));
+    public ResponseEntity<ApiResponse<List<SystemSettingResponse>>> getAllSettings(
+            @RequestParam(required = false, defaultValue = "false") boolean reveal,
+            Authentication authentication) {
+        if (!reveal) {
+            return ResponseEntity.ok(new ApiResponse<>(true, "Settings retrieved successfully",
+                    systemSettingService.getAllSettings()));
+        }
+        if (!isAdmin(authentication)) {
+            return forbidden();
+        }
+        return ResponseEntity.ok(new ApiResponse<>(true, "Settings retrieved successfully",
+                systemSettingService.getAllSettings(true, userIdOf(authentication))));
     }
 
     @GetMapping("/{id}")
@@ -40,9 +49,36 @@ public class SystemSettingController {
 
     @GetMapping("/key/{key}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
-    public ResponseEntity<ApiResponse<SystemSettingResponse>> getSettingByKey(@PathVariable String key) {
-        SystemSettingResponse setting = systemSettingService.getSettingByKey(key);
-        return ResponseEntity.ok(new ApiResponse<>(true, "Setting retrieved successfully", setting));
+    public ResponseEntity<ApiResponse<SystemSettingResponse>> getSettingByKey(
+            @PathVariable String key,
+            @RequestParam(required = false, defaultValue = "false") boolean reveal,
+            Authentication authentication) {
+        if (!reveal) {
+            return ResponseEntity.ok(new ApiResponse<>(true, "Setting retrieved successfully",
+                    systemSettingService.getSettingByKey(key)));
+        }
+        // A reveal that is not allowed answers with 403 rather than with dots: a
+        // page that asked for the text and got the mask back cannot tell whether
+        // the feature works.
+        if (!isAdmin(authentication)) {
+            return forbidden();
+        }
+        return ResponseEntity.ok(new ApiResponse<>(true, "Setting retrieved successfully",
+                systemSettingService.getSettingByKey(key, true, userIdOf(authentication))));
+    }
+
+    private static boolean isAdmin(Authentication authentication) {
+        return authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> "ROLE_ADMIN".equals(authority.getAuthority()));
+    }
+
+    private static <T> ResponseEntity<ApiResponse<T>> forbidden() {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(new ApiResponse<>(false, "Only an administrator may read a stored secret", null));
+    }
+
+    private Long userIdOf(Authentication authentication) {
+        return userService.findByUsername(authentication.getName()).getId();
     }
 
     @PutMapping("/key/{key}")

@@ -48,9 +48,17 @@ public class DatabaseSnapshotService {
         }
     }
 
-    /** {@code LumiPOS_DB_2026-11-17_020000.db} — the name the restore list shows. */
-    public String snapshotFileName(LocalDateTime takenAt) {
-        return GoogleDriveService.SNAPSHOT_PREFIX + takenAt.format(NAME_STAMP) + ".db";
+    /**
+     * {@code LumiPOS_DB_2026-11-17_020000.db}, or {@code ..._manual.db} for a copy a
+     * person asked for — the name the restore list shows and retention reads.
+     *
+     * <p>The marker sits before the extension because that is where the kind of the
+     * file is written too: a sealed manual copy is
+     * {@code ..._manual.db.enc} and still reads as a database.
+     */
+    public String snapshotFileName(LocalDateTime takenAt, boolean manual) {
+        return GoogleDriveService.SNAPSHOT_PREFIX + takenAt.format(NAME_STAMP)
+                + (manual ? GoogleDriveService.MANUAL_MARKER : "") + ".db";
     }
 
     /**
@@ -101,13 +109,15 @@ public class DatabaseSnapshotService {
      * sent, so the encrypted copy has to exist before the upload starts.
      *
      * @param passphrase encrypts the snapshot when non-null; null uploads it plain
+     * @param manual     names the copy so retention leaves it to the shop to delete
      */
     public GoogleDriveService.DriveUpload uploadSnapshotToDrive(GoogleDriveService drive, String folderId,
                                                                LocalDateTime takenAt,
-                                                               char[] passphrase) throws Exception {
+                                                               char[] passphrase,
+                                                               boolean manual) throws Exception {
         Path snapshot = createSnapshot();
         try {
-            String fileName = snapshotFileName(takenAt);
+            String fileName = snapshotFileName(takenAt, manual);
             if (passphrase == null) {
                 return drive.uploadVerified(snapshot.toFile(), "application/x-sqlite3", folderId, fileName);
             }

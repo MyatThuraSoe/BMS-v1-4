@@ -193,8 +193,10 @@ public class InventoryService {
         if (value instanceof LocalDateTime) return (LocalDateTime) value;
         if (value instanceof java.sql.Timestamp) return ((java.sql.Timestamp) value).toLocalDateTime();
         if (value instanceof java.util.Date) {
+            // An instant becomes wall clock on the shop's calendar, which is the one
+            // every other timestamp in this database was written against.
             return LocalDateTime.ofInstant(((java.util.Date) value).toInstant(),
-                    java.time.ZoneId.systemDefault());
+                    shopTimeService.zone());
         }
         throw new IllegalArgumentException("Unexpected date type: " + value);
     }

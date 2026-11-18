@@ -3,6 +3,7 @@ package com.bms.controller;
 import com.bms.dto.response.ApiResponse;
 import com.bms.service.DataExportService;
 import com.bms.service.DataImportService;
+import com.bms.service.InstallIdentity;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -20,6 +21,7 @@ public class DataController {
 
     private final DataExportService exportService;
     private final DataImportService importService;
+    private final InstallIdentity installIdentity;
 
     @GetMapping("/export")
     @PreAuthorize("hasRole('ADMIN')")
@@ -36,10 +38,23 @@ public class DataController {
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Map<String, Object>>> importData(
             @RequestBody Map<String, Object> backup,
-            @RequestParam(defaultValue = "MERGE") String mode) {
+            @RequestParam(defaultValue = "MERGE") String mode,
+            @RequestParam(defaultValue = "false") boolean confirmSameShop) {
         DataImportService.ImportMode importMode =
                 DataImportService.ImportMode.valueOf(mode.toUpperCase());
-        Map<String, Object> result = importService.importAll(backup, importMode);
+        Map<String, Object> result = importService.importAll(backup, importMode, confirmSameShop);
         return ResponseEntity.ok(new ApiResponse<>(true, "Import completed", result));
+    }
+
+    /**
+     * Which install this is, so the import page can tell a file made here from a
+     * file made somewhere else before it offers the merge. The answer is not a
+     * secret: every backup this app writes carries the same id.
+     */
+    @GetMapping("/install-id")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> installId() {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Install id retrieved",
+                Map.of("installId", installIdentity.currentId())));
     }
 }

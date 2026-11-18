@@ -11,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.support.CronExpression;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.FileOutputStream;
@@ -18,6 +19,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
@@ -426,7 +428,9 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
      * for the caller without rolling back the recorded outcome.
      */
     public String runBackupNow(LocalDate startDate, LocalDate endDate) throws Exception {
-        return runBackupNow(startDate, endDate, null);
+        // The scheduler's own entry point: nobody is at the keyboard, so the copy
+        // it writes is one retention is allowed to thin away.
+        return runBackupNow(startDate, endDate, null, false);
     }
 
     /**
@@ -435,8 +439,18 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
      *                   scheduler calls the two-argument version with none.
      */
     public String runBackupNow(LocalDate startDate, LocalDate endDate, char[] passphrase) throws Exception {
+        return runBackupNow(startDate, endDate, passphrase, true);
+    }
+
+    /**
+     * @param manual true when a person asked for this copy rather than the schedule;
+     *               it is what puts {@code _manual} in the file name, and what keeps
+     *               the copy out of retention's counting.
+     */
+    public String runBackupNow(LocalDate startDate, LocalDate endDate, char[] passphrase,
+                               boolean manual) throws Exception {
         try {
-            String link = executeGoogleDriveBackup(startDate, endDate, passphrase);
+            String link = executeGoogleDriveBackup(startDate, endDate, passphrase, manual);
             return link;
         } catch (Exception e) {
             BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
@@ -521,7 +535,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
 
     @Transactional
     public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate) throws Exception {
-        return executeGoogleDriveBackup(startDate, endDate, null);
+        return executeGoogleDriveBackup(startDate, endDate, null, false);
     }
 
     /**
@@ -533,6 +547,18 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
     @Transactional
     public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate,
                                           char[] passphrase) throws Exception {
+        // Only a person has a passphrase to type, so a run that carries one is a
+        // run that person asked for.
+        return executeGoogleDriveBackup(startDate, endDate, passphrase, true);
+    }
+
+    /**
+     * @param manual true when somebody pressed the button, which names the files
+     *               {@code _manual} so retention leaves them to the shop
+     */
+    @Transactional
+    public String executeGoogleDriveBackup(LocalDate startDate, LocalDate endDate,
+                                          char[] passphrase, boolean manual) throws Exception {
         BackupSetting setting = backupSettingRepository.findFirstByOrderByIdAsc()
                 .orElseGet(() -> backupSettingRepository.save(new BackupSetting()));
 
@@ -555,7 +581,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
         if (!format.equals("JSON")) {
             try {
                 uploads.add(snapshotService.uploadSnapshotToDrive(
-                        googleDriveService, folderId, takenAt, encrypt ? passphrase : null));
+                        googleDriveService, folderId, takenAt, encrypt ? passphrase : null, manual));
             } catch (Exception ex) {
                 failed.add("database snapshot: " + friendlyError(new Exception(ex)));
                 // BOTH still owes the shop the export; DB alone has nothing left
@@ -567,7 +593,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
         }
         if (!format.equals("DB")) {
             try {
-                uploads.add(uploadJsonBackup(folderId, takenAt, encrypt ? passphrase : null));
+                uploads.add(uploadJsonBackup(folderId, takenAt, encrypt ? passphrase : null, manual));
             } catch (Exception ex) {
                 failed.add("data export: " + friendlyError(new Exception(ex)));
                 if (uploads.isEmpty()) {
@@ -578,9 +604,17 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
 
         setting.setLastBackupDate(takenAt);
         setting.setLastBackupAttempt(takenAt);
-        setting.setBackupStatus(failed.isEmpty() ? "SUCCESS" : "PARTIAL");
-        setting.setLastErrorMessage(failed.isEmpty() ? null : String.join("; ", failed));
         setting.setNextBackupDate(calculateNextBackupDate(setting, planned == null ? takenAt : planned));
+        // The next run is worked out before the result is written down because a
+        // shop whose custom text was accepted before the settings page learned to
+        // refuse it gets its plan AND a note saying the plan is a daily one.
+        List<String> problems = new ArrayList<>(failed);
+        String scheduleNote = invalidCronWarning(setting, takenAt);
+        if (scheduleNote != null) {
+            problems.add(scheduleNote);
+        }
+        setting.setBackupStatus(failed.isEmpty() ? "SUCCESS" : "PARTIAL");
+        setting.setLastErrorMessage(problems.isEmpty() ? null : String.join("; ", problems));
         backupSettingRepository.save(setting);
 
         // The folder is tidied after the result is recorded, not before: nothing a
@@ -618,8 +652,9 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
      * finding one of them quietly overwrote the other.
      */
     private GoogleDriveService.DriveUpload uploadJsonBackup(String folderId, LocalDateTime takenAt,
-                                                           char[] passphrase) throws Exception {
-        String fileName = GoogleDriveService.JSON_BACKUP_PREFIX + takenAt.format(JSON_STAMP) + ".json";
+                                                           char[] passphrase, boolean manual) throws Exception {
+        String fileName = GoogleDriveService.JSON_BACKUP_PREFIX + takenAt.format(JSON_STAMP)
+                + (manual ? GoogleDriveService.MANUAL_MARKER : "") + ".json";
         Path tempFile = dataExportService.exportAllToJsonFile();
         try {
             if (passphrase == null) {
@@ -674,39 +709,166 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
     }
 
     /**
-     * Computes the next scheduled backup time. CUSTOM uses the cron expression
-     * when it parses, otherwise it falls back to +1 day so automation always keeps running.
+     * Computes the next scheduled backup time.
      *
      * <p>The other frequencies count from the slot that was PLANNED, never from the moment
      * a run finished: the scheduler only looks every ten minutes and a backup takes time of
      * its own, so counting from the finish slid a daily 02:00 backup later every single day
      * until it ran during opening hours. A slot already behind the clock — the server was
      * off — is moved forward in whole periods, so three days switched off costs one
-     * catch-up run rather than three, and a monthly on the 31st lands at the end of a short
-     * month because the period is added to the planned date and not to a previous result.
+     * catch-up run rather than three.
+     *
+     * <p>A monthly or yearly run is pinned to the day of the month the schedule was first
+     * planned on, not to whatever day the previous answer landed on: adding a month to
+     * Jan 31 gives Feb 28, and adding a month to that gives Mar 28 forever. The anchor is
+     * re-pinned on every step, so the 31st comes back in March and a leap-year 29th comes
+     * back with the next leap year.
      *
      * @param from the planned slot of the run that just happened, or the moment automation
      *             was switched on when there is no plan to count from
      */
     public LocalDateTime calculateNextBackupDate(BackupSetting setting, LocalDateTime from) {
         String frequency = setting.getFrequency() == null ? "WEEKLY" : setting.getFrequency().toUpperCase();
+        LocalDateTime now = shopTimeService.now();
         if ("CUSTOM".equals(frequency)) {
-            try {
-                return org.springframework.scheduling.support.CronExpression
-                        .parse(setting.getCustomCronExpression())
-                        .next(from);
-            } catch (Exception e) {
-                return from.plusDays(1);
-            }
+            return nextCronRun(setting, from, now);
         }
 
-        LocalDateTime slot = atScheduledTime(setting, from);
-        LocalDateTime next = plusPeriods(slot, frequency, 1);
-        LocalDateTime now = shopTimeService.now();
+        int anchorDay = anchorDayOf(setting, from);
+        LocalDateTime next = plusPeriods(atScheduledTime(setting, from), frequency, 1);
+        if (isAnchoredFrequency(frequency)) {
+            next = onAnchorDay(next, anchorDay);
+        }
         while (!next.isAfter(now)) {
             next = plusPeriods(next, frequency, 1);
+            if (isAnchoredFrequency(frequency)) {
+                next = onAnchorDay(next, anchorDay);
+            }
         }
         return next;
+    }
+
+    /**
+     * The next time the cron text fires after the shop's own clock.
+     *
+     * <p>Counting from the slot that was planned is what turned three days switched
+     * off into three backups in a row: the answer stayed in the past, the scheduler
+     * ran it, and planned another past time. So the search starts no earlier than
+     * now, and an answer that is somehow still not in the future is looked for
+     * again rather than handed back.
+     *
+     * <p>A text that will not parse, or that never fires again, has no next time to
+     * give, and only a row saved before the settings page refused such text can
+     * still hold one. The shop gets tomorrow rather than nothing — automation that
+     * stops saying when it runs is worse than one that runs on the wrong day — said
+     * out loud in the log and in {@code lastErrorMessage}.
+     */
+    private static LocalDateTime nextCronRun(BackupSetting setting, LocalDateTime planned, LocalDateTime now) {
+        LocalDateTime from = planned.isAfter(now) ? planned : now;
+        try {
+            CronExpression cron = CronExpression.parse(setting.getCustomCronExpression());
+            LocalDateTime next = cron.next(from);
+            for (int retry = 0; retry < 5 && (next == null || !next.isAfter(now)); retry++) {
+                next = next == null ? null : cron.next(next);
+            }
+            if (next != null && next.isAfter(now)) {
+                return next;
+            }
+            log.warn("The custom backup schedule [{}] has no next run; using a daily backup instead",
+                    setting.getCustomCronExpression());
+        } catch (Exception e) {
+            log.warn("The custom backup schedule [{}] cannot be read; using a daily backup instead: {}",
+                    setting.getCustomCronExpression(), e.getMessage());
+        }
+        return now.plusDays(1);
+    }
+
+    /**
+     * The shortest gap a custom schedule may ask for. A backup takes minutes and
+     * uploads what it made; one promised every couple of minutes spends the shop's
+     * evening re-uploading the same database and never finishes a schedule cycle.
+     */
+    public static final Duration MINIMUM_CRON_GAP = Duration.ofMinutes(15);
+
+    public static final String INVALID_CRON_TEXT_MESSAGE = "That schedule text is not valid";
+    public static final String TOO_OFTEN_CRON_TEXT_MESSAGE =
+            "That schedule text runs more often than every 15 minutes";
+    public static final String INVALID_CRON_MESSAGE = "Custom schedule is not valid; using daily";
+
+    /** How many runs in a row the gap between them is watched over. */
+    private static final int MAX_CRON_RUNS_WATCHED = 10;
+
+    /**
+     * Why this custom text must not be saved, or null when it may be.
+     *
+     * <p>The runs are watched rather than the text read for a pattern: the question
+     * the shop is being refused over is how often it will really back up, and that
+     * is what the expression says once the clock does the arithmetic.
+     *
+     * <p>A stretch of them, because the gaps are not always equal — "minute 0 and
+     * minute 10 of every hour" is ten minutes apart half the time and fifty the
+     * other half, and a pair of neighbours can land on the fifty.
+     */
+    public static String cronScheduleError(String expression, LocalDateTime from) {
+        try {
+            CronExpression cron = CronExpression.parse(expression);
+            LocalDateTime previous = cron.next(from);
+            if (previous == null) {
+                return INVALID_CRON_TEXT_MESSAGE;
+            }
+            for (int run = 1; run < MAX_CRON_RUNS_WATCHED; run++) {
+                LocalDateTime next = cron.next(previous);
+                if (next == null) {
+                    break;
+                }
+                if (Duration.between(previous, next).compareTo(MINIMUM_CRON_GAP) < 0) {
+                    return TOO_OFTEN_CRON_TEXT_MESSAGE;
+                }
+                previous = next;
+            }
+            return null;
+        } catch (Exception e) {
+            return INVALID_CRON_TEXT_MESSAGE;
+        }
+    }
+
+    /**
+     * The note an already-stored row earns because its custom text cannot be
+     * planned, or null when the row schedules itself honestly.
+     *
+     * <p>Only unreadable text is noted: a row that parses plans what it parsed,
+     * and telling the shop its schedule is "not valid" while it runs on that
+     * schedule is a lie of a different kind.
+     */
+    public static String invalidCronWarning(BackupSetting setting, LocalDateTime from) {
+        if (!"CUSTOM".equalsIgnoreCase(setting.getFrequency())) {
+            return null;
+        }
+        return INVALID_CRON_TEXT_MESSAGE.equals(cronScheduleError(setting.getCustomCronExpression(), from))
+                ? INVALID_CRON_MESSAGE
+                : null;
+    }
+
+    /** Frequencies that mean "this day of the month", so the day has to be remembered. */
+    public static boolean isAnchoredFrequency(String frequency) {
+        String name = frequency == null ? "" : frequency.toUpperCase();
+        return "MONTHLY".equals(name) || "YEARLY".equals(name);
+    }
+
+    /**
+     * The day a monthly or yearly run belongs to. A row saved before it was written
+     * down is read from its own plan, which is the best answer available — the
+     * alternative, taking the day of whatever the old sliding rule produced, is how
+     * the 31st became the 28th.
+     */
+    private static int anchorDayOf(BackupSetting setting, LocalDateTime from) {
+        Integer recorded = setting.getAnchorDayOfMonth();
+        return recorded == null || recorded < 1 || recorded > 31 ? from.getDayOfMonth() : recorded;
+    }
+
+    /** The anchor day in the month the date moved into, or the last day it has. */
+    private static LocalDateTime onAnchorDay(LocalDateTime date, int anchorDay) {
+        return date.withDayOfMonth(Math.min(anchorDay, date.toLocalDate().lengthOfMonth()));
     }
 
     /** The hour the shop chose, or the hour automation started at when it chose none. */
@@ -727,6 +889,10 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
     /**
      * Safely checks if a date object (LocalDate, LocalDateTime, or java.util.Date)
      * falls within the given startDate and endDate range.
+     *
+     * <p>An instant is read on the shop's clock: the range was typed against the
+     * shop's calendar, and on the machine's clock a shop east of its server loses
+     * the first hours of the last day it asked for.
      */
     private boolean isDateInRange(Object dateObject, LocalDate startDate, LocalDate endDate) {
         if (dateObject == null) return false;
@@ -738,7 +904,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             date = (java.time.LocalDate) dateObject;
         } else if (dateObject instanceof java.util.Date) {
             date = ((java.util.Date) dateObject).toInstant()
-                    .atZone(java.time.ZoneId.systemDefault()).toLocalDate();
+                    .atZone(shopTimeService.zone()).toLocalDate();
         } else {
             return false; // Fallback for unknown types
         }

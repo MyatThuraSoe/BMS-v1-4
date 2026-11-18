@@ -83,15 +83,51 @@ public class DataImportService {
     @Autowired
     private LedgerReadService ledgerReadService;
 
+    @Autowired
+    private InstallIdentity installIdentity;
+
     public enum ImportMode { REPLACE_ALL, MERGE }
 
+    /**
+     * What the shop is told when a file cannot be merged on the numbers it
+     * carries. It is a choice the shop has to make, not something to guess at:
+     * only the person who owns both tills knows whether the file is this shop's
+     * own older export or somebody else's.
+     */
+    public static final String OTHER_SHOP_MESSAGE =
+            "This file came from another shop or an older export. Use Replace everything, "
+                    + "or confirm that it is the same shop.";
+
+    @Transactional
+    public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode) {
+        return importAll(backup, mode, false);
+    }
+
+    /**
+     * @param confirmSameShop the shop's own answer to the question the file could
+     *                        not answer: it does not say this install's id, so a
+     *                        person has to say whether it belongs here. It buys
+     *                        the right to try the merge, never the right to mix
+     *                        two sets of books — the rows themselves are matched
+     *                        against each other first.
+     */
     @Transactional
     @SuppressWarnings("unchecked")
-    public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode) {
+    public Map<String, Object> importAll(Map<String, Object> backup, ImportMode mode,
+                                         boolean confirmSameShop) {
         periodGuard.lock();
 
         Map<String, Object> rawData = (Map<String, Object>) backup.get("data");
         if (rawData == null) throw new IllegalArgumentException("Invalid backup file: missing 'data' section");
+
+        // A file says which install it came out of, and that answer decides how
+        // much of its numbering can be trusted. Everything written here agrees
+        // with itself; anything else is a stranger wearing this shop's id numbers.
+        String fileId = installIdOf(backup);
+        boolean fromThisInstall = installIdentity.currentId().equals(fileId);
+        if (mode == ImportMode.MERGE && !fromThisInstall && !confirmSameShop) {
+            throw new com.bms.exception.StateConflictException(OTHER_SHOP_MESSAGE);
+        }
 
         // A JSON file that carries both journals IS a complete backup, so it may
         // replace the closed periods and the ledgers with itself. A business-only
@@ -143,6 +179,14 @@ public class DataImportService {
                 .map(SystemSetting::getId).toList();
         List<SystemSetting> systemSettings = readList(mapper, rawData.get("systemSettings"), SystemSetting.class).stream()
                 .filter(setting -> !setting.getSettingKey().startsWith("accounting."))
+                // Each install has its own id, and the one in the file is already
+                // read from the top of the file. As a setting row it would let a
+                // merge hand this shop another shop's name.
+                .filter(setting -> !InstallIdentity.SETTING_KEY.equals(setting.getSettingKey()))
+                // A file written before the token stopped being exported carries
+                // the print agent token of the shop that wrote it. Importing it
+                // would point this install's queue at that other shop's agent.
+                .filter(setting -> !SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey()))
                 .toList();
         if (systemSettings.stream().anyMatch(setting -> internalSettingIds.contains(setting.getId()))) {
             throw new com.bms.exception.BusinessException("Backup setting IDs conflict with internal accounting settings");
@@ -283,50 +327,71 @@ public class DataImportService {
 
         // 4️⃣ MERGE = insert-only for records we do NOT already have. Existing IDs
         //    are left untouched — nothing in the store is ever silently overwritten
-        //    by a "safe" merge.
+        //    by a "safe" merge. A file that is not this install's own is held to
+        //    more than that: its rows have to say they are the same rows.
         if (mode == ImportMode.MERGE) {
+            MergeGate gate = new MergeGate(!fromThisInstall);
             users = keepOnlyNewUsers(users);
-            categories = keepOnlyNew(categories, categoryRepository::findAll);
-            customers = keepOnlyNew(customers, customerRepository::findAll);
-            suppliers = keepOnlyNew(suppliers, supplierRepository::findAll);
-            products = keepOnlyNew(products, productRepository::findAll);
-            purchases = keepOnlyNew(purchases, purchaseRepository::findAll);
-            sales = keepOnlyNew(sales, saleRepository::findAll);
-            receiptCustomizations = keepOnlyNew(receiptCustomizations, receiptCustomizationRepository::findAll);
-            arPayments = keepOnlyNew(arPayments, arPaymentRepository::findAll);
-            orders = keepOnlyNew(orders, orderRepository::findAll);
-            orderSequences = keepOnlyNew(orderSequences, orderSequenceRepository::findAll);
-            saleReturns = keepOnlyNew(saleReturns, saleReturnRepository::findAll);
-            expenses = keepOnlyNew(expenses, expenseRepository::findAll);
-            cashShifts = keepOnlyNew(cashShifts, cashShiftRepository::findAll);
-            shopInfoRows = keepOnlyNew(shopInfoRows, shopInfoRepository::findAll);
-            systemSettings = keepOnlyNew(systemSettings, systemSettingRepository::findAll);
-            locations = keepOnlyNew(locations, locationRepository::findAll);
-            locationStock = keepOnlyNew(locationStock, locationStockRepository::findAll);
-            glAccounts = keepOnlyNew(glAccounts, glAccountRepository::findAll);
-            glMappings = keepOnlyNew(glMappings, glMappingRepository::findAll);
-            cashDrawers = keepOnlyNew(cashDrawers, cashDrawerRepository::findAll);
-            drawerSessions = keepOnlyNew(drawerSessions, cashDrawerSessionRepository::findAll);
-            drawerMovements = keepOnlyNew(drawerMovements, cashDrawerMovementRepository::findAll);
-            purchasePayments = keepOnlyNew(purchasePayments, purchasePaymentRepository::findAll);
-            stockMovements = keepOnlyNew(stockMovements, stockMovementRepository::findAll);
-            stockTransfers = keepOnlyNew(stockTransfers, stockTransferRepository::findAll);
-            priceLists = keepOnlyNew(priceLists, priceListRepository::findAll);
-            promotions = keepOnlyNew(promotions, promotionRepository::findAll);
-            priceHistory = keepOnlyNew(priceHistory, productPriceHistoryRepository::findAll);
-            countSheets = keepOnlyNew(countSheets, countSheetRepository::findAll);
-            invoiceSequences = keepOnlyNew(invoiceSequences, invoiceSequenceRepository::findAll);
-            purchaseSequences = keepOnlyNew(purchaseSequences, purchaseSequenceRepository::findAll);
-            customerSequences = keepOnlyNew(customerSequences, customerSequenceRepository::findAll);
-            transferSequences = keepOnlyNew(transferSequences, transferSequenceRepository::findAll);
+            categories = gate.keepOnlyNew("categories", categories, categoryRepository::findAll, null);
+            customers = gate.keepOnlyNew("customers", customers, customerRepository::findAll,
+                    Customer::getCustomerCode);
+            suppliers = gate.keepOnlyNew("suppliers", suppliers, supplierRepository::findAll, null);
+            products = gate.keepOnlyNew("products", products, productRepository::findAll, Product::getSku);
+            purchases = gate.keepOnlyNew("purchases", purchases, purchaseRepository::findAll,
+                    Purchase::getPurchaseNumber);
+            sales = gate.keepOnlyNew("sales", sales, saleRepository::findAll, Sale::getInvoiceNumber);
+            receiptCustomizations = gate.keepOnlyNew("receiptCustomizations", receiptCustomizations,
+                    receiptCustomizationRepository::findAll, null);
+            arPayments = gate.keepOnlyNew("arPayments", arPayments, arPaymentRepository::findAll, null);
+            orders = gate.keepOnlyNew("orders", orders, orderRepository::findAll, null);
+            orderSequences = gate.keepOnlyNew("orderSequences", orderSequences,
+                    orderSequenceRepository::findAll, null);
+            saleReturns = gate.keepOnlyNew("saleReturns", saleReturns, saleReturnRepository::findAll, null);
+            expenses = gate.keepOnlyNew("expenses", expenses, expenseRepository::findAll, null);
+            cashShifts = gate.keepOnlyNew("cashShifts", cashShifts, cashShiftRepository::findAll, null);
+            shopInfoRows = gate.keepOnlyNew("shopInfo", shopInfoRows, shopInfoRepository::findAll, null);
+            systemSettings = gate.keepOnlyNew("systemSettings", systemSettings,
+                    systemSettingRepository::findAll, null);
+            locations = gate.keepOnlyNew("locations", locations, locationRepository::findAll, null);
+            locationStock = gate.keepOnlyNew("locationStock", locationStock,
+                    locationStockRepository::findAll, null);
+            glAccounts = gate.keepOnlyNew("glAccounts", glAccounts, glAccountRepository::findAll, null);
+            glMappings = gate.keepOnlyNew("glMappings", glMappings, glMappingRepository::findAll, null);
+            cashDrawers = gate.keepOnlyNew("cashDrawers", cashDrawers, cashDrawerRepository::findAll, null);
+            drawerSessions = gate.keepOnlyNew("cashDrawerSessions", drawerSessions,
+                    cashDrawerSessionRepository::findAll, null);
+            drawerMovements = gate.keepOnlyNew("cashDrawerMovements", drawerMovements,
+                    cashDrawerMovementRepository::findAll, null);
+            purchasePayments = gate.keepOnlyNew("purchasePayments", purchasePayments,
+                    purchasePaymentRepository::findAll, null);
+            stockMovements = gate.keepOnlyNew("stockMovements", stockMovements,
+                    stockMovementRepository::findAll, null);
+            stockTransfers = gate.keepOnlyNew("stockTransfers", stockTransfers,
+                    stockTransferRepository::findAll, null);
+            priceLists = gate.keepOnlyNew("priceLists", priceLists, priceListRepository::findAll, null);
+            promotions = gate.keepOnlyNew("promotions", promotions, promotionRepository::findAll, null);
+            priceHistory = gate.keepOnlyNew("productPriceHistory", priceHistory,
+                    productPriceHistoryRepository::findAll, null);
+            countSheets = gate.keepOnlyNew("countSheets", countSheets, countSheetRepository::findAll, null);
+            invoiceSequences = gate.keepOnlyNew("invoiceSequences", invoiceSequences,
+                    invoiceSequenceRepository::findAll, null);
+            purchaseSequences = gate.keepOnlyNew("purchaseSequences", purchaseSequences,
+                    purchaseSequenceRepository::findAll, null);
+            customerSequences = gate.keepOnlyNew("customerSequences", customerSequences,
+                    customerSequenceRepository::findAll, null);
+            transferSequences = gate.keepOnlyNew("transferSequences", transferSequences,
+                    transferSequenceRepository::findAll, null);
             // period_close is keyed by the period itself, not an id column.
             java.util.Set<String> alreadyClosed = periodCloseRepository.findAll().stream()
                     .map(PeriodClose::getPeriod).collect(java.util.stream.Collectors.toSet());
             periodCloses = periodCloses.stream()
                     .filter(c -> c.getPeriod() == null || !alreadyClosed.contains(c.getPeriod()))
                     .toList();
-            inventoryLedger = keepOnlyNew(inventoryLedger, inventoryLedgerRepository::findAll);
-            profitLedger = keepOnlyNew(profitLedger, profitLedgerRepository::findAll);
+            inventoryLedger = gate.keepOnlyNew("inventoryLedger", inventoryLedger,
+                    inventoryLedgerRepository::findAll, null);
+            profitLedger = gate.keepOnlyNew("profitLedger", profitLedger,
+                    profitLedgerRepository::findAll, null);
+            gate.refuseRowsThatDoNotMatch();
         }
 
         if (!carriesLedgers && ledgerReadService.isActive() && (!products.isEmpty() || !sales.isEmpty()
@@ -394,7 +459,15 @@ public class DataImportService {
         counts.put("inventoryLedger", insertAll(inventoryLedger));
         counts.put("profitLedger", insertAll(profitLedger));
 
-        // 6️⃣ Reset auto-increment counters so NEW records don't collide
+        // 6️⃣ A replace took the file's history whole, so it takes the identity of
+        //    the install that wrote it too: the next backup of these books is then
+        //    the same shop's own file and merges instead of looking foreign. A file
+        //    with no id says nothing, and nothing is not a reason to change.
+        if (mode == ImportMode.REPLACE_ALL) {
+            installIdentity.adopt(fileId);
+        }
+
+        // 7️⃣ Reset auto-increment counters so NEW records don't collide
         resetIdentityCounters();
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -474,31 +547,109 @@ public class DataImportService {
         return null;
     }
 
-    /** In MERGE mode, drops records whose ID already exists in the destination. */
-    private <T> List<T> keepOnlyNew(List<T> incoming, java.util.function.Supplier<List<T>> existingLoader) {
-        if (incoming == null || incoming.isEmpty()) return List.of();
-        java.util.Set<Object> existingIds = existingLoader.get().stream()
-                .map(e -> {
-                    try {
-                        java.lang.reflect.Method m = e.getClass().getMethod("getId");
-                        return m.invoke(e);
-                    } catch (Exception ex) {
-                        return null;
-                    }
-                })
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        return incoming.stream()
-                .filter(e -> {
-                    try {
-                        java.lang.reflect.Method m = e.getClass().getMethod("getId");
-                        Object id = m.invoke(e);
-                        return id == null || !existingIds.contains(id);
-                    } catch (Exception ex) {
-                        return true;
-                    }
-                })
-                .collect(java.util.stream.Collectors.toList());
+    /**
+     * Which install took this file. Blank for every file written before the id
+     * existed, which is why a missing answer and a different one are refused the
+     * same way: neither tells the shop anything.
+     */
+    private static String installIdOf(Map<String, Object> backup) {
+        Object value = backup.get("installId");
+        return value == null ? "" : value.toString().trim();
+    }
+
+    /**
+     * Decides, for one merge, which of the file's rows this shop already has.
+     *
+     * <p>A file written by this install may be trusted on its numbering: an id
+     * that exists here names the same row there, so skipping it is correct and
+     * has always been the rule. A file from somewhere else cannot be trusted that
+     * way — every database hands out 1, 2, 3 — and skipping on a number that
+     * means two different things is how two shops become one set of books: the row
+     * is left out, and the sale items and payments that point at it attach to
+     * whatever happens to carry that number here.
+     *
+     * <p>So for a stranger's file an overlapping id is only skipped when the rows
+     * agree about what they are by their own business key — an invoice number, a
+     * product SKU, a customer code. Anything else is reported and the whole merge
+     * is rolled back, because a mixed book looks exactly like a right one.
+     */
+    private static final class MergeGate {
+
+        /** Enough for the shop to act on; the rest is counted, not listed. */
+        private static final int MAX_REPORTED = 10;
+
+        private final boolean rowsMustMatch;
+        private final List<String> collisions = new ArrayList<>();
+        private int beyondTheList;
+
+        MergeGate(boolean rowsMustMatch) {
+            this.rowsMustMatch = rowsMustMatch;
+        }
+
+        <T> List<T> keepOnlyNew(String section, List<T> incoming,
+                                java.util.function.Supplier<List<T>> existingLoader,
+                                java.util.function.Function<T, String> businessKey) {
+            if (incoming == null || incoming.isEmpty()) return List.of();
+            java.util.Set<Object> existingIds = new java.util.HashSet<>();
+            java.util.Map<Object, T> existingRows = new java.util.HashMap<>();
+            for (T existing : existingLoader.get()) {
+                Object id = idOf(existing);
+                if (id == null) continue;
+                existingIds.add(id);
+                existingRows.putIfAbsent(id, existing);
+            }
+
+            List<T> fresh = new ArrayList<>();
+            for (T row : incoming) {
+                Object id = idOf(row);
+                if (id == null || !existingIds.contains(id)) {
+                    fresh.add(row);
+                    continue;
+                }
+                if (!rowsMustMatch || isTheSameRow(existingRows.get(id), row, businessKey)) {
+                    continue;
+                }
+                if (collisions.size() < MAX_REPORTED) {
+                    collisions.add(section + " id " + id);
+                } else {
+                    beyondTheList++;
+                }
+            }
+            return fresh;
+        }
+
+        /**
+         * Refuses the merge before any of it lands. Half a stranger's books in the
+         * shop is worse than none, and the shop cannot tell which rows came from
+         * which till afterwards.
+         */
+        void refuseRowsThatDoNotMatch() {
+            if (collisions.isEmpty()) {
+                return;
+            }
+            throw new com.bms.exception.StateConflictException(
+                    "Nothing was merged. This file has rows with the same numbers as rows in this shop,"
+                            + " but they are not the same rows: " + String.join(", ", collisions)
+                            + (beyondTheList > 0 ? " (and " + beyondTheList + " more)" : "")
+                            + ". Use Replace everything if the file is meant to take the place of this data.");
+        }
+
+        private static <T> boolean isTheSameRow(T here, T there,
+                                                java.util.function.Function<T, String> businessKey) {
+            if (businessKey == null) {
+                return false;
+            }
+            String mine = businessKey.apply(here);
+            return mine != null && !mine.isBlank() && mine.equalsIgnoreCase(businessKey.apply(there));
+        }
+
+        private static Object idOf(Object row) {
+            try {
+                return row.getClass().getMethod("getId").invoke(row);
+            } catch (Exception impossibleOnOurOwnEntities) {
+                return null;
+            }
+        }
     }
 
     /** Users must never collide on username/email (unique columns), not just ID. */
@@ -594,6 +745,11 @@ public class DataImportService {
         wipeIfPresent(tables, "inventory_ledger", rawData.get("inventoryLedger"));
         wipeIfPresent(tables, "profit_ledger", rawData.get("profitLedger"));
 
+        // A replace cannot bring this install's own key back from the file — a
+        // secret never travels in a backup — so the wipe takes the row out with
+        // everything else and these few lines put it back afterwards.
+        List<SystemSetting> secretsOfThisInstall = secretsOfThisInstall();
+
         jdbcTemplate.execute(disableFk);
         try {
             for (String table : tables) {
@@ -614,6 +770,30 @@ public class DataImportService {
         // Drop any JPA entities currently cached; SQL deletes bypass the
         // persistence context and stale state would corrupt the upcoming saveAll.
         entityManager.clear();
+        secretsOfThisInstall.forEach(entityManager::persist);
+    }
+
+    /**
+     * The secret rows this install holds, copied out so the copy survives both the
+     * SQL delete and the persistence-context clear. Handing the print agent a
+     * stranger's key would point the counter queue at another shop's printer, and
+     * handing it no key at all would stop this shop printing until its next
+     * restart, so the value it was given when this install started is the one that
+     * stays.
+     */
+    private List<SystemSetting> secretsOfThisInstall() {
+        return systemSettingRepository.findAll().stream()
+                .filter(setting -> SystemSettingService.SECRET_KEYS.contains(setting.getSettingKey()))
+                .map(setting -> {
+                    SystemSetting copy = new SystemSetting();
+                    copy.setSettingKey(setting.getSettingKey());
+                    copy.setSettingValue(setting.getSettingValue());
+                    copy.setDescription(setting.getDescription());
+                    copy.setDataType(setting.getDataType());
+                    copy.setIsPublic(setting.getIsPublic());
+                    return copy;
+                })
+                .toList();
     }
 
     private void wipeIfPresent(List<String> tables, String table, Object raw) {

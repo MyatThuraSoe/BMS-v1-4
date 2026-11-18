@@ -74,6 +74,10 @@ public class AccountingSchemaMigration implements ApplicationRunner {
         ensureNullableColumn(dialect, "stock_movements", "source_transfer_id", "BIGINT");
         ensureNullableColumn(dialect, "backup_settings", "scheduled_time", "TIME");
         ensureColumn(dialect, "backup_settings", "retention_count", "INTEGER", "30");
+        // The day a monthly or yearly backup belongs to. Nullable with no default: an
+        // old row keeps its own planned day until the schedule is saved again, and a
+        // default would quietly re-day every shop that already set one.
+        ensureNullableColumn(dialect, "backup_settings", "anchor_day_of_month", "INTEGER");
         migrateUserIdentity();
         ensureUniqueIndex(dialect, "uq_count_sheets_sync_key", "count_sheets", "sync_key");
     }

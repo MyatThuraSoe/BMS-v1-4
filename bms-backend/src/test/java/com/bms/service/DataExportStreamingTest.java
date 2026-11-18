@@ -63,6 +63,9 @@ class DataExportStreamingTest {
         ShopTimeService shopTime = mock(ShopTimeService.class);
         when(shopTime.now()).thenReturn(LocalDateTime.of(2026, 11, 17, 2, 0));
         ReflectionTestUtils.setField(service, "shopTimeService", shopTime);
+        InstallIdentity install = mock(InstallIdentity.class);
+        when(install.currentId()).thenReturn("install-under-test");
+        ReflectionTestUtils.setField(service, "installIdentity", install);
         ReflectionTestUtils.setField(service, "entityManager", mock(EntityManager.class));
 
         sales = (SaleRepository) fakes.get(SaleRepository.class);

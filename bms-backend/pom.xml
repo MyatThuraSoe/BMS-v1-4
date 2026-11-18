@@ -267,6 +267,40 @@
                 </configuration>
             </plugin>
 
+            <!--
+              The backup encryption memory test has to run on a heap too small to
+              hold the file it seals, otherwise it proves nothing. It gets its own
+              fork with -Xmx128m, so it is excluded from the normal run, where the
+              suite keeps the heap the JVM gives it by default.
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-test</id>
+                        <configuration>
+                            <excludes>
+                                <exclude>**/BackupEncryptionMemoryTest.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>memory-limited-backup</id>
+                        <phase>test</phase>
+                        <goals>
+                            <goal>test</goal>
+                        </goals>
+                        <configuration>
+                            <argLine>-Xmx128m</argLine>
+                            <includes>
+                                <include>**/BackupEncryptionMemoryTest.java</include>
+                            </includes>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Used only to generate BCrypt password hashes from CLI -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>

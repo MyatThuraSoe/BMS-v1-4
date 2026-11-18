@@ -56,6 +56,16 @@ public class BackupSetting {
     @Column(name = "retention_count")
     private Integer retentionCount;
 
+    /**
+     * The day of the month a monthly or yearly backup is meant to fall on, noted
+     * down when the schedule is first planned. Counting one month on from the last
+     * planned date loses it: Jan 31 plus a month is Feb 28, and every month after
+     * that is a 28th. Null is a row saved before this was recorded, whose own
+     * planned day is used instead.
+     */
+    @Column(name = "anchor_day_of_month")
+    private Integer anchorDayOfMonth;
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -159,6 +169,14 @@ public class BackupSetting {
 
     public void setRetentionCount(Integer retentionCount) {
         this.retentionCount = retentionCount;
+    }
+
+    public Integer getAnchorDayOfMonth() {
+        return anchorDayOfMonth;
+    }
+
+    public void setAnchorDayOfMonth(Integer anchorDayOfMonth) {
+        this.anchorDayOfMonth = anchorDayOfMonth;
     }
 
     /**

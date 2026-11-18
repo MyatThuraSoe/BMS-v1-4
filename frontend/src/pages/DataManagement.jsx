@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
     Box, Typography, Paper, Button, Stack, Alert, Chip, Divider,
     Dialog, DialogTitle, DialogContent, DialogActions,
@@ -21,7 +21,18 @@ const DataManagement = () => {
     const [mode, setMode] = useState('MERGE');
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [confirmChecked, setConfirmChecked] = useState(false);
+    const [sameShopChecked, setSameShopChecked] = useState(false);
+    const [localInstallId, setLocalInstallId] = useState('');
     const fileInputRef = useRef();
+
+    // Which install is this? A backup file can name the one it came out of, but
+    // only the backend knows the id of the one standing here, and the difference
+    // between those two answers is the whole warning below.
+    useEffect(() => {
+        dataService.installId().then(setLocalInstallId).catch(() => {});
+    }, []);
+    const fileProvesSameShop = !!localInstallId && !!preview?.installId
+        && preview.installId === localInstallId;
 
     // ---------- EXPORT ----------
     const handleExport = async () => {
@@ -53,6 +64,7 @@ const DataManagement = () => {
             if (!json.data) throw new Error('Invalid backup');
             setPreview(json);
             setFileName(file.name);
+            setSameShopChecked(false);
             notifySuccess(t('backup_loaded_from', { date: json.exportedAt || t('unknown_date') }));
         } catch {
             notifyError(t('invalid_backup_file'));
@@ -75,12 +87,13 @@ const DataManagement = () => {
         setConfirmOpen(false);
         setImporting(true);
         try {
-            const res = await dataService.importAll(preview, mode);
+            const res = await dataService.importAll(preview, mode, mode === 'MERGE' && sameShopChecked);
             const counts = res.data.data.counts;
             const summary = Object.entries(counts).map(([k, v]) => `${k}: ${v}`).join(', ');
             notifySuccess(t('import_complete', { summary }));
             setPreview(null);
             setFileName('');
+            setSameShopChecked(false);
         } catch (err) {
             notifyError(err.response?.data?.message || t('import_failed'));
         } finally {
@@ -166,6 +179,28 @@ const DataManagement = () => {
                                 ? t('merge_mode_description')
                                 : t('replace_mode_description')}
                         </Typography>
+
+                        {mode === 'MERGE' && !fileProvesSameShop && (
+                            <Alert severity="warning" sx={{ mt: 2 }}>
+                                <Typography variant="body2" gutterBottom>
+                                    {preview.installId
+                                        ? t('merge_other_shop_warning')
+                                        : t('merge_older_export_warning')}
+                                </Typography>
+                                <FormControlLabel
+                                    control={
+                                        <Checkbox
+                                            checked={sameShopChecked}
+                                            onChange={(e) => setSameShopChecked(e.target.checked)}
+                                        />
+                                    }
+                                    label={t('merge_same_shop_confirm')}
+                                />
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                    {t('merge_same_shop_confirm_hint')}
+                                </Typography>
+                            </Alert>
+                        )}
 
                         <Button
                             fullWidth
