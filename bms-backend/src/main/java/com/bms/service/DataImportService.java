@@ -14,10 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -154,7 +151,7 @@ public class DataImportService {
         List<Category>  categories = readList(mapper, rawData.get("categories"), Category.class);
         List<Product>   products   = readList(mapper, rawData.get("products"),   Product.class);
         List<Customer>  customers  = readCustomers(mapper, rawData.get("customers"));
-        List<Supplier>  suppliers  = readList(mapper, rawData.get("suppliers"),  Supplier.class);
+        List<Supplier>  suppliers  = readSuppliers(mapper, rawData.get("suppliers"));
         List<Sale>      sales      = readList(mapper, rawData.get("sales"),      Sale.class);
         List<Purchase>  purchases  = readList(mapper, rawData.get("purchases"),  Purchase.class);
         List<ReceiptCustomization> receiptCustomizations =
@@ -677,6 +674,12 @@ public class DataImportService {
     }
 
     private void wipeAllData(Map<String, Object> rawData) {
+        // customer_phones / supplier_phones / product_images are deliberately NOT
+        // wiped: the phone rows are restored with their owner (nested in the
+        // customer/supplier JSON) and product images have no export section at all,
+        // so deleting them here destroyed data the restore could never put back.
+        // Product and customer ids are preserved by a restore, so the surviving rows
+        // still point at the right owner.
         List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
@@ -684,9 +687,8 @@ public class DataImportService {
             "purchase_items", "purchase_expenses", "purchases",
             "order_items", "orders", "order_sequences",
             "stock_movements",
-            "product_price_history", "product_images",
-            "products", "categories", "customers", "suppliers",
-            "customer_phones", "supplier_phones"
+            "product_price_history",
+            "products", "categories", "customers", "suppliers"
         ));
 
         // Tables introduced in newer backup versions are only wiped when the
@@ -778,54 +780,46 @@ public class DataImportService {
 
     private <T> List<T> readList(ObjectMapper mapper, Object raw, Class<T> type) {
         if (raw == null) return List.of();
-        List<T> result = mapper.convertValue(raw,
+        // Nested children (sale items and payments, purchase items, price-list
+        // items, count-sheet items, promotion tiers) are the only copy of those
+        // rows in the backup: there is no separate section for them. They must
+        // therefore survive deserialization, and their back-references are
+        // re-attached after reading, before anything is merged.
+        return mapper.convertValue(raw,
                 mapper.getTypeFactory().constructCollectionType(List.class, type));
-        // Clear all bidirectional collections so Hibernate does not attempt to
-        // process child rows whose owner entity has no assigned ID yet during
-        // persist(). Child entities are deserialized in their own sections and
-        // re-linked below where needed.
-        for (T entity : result) {
-            clearCollections(entity);
-        }
-        return result;
     }
 
     /**
-     * Clears every {@link Collection}-typed field on the entity so Hibernate
-     * does not attempt to process child collections whose owner may not yet
-     * have an assigned ID.
-     */
-    private void clearCollections(Object entity) {
-        Class<?> clazz = entity.getClass();
-        while (clazz != null && clazz != Object.class) {
-            for (Field f : clazz.getDeclaredFields()) {
-                if (Collection.class.isAssignableFrom(f.getType())) {
-                    f.setAccessible(true);
-                    try {
-                        Collection<?> current = (Collection<?>) f.get(entity);
-                        if (current != null) {
-                            current.clear();
-                        }
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            clazz = clazz.getSuperclass();
-        }
-    }
-
-    /**
-     * Reads customers while clearing their phone collections. Phones are
-     * re-attached from the {@code customer_phones} section; keeping them here
-     * creates bidirectional child rows whose owner (the customer) has no
-     * assigned ID yet, which Hibernate rejects during persist.
+     * Reads customers, keeping the phones that travel nested inside each one and
+     * re-attaching their back-reference. Phones are the only copy of those rows in
+     * the file (there is no separate section), and {@code customer_id} is NOT NULL,
+     * so losing the owner would either drop the numbers or fail the insert.
      */
     private List<Customer> readCustomers(ObjectMapper mapper, Object raw) {
         if (raw == null) return List.of();
         List<Customer> result = mapper.convertValue(raw,
                 mapper.getTypeFactory().constructCollectionType(List.class, Customer.class));
         for (Customer c : result) {
-            c.getPhones().clear();
+            if (c.getPhones() != null) {
+                c.getPhones().forEach(phone -> phone.setCustomer(c));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Reads suppliers, keeping the phones nested inside each one and re-attaching
+     * their back-reference — the same reason as {@link #readCustomers}: those rows
+     * exist nowhere else in the file and {@code supplier_id} is NOT NULL.
+     */
+    private List<Supplier> readSuppliers(ObjectMapper mapper, Object raw) {
+        if (raw == null) return List.of();
+        List<Supplier> result = mapper.convertValue(raw,
+                mapper.getTypeFactory().constructCollectionType(List.class, Supplier.class));
+        for (Supplier s : result) {
+            if (s.getPhones() != null) {
+                s.getPhones().forEach(phone -> phone.setSupplier(s));
+            }
         }
         return result;
     }
@@ -844,7 +838,6 @@ public class DataImportService {
         for (Object item : list) {
             T entity = mapper.convertValue(item, type);
             link.accept(entity, (Map<String, Object>) item);
-            clearCollections(entity);
             result.add(entity);
         }
         return result;

@@ -5,10 +5,7 @@ import jakarta.persistence.EntityManager;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 
@@ -104,7 +101,10 @@ public class BackupEntityInserter implements AutoCloseable {
                 if (entity == null) {
                     continue;
                 }
-                clearCollections(entity);
+                // Collections are deliberately left intact: for sales, purchases,
+                // price lists, count sheets and promotions the nested children are
+                // the only copy of those rows in the file. Clearing here (or in the
+                // import layer) restored invoices with no lines.
                 entityManager.merge(entity);
                 count++;
                 if (count % FLUSH_EVERY == 0) {
@@ -115,28 +115,6 @@ public class BackupEntityInserter implements AutoCloseable {
         }
         entityManager.flush();
         entityManager.clear();
-    }
-
-    /**
-     * Clears every {@link Collection}-typed field on the entity via setter methods,
-     * bypassing Hibernate's enhanced getter/setter methods. Used as a fallback when
-     * merge() fails due to collections whose owner has no assigned ID yet.
-     */
-    private void clearCollections(Object entity) {
-        Class<?> clazz = entity.getClass();
-        while (clazz != null && clazz != Object.class) {
-            for (Method m : clazz.getDeclaredMethods()) {
-                if (m.getName().startsWith("set") && m.getParameterCount() == 1
-                        && Collection.class.isAssignableFrom(m.getParameterTypes()[0])) {
-                    m.setAccessible(true);
-                    try {
-                        m.invoke(entity, new ArrayList<>());
-                    } catch (Exception ignored) {
-                    }
-                }
-            }
-            clazz = clazz.getSuperclass();
-        }
     }
 
     @Override
