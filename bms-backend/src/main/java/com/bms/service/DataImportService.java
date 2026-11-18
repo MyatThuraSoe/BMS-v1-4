@@ -237,6 +237,11 @@ public class DataImportService {
 
         List<PriceList> priceLists = readFlat(mapper, rawData.get("priceLists"), PriceList.class,
                 (priceList, row) -> {
+                    // Jackson has already populated this collection from the row's
+                    // own "items" key, where a child carries only productId and price.
+                    // Clearing first keeps one row per item instead of appending a
+                    // second copy whose product association is null.
+                    priceList.getItems().clear();
                     for (Object itemRow : maps(row.get("items"))) {
                         Map<String, Object> ir = mapOf(itemRow);
                         PriceListItem item = mapper.convertValue(itemRow, PriceListItem.class);
