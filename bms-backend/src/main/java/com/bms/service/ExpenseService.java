@@ -172,7 +172,8 @@ public class ExpenseService {
         if (expense.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Expense not found: " + id);
         }
-        ledgerPostingService.postExpense(expense);
+        // Deleting cancels the original create posting; posting again would
+        // leave the expense in the ledger (create + post - reverse = still present).
         ledgerPostingService.reverseExpense(expense, expense.getExpenseDate().atStartOfDay());
         expense.setDeletedAt(shopTimeService.now());
         expenseRepository.save(expense);

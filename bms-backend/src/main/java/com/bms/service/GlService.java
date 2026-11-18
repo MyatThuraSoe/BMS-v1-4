@@ -340,22 +340,37 @@ public class GlService {
             if (purchase.getReceivingStatus() == Purchase.ReceivingStatus.ORDERED) {
                 continue;
             }
-            boolean hasMovements = !stockMovementRepository
-                    .findByReference(StockMovement.ReferenceType.RECEIVING, purchase.getId()).isEmpty();
-            if (hasMovements) {
-                continue;
-            }
             BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
-            BigDecimal amount = money(purchase.getTotalAmount())
-                    .subtract(money(purchase.getReturnedAmount()))
-                    .multiply(fx)
-                    .setScale(2, RoundingMode.HALF_UP);
             LocalDate date = purchase.getReceivedAt() != null
                     ? purchase.getReceivedAt().toLocalDate() : purchase.getPurchaseDate();
-            addPair(entries, accounts, date, purchase.getPurchaseNumber(),
-                    "Purchase received from "
-                            + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier"),
-                    GlMapping.EventType.INVENTORY, GlMapping.EventType.ACCOUNTS_PAYABLE, amount);
+            // Journal per purchase item: an item that already has a receiving
+            // movement was journaled on a prior run; only newly received lines
+            // are posted. This prevents understating payables/inventory when a
+            // PO is partially received, journaled, then receives more later.
+            for (PurchaseItem item : purchase.getItems()) {
+                int received = item.getReceivedQuantity() != null ? item.getReceivedQuantity() : 0;
+                if (received <= 0) {
+                    continue;
+                }
+                boolean alreadyJournaled = !stockMovementRepository
+                        .findByReferenceAndPurchaseItem(
+                                StockMovement.ReferenceType.RECEIVING, purchase.getId(), item.getId())
+                        .isEmpty();
+                if (alreadyJournaled) {
+                    continue;
+                }
+                BigDecimal itemAmount = item.getUnitCost() != null
+                        ? item.getUnitCost().multiply(BigDecimal.valueOf(received)).setScale(2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                itemAmount = itemAmount.multiply(fx).setScale(2, RoundingMode.HALF_UP);
+                if (itemAmount.signum() == 0) {
+                    continue;
+                }
+                addPair(entries, accounts, date, purchase.getPurchaseNumber() + "-item-" + item.getId(),
+                        "Purchase received from "
+                                + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier"),
+                        GlMapping.EventType.INVENTORY, GlMapping.EventType.ACCOUNTS_PAYABLE, itemAmount);
+            }
         }
     }
 
