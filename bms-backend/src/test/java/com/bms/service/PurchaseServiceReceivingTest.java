@@ -8,6 +8,7 @@ import com.bms.entity.Product;
 import com.bms.entity.Purchase;
 import com.bms.entity.PurchaseItem;
 import com.bms.entity.StockMovement;
+import com.bms.exception.BusinessException;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.InventoryLedgerRepository;
 import com.bms.repository.LocationStockRepository;
@@ -26,6 +27,8 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -36,14 +39,17 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 class PurchaseServiceReceivingTest {
 
     @Mock
@@ -215,5 +221,51 @@ class PurchaseServiceReceivingTest {
 
         verify(purchaseRepository).save(purchase);
         assertEquals(Purchase.ReceivingStatus.PARTIAL, purchase.getReceivingStatus());
+    }
+
+    // BUG-8c: receiveUnits with quarantine > 0 and no quarantine location throws
+    // before the ledger is posted
+    @Test
+    void receivingWithQuarantineButNoQuarantineLocationThrowsBeforeLedgerPost() {
+        stubReceiving();
+        lenient().when(locationService.getDefault(Location.LocationType.QUARANTINE)).thenReturn(null);
+
+        ReceivePurchaseRequest.ReceiveItem entry = new ReceivePurchaseRequest.ReceiveItem();
+        entry.setPurchaseItemId(100L);
+        entry.setReceivedQuantity(6);
+        entry.setQuarantineQuantity(2);
+
+        ReceivePurchaseRequest request = new ReceivePurchaseRequest();
+        request.setItems(List.of(entry));
+        request.setCancelRemainder(false);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> purchaseService.receivePurchase(1L, request, 99L));
+        assertEquals("No quarantine location configured.", ex.getMessage());
+
+        // Nothing should have been posted to the ledger
+        verify(inventoryLedgerRepository, never()).save(any(InventoryLedger.class));
+    }
+
+    // BUG-8c: receiveUnits with null destination throws before the ledger is posted
+    @Test
+    void receivingWithNullDestinationThrowsBeforeLedgerPost() {
+        stubReceiving();
+        lenient().when(locationService.getLocation(999L)).thenReturn(null);
+
+        ReceivePurchaseRequest.ReceiveItem entry = new ReceivePurchaseRequest.ReceiveItem();
+        entry.setLocationId(999L);
+        entry.setPurchaseItemId(100L);
+        entry.setReceivedQuantity(6);
+
+        ReceivePurchaseRequest request = new ReceivePurchaseRequest();
+        request.setItems(List.of(entry));
+        request.setCancelRemainder(false);
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> purchaseService.receivePurchase(1L, request, 99L));
+        assertEquals("No receiving location configured for the destination.", ex.getMessage());
+
+        verify(inventoryLedgerRepository, never()).save(any(InventoryLedger.class));
     }
 }

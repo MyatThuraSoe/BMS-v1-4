@@ -49,8 +49,13 @@ public class GoogleDriveService {
 
     private static final int BACKUP_PAGE_SIZE = 100;
 
+    /** Never walk past this many files when listing backups. */
+    private static final int BACKUP_LIST_CEILING = 500;
+
     /** The characters Drive itself uses in a file id, and the only ones accepted here. */
     private static final Pattern DRIVE_ID = Pattern.compile("[A-Za-z0-9_-]+");
+
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(GoogleDriveService.class);
 
     @Autowired
     private ShopTimeService shopTimeService;
@@ -361,7 +366,7 @@ public class GoogleDriveService {
         return readAllPages(pageToken -> service.files().list()
                 .setQ(backupListQuery(folderId))
                 .setSpaces("drive")
-                .setOrderBy("modifiedTime desc")
+                .setOrderBy("createdTime desc")
                 .setPageSize(BACKUP_PAGE_SIZE)
                 .setPageToken(pageToken)
                 .setFields("nextPageToken, files(id, name, size, modifiedTime, mimeType)")
@@ -408,15 +413,14 @@ public class GoogleDriveService {
     static List<DriveBackupFile> readAllPages(BackupPageReader page) throws Exception {
         List<DriveBackupFile> files = new ArrayList<>();
         String pageToken = null;
-        // Agreed ceiling: never walk past 500 files, so a folder of tens of
-        // thousands cannot keep the restore list paging until the connection gives up.
-        int ceiling = 500;
+        boolean truncated = false;
         do {
             FileList result = page.read(pageToken);
             if (result.getFiles() != null) {
                 for (File f : result.getFiles()) {
-                    if (files.size() >= ceiling) {
-                        return files;
+                    if (files.size() >= BACKUP_LIST_CEILING) {
+                        truncated = true;
+                        break;
                     }
                     files.add(new DriveBackupFile(
                             f.getId(),
@@ -426,8 +430,14 @@ public class GoogleDriveService {
                             f.getMimeType()));
                 }
             }
+            if (truncated) {
+                break;
+            }
             pageToken = result.getNextPageToken();
         } while (pageToken != null && !pageToken.isBlank());
+        if (truncated) {
+            log.warn("Backup list truncated at {} files", BACKUP_LIST_CEILING);
+        }
         return files;
     }
 

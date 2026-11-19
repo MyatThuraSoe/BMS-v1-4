@@ -9,6 +9,7 @@ import com.bms.entity.Product;
 import com.bms.entity.Role;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
@@ -37,6 +38,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -219,5 +221,79 @@ class SaleReturnStoreCreditTest {
 
         // Opening the dialog is a read; a write lock here would stall the till.
         verify(saleRepository, never()).findByIdForUpdate(anyLong());
+    }
+
+    // BUG-3: CREDIT as a refund method is not valid when money is due back
+    @Test
+    void creditRefundMethodThrowsWhenMoneyIsDueBack() {
+        SaleReturnRequest request = new SaleReturnRequest();
+        request.setReason("Wrong item");
+        request.setRefundMethod("CREDIT");
+        SaleReturnRequest.SaleReturnItemRequest item = new SaleReturnRequest.SaleReturnItemRequest();
+        item.setSaleItemId(1000L);
+        item.setQuantity(1);
+        request.setItems(List.of(item));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.createSaleReturn(100L, request, 5L));
+        assertTrue(ex.getMessage().contains("CREDIT is not valid when money is due back"));
+    }
+
+    // BUG-4: STORE_CREDIT refund larger than creditLimit succeeds
+    @Test
+    void storeCreditRefundExceedsCreditLimitSucceeds() {
+        customer.setCreditLimit(new BigDecimal("50.00"));
+        customer.setCreditBalance(BigDecimal.ZERO);
+
+        SaleReturnRequest request = storeCreditRequest();
+
+        service.createSaleReturn(100L, request, 5L);
+
+        assertEquals(0, customer.getCreditBalance().compareTo(new BigDecimal("30.00")),
+                "credit balance rises by the refund even though it exceeds the limit");
+        verify(customerRepository).save(customer);
+    }
+
+    // BUG-8b: mixed-payment sale with no explicit refund method throws
+    @Test
+    void mixedPaymentSaleRequiresExplicitRefundMethod() {
+        lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L))
+                .thenReturn(List.of(
+                        cashPayment(PaymentMethod.CASH, new BigDecimal("40.00")),
+                        cashPayment(PaymentMethod.CARD, new BigDecimal("60.00"))));
+
+        SaleReturnRequest request = new SaleReturnRequest();
+        request.setReason("Partial return");
+        // no refundMethod set
+        SaleReturnRequest.SaleReturnItemRequest item = new SaleReturnRequest.SaleReturnItemRequest();
+        item.setSaleItemId(1000L);
+        item.setQuantity(1);
+        request.setItems(List.of(item));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> service.createSaleReturn(100L, request, 5L));
+        assertEquals("Choose a refund method", ex.getMessage());
+    }
+
+    // BUG-8b: with an explicit method, mixed-payment return passes
+    @Test
+    void mixedPaymentSaleWithExplicitMethodPasses() {
+        lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L))
+                .thenReturn(List.of(
+                        cashPayment(PaymentMethod.CASH, new BigDecimal("40.00")),
+                        cashPayment(PaymentMethod.CARD, new BigDecimal("60.00"))));
+
+        SaleReturnRequest request = storeCreditRequest();
+        request.setRefundMethod("STORE_CREDIT");
+
+        // Should not throw
+        service.createSaleReturn(100L, request, 5L);
+    }
+
+    private static SalePayment cashPayment(PaymentMethod method, BigDecimal amount) {
+        SalePayment p = new SalePayment();
+        p.setPaymentMethod(method);
+        p.setAmount(amount);
+        return p;
     }
 }

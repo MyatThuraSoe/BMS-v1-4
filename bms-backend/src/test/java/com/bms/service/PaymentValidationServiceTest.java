@@ -249,4 +249,30 @@ class PaymentValidationServiceTest {
         assertFalse(response.isValid());
         assertEquals("NO_OPEN_SHIFT", response.getCode());
     }
+
+    // BUG-2: store credit and CREDIT are not valid settlement/payment methods
+    @Test
+    void verifyForSaleRejectsStoreCreditLine() {
+        BusinessException ex = assertThrows(BusinessException.class, () ->
+                paymentValidationService.verifyForSale(
+                        shift(ShiftType.CASH_DRAWER, DrawerSessionStatus.OPEN),
+                        List.of(payment("STORE_CREDIT", "10000")),
+                        new BigDecimal("10000"),
+                        Sale.SaleType.CASH));
+        assertTrue(ex.getMessage().startsWith("PAYMENT_INVALID"));
+    }
+
+    @Test
+    void parseSettlementMethodRejectsCreditAndStoreCredit() {
+        assertThrows(BusinessException.class, () ->
+                paymentValidationService.parseSettlementMethod("CREDIT"));
+        assertThrows(BusinessException.class, () ->
+                paymentValidationService.parseSettlementMethod("STORE_CREDIT"));
+    }
+
+    @Test
+    void parseSettlementMethodAcceptsCashAndCard() {
+        assertEquals(PaymentMethod.CASH, paymentValidationService.parseSettlementMethod("CASH"));
+        assertEquals(PaymentMethod.CARD, paymentValidationService.parseSettlementMethod("CARD"));
+    }
 }
