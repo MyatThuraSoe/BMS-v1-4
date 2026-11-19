@@ -69,6 +69,9 @@ public class ExpenseService {
 
     public ExpenseResponse createExpense(ExpenseRequest request, Long userId) {
         periodGuard.assertOpen(request.getExpenseDate());
+        if (request.getExpenseDate().isAfter(shopTimeService.today())) {
+            throw new BusinessException("Expense date cannot be in the future");
+        }
         Expense expense = new Expense();
         expense.setCategory(parseCategory(request.getCategory()));
         expense.setDescription(request.getDescription());
@@ -159,8 +162,8 @@ public class ExpenseService {
 
     private BigDecimal requirePositive(BigDecimal amount) {
         BigDecimal value = amount != null ? amount : BigDecimal.ZERO;
-        if (value.compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException("Expense amount cannot be negative");
+        if (value.compareTo(BigDecimal.ZERO) <= 0) {
+            throw new BusinessException("Expense amount must be greater than zero");
         }
         return value;
     }
@@ -172,6 +175,9 @@ public class ExpenseService {
         if (expense.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Expense not found: " + id);
         }
+        // Assert the period is open before reversing, even for capitalised
+        // expenses whose reverseExpense returns early without calling postProfit.
+        periodGuard.assertOpen(expense.getExpenseDate().atStartOfDay());
         // Deleting cancels the original create posting; posting again would
         // leave the expense in the ledger (create + post - reverse = still present).
         ledgerPostingService.reverseExpense(expense, expense.getExpenseDate().atStartOfDay());

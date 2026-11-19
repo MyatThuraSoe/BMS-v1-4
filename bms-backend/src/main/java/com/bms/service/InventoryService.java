@@ -147,7 +147,8 @@ public class InventoryService {
             String refType = row[3] != null ? ((StockMovement.ReferenceType) row[3]).name() : "UNKNOWN";
 
             boolean isIn = type == StockMovement.MovementType.IN
-                    || type == StockMovement.MovementType.ADJUSTMENT_IN;
+                    || type == StockMovement.MovementType.ADJUSTMENT_IN
+                    || type == StockMovement.MovementType.TRANSFER_IN;
 
             String dayKey = when.toLocalDate().format(fmt);
             long[] day = byDay.computeIfAbsent(dayKey, k -> new long[2]);

@@ -376,8 +376,9 @@ public class StockCountService {
             if (item.getCountedQuantity() == null) {
                 return false;
             }
-            int live = item.getProduct().getStockQuantity() != null ? item.getProduct().getStockQuantity() : 0;
-            int variance = item.getCountedQuantity() - live;
+            // Variance is measured against the count-time snapshot, not live stock
+            // which may have changed since the count was submitted.
+            int variance = item.getCountedQuantity() - item.getSystemQuantity();
             if (variance == 0) continue;
             nonZeroLines++;
             BigDecimal value = unitCostAtCount(item, item.getProduct())
@@ -401,9 +402,9 @@ public class StockCountService {
             if (item.getCountedQuantity() == null) {
                 continue;
             }
-            int live = item.getProduct().getStockQuantity() != null
-                    ? item.getProduct().getStockQuantity() : 0;
-            if (needsReasonCode(item.getCountedQuantity(), live, item.getReasonCode())) {
+            // Compare against the count-time snapshot, not live stock which may
+            // have changed since submission.
+            if (needsReasonCode(item.getCountedQuantity(), item.getSystemQuantity(), item.getReasonCode())) {
                 return false;
             }
         }
@@ -478,14 +479,18 @@ public class StockCountService {
             }
             Product product = products.get(item.getProduct().getId());
             int live = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
-            int variance = item.getCountedQuantity() - live;
+            // Variance is measured against the snapshot taken at count time
+            // (item.getSystemQuantity()), not against live stock which may have
+            // changed since the count was submitted. Applying live + variance
+            // keeps sold units from being resurrected by the count.
+            int variance = item.getCountedQuantity() - item.getSystemQuantity();
             BigDecimal unitCost = unitCostAtCount(item, product);
             item.setLiveQuantityAtApply(live);
             item.setVarianceAtApply(variance);
             item.setVariance(variance);
             item.setValuationAmount(unitCost.multiply(BigDecimal.valueOf(variance))
                     .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP));
-            if (needsReasonCode(item.getCountedQuantity(), live, item.getReasonCode())) {
+            if (needsReasonCode(item.getCountedQuantity(), item.getSystemQuantity(), item.getReasonCode())) {
                 missingReasons.add(product.getName());
             }
         }
@@ -501,6 +506,7 @@ public class StockCountService {
             }
             int variance = item.getVarianceAtApply() != null ? item.getVarianceAtApply() : 0;
             Product product = products.get(item.getProduct().getId());
+            int live = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
 
             if (variance != 0) {
                 StockMovement movement = new StockMovement();
@@ -532,7 +538,7 @@ public class StockCountService {
                 }
             }
 
-            product.setStockQuantity(item.getCountedQuantity());
+            product.setStockQuantity(live + variance);
             product.setLastCountDate(today);
             productRepository.save(product);
             if (product.getStockQuantity() < product.getReservedQuantity()) {

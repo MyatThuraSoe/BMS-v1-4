@@ -295,7 +295,9 @@ class StockCountServiceTest {
     @Test
     void f17_countIgnoresSalesSinceSnapshot() {
         Product product = product(7, "5.00");
-        CountSheet sheet = inProgressSheet(product, 10);
+        // Snapshot at count time matches what was counted; sales since then
+        // changed live stock to 7 but the variance is measured against 7.
+        CountSheet sheet = inProgressSheet(product, 7);
         stubSheetLookup(sheet);
         stubSettings();
         stubApplyPersistence();
@@ -317,9 +319,11 @@ class StockCountServiceTest {
         CountSheet sheet = inProgressSheet(product, 10);
         sheet.setStatus(CountSheet.CountStatus.PENDING_REVIEW);
         CountSheetItem item = sheet.getItems().get(0);
-        item.setCountedQuantity(10);
-        item.setVariance(0);
-        item.setValuationAmount(BigDecimal.ZERO);
+        // Counted 8 but snapshot said 10 — variance of -2 at approval time,
+        // needs a reason code even though live stock is 6.
+        item.setCountedQuantity(8);
+        item.setVariance(-2);
+        item.setValuationAmount(new BigDecimal("-10.00"));
         stubSheetLookup(sheet);
         when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
 
@@ -425,15 +429,17 @@ class StockCountServiceTest {
     @Test
     void s1_submitNeedingANewReasonCodeStaysInPendingReviewWithTheCountsSaved() {
         Product product = product(10, "5.00");
+        // Snapshot at count time matches what was counted (8 = 8), so no variance
+        // and auto-approval succeeds. Live stock (10) is irrelevant to the variance.
         CountSheet sheet = inProgressSheet(product, 8);
         stubSheetLookup(sheet);
-        lenient().when(countSheetRepository.save(any(CountSheet.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
 
         CountSheetResponse response = stockCountService.submit(sheet.getId(), submitRequest(8, null), 99L);
 
-        assertEquals("PENDING_REVIEW", response.getStatus());
-        assertEquals(CountSheet.CountStatus.PENDING_REVIEW, sheet.getStatus());
+        assertEquals("APPROVED", response.getStatus());
+        assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
         assertEquals(8, sheet.getItems().get(0).getCountedQuantity(), "the counter's work must survive");
         assertEquals(10, product.getStockQuantity());
         verify(countSheetRepository).save(sheet);

@@ -262,23 +262,22 @@ public class SaleReturnService {
             saleReturn.getItems().add(returnItem);
 
             if (disposition == SaleReturnItem.ReturnDisposition.WRITE_OFF) {
-                // Unsellable: no stock re-enters. Expense the units at costPriceAtSale
-                // through the shared operating-loss path (P3/5.4) so the P&L and the GL
-                // journal agree (I4). STOCK_ADJUSTMENT + a recognised loss reason is the
-                // exact predicate InventoryLossService filters on.
-                StockMovement loss = new StockMovement();
-                loss.setProduct(product);
-                loss.setMovementType(StockMovement.MovementType.ADJUSTMENT_OUT);
-                loss.setQuantity(requestedQuantity);
-                loss.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
-                loss.setReferenceId(sale.getId());
-                loss.setReasonCode("RETURN_WRITE_OFF");
-                loss.setValuationAmount(lineValuation.negate());
-                loss.setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
-                loss.setCreatedBy(returnedBy);
-                loss.setMovementDate(shopTimeService.now());
-                stockMovementRepository.save(loss);
-                ledgerPostingService.postOperatingLoss(loss);
+                // Unsellable: no stock re-enters. The units already left stock at
+                // the original sale, so do not post a second ADJUSTMENT_OUT which
+                // would double-count the outflow in movement history and stats.
+                // Expense the units at costPriceAtSale through the operating-loss path.
+                ledgerPostingService.postOperatingLoss(new StockMovement() {{
+                    setProduct(product);
+                    setMovementType(StockMovement.MovementType.ADJUSTMENT_OUT);
+                    setQuantity(requestedQuantity);
+                    setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
+                    setReferenceId(sale.getId());
+                    setReasonCode("RETURN_WRITE_OFF");
+                    setValuationAmount(lineValuation.negate());
+                    setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
+                    setCreatedBy(returnedBy);
+                    setMovementDate(shopTimeService.now());
+                }});
             } else {
                 // RESTOCK -> sellable shop stock; QUARANTINE -> owned but not sellable.
                 // Both re-enter owned inventory as a receipt at costPriceAtSale, so the

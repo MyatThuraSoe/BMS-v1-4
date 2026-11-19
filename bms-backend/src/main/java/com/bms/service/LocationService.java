@@ -128,7 +128,13 @@ public class LocationService {
         Location shop = getDefault(Location.LocationType.SHOP);
         locationStockRepository.findForUpdate(shop.getId(), product.getId())
                 .ifPresent(stock -> {
-                    stock.setQuantity(Math.max(0, stock.getQuantity() - quantity));
+                    int bucketQty = stock.getQuantity() != null ? stock.getQuantity() : 0;
+                    if (bucketQty < quantity) {
+                        throw new BusinessException("SHOP bucket for " + product.getName()
+                                + " has only " + bucketQty + " unit(s), less than the "
+                                + quantity + " being removed; stock drift detected");
+                    }
+                    stock.setQuantity(bucketQty - quantity);
                     locationStockRepository.save(stock);
                 });
     }
@@ -559,7 +565,13 @@ public class LocationService {
             // products may never have had one.
             locationStockRepository.findForUpdate(from.getId(), product.getId())
                     .ifPresent(stock -> {
-                        stock.setQuantity(Math.max(0, stock.getQuantity() - quantity));
+                        int bucketQty = stock.getQuantity() != null ? stock.getQuantity() : 0;
+                        if (bucketQty < quantity) {
+                            throw new BusinessException("SHOP bucket for " + product.getName()
+                                    + " has only " + bucketQty + " unit(s), less than the "
+                                    + quantity + " being moved; stock drift detected");
+                        }
+                        stock.setQuantity(bucketQty - quantity);
                         locationStockRepository.save(stock);
                     });
         } else {
