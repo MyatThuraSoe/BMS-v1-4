@@ -583,7 +583,11 @@ public class ReportService {
             lossSummaries.add(lossSummary);
         }
         totalExpenses = totalExpenses.add(totalInventoryLoss);
-        if (ledgerActive) totalExpenses = ledgerReadService.totals(startDateTime, endDateTime)[2];
+        // When ledger reads are active, totalExpenses is the sum of byCategory
+        // (EXPENSE + PURCHASE_VARIANCE) plus inventory losses (WRITE_OFF).
+        // INVENTORY_GAIN rows are negative expenses in totals()[2] and are
+        // excluded here so the total equals the sum of its category lines;
+        // gains are reported separately via postInventoryGain in the GL.
 
         // ONE revenue definition across every report: tax-EXCLUSIVE and already
         // net of returns, identical to the Daily Sales report and Profit summary.
@@ -922,7 +926,7 @@ public class ReportService {
     // Inventory report
     // -----------------------------------------------------------------------
     public Map<String, Object> getInventoryReport() {
-        var products = productRepository.findAll();
+        var products = productRepository.findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc();
         
         BigDecimal totalInventoryValue = BigDecimal.ZERO;
         int totalProducts = 0;
@@ -932,10 +936,10 @@ public class ReportService {
         for (var product : products) {
             totalProducts++;
             BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
-            BigDecimal value = unitCost.multiply(BigDecimal.valueOf(product.getStockQuantity() == null ? 0 : product.getStockQuantity()));
+            int stock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
+            BigDecimal value = unitCost.multiply(BigDecimal.valueOf(stock));
             totalInventoryValue = totalInventoryValue.add(value);
 
-            int stock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
             int minStock = product.getMinStockLevel() == null ? 0 : product.getMinStockLevel();
 
             if (stock <= minStock) {

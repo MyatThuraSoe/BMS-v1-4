@@ -1,6 +1,7 @@
 package com.bms.service;
 
 import com.bms.entity.CashDrawerSession;
+import com.bms.entity.DrawerSessionStatus;
 import com.bms.entity.PeriodClose;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
@@ -100,7 +101,10 @@ public class AccountingPeriodService {
         // misses drawers opened earlier that never closed.
         if (booleanSetting("accounting.period.requireNoOpenDrawers", true)) {
             List<CashDrawerSession> open = drawerSessionRepository.findForReport(
-                    month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay());
+                    month.atDay(1).atStartOfDay(), month.plusMonths(1).atDay(1).atStartOfDay())
+                    .stream()
+                    .filter(session -> session.getStatus() == DrawerSessionStatus.OPEN)
+                    .collect(java.util.stream.Collectors.toList());
             if (!open.isEmpty()) {
                 throw new BusinessException("Close the drawer sessions open during " + month + " first: "
                         + open.stream()

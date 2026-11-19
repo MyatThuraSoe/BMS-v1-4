@@ -173,10 +173,17 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Object[]> getStockStatusCounts();
 
     @Query("""
-        SELECT COALESCE(SUM(p.stockQuantity), 0),
-               COALESCE(SUM(COALESCE(p.costPrice, 0) * p.stockQuantity), 0),
-               COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0)
+        SELECT COALESCE(SUM(p.stockQuantity + COALESCE(ls.non_shop_qty, 0)), 0),
+               COALESCE(SUM(COALESCE(p.costPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0),
+               COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0)
         FROM Product p
+        LEFT JOIN (
+            SELECT ls.product.id AS pid, SUM(ls.quantity) AS non_shop_qty
+            FROM LocationStock ls
+            JOIN Location l ON l.id = ls.location.id
+            WHERE l.type <> 'SHOP'
+            GROUP BY ls.product.id
+        ) ls ON ls.pid = p.id
         WHERE p.isActive = true AND p.deletedAt IS NULL
         """)
     List<Object[]> getInventoryValues();
@@ -184,14 +191,21 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("""
         SELECT c.id, c.name,
                COUNT(p),
-               COALESCE(SUM(p.stockQuantity), 0),
-               COALESCE(SUM(COALESCE(p.costPrice, 0) * p.stockQuantity), 0),
-               COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0)
+               COALESCE(SUM(p.stockQuantity + COALESCE(ls.non_shop_qty, 0)), 0),
+               COALESCE(SUM(COALESCE(p.costPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0),
+               COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0)
         FROM Product p
         JOIN p.category c
+        LEFT JOIN (
+            SELECT ls.product.id AS pid, SUM(ls.quantity) AS non_shop_qty
+            FROM LocationStock ls
+            JOIN Location l ON l.id = ls.location.id
+            WHERE l.type <> 'SHOP'
+            GROUP BY ls.product.id
+        ) ls ON ls.pid = p.id
         WHERE p.isActive = true AND p.deletedAt IS NULL
         GROUP BY c.id, c.name
-        ORDER BY COALESCE(SUM(COALESCE(p.unitPrice, 0) * p.stockQuantity), 0) DESC
+        ORDER BY COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0) DESC
         """)
     List<Object[]> getCategoryInventoryBreakdown();
 

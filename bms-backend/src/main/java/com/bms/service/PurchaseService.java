@@ -1108,6 +1108,30 @@ public class PurchaseService {
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
         }
+        // T8: a purchase that already has supplier payments cannot be edited to a
+        // total below what was paid. The overpayment would otherwise be invisible
+        // because refreshPaymentStatus only reports PAID/PARTIAL/PENDING.
+        BigDecimal paidOnPurchase = purchasePaymentService.paidAmount(purchase.getId());
+        if (paidOnPurchase != null && paidOnPurchase.signum() > 0) {
+            BigDecimal newSubtotal = request.getItems() != null
+                    ? request.getItems().stream()
+                        .map(i -> i.getUnitCost().multiply(BigDecimal.valueOf(i.getQuantity())))
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    : BigDecimal.ZERO;
+            BigDecimal newDiscount = request.getDiscountAmount() != null ? request.getDiscountAmount() : BigDecimal.ZERO;
+            BigDecimal newTax = request.getTaxAmount() != null ? request.getTaxAmount() : BigDecimal.ZERO;
+            BigDecimal newExpenses = request.getExpenses() != null
+                    ? request.getExpenses().stream()
+                        .map(com.bms.dto.request.PurchaseCreateRequest.ExpenseRequest::getAmount)
+                        .filter(java.util.Objects::nonNull)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add)
+                    : BigDecimal.ZERO;
+            BigDecimal newTotal = newSubtotal.subtract(newDiscount).add(newTax).add(newExpenses);
+            if (newTotal.compareTo(paidOnPurchase) < 0) {
+                throw new BusinessException("Cannot reduce purchase total below " + paidOnPurchase.toPlainString()
+                        + " already paid to the supplier. Refund or remove those payments first.");
+            }
+        }
         assertNotPartiallyReceived(purchase, "edit");
         if (purchase.getItems().stream().anyMatch(item -> item.getReturnedQuantity() > 0)) {
             throw new BusinessException("Cannot edit a purchase that has returned goods. Create a new purchase or adjustment.");

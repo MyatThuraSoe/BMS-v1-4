@@ -543,6 +543,21 @@ public class GlService {
             addPair(entries, accounts, payment.getPaymentDate().toLocalDate(), "ARP-" + payment.getId(),
                     "AR collection", debit, GlMapping.EventType.ACCOUNTS_RECEIVABLE, amount);
         }
+        // Dated reversals: reversed payments are journaled on the reversal date so
+        // closed periods do not change retrospectively. Non-cash reversals convert
+        // to store credit (REFUND_LIABILITY), cash reversals return to the drawer.
+        for (ArPayment payment : arPaymentRepository.findReversedForJournal(startTs, endTs)) {
+            BigDecimal amount = money(payment.getAmount());
+            if (amount.signum() == 0) {
+                continue;
+            }
+            LocalDate date = payment.getReversedAt() != null
+                    ? payment.getReversedAt().toLocalDate() : payment.getPaymentDate().toLocalDate();
+            GlMapping.EventType credit = payment.getPaymentMethod() == PaymentMethod.CASH
+                    ? GlMapping.EventType.CASH : GlMapping.EventType.REFUND_LIABILITY;
+            addPair(entries, accounts, date, "ARP-" + payment.getId() + "-REV",
+                    "AR payment reversed", GlMapping.EventType.ACCOUNTS_RECEIVABLE, credit, amount);
+        }
     }
 
     // O3: supplier payments settle the payable at the payment date. The
