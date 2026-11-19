@@ -4,6 +4,7 @@ import com.bms.dto.request.UserCreateRequest;
 import com.bms.dto.request.UserUpdateRequest;
 import com.bms.entity.Role;
 import com.bms.entity.User;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
@@ -58,7 +59,7 @@ class UserServiceNormalizedGuardTest {
         when(roleRepository.findById(3L)).thenReturn(Optional.of(cashier));
 
         service = new UserService(userRepository, roleRepository, saleRepository,
-                cashShiftRepository, cashShiftService, passwordEncoder, auditLogService);
+                cashShiftRepository, cashShiftService, passwordEncoder, auditLogService, mock(CashDrawerSessionRepository.class));
     }
 
     /** A user as it looks straight after an upgrade: no normalized keys at all. */

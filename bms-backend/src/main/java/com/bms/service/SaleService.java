@@ -24,7 +24,10 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.HashMap;
+import java.util.TreeMap;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -248,7 +251,7 @@ public class SaleService {
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
 
-        Map<Long, Integer> requestedByProduct = new HashMap<>();
+        Map<Long, Integer> requestedByProduct = new TreeMap<>();
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
             if (itemRequest.getQuantity() <= 0) {
                 throw new BusinessException("Quantity must be positive");
@@ -349,11 +352,11 @@ public class SaleService {
 
         if (saleType == Sale.SaleType.CREDIT) {
             // Credit-limit check BEFORE persisting anything.
-            // Store credit (money the shop owes the customer) offsets the debt,
-            // so the effective outstanding is currentBalance minus creditBalance.
-            BigDecimal creditBalance = creditCustomer.getCreditBalance();
-            BigDecimal effectiveBalance = creditCustomer.getCurrentBalance().subtract(creditBalance);
-            BigDecimal newBalance = effectiveBalance.add(totalAmount);
+            // Store credit (money the shop owes the customer) is not consumed at
+            // sale time (phase 1: store credit is not a valid tender), so the
+            // check is currentBalance + total against the limit, matching
+            // createSaleFromOrder.
+            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
             if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
                 throw new InsufficientCreditException(
                     "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
@@ -366,15 +369,23 @@ public class SaleService {
                             == com.bms.entity.PaymentMethod.CASH);
             BigDecimal tendered = request.getAmountPaid();
             if (hasCash) {
+                // BUG-8a: change is computed against the cash tender only, not the
+                // full sale total. With cash + card the card line is already settled
+                // by the drawer/card network; the cash drawer only sees the cash line.
+                BigDecimal cashPortion = paymentLines.stream()
+                        .filter(line -> paymentValidationService.parseMethod(line.getMethod())
+                                == com.bms.entity.PaymentMethod.CASH)
+                        .map(SalePaymentRequest::getAmount)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
                 if (tendered == null) {
-                    tendered = totalAmount;
+                    tendered = cashPortion;
                 }
-                if (tendered.compareTo(totalAmount) < 0) {
+                if (tendered.compareTo(cashPortion) < 0) {
                     throw new BusinessException("Amount paid (" + tendered
-                            + ") is less than total amount (" + totalAmount + ")");
+                            + ") is less than the cash portion (" + cashPortion + ")");
                 }
                 sale.setAmountPaid(tendered);
-                sale.setChangeGiven(tendered.subtract(totalAmount));
+                sale.setChangeGiven(tendered.subtract(cashPortion));
             } else {
                 // A non-cash sale collects exactly its payment lines, and
                 // resolvePayments/verifyForSale already forced those to totalAmount.
@@ -585,7 +596,11 @@ public class SaleService {
         // F22: the demand that has to fit is the order's TOTAL for the product, so a
         // product on two lines is not checked twice against the same units.
         Map<Long, Integer> demandCheckedByProduct = new HashMap<>();
-        for (OrderItem orderItem : order.getItems()) {
+        // BUG-7: lock products in a consistent id order to avoid deadlocks between
+        // concurrent conversions of overlapping orders.
+        List<OrderItem> lockedItems = new ArrayList<>(order.getItems());
+        lockedItems.sort(Comparator.comparing(oi -> oi.getProduct().getId()));
+        for (OrderItem orderItem : lockedItems) {
             Product product = productRepository.findByIdForUpdate(orderItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + orderItem.getProduct().getId()));
 
@@ -893,13 +908,6 @@ public class SaleService {
             // its revenue or COGS in the ledgers, whatever sold afterwards. Only
             // the inventory side depends on the units still being restorable.
             ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
-
-            // If this product was sold in a later sale, its units may already be
-            // gone — restoring them here would inflate stock. Skip the stock and
-            // inventory-ledger restore; the profit reversal above has already run.
-            if (saleRepository.productSoldAfter(lockedItem.getProduct().getId(), sale.getSaleDate())) {
-                continue;
-            }
 
             // P1/O8: void restores inventory at costPriceAtSale, dated on the void.
             BigDecimal costAtSale = lockedItem.getCostPriceAtSale() != null ? lockedItem.getCostPriceAtSale() : BigDecimal.ZERO;

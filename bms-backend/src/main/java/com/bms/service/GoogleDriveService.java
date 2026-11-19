@@ -408,10 +408,16 @@ public class GoogleDriveService {
     static List<DriveBackupFile> readAllPages(BackupPageReader page) throws Exception {
         List<DriveBackupFile> files = new ArrayList<>();
         String pageToken = null;
+        // Agreed ceiling: never walk past 500 files, so a folder of tens of
+        // thousands cannot keep the restore list paging until the connection gives up.
+        int ceiling = 500;
         do {
             FileList result = page.read(pageToken);
             if (result.getFiles() != null) {
                 for (File f : result.getFiles()) {
+                    if (files.size() >= ceiling) {
+                        return files;
+                    }
                     files.add(new DriveBackupFile(
                             f.getId(),
                             f.getName(),

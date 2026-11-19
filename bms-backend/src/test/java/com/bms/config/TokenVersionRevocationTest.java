@@ -5,6 +5,7 @@ import com.bms.entity.Role;
 import com.bms.entity.SystemSetting;
 import com.bms.entity.User;
 import com.bms.license.JwtSecretService;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
@@ -110,7 +111,7 @@ class TokenVersionRevocationTest {
 
         UserService userService = new UserService(userRepository, mock(RoleRepository.class),
                 mock(SaleRepository.class), mock(CashShiftRepository.class),
-                mock(CashShiftService.class), passwordEncoder, auditLogService);
+                mock(CashShiftService.class), passwordEncoder, auditLogService, mock(CashDrawerSessionRepository.class));
         ReflectionTestUtils.setField(userService, "jwtUtil", jwtUtil);
 
         String oldToken = jwtUtil.generateToken(user);

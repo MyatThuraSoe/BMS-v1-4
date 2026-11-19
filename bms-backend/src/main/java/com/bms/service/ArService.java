@@ -228,7 +228,7 @@ public class ArService {
         PaymentMethod paymentMethod = (request.getPaymentMethod() == null
                 || request.getPaymentMethod().isBlank())
                 ? PaymentMethod.CASH
-                : paymentValidationService.parseMethod(request.getPaymentMethod());
+                : paymentValidationService.parseSettlementMethod(request.getPaymentMethod());
 
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
         if (paymentMethod == PaymentMethod.CASH) {
