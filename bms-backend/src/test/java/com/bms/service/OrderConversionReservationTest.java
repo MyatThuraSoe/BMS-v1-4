@@ -52,7 +52,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import org.mockito.InOrder;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.inOrder;
 
 /**
  * F22: converting one order must not take the units another pending order is
@@ -282,5 +284,37 @@ class OrderConversionReservationTest {
         product.setIsActive(true);
         products.put(id, product);
         return product;
+    }
+
+    // BUG-7: products are locked in ascending id order even when order items
+    // are given in descending product-id order
+    @Test
+    void conversionLocksProductsInAscendingIdOrder() {
+        Product productA = product(3L, 10);  // higher id first in request
+        Product productB = product(1L, 10);  // lower id second in request
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        List<OrderCreateRequest.OrderItemRequest> items = new ArrayList<>();
+        OrderCreateRequest.OrderItemRequest itemA = new OrderCreateRequest.OrderItemRequest();
+        itemA.setProductId(3L);
+        itemA.setQuantity(1);
+        items.add(itemA);
+        OrderCreateRequest.OrderItemRequest itemB = new OrderCreateRequest.OrderItemRequest();
+        itemB.setProductId(1L);
+        itemB.setQuantity(1);
+        items.add(itemB);
+        request.setItems(items);
+        orderService.createOrder(request, 7L);
+        Order order = savedOrders.get(savedOrders.size() - 1);
+
+        // Clear invocations from order creation, then verify the lock order
+        // during conversion only.
+        org.mockito.Mockito.clearInvocations(productRepository);
+
+        saleService.createSaleFromOrder(order, "CASH", order.getTotalAmount(), null, 7L);
+
+        InOrder inOrder = inOrder(productRepository);
+        inOrder.verify(productRepository).findByIdForUpdate(1L);
+        inOrder.verify(productRepository).findByIdForUpdate(3L);
     }
 }

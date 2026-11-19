@@ -47,17 +47,11 @@ public class LoginAttemptPolicy {
         if (forwarded == null) {
             return remote;
         }
-        // Behind a proxy the left-most entry is the client and the rest belong to
-        // proxies; anything supplied by the caller to the left can be invented per
-        // request, but the shop said it trusts the header, so we take the first hop.
-        String[] hops = forwarded.split(",");
-        for (int i = 0; i < hops.length; i++) {
-            String hop = blankToNull(hops[i]);
-            if (hop != null) {
-                return hop;
-            }
-        }
-        return remote;
+        // Only the first hop is the client. Anything after the first comma was added
+        // by proxies and can be invented per request, so it must not be used as a
+        // lockout key - otherwise an attacker could pick which address gets locked.
+        String first = blankToNull(forwarded.split(",")[0]);
+        return first != null ? first : remote;
     }
 
     /**

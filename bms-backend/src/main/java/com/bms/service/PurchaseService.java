@@ -512,6 +512,13 @@ public class PurchaseService {
 
     private void receiveUnits(Purchase purchase, PurchaseItem item, int received, int quarantine,
                               Location destination, Long userId, Location quarantineLocation) {
+        if (destination == null) {
+            throw new BusinessException("No receiving location configured for the destination.");
+        }
+        if (quarantine > 0 && quarantineLocation == null) {
+            throw new BusinessException("No quarantine location configured.");
+        }
+
         Product product = productRepository.findByIdForUpdate(item.getProduct().getId())
                 .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + item.getProduct().getId()));
         User user = userRepository.findById(userId).orElse(null);
@@ -555,9 +562,6 @@ public class PurchaseService {
                 shopTimeService.now(), userId);
         BigDecimal newWeightedCost = posting.getUnitCostAfter();
 
-        if (destination == null) {
-            throw new BusinessException("No receiving location configured for the destination.");
-        }
         if (sellable > 0) {
             if (destination.getType() == Location.LocationType.SHOP) {
                 product.setStockQuantity(oldStock + sellable);
@@ -571,9 +575,6 @@ public class PurchaseService {
                     sellableValuation, user);
         }
         if (quarantine > 0) {
-            if (quarantineLocation == null) {
-                throw new BusinessException("No quarantine location configured.");
-            }
             locationService.addStock(product, quarantineLocation, quarantine);
             recordMovement(purchase, item, product, StockMovement.MovementType.IN, quarantine,
                     StockMovement.ReferenceType.RECEIVING, quarantineLocation.getCode(),

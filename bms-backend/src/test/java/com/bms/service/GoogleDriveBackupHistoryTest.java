@@ -119,6 +119,22 @@ class GoogleDriveBackupHistoryTest {
         assertEquals(500, listed.size(), "the walk stops at the agreed ceiling");
     }
 
+    @Test
+    void aFolderWithSixHundredFilesReturnsExactlyFiveHundred() throws Exception {
+        Queue<FileList> pages = new ArrayDeque<>();
+        for (int page = 0; page < 6; page++) {
+            List<File> files = new ArrayList<>();
+            for (int i = 0; i < 100; i++) {
+                files.add(driveFile("p" + page + "-" + i, "LumiPOS_Backup_x.json", "2026-11-17T02:00:00Z"));
+            }
+            pages.add(new FileList().setFiles(files).setNextPageToken("token-" + page));
+        }
+
+        List<DriveBackupFile> listed = GoogleDriveService.readAllPages(token -> pages.remove());
+
+        assertEquals(500, listed.size(), "600 files across six pages are capped at 500");
+    }
+
     // ------------------------------------------------------------------ retention
 
     @Test

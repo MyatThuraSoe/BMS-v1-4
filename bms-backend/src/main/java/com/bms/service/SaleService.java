@@ -369,23 +369,22 @@ public class SaleService {
                             == com.bms.entity.PaymentMethod.CASH);
             BigDecimal tendered = request.getAmountPaid();
             if (hasCash) {
-                // BUG-8a: change is computed against the cash tender only, not the
-                // full sale total. With cash + card the card line is already settled
-                // by the drawer/card network; the cash drawer only sees the cash line.
-                BigDecimal cashPortion = paymentLines.stream()
-                        .filter(line -> paymentValidationService.parseMethod(line.getMethod())
-                                == com.bms.entity.PaymentMethod.CASH)
-                        .map(SalePaymentRequest::getAmount)
-                        .reduce(BigDecimal.ZERO, BigDecimal::add);
-                if (tendered == null) {
-                    tendered = cashPortion;
+                if (paymentLines.size() > 1) {
+                    // Split tender: lines are exact portions of the total, no cash change.
+                    sale.setAmountPaid(totalAmount);
+                    sale.setChangeGiven(BigDecimal.ZERO);
+                } else {
+                    // Single cash line: its amount equals totalAmount (verifyForSale enforces it).
+                    if (tendered == null) {
+                        tendered = totalAmount;
+                    }
+                    if (tendered.compareTo(totalAmount) < 0) {
+                        throw new BusinessException("Amount paid (" + tendered
+                                + ") is less than total amount (" + totalAmount + ")");
+                    }
+                    sale.setAmountPaid(tendered);
+                    sale.setChangeGiven(tendered.subtract(totalAmount));
                 }
-                if (tendered.compareTo(cashPortion) < 0) {
-                    throw new BusinessException("Amount paid (" + tendered
-                            + ") is less than the cash portion (" + cashPortion + ")");
-                }
-                sale.setAmountPaid(tendered);
-                sale.setChangeGiven(tendered.subtract(cashPortion));
             } else {
                 // A non-cash sale collects exactly its payment lines, and
                 // resolvePayments/verifyForSale already forced those to totalAmount.
