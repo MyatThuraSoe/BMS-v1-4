@@ -29,7 +29,6 @@ import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -83,7 +82,7 @@ public class CashShiftService {
     private CashDrawerSessionService cashDrawerSessionService;
 
     @Autowired
-    private PasswordEncoder passwordEncoder;
+    private ManagerApprovalService managerApprovalService;
 
     @Autowired
     private AuditLogService auditLogService;
@@ -126,7 +125,16 @@ public class CashShiftService {
                                     + ". Open a non-cash shift, or ask a manager to enable shared drawer mode.");
                 }
                 if (cashDrawerSessionService.isManagerApprovalRequired() && !managerOrAdmin) {
-                    verifyManagerApproval(request.getApproverUsername(), request.getApproverPassword());
+                    // One shared approval path: it counts failed attempts against this
+                    // cashier, locks them out, and writes the audit row. The local
+                    // password compare this replaced did none of that, so a cashier
+                    // could sit on the shift-open screen guessing manager passwords.
+                    boolean approved = managerApprovalService.verify(
+                            request.getApproverUsername(), request.getApproverPassword(),
+                            ManagerApprovalService.Purpose.OPEN_SHIFT, cashierId);
+                    if (!approved) {
+                        throw new BusinessException("MANAGER_APPROVAL_REQUIRED: Manager credentials are required to join this drawer.");
+                    }
                 }
                 shift.setDrawerSession(existing);
                 shift.setOpeningAmount(existing.getOpeningFloat());
@@ -184,19 +192,6 @@ public class CashShiftService {
         }
     }
 
-    private void verifyManagerApproval(String username, String password) {
-        if (username == null || username.isBlank() || password == null || password.isBlank()) {
-            throw new BusinessException("MANAGER_APPROVAL_REQUIRED: Manager credentials are required to join this drawer.");
-        }
-        User approver = userRepository.findActiveByUsernameIgnoreCase(username)
-                .orElseThrow(() -> new BusinessException("Invalid manager credentials"));
-        if (!isManagerOrAdmin(approver)) {
-            throw new BusinessException("The approver must be a manager or administrator");
-        }
-        if (!passwordEncoder.matches(password, approver.getPassword())) {
-            throw new BusinessException("Invalid manager credentials");
-        }
-    }
 
     // ------------------------------------------------------------------
     // Reading

@@ -372,8 +372,12 @@ public class CashDrawerSessionService {
         if (type == DrawerMovementType.NO_SALE_OPEN && amount.compareTo(BigDecimal.ZERO) != 0) {
             throw new BusinessException("A no-sale open has no financial amount");
         }
-        if ((type == DrawerMovementType.PAY_OUT || type == DrawerMovementType.ADJUSTMENT)
+        if ((type == DrawerMovementType.PAY_OUT || type == DrawerMovementType.ADJUSTMENT
+                || type == DrawerMovementType.SAFE_DROP)
                 && (request.getReason() == null || request.getReason().isBlank())) {
+            // A safe drop lowers expected cash exactly like a payout, so it needs the
+            // same justification: without one, a shortage can be booked as cash sent
+            // to the safe, which nobody counts.
             throw new BusinessException("A reason is required for this drawer operation");
         }
 
@@ -516,24 +520,39 @@ public class CashDrawerSessionService {
         response.setExpectedCash(hideExpected ? null : expected);
 
         Map<DrawerMovementType, BigDecimal> summary = movementSummary(session.getId());
-        response.setCashSales(summary.getOrDefault(DrawerMovementType.CASH_SALE, BigDecimal.ZERO));
-        response.setCashRefunds(summary.getOrDefault(DrawerMovementType.CASH_REFUND, BigDecimal.ZERO));
-        response.setSafeDrops(summary.getOrDefault(DrawerMovementType.SAFE_DROP, BigDecimal.ZERO));
-        response.setPayIns(summary.getOrDefault(DrawerMovementType.PAY_IN, BigDecimal.ZERO));
-        response.setPayOuts(summary.getOrDefault(DrawerMovementType.PAY_OUT, BigDecimal.ZERO));
-        response.setAdjustments(summary.getOrDefault(DrawerMovementType.ADJUSTMENT, BigDecimal.ZERO));
+        if (hideExpected) {
+            // The blind count only works if the cashier cannot work out the expected
+            // figure. The per-type totals add straight back up to it (float + cash
+            // sales - refunds - payouts), so they are withheld until the count is in.
+            response.setCashSales(null);
+            response.setCashRefunds(null);
+            response.setSafeDrops(null);
+            response.setPayIns(null);
+            response.setPayOuts(null);
+            response.setAdjustments(null);
+            response.setMovementBreakdown(null);
+        } else {
+            response.setCashSales(summary.getOrDefault(DrawerMovementType.CASH_SALE, BigDecimal.ZERO));
+            response.setCashRefunds(summary.getOrDefault(DrawerMovementType.CASH_REFUND, BigDecimal.ZERO));
+            response.setSafeDrops(summary.getOrDefault(DrawerMovementType.SAFE_DROP, BigDecimal.ZERO));
+            response.setPayIns(summary.getOrDefault(DrawerMovementType.PAY_IN, BigDecimal.ZERO));
+            response.setPayOuts(summary.getOrDefault(DrawerMovementType.PAY_OUT, BigDecimal.ZERO));
+            response.setAdjustments(summary.getOrDefault(DrawerMovementType.ADJUSTMENT, BigDecimal.ZERO));
+            Map<String, BigDecimal> breakdown = new HashMap<>();
+            summary.forEach((type, amount) -> breakdown.put(type.name(), amount));
+            response.setMovementBreakdown(breakdown);
+        }
 
         List<CashDrawerMovement> movements =
                 cashDrawerMovementRepository.findByDrawerSessionIdOrderByOccurredAtAscIdAsc(session.getId());
-        response.setMovementCount(movements.size());
-        Map<String, BigDecimal> breakdown = new HashMap<>();
-        summary.forEach((type, amount) -> breakdown.put(type.name(), amount));
-        response.setMovementBreakdown(breakdown);
+        response.setMovementCount(hideExpected ? 0 : movements.size());
 
         if (includeMovements) {
-            response.setMovements(movements.stream()
-                    .map(this::toMovementResponse)
-                    .collect(Collectors.toList()));
+            // The individual amounts leak the same figure, so a hidden expectation
+            // means no movement rows either.
+            response.setMovements(hideExpected
+                    ? List.of()
+                    : movements.stream().map(this::toMovementResponse).collect(Collectors.toList()));
         }
         response.setContributingEmployees(buildEmployeeContributions(session.getId()));
         return response;
