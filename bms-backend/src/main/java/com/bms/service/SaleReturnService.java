@@ -265,19 +265,21 @@ public class SaleReturnService {
                 // Unsellable: no stock re-enters. The units already left stock at
                 // the original sale, so do not post a second ADJUSTMENT_OUT which
                 // would double-count the outflow in movement history and stats.
-                // Expense the units at costPriceAtSale through the operating-loss path.
-                ledgerPostingService.postOperatingLoss(new StockMovement() {{
-                    setProduct(product);
-                    setMovementType(StockMovement.MovementType.ADJUSTMENT_OUT);
-                    setQuantity(requestedQuantity);
-                    setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
-                    setReferenceId(sale.getId());
-                    setReasonCode("RETURN_WRITE_OFF");
-                    setValuationAmount(lineValuation.negate());
-                    setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
-                    setCreatedBy(returnedBy);
-                    setMovementDate(shopTimeService.now());
-                }});
+                // Persist a write-off movement so the loss is traceable and
+                // visible to both the movement-based report and the ledger path.
+                StockMovement loss = new StockMovement();
+                loss.setProduct(product);
+                loss.setMovementType(StockMovement.MovementType.ADJUSTMENT_OUT);
+                loss.setQuantity(requestedQuantity);
+                loss.setReferenceType(StockMovement.ReferenceType.STOCK_ADJUSTMENT);
+                loss.setReferenceId(sale.getId());
+                loss.setReasonCode("RETURN_WRITE_OFF");
+                loss.setValuationAmount(lineValuation.negate());
+                loss.setDescription("Return write-off (unsellable) from sale " + sale.getInvoiceNumber());
+                loss.setCreatedBy(returnedBy);
+                loss.setMovementDate(shopTimeService.now());
+                stockMovementRepository.save(loss);
+                ledgerPostingService.postOperatingLoss(loss);
             } else {
                 // RESTOCK -> sellable shop stock; QUARANTINE -> owned but not sellable.
                 // Both re-enter owned inventory as a receipt at costPriceAtSale, so the
@@ -303,6 +305,10 @@ public class SaleReturnService {
                 } else {
                     int oldStock = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
                     product.setStockQuantity(oldStock + requestedQuantity);
+                    // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+                    if (locationService != null) {
+                        locationService.setShopStock(product, oldStock + requestedQuantity);
+                    }
                     locationCode = "SHOP";
                 }
                 productRepository.save(product);

@@ -100,6 +100,9 @@ public class SaleService {
     private ShopTimeService shopTimeService;
 
     @Autowired
+    private LocationService locationService;
+
+    @Autowired
     private ManagerApprovalService managerApprovalService;
 
     @PersistenceContext
@@ -345,10 +348,19 @@ public class SaleService {
 
         // Validate every split-payment line before the sale row or any stock
         // movement is written. A cash line requires this shift's open drawer.
-        List<SalePaymentRequest> paymentLines = paymentValidationService.resolvePayments(
-                request.getPayments(), totalAmount, saleType);
-        paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
-        sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
+        // A zero-total sale (100% discount, zero tax) needs no payment — skip
+        // validation so resolvePayments' zero-amount fallback isn't rejected.
+        List<SalePaymentRequest> paymentLines = List.of();
+        if (totalAmount.signum() > 0) {
+            paymentLines = paymentValidationService.resolvePayments(
+                    request.getPayments(), totalAmount, saleType);
+            paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
+            sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
+        } else {
+            sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+        }
 
         if (saleType == Sale.SaleType.CREDIT) {
             // Credit-limit check BEFORE persisting anything.
@@ -494,6 +506,11 @@ public class SaleService {
             ledgerPostingService.postSaleProfit(sale, item);
 
             product.setStockQuantity(newStock);
+            // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+            // so transfers never see a false "stock drift detected".
+            if (locationService != null) {
+                locationService.setShopStock(product, newStock);
+            }
             productRepository.save(product);
 
             // Create stock movement record
@@ -731,6 +748,10 @@ public class SaleService {
                     null, "Sale (order conversion) " + savedSale.getInvoiceNumber(), sale.getSaleDate(), cashierId);
             ledgerPostingService.postSaleProfit(savedSale, item);
             product.setStockQuantity(newStock);
+            // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+            if (locationService != null) {
+                locationService.setShopStock(product, newStock);
+            }
             product.setReservedQuantity(reservedForOthers);
             productRepository.save(product);
 
@@ -807,7 +828,22 @@ public class SaleService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal cashAlreadyRefunded = safeSum(
                 saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
-        BigDecimal cashToReturn = cashPaid.add(arCashPaid).subtract(cashAlreadyRefunded);
+
+        // N4: net total refunds against total settled value first, then split the
+        // remainder into cash vs. store credit. Refunds are allocated against cash
+        // collected first, then against non-cash (AR) payments, so a prior cash
+        // refund on a card sale doesn't cause the customer to receive store credit
+        // for money already given back.
+        BigDecimal cashCollected = cashPaid.add(arCashPaid);
+        BigDecimal totalSettled = cashCollected.add(arNonCashPaid);
+        BigDecimal netRemaining = totalSettled.subtract(cashAlreadyRefunded).max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
+        BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
+                .max(BigDecimal.ZERO);
+        BigDecimal remainingCashOwed = cashCollected.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
+        BigDecimal remainingNonCashOwed = arNonCashPaid.subtract(refundsAgainstNonCash)
+                .max(BigDecimal.ZERO);
+        BigDecimal cashToReturn = remainingCashOwed;
 
         CashShift voidShift = sale.getEmployeeShift();
         CashDrawerSession originalSession = voidShift != null ? voidShift.getDrawerSession() : null;
@@ -915,6 +951,10 @@ public class SaleService {
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(quantityToRestore)),
                     null, "Stock restored from voided sale " + sale.getInvoiceNumber(), sale.getVoidedAt(), userId);
             product.setStockQuantity(product.getStockQuantity() + quantityToRestore);
+            // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+            if (locationService != null) {
+                locationService.setShopStock(product, product.getStockQuantity());
+            }
             productRepository.save(product);
 
             StockMovement movement = new StockMovement();
@@ -955,18 +995,17 @@ public class SaleService {
                     payment.setReversedAt(reversalAt);
                     payment.setReversalNote("Voided sale " + sale.getInvoiceNumber() + ": " + reason);
                     arPaymentRepository.save(payment);
-                    if (payment.getPaymentMethod() != PaymentMethod.CASH) {
-                        convertedNonCash = convertedNonCash.add(payment.getAmount() != null ? payment.getAmount() : BigDecimal.ZERO);
-                    }
                 }
-                if (creditCustomer != null && convertedNonCash.compareTo(BigDecimal.ZERO) > 0) {
+                if (creditCustomer != null && remainingNonCashOwed.compareTo(BigDecimal.ZERO) > 0) {
                     // N3: only the credit balance grows here. The paid part was
                     // already taken off currentBalance when the customer paid, and
                     // whatever is still unpaid on this invoice is reversed by
                     // reverseCreditBalance(sale) above — subtracting again would
-                    // cancel someone else's debt.
+                    // cancel someone else's debt. The amount is netted against
+                    // prior refunds so a card sale refunded partly in cash does not
+                    // mint store credit for money already returned.
                     creditCustomer.setCreditBalance(creditCustomer.getCreditBalance()
-                            .add(convertedNonCash).setScale(2, java.math.RoundingMode.HALF_UP));
+                            .add(remainingNonCashOwed).setScale(2, java.math.RoundingMode.HALF_UP));
                     customerRepository.save(creditCustomer);
                 }
             }
@@ -1168,8 +1207,12 @@ public class SaleService {
             // allocated to the lines, so the POS warns about the price the
             // customer really pays. See the allocation pass below.
 
+            // Compare against the effective (promo/contract) price, not the base
+            // shelf price. The POS caches the effective unit price after the first
+            // verify, so comparing to base shelf price would falsely flag every
+            // re-verify on a promoted/price-list item as a price change.
             // BigDecimal: never use .equals() here, scale differs (e.g. 2.50 vs 2.5) — use compareTo
-            boolean priceChanged = product.getUnitPrice().compareTo(itemRequest.getExpectedUnitPrice()) != 0;
+            boolean priceChanged = quote.getUnitPrice().compareTo(itemRequest.getExpectedUnitPrice()) != 0;
             boolean insufficientStock = product.getAvailableQuantity() < itemRequest.getQuantity();
             result.setPriceChanged(priceChanged);
             result.setInsufficientStock(insufficientStock);
@@ -1177,7 +1220,7 @@ public class SaleService {
             if (priceChanged) {
                 anyChanged = true;
                 messages.add(String.format("%s price changed from %s to %s",
-                        product.getName(), itemRequest.getExpectedUnitPrice(), product.getUnitPrice()));
+                        product.getName(), itemRequest.getExpectedUnitPrice(), quote.getUnitPrice()));
             }
             if (insufficientStock) {
                 anyChanged = true;

@@ -565,6 +565,10 @@ public class PurchaseService {
         if (sellable > 0) {
             if (destination.getType() == Location.LocationType.SHOP) {
                 product.setStockQuantity(oldStock + sellable);
+                // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+                if (locationService != null) {
+                    locationService.setShopStock(product, oldStock + sellable);
+                }
             } else {
                 locationService.addStock(product, destination, sellable);
             }
@@ -1093,6 +1097,21 @@ public class PurchaseService {
         purchase.setDeletedAt(shopTimeService.now());
         purchase.setIsActive(false);
         purchaseRepository.save(purchase);
+
+        // Reverse the PURCHASE_VARIANCE expense created when this PO was closed,
+        // so the P&L doesn't keep a stale expense for a deleted invoice.
+        if (purchase.getVarianceAmount() != null && purchase.getVarianceAmount().signum() > 0) {
+            for (Expense varianceExpense : expenseRepository.findFiltered(
+                    Expense.ExpenseCategory.PURCHASE_VARIANCE, null, null)) {
+                if (varianceExpense.getDescription() != null
+                        && varianceExpense.getDescription().contains(purchase.getPurchaseNumber())) {
+                    ledgerPostingService.reverseExpense(varianceExpense,
+                            varianceExpense.getExpenseDate().atStartOfDay());
+                    varianceExpense.setDeletedAt(shopTimeService.now());
+                    expenseRepository.save(varianceExpense);
+                }
+            }
+        }
 
         auditLogService.logAction(userId, "PURCHASE_DELETE",
                 "Purchase deleted: " + purchase.getPurchaseNumber(),

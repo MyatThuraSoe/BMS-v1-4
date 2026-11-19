@@ -63,6 +63,9 @@ public class StockCountService {
     @org.springframework.beans.factory.annotation.Autowired
     private PeriodGuard periodGuard;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    private LocationService locationService;
+
     public StockCountService(CountSheetRepository countSheetRepository,
                              CountSheetItemRepository countSheetItemRepository,
                              ProductRepository productRepository,
@@ -538,7 +541,16 @@ public class StockCountService {
                 }
             }
 
-            product.setStockQuantity(live + variance);
+            int newQty = live + variance;
+            if (newQty < 0) {
+                throw new BusinessException("Count approval would drive stock negative for "
+                        + product.getName() + " (live " + live + ", variance " + variance + ")");
+            }
+            product.setStockQuantity(newQty);
+            // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+            if (locationService != null) {
+                locationService.setShopStock(product, newQty);
+            }
             product.setLastCountDate(today);
             productRepository.save(product);
             if (product.getStockQuantity() < product.getReservedQuantity()) {
@@ -635,8 +647,18 @@ public class StockCountService {
             CountSheetItem item = new CountSheetItem();
             item.setCountSheet(sheet);
             item.setProduct(product);
+            // Snapshot the system quantity at count time (what the client saw when
+            // counting), not live stock at sync time. Using live stock here would
+            // re-introduce the "resurrected stock" bug: units sold between the
+            // physical count and the sync would be counted as a variance and added
+            // back on approval.
+            int countTimeSystemQty = entry.getSystemQuantity() != null ? entry.getSystemQuantity() : 0;
+            if (countTimeSystemQty < 0) {
+                throw new BusinessException("System quantity cannot be negative for product "
+                        + product.getName());
+            }
             item.setClientSystemQuantity(entry.getSystemQuantity());
-            item.setSystemQuantity(product.getStockQuantity() != null ? product.getStockQuantity() : 0);
+            item.setSystemQuantity(countTimeSystemQty);
             applyCountEntry(item, entry.getCountedQuantity(),
                     entry.getReasonCode(), entry.getNote());
             sheet.getItems().add(item);

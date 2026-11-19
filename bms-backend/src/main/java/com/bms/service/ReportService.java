@@ -143,7 +143,7 @@ public class ReportService {
             itemSales.add(item);
         }
         itemSales.sort(Comparator.comparing((Map<String, Object> r) ->
-                ((Number) r.get("totalPrice")).longValue()).reversed());
+                toBigDecimal(r.get("totalPrice"))).reversed());
 
         Long transactions = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
@@ -676,7 +676,16 @@ public class ReportService {
 
         BigDecimal totalExpenses;
         if (ledgerReadService.isActive()) {
-            totalExpenses = ledgerReadService.totals(startDateTime, endDateTime)[2];
+            // Same definition as the current period: operating expenses plus
+            // inventory (write-off) losses. INVENTORY_GAIN rows are excluded so
+            // the total equals the sum of its category lines and the two periods
+            // are comparable.
+            Map<String, BigDecimal> byCategory = ledgerReadService.expensesByCategory(startDateTime, endDateTime, false);
+            totalExpenses = byCategory.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+            Map<String, BigDecimal> inventoryLosses = ledgerReadService.expensesByCategory(startDateTime, endDateTime, true);
+            for (BigDecimal loss : inventoryLosses.values()) {
+                totalExpenses = totalExpenses.add(loss);
+            }
         } else {
             totalExpenses = BigDecimal.ZERO;
             for (Expense expense : expenseRepository.findFiltered(null, startDate, endDate)) {
