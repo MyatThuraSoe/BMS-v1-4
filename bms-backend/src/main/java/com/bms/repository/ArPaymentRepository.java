@@ -22,10 +22,14 @@ public interface ArPaymentRepository extends JpaRepository<ArPayment, Long> {
 
     // Collections dated in the half-open period [startDate, endDate) for the GL
     // journal (P4.5). The linked drawer PAY_IN is the duplicate cash trail.
+    // Reversed collections are excluded: voiding a collected sale pays the cash
+    // back over the counter, so journaling the original debit would leave GL cash
+    // above the drawer for good.
     @EntityGraph(attributePaths = {"invoice", "recordedBy"})
     @Query("""
         SELECT p FROM ArPayment p
         WHERE p.paymentDate >= :startDate AND p.paymentDate < :endDate
+          AND p.reversedAt IS NULL
         ORDER BY p.paymentDate ASC, p.id ASC
         """)
     List<ArPayment> findForJournal(@Param("startDate") LocalDateTime startDate,

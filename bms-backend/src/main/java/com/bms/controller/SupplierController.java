@@ -65,16 +65,18 @@ public class SupplierController {
 
     @PostMapping
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-    public ResponseEntity<ApiResponse<SupplierResponse>> createSupplier(@Valid @RequestBody SupplierCreateRequest request) {
-        Supplier supplier = supplierService.createSupplier(request);
+    public ResponseEntity<ApiResponse<SupplierResponse>> createSupplier(@Valid @RequestBody SupplierCreateRequest request,
+                                                                        @AuthenticationPrincipal User actor) {
+        Supplier supplier = supplierService.createSupplier(request, actor != null ? actor.getId() : null);
         SupplierResponse response = convertToResponse(supplier);
         return ResponseEntity.status(HttpStatus.CREATED).body(new ApiResponse<>(true, "Supplier created successfully", response));
     }
 
     @PutMapping("/{id}")
     @PreAuthorize("hasRole('ADMIN') or hasRole('MANAGER')")
-    public ResponseEntity<ApiResponse<SupplierResponse>> updateSupplier(@PathVariable Long id, @Valid @RequestBody SupplierCreateRequest request) {
-        Supplier supplier = supplierService.updateSupplier(id, request);
+    public ResponseEntity<ApiResponse<SupplierResponse>> updateSupplier(@PathVariable Long id, @Valid @RequestBody SupplierCreateRequest request,
+                                                                        @AuthenticationPrincipal User actor) {
+        Supplier supplier = supplierService.updateSupplier(id, request, actor != null ? actor.getId() : null);
         SupplierResponse response = convertToResponse(supplier);
         return ResponseEntity.ok(new ApiResponse<>(true, "Supplier updated successfully", response));
     }

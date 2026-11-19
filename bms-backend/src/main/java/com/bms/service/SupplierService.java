@@ -52,7 +52,7 @@ public class SupplierService {
         return convertToResponse(supplier);
     }
 
-    public Supplier createSupplier(SupplierCreateRequest request) {
+    public Supplier createSupplier(SupplierCreateRequest request, Long userId) {
         if (supplierRepository.existsByName(request.getName())) {
             throw new BusinessException("Supplier with name '" + request.getName() + "' already exists");
         }
@@ -79,14 +79,14 @@ public class SupplierService {
 
         Supplier savedSupplier = supplierRepository.save(supplier);
 
-        auditLogService.logAction(null, "SUPPLIER_CREATE", 
+        auditLogService.logAction(userId, "SUPPLIER_CREATE", 
             "Supplier created: " + savedSupplier.getName(), 
             "Supplier", savedSupplier.getId(), null, savedSupplier.toString());
 
         return savedSupplier;
     }
 
-    public Supplier updateSupplier(Long id, SupplierCreateRequest request) {
+    public Supplier updateSupplier(Long id, SupplierCreateRequest request, Long userId) {
         Supplier supplier = supplierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + id));
         if (!supplier.getIsActive() || supplier.getDeletedAt() != null) {
@@ -124,7 +124,7 @@ public class SupplierService {
 
         Supplier updatedSupplier = supplierRepository.save(supplier);
 
-        auditLogService.logAction(null, "SUPPLIER_UPDATE", 
+        auditLogService.logAction(userId, "SUPPLIER_UPDATE", 
             "Supplier updated: " + updatedSupplier.getName(), 
             "Supplier", updatedSupplier.getId(), oldValues, updatedSupplier.toString());
 

@@ -1,0 +1,210 @@
+
+
+# Master Product Requirements Document (PRD): LumiPOS Phase 2
+**Project:** LumiPOS 
+**Target Stack:** Spring Boot (Backend), React (Web Dashboard), Electron (Desktop POS), Android/Kotlin + Room DB (Mobile POS)
+**Objective:** Evolve LumiPOS from a single-location financial POS into a comprehensive, multi-location Retail Operations Platform featuring advanced costing, dynamic promotions, automated cycle counting, and realistic floor management.
+
+---
+
+## Module 1: Advanced Inventory Valuation & Purchasing
+*Builds upon the existing `CostCalculationUtils` and `PurchaseService`.*
+
+### 1.1 Landed Cost Engine
+**Business Problem:** Purchase invoices often include freight, customs duties, or insurance. If ignored, the Weighted Average Cost (WAC) is artificially low, overstating profit.
+**Requirements:**
+*   Allow users to add "Landed Cost" line items to a Purchase Order (PO) before receiving.
+*   Supported Allocation Methods: 
+    *   By Value (`%` of item total cost)
+    *   By Quantity (Flat fee per unit)
+    *   By Weight/Volume (If metadata exists)
+*   **Backend Logic:** 
+    *   The system must calculate a `landedUnitCost` for each `PurchaseItem`.
+    *   Formula: `landedUnitCost = originalUnitCost + (allocatedLandedCost / itemQuantity)`
+    *   The WAC update upon stock receipt must use `landedUnitCost`, not the supplier's base unit cost.
+*   **Data Model Addition:** 
+    *   `PurchaseExpense` Entity: `id`, `purchase_id`, `expenseType` (FREIGHT, CUSTOMS, HANDLING), `amount`, `allocationMethod`.
+    *   `PurchaseItem` Entity: Add `landedUnitCost` (BigDecimal).
+
+### 1.2 Inbound Logistics & Receiving
+**Business Problem:** Suppliers rarely deliver exactly what was ordered.
+**Requirements:**
+*   **Blind Receiving Mode:** When receiving a PO on the Android/Electron app, hide the "Expected Quantity". Force the staff to physically count and input the "Received Quantity".
+*   **Short-Shipment Handling:** If `Received Qty < Ordered Qty`, prompt the user:
+    *   *Option A:* Keep PO Open (Await remaining stock).
+    *   *Option B:* Cancel Remainder (Supplier out of stock).
+*   **Over-Shipment Handling:** If `Received Qty > Ordered Qty`, block receiving unless a Manager override PIN is entered.
+*   **Financial Logic:** WAC and Stock must only update based on the *Received Quantity* and the *Actual Invoice Amount*, not the original PO estimate.
+
+### 1.3 Quarantine & Damaged Goods Workflow
+**Business Problem:** Damaged deliveries cannot be sold, but cannot be deleted because supplier credit must be claimed.
+**Requirements:**
+*   Introduce a virtual `Location` entity. Default locations: `SHOP_FLOOR`, `BACKROOM`, `QUARANTINE`.
+*   If goods arrive damaged, they are received into `QUARANTINE`.
+*   Items in `QUARANTINE` have `isAvailableForSale = false`.
+*   **Return to Vendor (RTV):** Create an RTV document to deduct Quarantine items from the Supplier's account payable balance.
+
+---
+
+## Module 2: Dynamic Pricing & Promotions Engine
+*Builds upon `SaleDiscountUtils`.*
+
+### 2.1 Complex Promotion Rules
+**Business Problem:** Basket-level discounts are insufficient for modern retail marketing.
+**Requirements:**
+Create a `PromotionEngine` service evaluated at checkout before standard discounts are applied.
+*   **Rule 1: BOGO (Buy X Get Y):** 
+    *   *Logic:* If Cart contains $\ge$ `X` of Product A, apply `Z%` discount to `Y` of Product B.
+*   **Rule 2: Tiered Volume Pricing:**
+    *   *Logic:* If quantity of Product A $\ge$ 10, unit price drops to $8.50. If $\ge$ 50, unit price drops to $7.00.
+*   **Rule 3: Time-Bound Flash Sales:**
+    *   *Logic:* Category X receives 20% discount only between `14:00` and `17:00` local store time.
+*   **Conflict Resolution:** If multiple promotions apply to the same item, apply the one that yields the **lowest customer price** (standard retail best practice). Do not stack unless explicitly configured.
+
+### 2.2 Customer Tier Pricing
+*   Link `Customer` entity to a `PriceList` entity (e.g., RETAIL, WHOLESALE, VIP).
+*   At POS, if a customer is scanned/identified, the system overrides `Product.sellingPrice` with the corresponding price from the `PriceList`.
+
+---
+
+## Module 3: Realistic Inventory Management & Stock Checks
+*The core of Phase 2 daily operations.*
+
+### 3.1 ABC Cycle Counting Engine
+**Business Problem:** Closing the store for a full inventory count loses revenue.
+**Requirements:**
+*   Implement ABC Classification logic in the backend:
+    *   **Class A (High Value/High Velocity):** Count every 14 days.
+    *   **Class B (Medium):** Count every 60 days.
+    *   **Class C (Low Value/Slow):** Count every 365 days.
+*   **Daily Count Sheet Generation:** A scheduled Spring Boot job (`@Scheduled`) runs at 00:00 local time. It queries products due for counting based on their class and generates a `CountSheet` for the store.
+
+### 3.2 Blind Stock Count UX & Variance Workflow
+**Requirements:**
+*   **Blind Count UI:** The Android app displays the Product Name, Barcode, and Bin Location. It **must not** display `currentSystemStock`.
+*   **Input:** Staff physically counts and inputs `countedQuantity`.
+*   **Variance Calculation (Backend):** `variance = countedQuantity - systemQuantity`.
+*   **Approval Workflow:**
+    *   If `|variance| <= 2%` OR `|varianceValue| <= $10`: Auto-approve. Generate `StockMovement` of type `ADJUSTMENT`.
+    *   If `|variance| > 2%` OR `|varianceValue| > $10`: Flag as `PENDING_REVIEW`. Create a "Second Count" task for a Manager.
+*   **Data Model Addition:**
+    *   `CountSheet`: `id`, `scheduledDate`, `status` (PENDING, IN_PROGRESS, COMPLETED).
+    *   `CountSheetItem`: `id`, `sheet_id`, `product_id`, `systemQty` (hidden from UI), `countedQty`, `variance`, `status`.
+
+### 3.3 Inventory Adjustments & Shrinkage Reason Codes
+**Business Problem:** Simply subtracting stock hides *why* inventory is disappearing.
+**Requirements:**
+*   When manually adjusting stock, force the user to select a `ReasonCode` Enum.
+*   **Reason Codes & Financial Mapping:**
+    *   `SPOILAGE_EXPIRY`: Maps to COGS/Spoilage Expense.
+    *   `THEFT_SHRINKAGE`: Maps to Shrinkage Expense.
+    *   `DAMAGED_IN_STORE`: Maps to Damages Expense.
+    *   `INTERNAL_CONSUMPTION`: Maps to Staff Expense.
+    *   `COUNT_CORRECTION`: Maps to Inventory Adjustment (Neutral).
+*   **WAC Rule for Write-Offs:** When writing off stock (e.g., 5 stolen units), subtract the quantity from `Product.stockQuantity`. **Do NOT change the `costPrice` (WAC) of the remaining stock.** Record the financial loss as `varianceQty * currentWAC` in the `StockMovement` valuation field.
+
+---
+
+## Module 4: Multi-Location & Floor Operations
+*Builds upon existing stock movement architecture.*
+
+### 4.1 Bin Locations & Put-Away Routing
+**Requirements:**
+*   Add `binLocation` (String) to `Product` entity (e.g., "A4-B2").
+*   **Put-Away Feature:** When a PO is received, the Android app generates a "Put-Away List". It tells staff exactly which `binLocation` the received items belong to.
+*   **Shelf Label Printing:** Generate printable PDF barcodes for `binLocation`. Scanning a bin barcode on the Android app lists all products assigned to that shelf.
+
+### 4.2 Misplaced Item Rescue (Scan to Put-Away)
+**Business Problem:** Staff finds a frozen item in the dry-goods aisle.
+**Requirements:**
+*   Create an "Ad-Hoc Scan" mode on the POS.
+*   Staff scans the misplaced item. App displays: *"This belongs in Freezer 2. Please return."*
+*   If the item was marked as `0` stock (due to being lost/misplaced), scanning and confirming it is back in its bin can instantly trigger a `+1` stock adjustment with reason `COUNT_CORRECTION`, bypassing a full audit.
+
+### 4.3 Multi-Location Stock Transfers
+**Requirements:**
+*   Create `StockTransfer` entity: `id`, `fromLocation`, `toLocation`, `status` (DRAFT, IN_TRANSIT, RECEIVED).
+*   **Accounting Logic:** 
+    *   When status changes to `IN_TRANSIT`: Deduct stock from `fromLocation`. Add stock to a virtual `TRANSIT` location.
+    *   When status changes to `RECEIVED`: Deduct from `TRANSIT`. Add to `toLocation`.
+*   **Valuation:** Transfers occur at the **current WAC** of the sending location. No profit is recognized on internal transfers.
+
+---
+
+## Module 5: Financial & Accounting Integrations
+
+### 5.1 General Ledger (GL) Mapping
+**Requirements:**
+*   Create a `GlAccount` entity (e.g., 4000-Sales, 5000-COGS, 1200-Inventory Asset, 6000-Shrinkage).
+*   Map `ProductCategory` and `ReasonCode` to specific `GlAccount`s.
+*   **Export Feature:** Generate a CSV/JSON Journal Entry export for a given date range.
+    *   *Debit:* Inventory Asset (for Purchases)
+    *   *Credit:* Accounts Payable (for Purchases)
+    *   *Debit:* COGS (for Sales and Write-offs)
+    *   *Credit:* Inventory Asset (for Sales and Write-offs)
+
+### 5.2 Multi-Currency Purchasing
+**Requirements:**
+*   Allow `Purchase` to have a `currencyCode` (e.g., USD) and an `exchangeRate` against the store's base currency (e.g., MMK).
+*   **WAC Logic:** All WAC calculations must be stored in the **Base Currency**.
+*   Formula: `baseUnitCost = foreignUnitCost * exchangeRateAtTimeOfPurchase`.
+*   Store the historical `exchangeRate` on the `PurchaseItem` to ensure future reversals or reports do not fluctuate with current forex rates.
+
+---
+
+## Module 6: Technical & Architectural Requirements
+
+### 6.1 Concurrency & Scaling
+*   **Optimistic Locking:** Replace `findByIdForUpdate` (Pessimistic) with Hibernate `@Version` on `Product` and `Sale` entities to prevent database deadlocks during high-traffic POS checkouts.
+*   **Conflict Handling:** Catch `ObjectOptimisticLockingFailureException` in the Spring Boot controller. Return HTTP 409 Conflict to the POS client with the message: *"Stock was updated by another terminal. Please refresh cart."*
+
+### 6.2 Caching Strategy
+*   Implement **Redis** caching for `Product` master data and `PriceList` rules.
+*   **Cache Invalidation:** When a Purchase is received or a Stock Adjustment is made, the backend must publish an event to clear/update the Redis cache for that specific `productId`.
+
+### 6.3 Android Offline-First Sync
+*   **Room DB:** Store `CountSheet` and `StockTransfer` data locally.
+*   **Sync Logic:** If a user performs a stock count in a walk-in freezer (offline), save the `CountSheetItem` to Room DB with `syncStatus = PENDING`. When network is restored, sync to Spring Boot via REST API.
+*   **Idempotency:** The backend `/api/sync/count-sheet` endpoint must be idempotent. If the Android app retries the sync due to network timeout, the backend must not double-adjust the stock. Use a unique `clientTransactionId` for deduplication.
+
+---
+
+## Data Model Additions Summary (Schema Changes)
+
+| Entity | New Fields / Relationships | Purpose |
+| :--- | :--- | :--- |
+| `Product` | `binLocation`, `abcClass`, `lastCountDate`, `@Version` | Floor ops, cycle counting, concurrency |
+| `PurchaseItem` | `landedUnitCost`, `receivedQty`, `exchangeRate` | Landed costs, multi-currency, receiving |
+| `PurchaseExpense` | `id`, `purchase_id`, `type`, `amount`, `method` | Landed cost allocation |
+| `Location` | `id`, `name`, `type` (SHOP, BACKROOM, QUARANTINE, TRANSIT) | Multi-location architecture |
+| `StockMovement` | `reasonCode`, `location_id`, `valuationAmount` | Shrinkage tracking, location tracking |
+| `CountSheet` | `id`, `scheduledDate`, `status`, `location_id` | Cycle counting engine |
+| `CountSheetItem` | `id`, `sheet_id`, `product_id`, `countedQty`, `variance` | Blind count data |
+| `StockTransfer` | `id`, `fromLocation`, `toLocation`, `status` | Inter-location movement |
+| `Promotion` | `id`, `ruleType`, `conditionJson`, `actionJson` | Complex promotional rules |
+| `GlAccount` | `id`, `code`, `name`, `type` | Accounting integration |
+
+---
+
+## Acceptance Criteria & Definition of Done
+
+### Inventory & Receiving
+1.  **Landed Cost Test:** Create PO for 100 units at $10. Add $200 Freight (By Quantity). System must calculate `landedUnitCost` as $12.00. Receiving stock must update WAC using $12.00.
+2.  **Short-Shipment Test:** PO for 100. Receive 90. Select "Keep Open". System updates stock by 90. Remaining 10 stays on PO. WAC is calculated based on the 90 units and their proportional landed cost.
+3.  **Quarantine Test:** Receive 5 damaged units into Quarantine. POS search must show these units as "Out of Stock / Unavailable".
+
+### Stock Checks
+1.  **Blind Count Test:** Generate Count Sheet. Android API response must NOT contain `systemQty`. Submit count. Backend calculates variance.
+2.  **Variance Approval Test:** Submit a variance of 50 units on a $100 item. System must set status to `PENDING_REVIEW` and block the stock adjustment until Manager approves.
+3.  **Write-Off Accounting Test:** Adjust stock -5 due to `THEFT`. System stock decreases by 5. Product WAC remains unchanged. `StockMovement` records a negative valuation of `5 * currentWAC`.
+
+### Promotions & Pricing
+1.  **BOGO Test:** Add 2x Item A ($10) and 1x Item B ($5). Apply BOGO rule. Cart total must be $20. Profit report must show Revenue $20, COGS for 3 items.
+2.  **Concurrency Test:** Simulate 10 simultaneous checkout requests for the last 1 unit of stock. Exactly 1 succeeds. 9 receive HTTP 409. Stock never drops below 0.
+
+### Multi-Location
+1.  **Transfer Test:** Transfer 10 units from Store A to Store B. Store A stock decreases. Store B stock increases. Total company inventory value remains identical.
+2.  **Put-Away Test:** Receive PO. App displays Bin Location for each item. Scanning Bin Location lists expected products.
+
+---
+*End of Document.*

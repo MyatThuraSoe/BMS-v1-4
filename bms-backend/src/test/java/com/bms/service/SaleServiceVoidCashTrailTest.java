@@ -199,7 +199,7 @@ class SaleServiceVoidCashTrailTest {
         lenient().when(userRepository.findById(2L)).thenReturn(Optional.of(manager));
         lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L))
                 .thenReturn(List.of(cashPayment));
-        lenient().when(saleReturnRepository.sumCashRefundedBySaleId(100L)).thenReturn(null);
+        lenient().when(saleReturnRepository.sumRefundedAmountBySaleId(100L)).thenReturn(null);
         lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(100L)).thenReturn(List.of());
         lenient().when(saleItemRepository.findByIdForUpdate(1000L)).thenReturn(Optional.of(saleItem));
         lenient().when(productRepository.findByIdForUpdate(10L)).thenReturn(Optional.of(product));
@@ -273,6 +273,24 @@ class SaleServiceVoidCashTrailTest {
     }
 
     @Test
+    void voidStillReversesProfitWhenTheProductSoldAgainLater() {
+        sale.setSaleDate(LocalDateTime.now().minusHours(2));
+        sale.getEmployeeShift().setDrawerSession(todaySession);
+        saleItem.setCostPriceAtSale(new BigDecimal("60.00"));
+        // The same product sold again after this ticket, so those units cannot go
+        // back on the shelf.
+        lenient().when(saleRepository.productSoldAfter(eq(10L), any())).thenReturn(true);
+
+        saleService.voidSale(100L, 2L, "Customer changed their mind");
+
+        // The financial reversal is unconditional: a voided sale must never keep
+        // its revenue or its COGS, whatever sold afterwards.
+        verify(ledgerPostingService).postVoidProfit(sale, saleItem, 1, sale.getVoidedAt());
+        // Only the stock side is skipped.
+        assertEquals(5, product.getStockQuantity());
+    }
+
+    @Test
     void lateVoidPostsPaidOutOnCurrentDrawerAndLeavesClosedDrawerUntouched() {
         saleService.voidSale(100L, 1L, "Duplicate receipt");
 
@@ -302,7 +320,7 @@ class SaleServiceVoidCashTrailTest {
 
     @Test
     void lateVoidSubtractsPriorCashRefunds() {
-        lenient().when(saleReturnRepository.sumCashRefundedBySaleId(100L))
+        lenient().when(saleReturnRepository.sumRefundedAmountBySaleId(100L))
                 .thenReturn(new BigDecimal("30.00"));
 
         saleService.voidSale(100L, 1L, "Duplicate receipt");

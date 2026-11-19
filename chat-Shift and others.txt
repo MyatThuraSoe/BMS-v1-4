@@ -1,0 +1,1328 @@
+
+# Product Requirements Document  
+## Cash Shift Modification: Cash Drawer Shift vs Non-Cash Employee Shift
+
+**Project:** LumiPOS / BMS-v1-4  
+**Scope:** Offline/LAN shop POS operations  
+**Feature Area:** Cash Shift, Employee Shift, Payment Handling, Drawer Reconciliation, Reports, POS UX  
+**Important Exclusion:** Do **not** implement money rounding / cash rounding. This feature is not required.
+
+---
+
+# 1. Problem Statement
+
+Currently, the system treats a cashier shift mainly as a **cash drawer shift**.
+
+That creates a real-world problem:
+
+- Some employees only sell using mobile wallet, bank transfer, card, or credit.
+- They do not handle cash.
+- They do not need access to the cash drawer.
+- The shop may have only **one physical cash drawer**.
+- Forcing every employee to open a cash shift creates fake drawer reconciliation, confusing variance reports, and unnecessary friction.
+
+Example:
+
+| Employee | Activity | Needs Cash Drawer? |
+|---|---|---|
+| Aung | Main cashier, accepts cash | Yes |
+| Thida | Sells using KBZPay / WavePay only | No |
+| Kyaw | Floor sales using tablet, wallet only | No |
+
+The system must allow **multiple employees to sell at the same time**, while only the responsible cashier/manage user controls the physical cash drawer.
+
+---
+
+# 2. Core Requirement
+
+Separate the concept of:
+
+## A. Employee Work Shift
+
+Tracks what an employee did during their working period.
+
+Examples:
+
+- Sales made by Thida
+- Wallet payments accepted by Thida
+- Refunds processed by Thida
+- Discounts given by Thida
+- Voids performed by Thida
+
+An employee work shift may or may not involve cash.
+
+## B. Cash Drawer Session
+
+Tracks the physical cash drawer.
+
+Examples:
+
+- Opening float
+- Cash sales
+- Cash refunds
+- Safe drops
+- Pay-ins / pay-outs
+- Closing cash count
+- Cash over/short variance
+
+Only employees who are authorized to handle cash should be attached to a cash drawer session.
+
+---
+
+# 3. Main Business Rules
+
+## 3.1 All sales must belong to an employee shift
+
+Every completed sale must record:
+
+```text
+employeeShiftId
+userId
+saleDate
+paymentMethods
+```
+
+This gives employee accountability even when no cash is involved.
+
+---
+
+## 3.2 Only cash payments require a cash drawer session
+
+A sale can be completed without a cash drawer session **only if all payment methods are non-cash**.
+
+Allowed without drawer:
+
+- Mobile wallet
+- Card
+- Bank transfer
+- Credit sale
+- Store credit
+- Loyalty redemption
+- Other non-cash payment methods
+
+Not allowed without drawer:
+
+- Cash payment
+- Cash refund
+- Cash payout
+- Cash tendering
+- Any transaction that physically touches the drawer
+
+---
+
+## 3.3 Only one active cash drawer session per physical drawer
+
+If the shop has one drawer, only one drawer session can be open at a time.
+
+Example:
+
+```text
+Main Drawer
+Status: OPEN
+Opened by: Aung
+Opening float: 100,000 MMK
+```
+
+Another employee cannot open a second independent cash drawer session for the same drawer.
+
+They must either:
+
+1. Open a **Non-Cash Shift**, or
+2. Join the existing drawer session if shared drawer mode is enabled and permission is granted.
+
+---
+
+## 3.4 Non-cash employees must not see cash reconciliation
+
+A wallet-only employee should not be asked:
+
+- Opening float
+- Expected cash
+- Actual cash counted
+- Drawer variance
+- Safe drop
+- Cash drawer close
+
+Their close-shift screen should only show:
+
+- Total sales
+- Payment method summary
+- Refunds
+- Discounts
+- Voids
+- Number of transactions
+
+---
+
+# 4. Shift Types
+
+Add the following shift types:
+
+```java
+public enum ShiftType {
+    CASH_DRAWER,
+    NON_CASH,
+    SUPERVISOR
+}
+```
+
+## 4.1 `CASH_DRAWER`
+
+For employees who handle cash.
+
+Can:
+
+- Accept cash payments
+- Process cash refunds if permitted
+- Perform drawer movements
+- Be attached to an active drawer session
+
+Must:
+
+- Be linked to a drawer session
+- Follow cash drawer reconciliation rules
+
+---
+
+## 4.2 `NON_CASH`
+
+For employees who do not touch cash.
+
+Can:
+
+- Sell using mobile wallet
+- Sell using card
+- Sell using bank transfer
+- Create credit sales if allowed
+- Process non-cash refunds if allowed
+
+Cannot:
+
+- Accept cash
+- Give cash refund
+- Open cash drawer
+- Perform safe drop
+- Close cash drawer
+- See expected cash amount
+
+Does not require:
+
+- Opening float
+- Cash count
+- Cash variance
+
+---
+
+## 4.3 `SUPERVISOR`
+
+For manager/owner override.
+
+Can:
+
+- Override blocked operations
+- Approve cash refund
+- Approve manual discount
+- Join or close drawer sessions
+- Force-close shift with reason
+
+Important: Supervisor override must still be audited.
+
+A supervisor must not be able to secretly accept cash outside drawer reconciliation.  
+If a supervisor accepts cash, the transaction must still be linked to a valid drawer session.
+
+---
+
+# 5. Recommended Data Model
+
+## 5.1 Reuse Existing `CashShift` as Employee Shift
+
+To avoid breaking the existing system too much, keep the existing `CashShift` table/entity but expand its meaning.
+
+It becomes the employee work shift.
+
+Add fields:
+
+```java
+@Enumerated(EnumType.STRING)
+@Column(name = "shift_type", nullable = false)
+private ShiftType shiftType = ShiftType.CASH_DRAWER;
+
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "drawer_session_id")
+private CashDrawerSession drawerSession;
+```
+
+Existing fields such as:
+
+- openedBy
+- closedBy
+- openedAt
+- closedAt
+- status
+- openingFloat
+- expectedCash
+- countedCash
+- variance
+
+can remain for backward compatibility, but for new logic:
+
+- Drawer cash values should come from `CashDrawerSession`
+- Non-cash shifts should use zero/null cash values
+- Employee performance should come from sales linked to the shift
+
+---
+
+## 5.2 New Entity: `CashDrawer`
+
+Represents a physical drawer.
+
+```java
+public class CashDrawer {
+    private Long id;
+
+    private String name; 
+    // Example: "Main Drawer"
+
+    private String code;
+    // Example: "DRAWER-001"
+
+    private Boolean isActive;
+
+    private LocalDateTime createdAt;
+    private LocalDateTime deletedAt;
+}
+```
+
+For the first version, seed one default drawer:
+
+```text
+id: 1
+name: Main Drawer
+code: MAIN
+```
+
+---
+
+## 5.3 New Entity: `CashDrawerSession`
+
+Represents one open/close cycle of the physical drawer.
+
+```java
+public class CashDrawerSession {
+    private Long id;
+
+    private CashDrawer drawer;
+
+    private User openedBy;
+    private User closedBy;
+
+    private LocalDateTime openedAt;
+    private LocalDateTime closedAt;
+
+    @Enumerated(EnumType.STRING)
+    private DrawerSessionStatus status;
+
+    private BigDecimal openingFloat;
+
+    private BigDecimal expectedCash;
+
+    private BigDecimal countedCash;
+
+    private BigDecimal varianceAmount;
+
+    private String closingNote;
+
+    private Boolean blindClose;
+}
+```
+
+Enum:
+
+```java
+public enum DrawerSessionStatus {
+    OPEN,
+    CLOSED,
+    CANCELLED
+}
+```
+
+---
+
+## 5.4 New Entity: `CashDrawerMovement`
+
+Tracks every financial or security event related to the drawer.
+
+```java
+public class CashDrawerMovement {
+    private Long id;
+
+    private CashDrawerSession drawerSession;
+
+    @Enumerated(EnumType.STRING)
+    private DrawerMovementType movementType;
+
+    private BigDecimal amount;
+
+    private String referenceType;
+    private Long referenceId;
+
+    private User performedBy;
+
+    private CashShift employeeShift;
+
+    private String reason;
+
+    private LocalDateTime occurredAt;
+}
+```
+
+Enum:
+
+```java
+public enum DrawerMovementType {
+    OPENING_FLOAT,
+    CASH_SALE,
+    CASH_REFUND,
+    SAFE_DROP,
+    PAY_IN,
+    PAY_OUT,
+    NO_SALE_OPEN,
+    ADJUSTMENT
+}
+```
+
+Financial effect:
+
+| Movement Type | Effect |
+|---|---|
+| `OPENING_FLOAT` | Sets starting cash |
+| `CASH_SALE` | Increases expected drawer cash |
+| `CASH_REFUND` | Decreases expected drawer cash |
+| `SAFE_DROP` | Decreases expected drawer cash |
+| `PAY_IN` | Increases expected drawer cash |
+| `PAY_OUT` | Decreases expected drawer cash |
+| `NO_SALE_OPEN` | No financial effect, audit only |
+| `ADJUSTMENT` | Manager-only correction |
+
+---
+
+## 5.5 Update `Sale`
+
+Add:
+
+```java
+@ManyToOne(fetch = FetchType.LAZY)
+@JoinColumn(name = "employee_shift_id")
+private CashShift employeeShift;
+```
+
+A sale may have non-cash payments only, so it does not always need a drawer session.
+
+---
+
+## 5.6 Add or Update `SalePayment`
+
+If the system already has payment records, extend them.  
+If not, create a proper split-payment table.
+
+```java
+public class SalePayment {
+    private Long id;
+
+    private Sale sale;
+
+    @Enumerated(EnumType.STRING)
+    private PaymentMethod paymentMethod;
+
+    private BigDecimal amount;
+
+    private String externalReference;
+    // Example: wallet transaction reference, card approval code
+
+    @Enumerated(EnumType.STRING)
+    private PaymentStatus paymentStatus;
+
+    private CashDrawerSession drawerSession;
+    // Required only for CASH payments
+
+    private CashDrawerMovement drawerMovement;
+    // Linked movement for cash payment
+
+    private LocalDateTime paidAt;
+}
+```
+
+Payment methods:
+
+```java
+public enum PaymentMethod {
+    CASH,
+    MOBILE_WALLET,
+    CARD,
+    BANK_TRANSFER,
+    CREDIT,
+    STORE_CREDIT,
+    OTHER
+}
+```
+
+Payment status:
+
+```java
+public enum PaymentStatus {
+    COMPLETED,
+    PENDING,
+    FAILED,
+    REFUNDED,
+    PARTIALLY_REFUNDED
+}
+```
+
+---
+
+# 6. Drawer Expected Cash Formula
+
+The drawer expected cash must be calculated only from cash-related movements.
+
+```text
+Expected Cash =
+Opening Float
++ Cash Sales
+- Cash Refunds
+- Safe Drops
++ Pay Ins
+- Pay Outs
+± Manager Adjustments
+```
+
+Do not include:
+
+- Mobile wallet sales
+- Card sales
+- Bank transfer sales
+- Credit sales
+- Loyalty points
+- Non-cash refunds
+
+---
+
+# 7. Shift Opening Requirements
+
+## 7.1 Employee opens POS
+
+When an employee starts working, show:
+
+```text
+Choose shift type:
+
+[ Cash Drawer Shift ]
+I will accept cash and use the drawer.
+
+[ Non-Cash Shift ]
+I will only accept wallet/card/bank/credit payments.
+```
+
+---
+
+## 7.2 Opening a Non-Cash Shift
+
+Backend behavior:
+
+- Create `CashShift`
+- `shiftType = NON_CASH`
+- `drawerSession = null`
+- `openingFloat = 0`
+- No drawer validation required
+- Multiple non-cash shifts can be open at the same time
+
+Allowed:
+
+```text
+Aung - Cash Drawer Shift
+Thida - Non-Cash Shift
+Kyaw - Non-Cash Shift
+```
+
+---
+
+## 7.3 Opening a Cash Drawer Shift
+
+Backend behavior:
+
+1. Check if a drawer session is already open.
+2. If no drawer session exists:
+   - Create new `CashDrawerSession`
+   - Require opening float
+   - Link employee shift to drawer session
+3. If drawer session already exists:
+   - If shared drawer mode is disabled:
+     - Block opening another cash shift
+   - If shared drawer mode is enabled:
+     - Allow employee to join existing drawer session
+     - Require manager approval if configured
+
+---
+
+# 8. Shared Drawer Mode
+
+Add system setting:
+
+```text
+allowSharedCashDrawer = true / false
+```
+
+## 8.1 If disabled
+
+Only one employee can be attached to the drawer.
+
+Example:
+
+```text
+Aung has Main Drawer open.
+Thida cannot open Cash Drawer Shift.
+Thida must use Non-Cash Shift.
+```
+
+## 8.2 If enabled
+
+Multiple employees can sell using the same drawer.
+
+Example:
+
+```text
+Main Drawer Session #001
+Opened by: Aung
+
+Attached employees:
+- Aung
+- Thida
+```
+
+All cash sales still go into the same drawer session.
+
+Reports must show:
+
+- Total drawer cash
+- Cash sales by employee
+- Refunds by employee
+- Variance at drawer level
+
+Important: Variance belongs to the drawer session, not falsely to every employee.
+
+---
+
+# 9. Checkout Business Logic
+
+## 9.1 Non-cash sale
+
+If employee has `NON_CASH` shift:
+
+Allowed:
+
+```text
+Mobile Wallet: 25,000 MMK
+Card: 25,000 MMK
+Bank Transfer: 25,000 MMK
+Credit: 25,000 MMK
+```
+
+The system completes sale without drawer session.
+
+---
+
+## 9.2 Cash sale
+
+If employee has `NON_CASH` shift and tries cash:
+
+Block checkout.
+
+Error message:
+
+```text
+This is a Non-Cash Shift.
+Cash payments are not allowed.
+
+Please ask the cash drawer cashier to complete this sale,
+or park the sale and send it to the main counter.
+```
+
+---
+
+## 9.3 Mixed payment sale
+
+Example:
+
+```text
+Total: 50,000 MMK
+Cash: 20,000 MMK
+KBZPay: 30,000 MMK
+```
+
+This requires drawer session because part of the payment is cash.
+
+Rules:
+
+- If employee has active cash drawer session: allow.
+- If employee is non-cash: block.
+- Do not partially complete the sale.
+- Do not create stock movement before payment validation succeeds.
+
+---
+
+## 9.4 Credit sale
+
+Credit sale does not require drawer session.
+
+But later, when customer pays their credit balance:
+
+- If paid by cash: requires drawer session.
+- If paid by wallet/bank/card: does not require drawer session.
+
+---
+
+# 10. Refund Business Logic
+
+## 10.1 Non-cash refund
+
+If original payment was wallet/card/bank, refund can be processed without drawer.
+
+The system should record:
+
+```text
+refundMethod = MOBILE_WALLET / CARD / BANK_TRANSFER
+employeeShiftId
+refundStatus
+externalReference
+```
+
+No drawer movement is created.
+
+---
+
+## 10.2 Cash refund
+
+Cash refund physically removes money from drawer.
+
+Therefore:
+
+- Requires active cash drawer session.
+- Requires permission.
+- Creates `CashDrawerMovement` of type `CASH_REFUND`.
+- Decreases expected drawer cash.
+
+If a non-cash employee tries cash refund:
+
+Block with message:
+
+```text
+Cash refund requires the cash drawer cashier or manager.
+```
+
+Optional UX:
+
+```text
+[Create Refund Request]
+```
+
+The request appears in manager/cashier inbox for approval.
+
+---
+
+# 11. Shift Closing Requirements
+
+## 11.1 Closing Non-Cash Shift
+
+Non-cash shift close should be simple.
+
+Show summary:
+
+```text
+Non-Cash Shift Summary
+
+Employee: Thida
+Opened: 9:00 AM
+Closed: 5:00 PM
+
+Transactions: 42
+Gross Sales: 620,000 MMK
+Refunds: 15,000 MMK
+Net Sales: 605,000 MMK
+
+Payment Breakdown:
+KBZPay: 400,000 MMK
+WavePay: 180,000 MMK
+Bank Transfer: 25,000 MMK
+
+No cash drawer reconciliation required.
+```
+
+No fields for:
+
+- Opening float
+- Counted cash
+- Expected cash
+- Variance
+
+---
+
+## 11.2 Closing Cash Drawer Shift
+
+If employee is drawer owner:
+
+They may close the drawer session if:
+
+- No other active cash employees are attached, or
+- Manager approves transfer/closure
+
+Show blind cash close screen:
+
+```text
+Count the drawer physically.
+Do not show expected amount before count is submitted.
+```
+
+Fields:
+
+- Actual counted cash
+- Closing note
+- Manager approval if variance exceeds tolerance
+
+After submit:
+
+- Calculate expected cash
+- Calculate variance
+- Close drawer session
+- Close employee shift
+
+---
+
+## 11.3 Closing one employee shift should not always close the drawer
+
+If multiple employees are attached to one drawer:
+
+- Thida closing her shift should not close Aung’s drawer.
+- Drawer closes only when drawer owner/manager closes the drawer session.
+
+---
+
+# 12. Drawer Operations
+
+Only cash-authorized users can access drawer operations.
+
+## 12.1 Safe Drop
+
+Used when too much cash is in the drawer.
+
+Example:
+
+```text
+Drawer has 1,500,000 MMK.
+Manager removes 1,000,000 MMK to safe.
+```
+
+System records:
+
+```text
+SAFE_DROP -1,000,000 MMK
+```
+
+Expected drawer cash decreases.
+
+---
+
+## 12.2 Pay In
+
+Money added to drawer outside normal sale.
+
+Example:
+
+```text
+Owner adds small change coins/notes.
+```
+
+Creates positive drawer movement.
+
+---
+
+## 12.3 Pay Out
+
+Money removed from drawer for shop expense.
+
+Example:
+
+```text
+Paid delivery driver from drawer.
+```
+
+Creates negative drawer movement.
+
+Requires reason and permission.
+
+---
+
+## 12.4 No-Sale Drawer Open
+
+If drawer is opened without sale:
+
+Record:
+
+```text
+NO_SALE_OPEN
+amount = 0
+performedBy
+employeeShiftId
+reason
+timestamp
+```
+
+Show in manager report.
+
+---
+
+# 13. POS UX Requirements
+
+## 13.1 Shift status banner
+
+Always show current shift mode clearly.
+
+For non-cash:
+
+```text
+NON-CASH SHIFT
+Cash payments disabled
+```
+
+For cash:
+
+```text
+CASH DRAWER SHIFT
+Main Drawer #001
+```
+
+---
+
+## 13.2 Payment screen
+
+If shift is non-cash:
+
+- Cash button disabled/greyed out
+- Tooltip: "Cash requires drawer shift"
+- Provide action: "Park Sale for Cashier"
+
+Example:
+
+```text
+[ Cash - Disabled ]
+[ KBZPay ]
+[ WavePay ]
+[ Card ]
+[ Bank Transfer ]
+[ Credit ]
+```
+
+---
+
+## 13.3 Start shift screen
+
+Show active drawer state:
+
+```text
+Main Drawer:
+OPEN by Aung since 8:00 AM
+
+Choose:
+[Join Cash Drawer - Requires Permission]
+[Start Non-Cash Shift]
+```
+
+If no drawer open:
+
+```text
+Main Drawer:
+CLOSED
+
+Choose:
+[Open Cash Drawer Shift]
+[Start Non-Cash Shift]
+```
+
+---
+
+## 13.4 Manager active shifts widget
+
+Dashboard should show:
+
+```text
+Active Shifts
+
+Aung   CASH DRAWER   Main Drawer   Opened 8:00 AM
+Thida  NON_CASH      No Drawer     Opened 9:00 AM
+Kyaw   NON_CASH      No Drawer     Opened 9:15 AM
+```
+
+Actions:
+
+- View shift
+- Close shift
+- Force close with reason
+- View sales
+- View audit events
+
+---
+
+# 14. Reports
+
+## 14.1 Employee Shift Report
+
+For every employee shift:
+
+Show:
+
+- Sales count
+- Gross sales
+- Discounts
+- Refunds
+- Net sales
+- Payment breakdown
+- Voided sales
+- Manual discounts
+- Profit if user has permission
+
+For non-cash shifts:
+
+Do not show drawer variance.
+
+---
+
+## 14.2 Cash Drawer Session Report
+
+For drawer session:
+
+Show:
+
+```text
+Drawer: Main Drawer
+Opened by: Aung
+Opened at: 8:00 AM
+Closed at: 9:00 PM
+
+Opening Float:        100,000
+Cash Sales:           850,000
+Cash Refunds:         -30,000
+Safe Drops:           -500,000
+Pay Outs:             -20,000
+
+Expected Cash:        400,000
+Counted Cash:         398,000
+Variance:             -2,000
+```
+
+Also show contributing employees:
+
+```text
+Cash sales by employee:
+Aung: 600,000
+Thida: 250,000
+```
+
+---
+
+## 14.3 End-of-Day Report
+
+Separate sections:
+
+1. Business revenue summary
+2. Payment method summary
+3. Cash drawer reconciliation
+4. Employee shift summaries
+5. Exceptions / audit warnings
+
+Important:
+
+Digital payments must not appear as expected cash in drawer.
+
+---
+
+# 15. API Requirements
+
+## 15.1 Open employee shift
+
+```http
+POST /api/shifts/open
+```
+
+Request:
+
+```json
+{
+  "shiftType": "NON_CASH"
+}
+```
+
+or
+
+```json
+{
+  "shiftType": "CASH_DRAWER",
+  "drawerId": 1,
+  "openingFloat": 100000
+}
+```
+
+Response:
+
+```json
+{
+  "shiftId": 123,
+  "shiftType": "NON_CASH",
+  "drawerSessionId": null,
+  "cashAllowed": false,
+  "status": "OPEN"
+}
+```
+
+---
+
+## 15.2 Get current shift
+
+```http
+GET /api/shifts/current
+```
+
+Response:
+
+```json
+{
+  "shiftId": 123,
+  "shiftType": "NON_CASH",
+  "cashAllowed": false,
+  "drawerSessionId": null,
+  "openedAt": "2026-11-03T09:00:00"
+}
+```
+
+---
+
+## 15.3 Validate checkout payment
+
+Before checkout, backend must validate payment methods.
+
+```http
+POST /api/sales/validate-payment
+```
+
+Request:
+
+```json
+{
+  "payments": [
+    {
+      "method": "CASH",
+      "amount": 20000
+    },
+    {
+      "method": "MOBILE_WALLET",
+      "amount": 30000
+    }
+  ]
+}
+```
+
+If non-cash shift:
+
+```json
+{
+  "valid": false,
+  "code": "CASH_NOT_ALLOWED_FOR_SHIFT",
+  "message": "This shift cannot accept cash payments."
+}
+```
+
+---
+
+## 15.4 Close non-cash shift
+
+```http
+POST /api/shifts/{id}/close
+```
+
+Request:
+
+```json
+{
+  "closingNote": "Completed wallet-only sales"
+}
+```
+
+Backend should not require counted cash.
+
+---
+
+## 15.5 Close drawer session
+
+```http
+POST /api/drawer-sessions/{id}/close
+```
+
+Request:
+
+```json
+{
+  "countedCash": 398000,
+  "closingNote": "Shortage due to unknown reason"
+}
+```
+
+Response includes variance.
+
+---
+
+# 16. Permissions
+
+Add or update permissions:
+
+| Permission | Description |
+|---|---|
+| `SHIFT_OPEN_NON_CASH` | Employee can open non-cash shift |
+| `SHIFT_OPEN_CASH_DRAWER` | Employee can open cash drawer shift |
+| `DRAWER_JOIN_EXISTING` | Employee can join existing drawer |
+| `DRAWER_CLOSE` | User can close drawer session |
+| `DRAWER_FORCE_CLOSE` | Manager can force-close drawer |
+| `CASH_REFUND` | User can issue cash refund |
+| `DRAWER_PAY_IN` | User can add cash to drawer |
+| `DRAWER_PAY_OUT` | User can remove cash from drawer |
+| `DRAWER_SAFE_DROP` | User can perform safe drop |
+| `DRAWER_NO_SALE_OPEN` | User can open drawer without sale |
+| `SHIFT_VIEW_ALL` | Manager can view all employee shifts |
+
+---
+
+# 17. Migration Requirements
+
+## 17.1 Existing data
+
+Existing cash shifts should remain valid.
+
+Migration strategy:
+
+1. Create default `CashDrawer` named `Main Drawer`.
+2. Existing historical `CashShift` rows default to `CASH_DRAWER`.
+3. For currently open old cash shifts:
+   - Create a `CashDrawerSession`
+   - Use old opening float
+   - Link old shift to drawer session
+4. Existing closed shifts do not need recalculation.
+5. Existing sale records should not have financial values changed.
+
+---
+
+## 17.2 Backward compatibility
+
+Existing reports must continue to work.
+
+If old sales do not have `employeeShiftId`, allow null for historical records.
+
+New sales must require employee shift.
+
+---
+
+# 18. Acceptance Criteria
+
+## 18.1 Non-cash employee can sell without drawer
+
+Given Thida has a `NON_CASH` shift,  
+when she completes a sale using `MOBILE_WALLET`,  
+then the sale succeeds and no drawer session is required.
+
+---
+
+## 18.2 Non-cash employee cannot accept cash
+
+Given Thida has a `NON_CASH` shift,  
+when she tries to checkout with `CASH`,  
+then the backend rejects the sale with `CASH_NOT_ALLOWED_FOR_SHIFT`.
+
+---
+
+## 18.3 Only one drawer session can be open
+
+Given Main Drawer already has an open session,  
+when another user tries to open a new drawer session for Main Drawer,  
+then the system blocks it unless joining existing drawer is allowed.
+
+---
+
+## 18.4 Mixed payment requires drawer
+
+Given sale total is 50,000,  
+and payment is 20,000 cash + 30,000 wallet,  
+when a non-cash employee tries to checkout,  
+then checkout is blocked.
+
+---
+
+## 18.5 Non-cash shift close has no variance
+
+Given Thida has only wallet sales,  
+when she closes her shift,  
+then the system shows digital payment summary only and does not ask for cash count.
+
+---
+
+## 18.6 Drawer report includes all cash activity
+
+Given Aung and Thida both sold cash under the same drawer session,  
+when drawer is closed,  
+then expected cash includes both employees’ cash sales.
+
+---
+
+## 18.7 Cash refund reduces drawer expected cash
+
+Given a cash refund of 10,000 is processed,  
+when drawer expected cash is calculated,  
+then expected cash decreases by 10,000.
+
+---
+
+## 18.8 Wallet refund does not affect drawer
+
+Given a wallet refund of 10,000 is processed,  
+when drawer expected cash is calculated,  
+then drawer expected cash is unchanged.
+
+---
+
+# 19. Out of Scope
+
+Do not implement:
+
+- Money rounding
+- Cash rounding
+- Multi-branch cloud sync
+- Online SaaS subscription logic
+- Remote branch drawer management
+
+This feature is only for improving real-world shop shift behavior in offline/LAN usage.
+
+---
+
+# 20. Summary for AI Coding Agent
+
+Implement a separation between **employee work shifts** and **physical cash drawer sessions**.
+
+The most important rule:
+
+```text
+Non-cash sales require an employee shift.
+Cash sales require both an employee shift and an active cash drawer session.
+```
+
+Build the system so:
+
+- Wallet-only employees can work without touching the drawer.
+- One physical drawer has one reconciled cash session.
+- Multiple employees can sell without creating fake cash variances.
+- Cash variance is calculated only for the real drawer.
+- Employee accountability is preserved for every sale.
+- End-of-day reports clearly separate cash drawer money from digital revenue.

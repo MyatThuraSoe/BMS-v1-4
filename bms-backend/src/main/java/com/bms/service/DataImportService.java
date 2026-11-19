@@ -150,8 +150,8 @@ public class DataImportService {
         // 1️⃣ Parse JSON → Entities
         List<Category>  categories = readList(mapper, rawData.get("categories"), Category.class);
         List<Product>   products   = readList(mapper, rawData.get("products"),   Product.class);
-        List<Customer>  customers  = readList(mapper, rawData.get("customers"),  Customer.class);
-        List<Supplier>  suppliers  = readList(mapper, rawData.get("suppliers"),  Supplier.class);
+        List<Customer>  customers  = readCustomers(mapper, rawData.get("customers"));
+        List<Supplier>  suppliers  = readSuppliers(mapper, rawData.get("suppliers"));
         List<Sale>      sales      = readList(mapper, rawData.get("sales"),      Sale.class);
         List<Purchase>  purchases  = readList(mapper, rawData.get("purchases"),  Purchase.class);
         List<ReceiptCustomization> receiptCustomizations =
@@ -237,6 +237,10 @@ public class DataImportService {
 
         List<PriceList> priceLists = readFlat(mapper, rawData.get("priceLists"), PriceList.class,
                 (priceList, row) -> {
+                    // Jackson has already populated this collection from the row's
+                    // own "items" key, where a child carries only productId and price.
+                    // Clearing first keeps one row per item instead of appending a
+                    // second copy whose product association is null.
                     priceList.getItems().clear();
                     for (Object itemRow : maps(row.get("items"))) {
                         Map<String, Object> ir = mapOf(itemRow);
@@ -479,7 +483,7 @@ public class DataImportService {
         sections.put("profitLedger", profitLedger);
 
         BackupEntityInserter inserter = new BackupEntityInserter(entityManager, jdbcTemplate, env, shopTimeService);
-        inserter.prepare(new ArrayList<>(sections.values()));
+        inserter.prepare(sections);
         periodGuard.lock();
         if (mode == ImportMode.REPLACE_ALL) {
             wipeAllData(rawData);
@@ -675,6 +679,11 @@ public class DataImportService {
     }
 
     private void wipeAllData(Map<String, Object> rawData) {
+        // product_images is deliberately NOT wiped: no export section carries it, so
+        // a restore could never put those rows back. Product ids are preserved by a
+        // restore, so the surviving rows still point at the right product. The phone
+        // tables are wiped because the phone rows do travel (nested in the customer
+        // and supplier JSON), and re-inserting them would otherwise collide on id.
         List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
@@ -682,9 +691,9 @@ public class DataImportService {
             "purchase_items", "purchase_expenses", "purchases",
             "order_items", "orders", "order_sequences",
             "stock_movements",
-            "product_price_history", "product_images",
-            "products", "categories", "customers", "suppliers",
-            "customer_phones", "supplier_phones"
+            "product_price_history",
+            "customer_phones", "supplier_phones",
+            "products", "categories", "customers", "suppliers"
         ));
 
         // Tables introduced in newer backup versions are only wiped when the
@@ -776,8 +785,48 @@ public class DataImportService {
 
     private <T> List<T> readList(ObjectMapper mapper, Object raw, Class<T> type) {
         if (raw == null) return List.of();
+        // Nested children (sale items and payments, purchase items, price-list
+        // items, count-sheet items, promotion tiers) are the only copy of those
+        // rows in the backup: there is no separate section for them. They must
+        // therefore survive deserialization, and their back-references are
+        // re-attached after reading, before anything is merged.
         return mapper.convertValue(raw,
                 mapper.getTypeFactory().constructCollectionType(List.class, type));
+    }
+
+    /**
+     * Reads customers, keeping the phones that travel nested inside each one and
+     * re-attaching their back-reference. Phones are the only copy of those rows in
+     * the file (there is no separate section), and {@code customer_id} is NOT NULL,
+     * so the owner must be in place before the child row is written.
+     */
+    private List<Customer> readCustomers(ObjectMapper mapper, Object raw) {
+        if (raw == null) return List.of();
+        List<Customer> result = mapper.convertValue(raw,
+                mapper.getTypeFactory().constructCollectionType(List.class, Customer.class));
+        for (Customer c : result) {
+            if (c.getPhones() != null) {
+                c.getPhones().forEach(phone -> phone.setCustomer(c));
+            }
+        }
+        return result;
+    }
+
+    /**
+     * Reads suppliers, keeping the phones nested inside each one and re-attaching
+     * their back-reference — the same reason as {@link #readCustomers}: those rows
+     * exist nowhere else in the file and {@code supplier_id} is NOT NULL.
+     */
+    private List<Supplier> readSuppliers(ObjectMapper mapper, Object raw) {
+        if (raw == null) return List.of();
+        List<Supplier> result = mapper.convertValue(raw,
+                mapper.getTypeFactory().constructCollectionType(List.class, Supplier.class));
+        for (Supplier s : result) {
+            if (s.getPhones() != null) {
+                s.getPhones().forEach(phone -> phone.setSupplier(s));
+            }
+        }
+        return result;
     }
 
     /**
@@ -799,10 +848,26 @@ public class DataImportService {
         return result;
     }
 
-    /** An id-only stand-in for an association, or null when the row carries none. */
+    /**
+     * An id-only stand-in for an association, or null when the row carries none.
+     *
+     * <p>A plain detached instance holding just the id, rather than a
+     * {@code getReference} proxy: the write stage reads the id back to fill the
+     * foreign key column, and a proxy from a cleared persistence context cannot be
+     * read without initialising it.
+     */
     private <R> R reference(Object id, Class<R> type) {
         Long numeric = numericOrNull(id);
-        return numeric == null ? null : entityManager.getReference(type, numeric);
+        if (numeric == null) {
+            return null;
+        }
+        try {
+            R instance = type.getDeclaredConstructor().newInstance();
+            type.getMethod("setId", Long.class).invoke(instance, numeric);
+            return instance;
+        } catch (Exception ex) {
+            return entityManager.getReference(type, numeric);
+        }
     }
 
     /** The nested rows of a flattened parent, in the order they were written. */

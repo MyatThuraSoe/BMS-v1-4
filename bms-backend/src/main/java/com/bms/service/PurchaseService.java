@@ -895,27 +895,29 @@ public class PurchaseService {
 
     /**
      * Supplier credit for returned units (D1), in INVOICE currency so it is
-     * consistent with totalAmount (O3): the line's invoice unit cost plus the
-     * pro-rata share of the invoice tax (by line value). The inventory side of
-     * the RTV still leaves at the landed base cost; only the payable credit is
-     * invoice-currency. Freight is not refunded by the supplier and stays
-     * payable.
+     * consistent with {@code totalAmount} and therefore with what the supplier
+     * actually invoiced (O3): the line's landed invoice-currency unit cost plus
+     * the pro-rata share of recoverable invoice tax (by line value).
+     *
+     * <p>{@code landedUnitCost} is already in invoice currency and already carries
+     * the capitalised discount, non-recoverable tax and freight share, so those are
+     * credited exactly once. {@code baseUnitCost} is that same value converted to
+     * the shop base currency: using it here made every foreign-currency return
+     * reduce the payable by the exchange-rate factor as well, which could take the
+     * whole remaining invoice balance with it.
      */
     private BigDecimal rtvCreditAmount(Purchase purchase, PurchaseItem item, int quantity) {
-        // baseUnitCost includes exchange rate and landed cost allocation.
-        // Non-recoverable tax is already inside baseUnitCost; recoverable tax
-        // is not, so it must be added pro-rata by line value.
-        BigDecimal credit = item.getBaseUnitCost()
+        BigDecimal credit = item.getLandedUnitCost()
                 .multiply(BigDecimal.valueOf(quantity));
         if (Boolean.TRUE.equals(purchase.isTaxRecoverable())) {
             BigDecimal tax = purchase.getTaxAmount();
-            BigDecimal baseSubtotal = purchase.getItems().stream()
-                    .map(i -> i.getBaseUnitCost().multiply(BigDecimal.valueOf(i.getQuantity())))
+            BigDecimal invoiceSubtotal = purchase.getItems().stream()
+                    .map(i -> i.getLandedUnitCost().multiply(BigDecimal.valueOf(i.getQuantity())))
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (tax != null && tax.signum() > 0 && baseSubtotal != null && baseSubtotal.signum() > 0) {
-                BigDecimal lineValue = item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity));
+            if (tax != null && tax.signum() > 0 && invoiceSubtotal.signum() > 0) {
+                BigDecimal lineValue = item.getLandedUnitCost().multiply(BigDecimal.valueOf(quantity));
                 credit = credit.add(tax.multiply(lineValue)
-                        .divide(baseSubtotal, 2, RoundingMode.HALF_UP));
+                        .divide(invoiceSubtotal, 2, RoundingMode.HALF_UP));
             }
         }
         return credit.setScale(2, RoundingMode.HALF_UP);
@@ -1057,6 +1059,17 @@ public class PurchaseService {
 
         if (!purchase.getIsActive() || purchase.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Purchase not found: " + id);
+        }
+
+        // Money already paid to the supplier is evidence of a real invoice. Deleting
+        // the row would drop the remaining payable and the payment history from every
+        // report while the cash stays gone from the drawer, leaving the AP control
+        // account in debit with nothing to offset it.
+        BigDecimal paidOnPurchase = purchasePaymentService.paidAmount(purchase.getId());
+        if (paidOnPurchase != null && paidOnPurchase.signum() > 0) {
+            throw new BusinessException("This purchase already has " + paidOnPurchase.toPlainString()
+                    + " recorded in supplier payments. Refund or remove those payments before deleting it,"
+                    + " so the money paid stays traceable to an invoice.");
         }
 
         // An ORDERED PO with nothing received never touched stock: deleting it

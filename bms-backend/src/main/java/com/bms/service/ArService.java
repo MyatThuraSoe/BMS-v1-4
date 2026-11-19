@@ -20,6 +20,7 @@ import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
+import com.bms.service.PeriodGuard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -68,6 +69,9 @@ public class ArService {
 
     @Autowired
     private CashDrawerSessionService cashDrawerSessionService;
+
+    @Autowired
+    private PeriodGuard periodGuard;
 
     // ---- Reads ------------------------------------------------------------
 
@@ -182,6 +186,7 @@ public class ArService {
      */
     @Transactional(rollbackFor = Exception.class)
     public ArPaymentResponse recordPayment(Long invoiceId, ArPaymentRequest request, Long userId) {
+        periodGuard.assertOpen(shopTimeService.now());
         BigDecimal amount = request.getAmount() != null
                 ? request.getAmount().setScale(2, RoundingMode.HALF_UP)
                 : null;

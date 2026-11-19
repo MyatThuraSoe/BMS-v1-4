@@ -46,7 +46,11 @@ public interface SaleReturnRepository extends JpaRepository<SaleReturn, Long> {
     @Query("SELECT COALESCE(SUM(r.totalReturnAmount), 0) FROM SaleReturn r WHERE r.employeeShift.id = :shiftId")
     java.math.BigDecimal sumTotalByEmployeeShiftId(@Param("shiftId") Long shiftId);
 
-    @Query("SELECT COALESCE(SUM(r.totalReturnAmount), 0) FROM SaleReturn r " +
-           "WHERE r.sale.id = :saleId AND r.refundMethod = com.bms.entity.PaymentMethod.CASH")
-    java.math.BigDecimal sumCashRefundedBySaleId(@Param("saleId") Long saleId);
+    // Value already handed back to the customer against this sale, by any method
+    // (cash, card, store credit). It is refundAmount, not totalReturnAmount: a
+    // return that only reduced a credit balance returned no money. Voiding the
+    // sale must not pay this out a second time, whatever method it came back by.
+    @Query("SELECT COALESCE(SUM(r.refundAmount), 0) FROM SaleReturn r " +
+           "WHERE r.sale.id = :saleId")
+    java.math.BigDecimal sumRefundedAmountBySaleId(@Param("saleId") Long saleId);
 }
