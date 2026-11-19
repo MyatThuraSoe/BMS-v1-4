@@ -679,12 +679,11 @@ public class DataImportService {
     }
 
     private void wipeAllData(Map<String, Object> rawData) {
-        // customer_phones / supplier_phones / product_images are deliberately NOT
-        // wiped: the phone rows are restored with their owner (nested in the
-        // customer/supplier JSON) and product images have no export section at all,
-        // so deleting them here destroyed data the restore could never put back.
-        // Product and customer ids are preserved by a restore, so the surviving rows
-        // still point at the right owner.
+        // product_images is deliberately NOT wiped: no export section carries it, so
+        // a restore could never put those rows back. Product ids are preserved by a
+        // restore, so the surviving rows still point at the right product. The phone
+        // tables are wiped because the phone rows do travel (nested in the customer
+        // and supplier JSON), and re-inserting them would otherwise collide on id.
         List<String> tables = new ArrayList<>(List.of(
             "ar_payments", "receipt_customizations",
             "sale_return_items", "sale_returns", "refund_items", "refunds",
@@ -693,6 +692,7 @@ public class DataImportService {
             "order_items", "orders", "order_sequences",
             "stock_movements",
             "product_price_history",
+            "customer_phones", "supplier_phones",
             "products", "categories", "customers", "suppliers"
         ));
 
@@ -795,14 +795,10 @@ public class DataImportService {
     }
 
     /**
-     * Reads customers, dropping their nested phones.
-     *
-     * <p>The phone rows carry no section of their own, and the write stage runs on
-     * {@code merge}: a transient customer that still owns a populated collection is
-     * rejected by Hibernate. The table is deliberately no longer wiped, so an
-     * existing customer keeps its numbers through a restore (ids are preserved);
-     * restoring numbers for a customer the file introduces needs the explicit-id
-     * JDBC write path.
+     * Reads customers, keeping the phones that travel nested inside each one and
+     * re-attaching their back-reference. Phones are the only copy of those rows in
+     * the file (there is no separate section), and {@code customer_id} is NOT NULL,
+     * so the owner must be in place before the child row is written.
      */
     private List<Customer> readCustomers(ObjectMapper mapper, Object raw) {
         if (raw == null) return List.of();
@@ -810,16 +806,16 @@ public class DataImportService {
                 mapper.getTypeFactory().constructCollectionType(List.class, Customer.class));
         for (Customer c : result) {
             if (c.getPhones() != null) {
-                c.getPhones().clear();
+                c.getPhones().forEach(phone -> phone.setCustomer(c));
             }
         }
         return result;
     }
 
     /**
-     * Reads suppliers, dropping their nested phones for the same reason as
-     * {@link #readCustomers}: the merge-based write stage cannot carry a populated
-     * collection on a transient owner.
+     * Reads suppliers, keeping the phones nested inside each one and re-attaching
+     * their back-reference — the same reason as {@link #readCustomers}: those rows
+     * exist nowhere else in the file and {@code supplier_id} is NOT NULL.
      */
     private List<Supplier> readSuppliers(ObjectMapper mapper, Object raw) {
         if (raw == null) return List.of();
@@ -827,7 +823,7 @@ public class DataImportService {
                 mapper.getTypeFactory().constructCollectionType(List.class, Supplier.class));
         for (Supplier s : result) {
             if (s.getPhones() != null) {
-                s.getPhones().clear();
+                s.getPhones().forEach(phone -> phone.setSupplier(s));
             }
         }
         return result;
@@ -852,10 +848,26 @@ public class DataImportService {
         return result;
     }
 
-    /** An id-only stand-in for an association, or null when the row carries none. */
+    /**
+     * An id-only stand-in for an association, or null when the row carries none.
+     *
+     * <p>A plain detached instance holding just the id, rather than a
+     * {@code getReference} proxy: the write stage reads the id back to fill the
+     * foreign key column, and a proxy from a cleared persistence context cannot be
+     * read without initialising it.
+     */
     private <R> R reference(Object id, Class<R> type) {
         Long numeric = numericOrNull(id);
-        return numeric == null ? null : entityManager.getReference(type, numeric);
+        if (numeric == null) {
+            return null;
+        }
+        try {
+            R instance = type.getDeclaredConstructor().newInstance();
+            type.getMethod("setId", Long.class).invoke(instance, numeric);
+            return instance;
+        } catch (Exception ex) {
+            return entityManager.getReference(type, numeric);
+        }
     }
 
     /** The nested rows of a flattened parent, in the order they were written. */
