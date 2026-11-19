@@ -621,9 +621,16 @@ public class CashShiftService {
         response.setTransactionCount(transactions);
         response.setVoidedCount(voided);
         response.setPaymentBreakdown(breakdown);
-        response.setCashSalesTotal(shiftCashSales);
-        response.setNonCashSalesTotal(nonCash);
-        response.setReturnsTotal(returnsTotal);
+        // Blind close: hide the component totals for an open cash-drawer shift so
+        // a solo cashier cannot reconstruct the expected cash and "count to the
+        // number". The totals are still computed internally for variance.
+        boolean hideTotals = shift.getShiftType() == ShiftType.CASH_DRAWER
+                && "OPEN".equals(shift.getStatus());
+        if (!hideTotals) {
+            response.setCashSalesTotal(shiftCashSales);
+            response.setNonCashSalesTotal(nonCash);
+            response.setReturnsTotal(returnsTotal);
+        }
 
         CashDrawerSession session = shift.getDrawerSession();
         if (shift.getShiftType() == ShiftType.CASH_DRAWER && session == null) {

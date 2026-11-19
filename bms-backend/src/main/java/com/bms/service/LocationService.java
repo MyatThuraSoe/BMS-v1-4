@@ -139,6 +139,33 @@ public class LocationService {
                 });
     }
 
+    /**
+     * Sets shop-floor stock, keeping the mirrored SHOP {@link LocationStock}
+     * bucket in sync with {@link Product#setStockQuantity}. All shop-stock
+     * mutations (receipts, sales, voids, returns, counts, adjustments) must go
+     * through this helper so the bucket never drifts from
+     * {@code Product.stockQuantity}, which would otherwise trigger false
+     * "stock drift detected" errors on subsequent transfers.
+     * <p>Callers must set {@code Product#setStockQuantity} themselves; this
+     * method only updates the mirrored LocationStock bucket.</p>
+     */
+    public void setShopStock(Product product, int quantity) {
+        if (quantity < 0) {
+            throw new BusinessException("Shop stock cannot go negative for " + product.getName());
+        }
+        Location shop = getDefault(Location.LocationType.SHOP);
+        locationStockRepository.findForUpdate(shop.getId(), product.getId())
+                .ifPresentOrElse(
+                        stock -> stock.setQuantity(quantity),
+                        () -> {
+                            LocationStock fresh = new LocationStock();
+                            fresh.setLocation(shop);
+                            fresh.setProduct(product);
+                            fresh.setQuantity(quantity);
+                            locationStockRepository.save(fresh);
+                        });
+    }
+
     public List<Location> list() {
         ensureDefaults();
         return locationRepository.findByIsActiveTrueOrderByNameAsc();

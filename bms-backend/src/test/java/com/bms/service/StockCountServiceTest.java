@@ -401,9 +401,11 @@ class StockCountServiceTest {
         CountSheet saved = captor.getValue();
         CountSheetItem item = saved.getItems().get(0);
         assertEquals("PENDING_REVIEW", response.getStatus());
-        assertEquals(10, item.getSystemQuantity());
+        // System quantity snapshots the client's count-time quantity (100), not live stock (10).
+        assertEquals(100, item.getSystemQuantity());
         assertEquals(100, item.getClientSystemQuantity());
-        assertEquals(0, item.getVariance());
+        // Variance = counted (10) − system snapshot (100) = −90.
+        assertEquals(-90, item.getVariance());
         assertNotNull(saved.getSyncReceivedAt());
         verify(stockMovementRepository, never()).save(any(StockMovement.class));
     }

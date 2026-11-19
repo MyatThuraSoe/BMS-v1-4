@@ -439,7 +439,12 @@ public class GlService {
         BigDecimal voidTax = tax.subtract(returnedTax);
         BigDecimal voidRevenue = revenue.subtract(returnedNet);
 
-        postTenderSplit(entries, accounts, date, reference, sale, voidTender.negate(), "Void reversal");
+        // Void reversal tender: split proportionally across the original payment
+        // lines, but route CREDIT (card) payments to TENDER_CLEARING instead of
+        // ACCOUNTS_RECEIVABLE — the void pays out through the drawer/clearing,
+        // not by reinstating a receivable. This prevents dangling AR when a void
+        // reverses a credit sale that already had AR payments.
+        postVoidTenderSplit(entries, accounts, date, reference, sale, voidTender.negate(), "Void reversal");
         if (discount.signum() > 0) {
             add(entries, accounts, date, reference, "Void reversal discounts",
                     GlMapping.EventType.SALES_DISCOUNT, BigDecimal.ZERO, discount);
@@ -483,6 +488,41 @@ public class GlService {
                     ? GlMapping.EventType.CASH
                     : payment.getPaymentMethod() == PaymentMethod.CREDIT
                     ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.TENDER_CLEARING;
+            add(entries, accounts, date, reference, description, account,
+                    part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
+        }
+    }
+
+    /**
+     * Like {@link #postTenderSplit}, but for void reversals: CREDIT (card)
+     * payments are routed to TENDER_CLEARING instead of ACCOUNTS_RECEIVABLE,
+     * because the void pays out through the drawer/clearing rather than
+     * reinstating a receivable. When there are no payment lines, the fallback
+     * account is CASH (the void pays out cash), not ACCOUNTS_RECEIVABLE.
+     */
+    private void postVoidTenderSplit(List<JournalEntryResponse> entries,
+                                     Map<GlMapping.EventType, GlAccount> accounts,
+                                     LocalDate date, String reference, Sale sale,
+                                     BigDecimal signedAmount, String description) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        BigDecimal paidTotal = payments.stream().map(SalePayment::getAmount).filter(java.util.Objects::nonNull)
+                .map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (payments.isEmpty() || paidTotal.signum() == 0) {
+            add(entries, accounts, date, reference, description, GlMapping.EventType.CASH,
+                    signedAmount.max(BigDecimal.ZERO), signedAmount.negate().max(BigDecimal.ZERO));
+            return;
+        }
+        BigDecimal remaining = signedAmount;
+        for (int i = 0; i < payments.size(); i++) {
+            SalePayment payment = payments.get(i);
+            BigDecimal part = i == payments.size() - 1 ? remaining
+                    : signedAmount.multiply(money(payment.getAmount()).abs())
+                    .divide(paidTotal, 2, RoundingMode.HALF_UP);
+            remaining = remaining.subtract(part);
+            // CREDIT (card) → TENDER_CLEARING, not ACCOUNTS_RECEIVABLE, for void reversals.
+            GlMapping.EventType account = payment.getPaymentMethod() == PaymentMethod.CASH
+                    ? GlMapping.EventType.CASH
+                    : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, description, account,
                     part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
         }

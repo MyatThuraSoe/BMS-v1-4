@@ -181,6 +181,11 @@ public class UserService implements UserDetailsService {
         user.setFirstName(request.getFirstName());
         user.setLastName(request.getLastName());
         user.setPhone(request.getPhone());
+        // Bump token version when a non-admin user is promoted to admin — must
+        // check the *old* role, before setRole overwrites it.
+        if (!isAdmin(user) && newRoleIsAdmin) {
+            bumpTokenVersion(user);
+        }
         user.setRole(role);
         if (passwordChanged) {
             user.setPassword(passwordEncoder.encode(request.getPassword()));

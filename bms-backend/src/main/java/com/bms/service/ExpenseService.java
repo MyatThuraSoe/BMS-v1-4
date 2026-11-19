@@ -97,6 +97,9 @@ public class ExpenseService {
 
         periodGuard.assertOpen(expense.getExpenseDate());
         periodGuard.assertOpen(request.getExpenseDate());
+        if (request.getExpenseDate().isAfter(shopTimeService.today())) {
+            throw new BusinessException("Expense date cannot be in the future");
+        }
         Expense.ExpenseCategory category = parseCategory(request.getCategory());
         BigDecimal amount = requirePositive(request.getAmount());
         ledgerPostingService.postExpense(expense);

@@ -131,6 +131,12 @@ public class PurchasePaymentService {
         PayablesAgingResponse.SupplierAging totals = new PayablesAgingResponse.SupplierAging();
         totals.setSupplierName("Total");
         for (Purchase purchase : purchases) {
+            // Skip ORDERED (unreceived) POs — nothing received, no payable yet.
+            // The GL journal only creates AP on receipt, so ORDERED POs must not
+            // appear in aging.
+            if (purchase.getReceivingStatus() == Purchase.ReceivingStatus.ORDERED) {
+                continue;
+            }
             BigDecimal paid = paidByPurchase.getOrDefault(purchase.getId(), BigDecimal.ZERO);
             BigDecimal outstanding = purchase.getPayableAmount().subtract(paid);
             if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
