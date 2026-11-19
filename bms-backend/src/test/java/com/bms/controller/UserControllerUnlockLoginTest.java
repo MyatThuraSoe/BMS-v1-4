@@ -4,6 +4,7 @@ import com.bms.dto.response.UserResponse;
 import com.bms.entity.Role;
 import com.bms.entity.User;
 import com.bms.exception.ResourceNotFoundException;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
@@ -63,7 +64,7 @@ class UserControllerUnlockLoginTest {
         auditLogService = mock(AuditLogService.class);
         userService = new UserService(userRepository, mock(RoleRepository.class), mock(SaleRepository.class),
                 mock(CashShiftRepository.class), mock(CashShiftService.class), mock(PasswordEncoder.class),
-                auditLogService);
+                auditLogService, mock(CashDrawerSessionRepository.class));
         ReflectionTestUtils.setField(userService, "attemptTracker", tracker);
 
         controller = new UserController();

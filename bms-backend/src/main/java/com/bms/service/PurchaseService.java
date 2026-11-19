@@ -555,6 +555,9 @@ public class PurchaseService {
                 shopTimeService.now(), userId);
         BigDecimal newWeightedCost = posting.getUnitCostAfter();
 
+        if (destination == null) {
+            throw new BusinessException("No receiving location configured for the destination.");
+        }
         if (sellable > 0) {
             if (destination.getType() == Location.LocationType.SHOP) {
                 product.setStockQuantity(oldStock + sellable);
@@ -567,7 +570,10 @@ public class PurchaseService {
                             + " from purchase " + purchase.getPurchaseNumber(),
                     sellableValuation, user);
         }
-        if (quarantine > 0 && quarantineLocation != null) {
+        if (quarantine > 0) {
+            if (quarantineLocation == null) {
+                throw new BusinessException("No quarantine location configured.");
+            }
             locationService.addStock(product, quarantineLocation, quarantine);
             recordMovement(purchase, item, product, StockMovement.MovementType.IN, quarantine,
                     StockMovement.ReferenceType.RECEIVING, quarantineLocation.getCode(),

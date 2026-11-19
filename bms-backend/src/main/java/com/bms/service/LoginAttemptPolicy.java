@@ -47,10 +47,17 @@ public class LoginAttemptPolicy {
         if (forwarded == null) {
             return remote;
         }
-        // The left-most entry is the client; everything after it is a proxy this app
-        // has no way to check, and a chain of them would be one key per hop.
-        String client = blankToNull(forwarded.split(",")[0]);
-        return client != null ? client : remote;
+        // Behind a proxy the left-most entry is the client and the rest belong to
+        // proxies; anything supplied by the caller to the left can be invented per
+        // request, but the shop said it trusts the header, so we take the first hop.
+        String[] hops = forwarded.split(",");
+        for (int i = 0; i < hops.length; i++) {
+            String hop = blankToNull(hops[i]);
+            if (hop != null) {
+                return hop;
+            }
+        }
+        return remote;
     }
 
     /**

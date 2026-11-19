@@ -22,6 +22,10 @@ public interface CashDrawerSessionRepository extends JpaRepository<CashDrawerSes
 
     Optional<CashDrawerSession> findFirstByStatusOrderByOpenedAtDescIdDesc(DrawerSessionStatus status);
 
+    // A session that is still open belongs to the person who opened it: only they or a
+    // manager may close it, so disabling that account would strand the float.
+    Optional<CashDrawerSession> findFirstByOpenedByIdAndStatus(Long openedById, DrawerSessionStatus status);
+
     List<CashDrawerSession> findByStatusOrderByOpenedAtAscIdAsc(DrawerSessionStatus status);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)

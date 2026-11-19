@@ -141,6 +141,9 @@ public class PaymentValidationService {
                 throw new BusinessException("PAYMENT_INVALID: Every payment amount must be greater than zero.");
             }
             PaymentMethod method = parseMethod(payment.getMethod());
+            if (method == PaymentMethod.STORE_CREDIT) {
+                throw new BusinessException("PAYMENT_INVALID: Store credit cannot be used as a payment method.");
+            }
             if (saleType != Sale.SaleType.CREDIT && method == PaymentMethod.CREDIT) {
                 throw new BusinessException(
                         "PAYMENT_INVALID: A credit payment line is only allowed on a credit sale.");
@@ -243,6 +246,19 @@ public class PaymentValidationService {
                     throw new BusinessException("PAYMENT_INVALID: Unknown payment method: " + raw);
                 }
         }
+    }
+
+    /**
+     * Parses a settlement (money-in) method. CREDIT and STORE_CREDIT are not
+     * settlement methods — they create or move debt, they never tender cash —
+     * so they are rejected here. Used by AR and purchase payment recording.
+     */
+    public PaymentMethod parseSettlementMethod(String raw) {
+        PaymentMethod m = parseMethod(raw);
+        if (m == PaymentMethod.CREDIT || m == PaymentMethod.STORE_CREDIT) {
+            throw new BusinessException("PAYMENT_INVALID: " + m + " is not a valid settlement method.");
+        }
+        return m;
     }
 
     public SalePaymentResponse toResponse(SalePayment payment) {

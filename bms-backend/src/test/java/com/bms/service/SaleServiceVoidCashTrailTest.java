@@ -2,6 +2,7 @@ package com.bms.service;
 
 import com.bms.entity.ArPayment;
 import com.bms.entity.CashDrawer;
+import com.bms.entity.InventoryLedger;
 import com.bms.entity.CashDrawerMovement;
 import com.bms.entity.CashDrawerSession;
 import com.bms.entity.CashShift;
@@ -51,6 +52,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -277,17 +279,22 @@ class SaleServiceVoidCashTrailTest {
         sale.setSaleDate(LocalDateTime.now().minusHours(2));
         sale.getEmployeeShift().setDrawerSession(todaySession);
         saleItem.setCostPriceAtSale(new BigDecimal("60.00"));
-        // The same product sold again after this ticket, so those units cannot go
-        // back on the shelf.
-        lenient().when(saleRepository.productSoldAfter(eq(10L), any())).thenReturn(true);
+        // Even though the product sold again after this ticket, the void still
+        // restores the stock — stock is one aggregate count and the voided units
+        // go back on the shelf regardless of later sales.
 
         saleService.voidSale(100L, 2L, "Customer changed their mind");
 
         // The financial reversal is unconditional: a voided sale must never keep
         // its revenue or its COGS, whatever sold afterwards.
         verify(ledgerPostingService).postVoidProfit(sale, saleItem, 1, sale.getVoidedAt());
-        // Only the stock side is skipped.
-        assertEquals(5, product.getStockQuantity());
+        // Stock is always restored on void (BUG-1).
+        assertEquals(6, product.getStockQuantity());
+        // The inventory-ledger VOID posting and the ADJUSTMENT_IN movement are saved.
+        verify(ledgerPostingService).postInventory(
+                any(Product.class), any(InventoryLedger.EventType.class), anyString(), any(),
+                any(), anyInt(), any(), any(), any(), anyString(), any(), any());
+        verify(stockMovementRepository).save(any());
     }
 
     @Test

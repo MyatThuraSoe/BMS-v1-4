@@ -12,6 +12,7 @@ import com.bms.entity.Role;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
@@ -51,6 +52,7 @@ public class UserService implements UserDetailsService {
     private final CashShiftService cashShiftService;
     private final PasswordEncoder passwordEncoder;
     private final AuditLogService auditLogService;
+    private final CashDrawerSessionRepository cashDrawerSessionRepository;
 
     public UserService(UserRepository userRepository,
                       RoleRepository roleRepository,
@@ -58,7 +60,8 @@ public class UserService implements UserDetailsService {
                       CashShiftRepository cashShiftRepository,
                       CashShiftService cashShiftService,
                       PasswordEncoder passwordEncoder,
-                      AuditLogService auditLogService) {
+                      AuditLogService auditLogService,
+                      CashDrawerSessionRepository cashDrawerSessionRepository) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.saleRepository = saleRepository;
@@ -66,6 +69,7 @@ public class UserService implements UserDetailsService {
         this.cashShiftService = cashShiftService;
         this.passwordEncoder = passwordEncoder;
         this.auditLogService = auditLogService;
+        this.cashDrawerSessionRepository = cashDrawerSessionRepository;
     }
 
     @Override
@@ -161,6 +165,7 @@ public class UserService implements UserDetailsService {
                 }
                 closeUserOpenShift(openShift.get().getId(), "User deactivated", currentUserId());
             }
+            assertNoOpenDrawerOwnedBy(userId);
         }
         if (Boolean.FALSE.equals(request.getIsActive()) && user.getUsername().equals(currentUsername())) {
             throw new BusinessException("auth.user.self.deactivate");
@@ -220,6 +225,7 @@ public class UserService implements UserDetailsService {
             }
             closeUserOpenShift(openShift.get().getId(), "User deleted", actingUserId);
         }
+        assertNoOpenDrawerOwnedBy(userId);
 
         user.setUsername(com.bms.util.SoftDeleteKeys.release(user.getUsername(), user.getId(), 255));
         user.setUsernameNormalized(com.bms.util.SoftDeleteKeys.release(user.getUsernameNormalized(), user.getId(), 255));
@@ -332,6 +338,20 @@ public class UserService implements UserDetailsService {
                 today.getTotalSales(),
                 today.getTotalRevenue()
         );
+    }
+
+    /**
+     * A drawer that is still open belongs to the person who opened it: only its owner
+     * or a manager can close it. Disabling the account strands the float, and the next
+     * shift cannot open that drawer either. The open-shift check above does not cover
+     * this, because a shift can be closed while it leaves the drawer open.
+     */
+    private void assertNoOpenDrawerOwnedBy(Long userId) {
+        cashDrawerSessionRepository.findFirstByOpenedByIdAndStatus(userId, DrawerSessionStatus.OPEN)
+                .ifPresent(session -> {
+                    throw new BusinessException("This user still holds open cash drawer session "
+                            + session.getId() + ". Close the drawer before deactivating or deleting them.");
+                });
     }
 
     private void closeUserOpenShift(Long shiftId, String reason, Long actingUserId) {

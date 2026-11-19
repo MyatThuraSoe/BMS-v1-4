@@ -9,6 +9,7 @@ import com.bms.entity.Role;
 import com.bms.entity.ShiftType;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
+import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.RoleRepository;
 import com.bms.repository.SaleRepository;
@@ -72,7 +73,7 @@ class UserServiceShiftActorTest {
         when(roleRepository.findById(3L)).thenReturn(Optional.of(cashierRole()));
 
         service = new UserService(userRepository, roleRepository, mock(SaleRepository.class),
-                cashShiftRepository, cashShiftService, passwordEncoder, auditLogService);
+                cashShiftRepository, cashShiftService, passwordEncoder, auditLogService, mock(CashDrawerSessionRepository.class));
         ShopTimeService shopTimeService = mock(ShopTimeService.class);
         when(shopTimeService.now()).thenReturn(LocalDateTime.of(2026, 11, 16, 10, 0));
         ReflectionTestUtils.setField(service, "shopTimeService", shopTimeService);

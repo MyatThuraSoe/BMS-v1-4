@@ -43,7 +43,7 @@ import java.util.Locale;
 public class ManagerApprovalService {
 
     public enum Purpose {
-        SALE_DISCOUNT, BELOW_COST, OVER_SHIPMENT
+        SALE_DISCOUNT, BELOW_COST, OVER_SHIPMENT, OPEN_SHIFT
     }
 
     /** The single answer to every rejection, so nothing is revealed about the account. */

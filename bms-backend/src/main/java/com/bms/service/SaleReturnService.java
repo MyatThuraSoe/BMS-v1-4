@@ -351,6 +351,11 @@ public class SaleReturnService {
         }
 
         PaymentMethod refundMethod = resolveRefundMethod(request.getRefundMethod(), sale, employeeShift, debtReduction, refundDue);
+        // BUG-3: CREDIT as a refund method pays nothing — it only reduces debt.
+        // When money is actually due back to the customer, CREDIT is not valid.
+        if (refundDue.signum() > 0 && refundMethod == PaymentMethod.CREDIT) {
+            throw new BusinessException("Refund method CREDIT is not valid when money is due back.");
+        }
         if (refundMethod == PaymentMethod.CASH && refundDue.compareTo(BigDecimal.ZERO) > 0) {
             if (employeeShift == null) {
                 throw new BusinessException(
@@ -459,14 +464,13 @@ public class SaleReturnService {
         if (refundMethod == PaymentMethod.STORE_CREDIT && refundDue.compareTo(BigDecimal.ZERO) > 0) {
             Customer customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+            // No credit-limit check here: the limit caps what the customer owes the
+            // shop, while store credit is the opposite direction (money the shop owes
+            // them). Capping it with the limit refused legitimate refunds - a customer
+            // with a 50 limit could not take a 200 return as store credit at all.
+            // The refund itself is already bounded by refundDue, which is the value
+            // actually being returned.
             BigDecimal newCreditBalance = customer.getCreditBalance().add(refundDue).setScale(2, RoundingMode.HALF_UP);
-            // Cap store credit at the customer's credit limit so returns cannot
-            // create an unbounded liability beyond what the shop has approved.
-            if (customer.getCreditLimit() != null && customer.getCreditLimit().compareTo(BigDecimal.ZERO) > 0
-                    && newCreditBalance.compareTo(customer.getCreditLimit()) > 0) {
-                throw new BusinessException("Store credit would exceed credit limit of "
-                        + customer.getCreditLimit() + " for customer " + customer.getId());
-            }
             customer.setCreditBalance(newCreditBalance);
             customerRepository.save(customer);
         }
@@ -569,6 +573,11 @@ public class SaleReturnService {
                 .collect(Collectors.toSet());
         if (methods.size() == 1) {
             return methods.iterator().next();
+        }
+        // BUG-8b: a mixed-payment sale needs an explicit refund method — the default
+        // of CASH would refund a card portion in cash.
+        if (raw == null || raw.isBlank()) {
+            throw new BusinessException("Choose a refund method");
         }
         return methods.contains(PaymentMethod.CASH)
                 ? PaymentMethod.CASH : methods.iterator().next();
