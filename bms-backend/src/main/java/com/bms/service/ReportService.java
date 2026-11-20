@@ -26,6 +26,7 @@ import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.repository.LocationStockRepository;
 import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -100,6 +101,9 @@ public class ReportService {
 
     @Autowired
     private CashDrawerSessionService cashDrawerSessionService;
+
+    @Autowired
+    private LocationStockRepository locationStockRepository;
 
     @Autowired
     private ShopTimeService shopTimeService;
@@ -945,7 +949,10 @@ public class ReportService {
         for (var product : products) {
             totalProducts++;
             BigDecimal unitCost = product.getCostPrice() != null ? product.getCostPrice() : BigDecimal.ZERO;
-            int stock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();
+            // Use total owned units (shop + all non-shop buckets) instead of
+            // stockQuantity (shop only) so the report matches getInventoryValues.
+            int stock = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
+            stock += (int) locationStockRepository.sumNonShopQuantityByProduct(product.getId());
             BigDecimal value = unitCost.multiply(BigDecimal.valueOf(stock));
             totalInventoryValue = totalInventoryValue.add(value);
 
