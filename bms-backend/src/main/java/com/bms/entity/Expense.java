@@ -47,6 +47,15 @@ public class Expense {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * O6: marks whether this expense has been settled (paid out of the drawer).
+     * Expenses are posted to GL as Dr Operating Expense / Cr Expense Payable when
+     * created; settling clears the payable (Dr Expense Payable / Cr Cash). Default
+     * false — expenses are never auto-settled.
+     */
+    @Column(name = "settled", nullable = false)
+    private Boolean settled = false;
+
     @Column(name = "ledger_revision", nullable = false, columnDefinition = "BIGINT DEFAULT 0")
     private long ledgerRevision;
 
@@ -132,4 +141,7 @@ public class Expense {
 
     public LocalDateTime getDeletedAt() { return deletedAt; }
     public void setDeletedAt(LocalDateTime deletedAt) { this.deletedAt = deletedAt; }
+
+    public Boolean getSettled() { return settled != null ? settled : false; }
+    public void setSettled(Boolean settled) { this.settled = settled != null ? settled : false; }
 }
