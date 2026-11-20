@@ -655,13 +655,19 @@ public class SaleService {
 
         // Below-cost check at fulfilment: cost may have changed since the order
         // was created, so re-check against the cost in force now (P2).
+        // Allocate the header discount across lines first (same as createSale),
+        // so a discounted order can't slip below cost without manager approval.
         BelowCostPolicy conversionBelowCostPolicy = getBelowCostPolicy();
         boolean conversionBelowCostAllowed = conversionBelowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
                 || isManagerOrAdmin(cashierId);
+        Map<SaleItem, BigDecimal> allocationMap = SaleDiscountUtils.allocateDiscounts(sale);
         for (SaleItem item : sale.getItems()) {
             BigDecimal lineCost = item.getCostPriceAtSale();
-            BigDecimal linePrice = item.getUnitPrice();
-            if (lineCost != null && linePrice != null && linePrice.compareTo(lineCost) < 0) {
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(allocationMap.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal netUnit = lineNet.divide(BigDecimal.valueOf(item.getQuantity()), 4,
+                    java.math.RoundingMode.HALF_UP);
+            if (lineCost != null && netUnit.compareTo(lineCost) < 0) {
                 if (conversionBelowCostPolicy == BelowCostPolicy.BLOCK) {
                     throw new BusinessException("Product '" + item.getProduct().getName()
                             + "' is priced below cost at fulfilment; below-cost sales are blocked");

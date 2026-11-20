@@ -186,8 +186,58 @@ public class OrderService {
         BigDecimal discountAmount = computeShopDiscount(subtotal);
         order.setSubtotal(subtotal);
         order.setDiscountAmount(discountAmount);
+
+        // Below-cost check at creation: allocate the header discount across lines
+        // and compare the net unit price against cost, same as createSale does.
+        BelowCostPolicy orderBelowCostPolicy = getBelowCostPolicy();
+        boolean orderBelowCostAllowed = orderBelowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
+                || isManagerOrAdmin(userId);
+        Map<OrderItem, BigDecimal> discountAllocations = new java.util.HashMap<>();
+        BigDecimal grossTotal = order.getItems().stream()
+                .map(OrderItem::getTotalPrice)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal orderDiscount = order.getDiscountAmount() != null ? order.getDiscountAmount() : BigDecimal.ZERO;
+        if (orderDiscount.signum() > 0 && grossTotal.signum() > 0) {
+            BigDecimal allocated = BigDecimal.ZERO;
+            OrderItem remainderTarget = null;
+            for (OrderItem item : order.getItems()) {
+                if (item.getTotalPrice().signum() > 0
+                        && (remainderTarget == null || item.getId() == null
+                        || remainderTarget.getId() == null || item.getId() > remainderTarget.getId())) {
+                    remainderTarget = item;
+                }
+            }
+            for (OrderItem item : order.getItems()) {
+                if (item == remainderTarget) continue;
+                BigDecimal share = orderDiscount.signum() > 0 && grossTotal.signum() > 0 && item.getTotalPrice().signum() > 0
+                        ? orderDiscount.multiply(item.getTotalPrice()).divide(grossTotal, 2, RoundingMode.HALF_UP)
+                        : BigDecimal.ZERO;
+                discountAllocations.put(item, share);
+                allocated = allocated.add(share);
+            }
+            if (remainderTarget != null) {
+                discountAllocations.put(remainderTarget, orderDiscount.subtract(allocated).max(BigDecimal.ZERO));
+            }
+        }
+        for (OrderItem item : order.getItems()) {
+            BigDecimal lineCost = item.getCostPriceAtOrder();
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(discountAllocations.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal netUnit = lineNet.divide(BigDecimal.valueOf(item.getQuantity()), 4,
+                    java.math.RoundingMode.HALF_UP);
+            if (lineCost != null && netUnit.compareTo(lineCost) < 0) {
+                if (orderBelowCostPolicy == BelowCostPolicy.BLOCK) {
+                    throw new BusinessException("Product '" + item.getProduct().getName()
+                            + "' is priced below cost at order creation; below-cost sales are blocked");
+                }
+                if (orderBelowCostPolicy == BelowCostPolicy.REQUIRE_MANAGER && !orderBelowCostAllowed) {
+                    throw new BusinessException("Product '" + item.getProduct().getName()
+                            + "' is priced below cost at order creation; manager approval is required");
+                }
+            }
+        }
+
         order.setPromotionDiscount(promotionDiscount.setScale(2, RoundingMode.HALF_UP));
-        order.setPriceListDiscount(priceListDiscount.setScale(2, RoundingMode.HALF_UP));
         // P5: tax applies to the discounted line value, using the same proportional
         // allocation rule as sales so conversion reproduces identical line taxes.
         BigDecimal taxAmount = applyDiscountedLineTaxes(order, taxRate);
