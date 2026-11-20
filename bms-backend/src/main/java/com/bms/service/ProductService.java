@@ -597,6 +597,9 @@ public class ProductService {
         }
 
         product.setStockQuantity(newQuantity);
+        // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+        // so transfers never see a false "stock drift detected".
+        locationService.setShopStock(product, newQuantity);
         productRepository.save(product);
 
         auditLogService.logAction(userId, "STOCK_ADJUSTMENT",
