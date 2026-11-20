@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +158,7 @@ public class GlService {
         GlAccount inventoryAdjustment = account("3100", "Inventory Adjustments", GlAccount.AccountType.EQUITY);
         GlAccount revenue = account("4000", "Sales Revenue", GlAccount.AccountType.REVENUE);
         GlAccount cogs = account("5000", "Cost of Goods Sold", GlAccount.AccountType.EXPENSE);
+        GlAccount inputTax = account("1300", "Input Tax Recoverable", GlAccount.AccountType.ASSET);
         GlAccount shrinkage = account("5100", "Shrinkage & Spoilage", GlAccount.AccountType.EXPENSE);
         GlAccount freight = account("5200", "Freight & Duty", GlAccount.AccountType.EXPENSE);
         GlAccount revaluation = account("5300", "Inventory Revaluation", GlAccount.AccountType.EXPENSE);
@@ -175,6 +177,7 @@ public class GlService {
         mapping(GlMapping.EventType.INVENTORY_REVALUATION, revaluation, "Inventory revaluation reserve");
         mapping(GlMapping.EventType.INVENTORY_ADJUSTMENT, inventoryAdjustment, "Neutral inventory corrections / opening balances");
         mapping(GlMapping.EventType.EXPENSE_PAYABLE, expensePayable, "Expenses awaiting payment");
+        mapping(GlMapping.EventType.INPUT_TAX, inputTax, "Recoverable purchase input tax");
         mapping(GlMapping.EventType.REFUND_LIABILITY, refundLiability, "Store credit owed to customers");
         mapping(GlMapping.EventType.TENDER_CLEARING, tenderClearing, "Non-cash tender clearing");
         mapping(GlMapping.EventType.CASH_CLEARING, cashClearing, "Manual drawer / safe-drop clearing");
@@ -343,6 +346,19 @@ public class GlService {
             BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
             LocalDate date = purchase.getReceivedAt() != null
                     ? purchase.getReceivedAt().toLocalDate() : purchase.getPurchaseDate();
+            boolean recoverable = purchase.isTaxRecoverable();
+            // Build value-weighted lines so recoverable tax can be allocated
+            // across purchase items pro-rata to line value (same basis used by
+            // applyLandedCosts for non-recoverable tax).
+            List<LandedCostAllocator.Line> lines = new ArrayList<>();
+            for (PurchaseItem item : purchase.getItems()) {
+                int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
+                        item.getProduct().getWeight()));
+            }
+            Map<Long, BigDecimal> taxShares = recoverable
+                    ? LandedCostAllocator.allocateByValue(lines, purchase.getTaxAmount())
+                    : Collections.emptyMap();
             // Journal per purchase item: an item that already has a receiving
             // movement was journaled on a prior run; only newly received lines
             // are posted. This prevents understating payables/inventory when a
@@ -366,10 +382,31 @@ public class GlService {
                 if (itemAmount.signum() == 0) {
                     continue;
                 }
-                addPair(entries, accounts, date, purchase.getPurchaseNumber() + "-item-" + item.getId(),
-                        "Purchase received from "
-                                + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier"),
+                String reference = purchase.getPurchaseNumber() + "-item-" + item.getId();
+                String description = "Purchase received from "
+                        + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier");
+                // Goods value to inventory, credited against the supplier payable.
+                addPair(entries, accounts, date, reference, description,
                         GlMapping.EventType.INVENTORY, GlMapping.EventType.ACCOUNTS_PAYABLE, itemAmount);
+                if (recoverable) {
+                    int ordered = item.getQuantity() != null ? item.getQuantity() : 0;
+                    BigDecimal taxShare = taxShares.getOrDefault(item.getId(), BigDecimal.ZERO);
+                    if (ordered > 0 && taxShare.signum() > 0) {
+                        // Recoverable input tax is an asset (Input Tax Recoverable),
+                        // not part of inventory cost. Pro-rate to the received qty.
+                        BigDecimal receivedTax = taxShare.multiply(BigDecimal.valueOf(received))
+                                .divide(BigDecimal.valueOf(ordered), 2, RoundingMode.HALF_UP)
+                                .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+                        if (receivedTax.signum() > 0) {
+                            addPair(entries, accounts, date,
+                                    purchase.getPurchaseNumber() + "-tax-" + item.getId(),
+                                    "Recoverable input tax on purchase "
+                                            + purchase.getPurchaseNumber(),
+                                    GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE,
+                                    receivedTax);
+                        }
+                    }
+                }
             }
         }
     }
