@@ -122,8 +122,7 @@ public class InventoryController {
         response.setDescription(product.getDescription());
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
-        response.setTaxRate(product.getTaxRate());
-response.setStockQuantity(product.getStockQuantity());
+        response.setStockQuantity(product.getStockQuantity());
         response.setMinStockLevel(product.getMinStockLevel());
         response.setIsActive(product.getIsActive());
         response.setCreatedAt(product.getCreatedAt());

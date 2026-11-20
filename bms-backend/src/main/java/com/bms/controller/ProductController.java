@@ -295,7 +295,6 @@ public class ProductController {
         response.setDescription(product.getDescription());
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
-        response.setTaxRate(product.getTaxRate());
         response.setVersion(product.getVersion());
         response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
