@@ -121,13 +121,13 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     );
 
     // Customer Statics
-    @Query("SELECT SUM(s.totalAmount) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false AND s.saleDate >= :startDate")
+    @Query("SELECT SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false AND s.saleDate >= :startDate")
     BigDecimal sumTotalAmountByCustomerIdAndDateAfter(@Param("customerId") Long customerId, @Param("startDate") java.time.LocalDateTime startDate);
 
     @Query("SELECT COUNT(s) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false")
     Long countInvoicesByCustomerId(@Param("customerId") Long customerId);
 
-    @Query("SELECT si.product.id, si.product.name, SUM(si.quantity) as totalQty, SUM(si.totalPrice) as totalAmt " +
+    @Query("SELECT si.product.id, si.product.name, SUM(si.quantity - COALESCE(si.quantityRefunded, 0)) as totalQty, SUM(si.totalPrice) as totalAmt " +
             "FROM SaleItem si JOIN si.sale s " +
             "WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false " +
             "GROUP BY si.product.id, si.product.name " +
@@ -213,17 +213,19 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                   @Param("shiftStart") LocalDateTime shiftStart,
                                   @Param("shiftEnd") LocalDateTime shiftEnd);
 
-    // Customer LTV — aggregate per customer across all non-voided sales
+    // Customer LTV — aggregate per customer across all non-voided sales,
+    // net of returns.
     @Query("""
         SELECT s.customer.id, s.customer.firstName, s.customer.lastName, s.customer.phone,
-               COUNT(s.id), SUM(s.totalAmount), MIN(s.saleDate), MAX(s.saleDate)
+               COUNT(s.id), SUM(s.totalAmount - COALESCE(s.amountReturned, 0)),
+               MIN(s.saleDate), MAX(s.saleDate)
         FROM Sale s
         WHERE s.customer IS NOT NULL
           AND s.isVoided = false
           AND s.isActive = true
           AND s.deletedAt IS NULL
         GROUP BY s.customer.id, s.customer.firstName, s.customer.lastName, s.customer.phone
-        ORDER BY SUM(s.totalAmount) DESC
+        ORDER BY SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) DESC
         """)
     List<Object[]> findCustomerLtvData();
 
