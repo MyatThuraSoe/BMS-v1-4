@@ -549,6 +549,12 @@ public class SaleService {
             entityMethod = com.bms.entity.PaymentMethod.CREDIT;
         } else {
             entityMethod = paymentValidationService.parseMethod(method);
+            // Store credit is not redeemable as payment (D4): it is a liability
+            // the shop owes the customer, issued only on returns. It can never
+            // tender money toward a new sale.
+            if (entityMethod == com.bms.entity.PaymentMethod.STORE_CREDIT) {
+                throw new BusinessException("PAYMENT_INVALID: Store credit cannot be used as a payment method.");
+            }
         }
 
         if (isCredit && order.getCustomer() == null) {
