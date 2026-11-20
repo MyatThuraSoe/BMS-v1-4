@@ -855,7 +855,6 @@ public class SaleService {
         // for money already given back.
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
         BigDecimal totalSettled = cashCollected.add(arNonCashPaid);
-        BigDecimal netRemaining = totalSettled.subtract(cashAlreadyRefunded).max(BigDecimal.ZERO);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
         BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
                 .max(BigDecimal.ZERO);
@@ -1006,7 +1005,6 @@ public class SaleService {
                         ? customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                         .orElse(null)
                         : null;
-                BigDecimal convertedNonCash = BigDecimal.ZERO;
                 for (ArPayment payment : arPayments) {
                     if (payment.getReversedAt() != null) {
                         continue;
