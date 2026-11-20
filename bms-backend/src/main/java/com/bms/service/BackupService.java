@@ -151,7 +151,7 @@ public class BackupService {
 
     private void writeProductsSheet(Workbook workbook) {
         Sheet sheet = workbook.createSheet("Products");
-String[] headers = {"id", "sku", "name", "description", "category_id", "unit_price", "cost_price", "tax_rate", "stock_quantity", "reserved_quantity", "min_stock_level", "unit", "image_data", "image_type", "is_active", "deleted_at", "created_at", "updated_at"};
+String[] headers = {"id", "sku", "name", "description", "category_id", "unit_price", "cost_price", "stock_quantity", "reserved_quantity", "min_stock_level", "unit", "image_data", "image_type", "is_active", "deleted_at", "created_at", "updated_at"};
         createHeaderRow(sheet, headers);
         int rowNum = 1;
         for (Product p : productRepository.findAll()) {
@@ -159,8 +159,7 @@ String[] headers = {"id", "sku", "name", "description", "category_id", "unit_pri
             int col = 0;
             setCell(row, col++, p.getId()); setCell(row, col++, p.getSku()); setCell(row, col++, p.getName());
             setCell(row, col++, p.getDescription()); setCell(row, col++, p.getCategory() != null ? p.getCategory().getId() : null);
-            setCell(row, col++, p.getUnitPrice()); setCell(row, col++, p.getCostPrice()); setCell(row, col++, p.getTaxRate());
-            setCell(row, col++, p.getStockQuantity());
+            setCell(row, col++, p.getUnitPrice()); setCell(row, col++, p.getCostPrice()); setCell(row, col++, p.getStockQuantity());
             setCell(row, col++, p.getReservedQuantity()); setCell(row, col++, p.getMinStockLevel()); setCell(row, col++, p.getUnit());
             setCell(row, col++, binaryPlaceholder(p.getImageData())); setCell(row, col++, p.getImageType());
             setCell(row, col++, p.getIsActive()); setCell(row, col++, p.getDeletedAt()); setCell(row, col++, p.getCreatedAt()); setCell(row, col, p.getUpdatedAt());

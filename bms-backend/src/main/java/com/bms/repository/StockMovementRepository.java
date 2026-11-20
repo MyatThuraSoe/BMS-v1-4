@@ -87,7 +87,7 @@ public interface StockMovementRepository extends JpaRepository<StockMovement, Lo
     // like DATE() are off-limits in native SQL here. Aggregation happens in
     // InventoryService.
     @Query("""
-        SELECT sm.movementType, sm.quantity, sm.movementDate, sm.referenceType
+        SELECT sm.movementType, sm.quantity, sm.movementDate, sm.referenceType, sm.reasonCode
         FROM StockMovement sm
         WHERE sm.movementDate >= :from
         """)

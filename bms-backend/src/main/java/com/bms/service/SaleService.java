@@ -549,6 +549,12 @@ public class SaleService {
             entityMethod = com.bms.entity.PaymentMethod.CREDIT;
         } else {
             entityMethod = paymentValidationService.parseMethod(method);
+            // Store credit is not redeemable as payment (D4): it is a liability
+            // the shop owes the customer, issued only on returns. It can never
+            // tender money toward a new sale.
+            if (entityMethod == com.bms.entity.PaymentMethod.STORE_CREDIT) {
+                throw new BusinessException("PAYMENT_INVALID: Store credit cannot be used as a payment method.");
+            }
         }
 
         if (isCredit && order.getCustomer() == null) {
@@ -601,6 +607,11 @@ public class SaleService {
         BigDecimal taxAmount = order.getTaxAmount();
         BigDecimal totalAmount = order.getTotalAmount();
 
+        // Zero-total sale: no payment needed
+        if (!isCredit && totalAmount.signum() == 0) {
+            amountPaid = BigDecimal.ZERO;
+        }
+
         // The order being converted still holds its own reservation, so stock checks
         // must NOT count that reservation against itself. Compute the order's reserved
         // share per product (aggregated, since a product can appear on multiple lines).
@@ -650,13 +661,19 @@ public class SaleService {
 
         // Below-cost check at fulfilment: cost may have changed since the order
         // was created, so re-check against the cost in force now (P2).
+        // Allocate the header discount across lines first (same as createSale),
+        // so a discounted order can't slip below cost without manager approval.
         BelowCostPolicy conversionBelowCostPolicy = getBelowCostPolicy();
         boolean conversionBelowCostAllowed = conversionBelowCostPolicy != BelowCostPolicy.REQUIRE_MANAGER
                 || isManagerOrAdmin(cashierId);
+        Map<SaleItem, BigDecimal> allocationMap = SaleDiscountUtils.allocateDiscounts(sale);
         for (SaleItem item : sale.getItems()) {
             BigDecimal lineCost = item.getCostPriceAtSale();
-            BigDecimal linePrice = item.getUnitPrice();
-            if (lineCost != null && linePrice != null && linePrice.compareTo(lineCost) < 0) {
+            BigDecimal lineNet = item.getTotalPrice()
+                    .subtract(allocationMap.getOrDefault(item, BigDecimal.ZERO));
+            BigDecimal netUnit = lineNet.divide(BigDecimal.valueOf(item.getQuantity()), 4,
+                    java.math.RoundingMode.HALF_UP);
+            if (lineCost != null && netUnit.compareTo(lineCost) < 0) {
                 if (conversionBelowCostPolicy == BelowCostPolicy.BLOCK) {
                     throw new BusinessException("Product '" + item.getProduct().getName()
                             + "' is priced below cost at fulfilment; below-cost sales are blocked");
@@ -682,9 +699,17 @@ public class SaleService {
         SalePaymentRequest paymentLine = new SalePaymentRequest();
         paymentLine.setMethod(entityMethod.name());
         paymentLine.setAmount(totalAmount);
-        List<SalePaymentRequest> paymentLines = List.of(paymentLine);
-        paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
-                isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+        List<SalePaymentRequest> paymentLines;
+        if (totalAmount.signum() == 0 && !isCredit) {
+            // Zero-total sale: no payment needed, skip validation
+            paymentLines = List.of();
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+        } else {
+            paymentLines = List.of(paymentLine);
+            paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
+                    isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+        }
 
         if (isCredit) {
             BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
@@ -836,7 +861,6 @@ public class SaleService {
         // for money already given back.
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
         BigDecimal totalSettled = cashCollected.add(arNonCashPaid);
-        BigDecimal netRemaining = totalSettled.subtract(cashAlreadyRefunded).max(BigDecimal.ZERO);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
         BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
                 .max(BigDecimal.ZERO);
@@ -987,7 +1011,6 @@ public class SaleService {
                         ? customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                         .orElse(null)
                         : null;
-                BigDecimal convertedNonCash = BigDecimal.ZERO;
                 for (ArPayment payment : arPayments) {
                     if (payment.getReversedAt() != null) {
                         continue;

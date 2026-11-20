@@ -16,6 +16,7 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -157,6 +158,7 @@ public class GlService {
         GlAccount inventoryAdjustment = account("3100", "Inventory Adjustments", GlAccount.AccountType.EQUITY);
         GlAccount revenue = account("4000", "Sales Revenue", GlAccount.AccountType.REVENUE);
         GlAccount cogs = account("5000", "Cost of Goods Sold", GlAccount.AccountType.EXPENSE);
+        GlAccount inputTax = account("1300", "Input Tax Recoverable", GlAccount.AccountType.ASSET);
         GlAccount shrinkage = account("5100", "Shrinkage & Spoilage", GlAccount.AccountType.EXPENSE);
         GlAccount freight = account("5200", "Freight & Duty", GlAccount.AccountType.EXPENSE);
         GlAccount revaluation = account("5300", "Inventory Revaluation", GlAccount.AccountType.EXPENSE);
@@ -175,6 +177,7 @@ public class GlService {
         mapping(GlMapping.EventType.INVENTORY_REVALUATION, revaluation, "Inventory revaluation reserve");
         mapping(GlMapping.EventType.INVENTORY_ADJUSTMENT, inventoryAdjustment, "Neutral inventory corrections / opening balances");
         mapping(GlMapping.EventType.EXPENSE_PAYABLE, expensePayable, "Expenses awaiting payment");
+        mapping(GlMapping.EventType.INPUT_TAX, inputTax, "Recoverable purchase input tax");
         mapping(GlMapping.EventType.REFUND_LIABILITY, refundLiability, "Store credit owed to customers");
         mapping(GlMapping.EventType.TENDER_CLEARING, tenderClearing, "Non-cash tender clearing");
         mapping(GlMapping.EventType.CASH_CLEARING, cashClearing, "Manual drawer / safe-drop clearing");
@@ -343,6 +346,19 @@ public class GlService {
             BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
             LocalDate date = purchase.getReceivedAt() != null
                     ? purchase.getReceivedAt().toLocalDate() : purchase.getPurchaseDate();
+            boolean recoverable = purchase.isTaxRecoverable();
+            // Build value-weighted lines so recoverable tax can be allocated
+            // across purchase items pro-rata to line value (same basis used by
+            // applyLandedCosts for non-recoverable tax).
+            List<LandedCostAllocator.Line> lines = new ArrayList<>();
+            for (PurchaseItem item : purchase.getItems()) {
+                int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
+                        item.getProduct().getWeight()));
+            }
+            Map<Long, BigDecimal> taxShares = recoverable
+                    ? LandedCostAllocator.allocateByValue(lines, purchase.getTaxAmount())
+                    : Collections.emptyMap();
             // Journal per purchase item: an item that already has a receiving
             // movement was journaled on a prior run; only newly received lines
             // are posted. This prevents understating payables/inventory when a
@@ -366,10 +382,31 @@ public class GlService {
                 if (itemAmount.signum() == 0) {
                     continue;
                 }
-                addPair(entries, accounts, date, purchase.getPurchaseNumber() + "-item-" + item.getId(),
-                        "Purchase received from "
-                                + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier"),
+                String reference = purchase.getPurchaseNumber() + "-item-" + item.getId();
+                String description = "Purchase received from "
+                        + (purchase.getSupplier() != null ? purchase.getSupplier().getName() : "supplier");
+                // Goods value to inventory, credited against the supplier payable.
+                addPair(entries, accounts, date, reference, description,
                         GlMapping.EventType.INVENTORY, GlMapping.EventType.ACCOUNTS_PAYABLE, itemAmount);
+                if (recoverable) {
+                    int ordered = item.getQuantity() != null ? item.getQuantity() : 0;
+                    BigDecimal taxShare = taxShares.getOrDefault(item.getId(), BigDecimal.ZERO);
+                    if (ordered > 0 && taxShare.signum() > 0) {
+                        // Recoverable input tax is an asset (Input Tax Recoverable),
+                        // not part of inventory cost. Pro-rate to the received qty.
+                        BigDecimal receivedTax = taxShare.multiply(BigDecimal.valueOf(received))
+                                .divide(BigDecimal.valueOf(ordered), 2, RoundingMode.HALF_UP)
+                                .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+                        if (receivedTax.signum() > 0) {
+                            addPair(entries, accounts, date,
+                                    purchase.getPurchaseNumber() + "-tax-" + item.getId(),
+                                    "Recoverable input tax on purchase "
+                                            + purchase.getPurchaseNumber(),
+                                    GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE,
+                                    receivedTax);
+                        }
+                    }
+                }
             }
         }
     }
@@ -439,12 +476,50 @@ public class GlService {
         BigDecimal voidTax = tax.subtract(returnedTax);
         BigDecimal voidRevenue = revenue.subtract(returnedNet);
 
-        // Void reversal tender: split proportionally across the original payment
-        // lines, but route CREDIT (card) payments to TENDER_CLEARING instead of
-        // ACCOUNTS_RECEIVABLE — the void pays out through the drawer/clearing,
-        // not by reinstating a receivable. This prevents dangling AR when a void
-        // reverses a credit sale that already had AR payments.
-        postVoidTenderSplit(entries, accounts, date, reference, sale, voidTender.negate(), "Void reversal");
+        // N4 void-tender netting: credit AR for the still-outstanding portion,
+        // CASH for net cash refunded. Non-cash goes to TENDER_CLEARING for cash
+        // sales (card reversal) or REFUND_LIABILITY for credit sales (store credit).
+        BigDecimal cashPaid = moneyVoidCash(sale);
+        BigDecimal arCashPaid = moneyVoidArCash(sale);
+        BigDecimal arNonCashPaid = moneyVoidArNonCash(sale);
+        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale);
+        BigDecimal cashAlreadyRefunded = safeSumVoid(sale);
+
+        BigDecimal cashCollected = cashPaid.add(arCashPaid);
+        BigDecimal nonCashCollected = arNonCashPaid.add(saleNonCashPaid);
+        BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
+        BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
+                .max(BigDecimal.ZERO);
+        BigDecimal remainingCashOwed = cashCollected.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
+        BigDecimal remainingNonCashOwed = nonCashCollected.subtract(refundsAgainstNonCash)
+                .max(BigDecimal.ZERO);
+
+        BigDecimal netCashRefund = remainingCashOwed;
+        BigDecimal netNonCashRefund = remainingNonCashOwed;
+
+        boolean isCreditSale = sale.getSaleType() == Sale.SaleType.CREDIT;
+
+        if (netCashRefund.signum() > 0) {
+            add(entries, accounts, date, reference, "Void reversal",
+                    GlMapping.EventType.CASH, BigDecimal.ZERO, netCashRefund);
+        }
+        if (netNonCashRefund.signum() > 0) {
+            GlMapping.EventType nonCashAccount = isCreditSale
+                    ? GlMapping.EventType.REFUND_LIABILITY
+                    : GlMapping.EventType.TENDER_CLEARING;
+            add(entries, accounts, date, reference, "Void reversal",
+                    nonCashAccount, BigDecimal.ZERO, netNonCashRefund);
+        }
+        BigDecimal outstanding = voidTender.subtract(netCashRefund).subtract(netNonCashRefund);
+        if (outstanding.signum() > 0) {
+            // Outstanding portion reverses AR for credit sales, CASH for cash sales.
+            GlMapping.EventType outstandingAccount = isCreditSale
+                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE
+                    : GlMapping.EventType.CASH;
+            add(entries, accounts, date, reference, "Void reversal",
+                    outstandingAccount, BigDecimal.ZERO, outstanding);
+        }
+
         if (discount.signum() > 0) {
             add(entries, accounts, date, reference, "Void reversal discounts",
                     GlMapping.EventType.SALES_DISCOUNT, BigDecimal.ZERO, discount);
@@ -461,6 +536,44 @@ public class GlService {
             addPair(entries, accounts, date, reference, "Void reversal COGS",
                     GlMapping.EventType.INVENTORY, GlMapping.EventType.COST_OF_GOODS_SOLD, cogs);
         }
+    }
+
+    private BigDecimal moneyVoidCash(Sale sale) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        return payments.stream()
+                .filter(p -> p.getPaymentMethod() == PaymentMethod.CASH)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal moneyVoidArCash(Sale sale) {
+        List<ArPayment> payments = arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(sale.getId());
+        return payments.stream()
+                .filter(p -> p.getReversedAt() == null
+                        && p.getPaymentMethod() == PaymentMethod.CASH)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal moneyVoidArNonCash(Sale sale) {
+        List<ArPayment> payments = arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(sale.getId());
+        return payments.stream()
+                .filter(p -> p.getReversedAt() == null
+                        && p.getPaymentMethod() != PaymentMethod.CASH)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal moneyVoidSaleNonCash(Sale sale) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        return payments.stream()
+                .filter(p -> p.getPaymentMethod() != PaymentMethod.CASH)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    private BigDecimal safeSumVoid(Sale sale) {
+        return safeSum(saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
     }
 
     private void postTenderSplit(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
@@ -488,41 +601,6 @@ public class GlService {
                     ? GlMapping.EventType.CASH
                     : payment.getPaymentMethod() == PaymentMethod.CREDIT
                     ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.TENDER_CLEARING;
-            add(entries, accounts, date, reference, description, account,
-                    part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
-        }
-    }
-
-    /**
-     * Like {@link #postTenderSplit}, but for void reversals: CREDIT (card)
-     * payments are routed to TENDER_CLEARING instead of ACCOUNTS_RECEIVABLE,
-     * because the void pays out through the drawer/clearing rather than
-     * reinstating a receivable. When there are no payment lines, the fallback
-     * account is CASH (the void pays out cash), not ACCOUNTS_RECEIVABLE.
-     */
-    private void postVoidTenderSplit(List<JournalEntryResponse> entries,
-                                     Map<GlMapping.EventType, GlAccount> accounts,
-                                     LocalDate date, String reference, Sale sale,
-                                     BigDecimal signedAmount, String description) {
-        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
-        BigDecimal paidTotal = payments.stream().map(SalePayment::getAmount).filter(java.util.Objects::nonNull)
-                .map(BigDecimal::abs).reduce(BigDecimal.ZERO, BigDecimal::add);
-        if (payments.isEmpty() || paidTotal.signum() == 0) {
-            add(entries, accounts, date, reference, description, GlMapping.EventType.CASH,
-                    signedAmount.max(BigDecimal.ZERO), signedAmount.negate().max(BigDecimal.ZERO));
-            return;
-        }
-        BigDecimal remaining = signedAmount;
-        for (int i = 0; i < payments.size(); i++) {
-            SalePayment payment = payments.get(i);
-            BigDecimal part = i == payments.size() - 1 ? remaining
-                    : signedAmount.multiply(money(payment.getAmount()).abs())
-                    .divide(paidTotal, 2, RoundingMode.HALF_UP);
-            remaining = remaining.subtract(part);
-            // CREDIT (card) → TENDER_CLEARING, not ACCOUNTS_RECEIVABLE, for void reversals.
-            GlMapping.EventType account = payment.getPaymentMethod() == PaymentMethod.CASH
-                    ? GlMapping.EventType.CASH
-                    : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, description, account,
                     part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
         }
@@ -586,7 +664,13 @@ public class GlService {
         // Dated reversals: reversed payments are journaled on the reversal date so
         // closed periods do not change retrospectively. Non-cash reversals convert
         // to store credit (REFUND_LIABILITY), cash reversals return to the drawer.
+        // When the invoice itself was voided, the collection reversal is handled by
+        // postVoidReversal (which nets against returns), so skip the standalone
+        // ARP-REV row here to avoid double-counting.
         for (ArPayment payment : arPaymentRepository.findReversedForJournal(startTs, endTs)) {
+            if (payment.getInvoice() != null && payment.getInvoice().getIsVoided()) {
+                continue;
+            }
             BigDecimal amount = money(payment.getAmount());
             if (amount.signum() == 0) {
                 continue;
@@ -794,6 +878,10 @@ public class GlService {
     }
 
     private BigDecimal money(BigDecimal value) {
+        return value != null ? value : BigDecimal.ZERO;
+    }
+
+    private BigDecimal safeSum(BigDecimal value) {
         return value != null ? value : BigDecimal.ZERO;
     }
 

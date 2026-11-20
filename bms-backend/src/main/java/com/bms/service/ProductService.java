@@ -193,7 +193,6 @@ public class ProductService {
         product.setName(request.getName());
         product.setDescription(request.getDescription());
         product.setUnitPrice(request.getUnitPrice());
-        product.setTaxRate(request.getTaxRate() != null ? request.getTaxRate() : BigDecimal.ZERO);
         product.setStockQuantity(0);
         product.setMinStockLevel(request.getMinStockLevel() != null ? request.getMinStockLevel() : 0);
         product.setUnit(request.getUnit());
@@ -597,6 +596,9 @@ public class ProductService {
         }
 
         product.setStockQuantity(newQuantity);
+        // Keep the SHOP LocationStock bucket in sync with product.stockQuantity
+        // so transfers never see a false "stock drift detected".
+        locationService.setShopStock(product, newQuantity);
         productRepository.save(product);
 
         auditLogService.logAction(userId, "STOCK_ADJUSTMENT",
@@ -915,7 +917,6 @@ public class ProductService {
         response.setDescription(product.getDescription());
         response.setUnitPrice(product.getUnitPrice());
         response.setCostPrice(product.getCostPrice());
-        response.setTaxRate(product.getTaxRate());
         response.setVersion(product.getVersion());
         response.setStockQuantity(product.getStockQuantity());
         response.setReservedQuantity(product.getReservedQuantity());
@@ -982,9 +983,6 @@ public class ProductService {
         }
         if (request.getCostPrice() != null && request.getCostPrice().compareTo(BigDecimal.ZERO) < 0) {
             throw new BusinessException("Cost price cannot be negative");
-        }
-        if (request.getTaxRate() != null && request.getTaxRate().compareTo(BigDecimal.ZERO) < 0) {
-            throw new BusinessException("Tax rate cannot be negative");
         }
         if (request.getStockQuantity() != null && request.getStockQuantity() < 0) {
             throw new BusinessException("Stock quantity cannot be negative");

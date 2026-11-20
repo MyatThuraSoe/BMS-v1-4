@@ -74,9 +74,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         AND p.deletedAt IS NULL
         AND (:categoryId IS NULL OR p.category.id = :categoryId)
         AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%')))
-        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        AND (s IS NULL OR (s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false))
         GROUP BY p.id
-        ORDER BY COALESCE(SUM(si.quantity), 0) DESC
+        ORDER BY COALESCE(SUM(si.quantity - COALESCE(si.quantityRefunded, 0)), 0) DESC
     """)
     Page<Product> searchMostSoldProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
 
@@ -90,9 +90,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         AND p.deletedAt IS NULL
         AND (:categoryId IS NULL OR p.category.id = :categoryId)
         AND (LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :keyword, '%')) OR LOWER(p.barcode) LIKE LOWER(CONCAT('%', :keyword, '%')))
-        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        AND (s IS NULL OR (s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false))
         GROUP BY p.id
-        ORDER BY COALESCE(SUM(si.quantity), 0) ASC
+        ORDER BY COALESCE(SUM(si.quantity - COALESCE(si.quantityRefunded, 0)), 0) ASC
     """)
     Page<Product> searchLeastSoldProducts(@Param("keyword") String keyword, @Param("categoryId") Long categoryId, Pageable pageable);
 
@@ -123,9 +123,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         LEFT JOIN Sale s ON s.id = si.sale.id
         WHERE p.isActive = true
         AND p.deletedAt IS NULL
-        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        AND (s IS NULL OR (s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false))
         GROUP BY p.id
-        ORDER BY COALESCE(SUM(si.quantity), 0) DESC
+        ORDER BY COALESCE(SUM(si.quantity - COALESCE(si.quantityRefunded, 0)), 0) DESC
     """)
     Page<Product> findMostSoldProducts(Pageable pageable);
 
@@ -137,9 +137,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
         LEFT JOIN Sale s ON s.id = si.sale.id
         WHERE p.isActive = true
         AND p.deletedAt IS NULL
-        AND (s IS NULL OR (s.isVoided = false AND s.isActive = true AND s.deletedAt IS NULL))
+        AND (s IS NULL OR (s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false))
         GROUP BY p.id
-        ORDER BY COALESCE(SUM(si.quantity), 0) ASC
+        ORDER BY COALESCE(SUM(si.quantity - COALESCE(si.quantityRefunded, 0)), 0) ASC
     """)
     Page<Product> findLeastSoldProducts(Pageable pageable);
 
@@ -189,13 +189,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Object[]> getInventoryValues();
 
     @Query("""
-        SELECT c.id, c.name,
+        SELECT COALESCE(c.id,-1), COALESCE(c.name,'Uncategorized'),
                COUNT(p),
                COALESCE(SUM(p.stockQuantity + COALESCE(ls.non_shop_qty, 0)), 0),
                COALESCE(SUM(COALESCE(p.costPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0),
                COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0)
         FROM Product p
-        JOIN p.category c
+        LEFT JOIN p.category c
         LEFT JOIN (
             SELECT ls.product.id AS pid, SUM(ls.quantity) AS non_shop_qty
             FROM LocationStock ls
@@ -204,7 +204,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             GROUP BY ls.product.id
         ) ls ON ls.pid = p.id
         WHERE p.isActive = true AND p.deletedAt IS NULL
-        GROUP BY c.id, c.name
+        GROUP BY COALESCE(c.id,-1), COALESCE(c.name,'Uncategorized')
         ORDER BY COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0) DESC
         """)
     List<Object[]> getCategoryInventoryBreakdown();

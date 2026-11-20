@@ -493,6 +493,13 @@ public class CashShiftService {
         }
 
         CashDrawerSession session = shift.getDrawerSession();
+        // Blind close: hide component totals so a solo cashier cannot
+        // reconstruct expected cash and "count to the number".
+        boolean isOpenBlindCashShift = session != null
+                && shift.getShiftType() == ShiftType.CASH_DRAWER
+                && session.getStatus() == DrawerSessionStatus.OPEN
+                && Boolean.TRUE.equals(session.getBlindClose());
+
         if (session != null) {
             response.setDrawerSessionId(session.getId());
             if (session.getDrawer() != null) {
@@ -518,8 +525,9 @@ public class CashShiftService {
                 // without a misleading personal cash expectation.
                 boolean drawerOwner = session.getOpenedBy() != null
                         && Objects.equals(session.getOpenedBy().getId(), shift.getCashierId());
-                response.setDrawerCashSalesTotal(nullSafe(cashDrawerMovementRepository
-                        .sumAmountBySessionAndType(session.getId(), DrawerMovementType.CASH_SALE)));
+                response.setDrawerCashSalesTotal(isOpenBlindCashShift ? null
+                        : nullSafe(cashDrawerMovementRepository
+                                .sumAmountBySessionAndType(session.getId(), DrawerMovementType.CASH_SALE)));
                 if (drawerOwner) {
                     BigDecimal drawerExpected = cashDrawerSessionService.getExpectedCash(session.getId());
                     boolean hideExpected = drawerOpen && Boolean.TRUE.equals(session.getBlindClose());
@@ -549,7 +557,7 @@ public class CashShiftService {
         }
 
         if (includeStats) {
-            populateStats(shift, response);
+            populateStats(shift, response, isOpenBlindCashShift);
         } else {
             response.setVariance(shift.getVariance());
             response.setVarianceExceedsTolerance(shift.getVariance() != null
@@ -559,7 +567,8 @@ public class CashShiftService {
         return response;
     }
 
-    private void populateStats(CashShift shift, CashShiftResponse response) {
+    private void populateStats(CashShift shift, CashShiftResponse response,
+                               boolean hideBlindTotals) {
         List<Sale> sales = saleRepository.findByEmployeeShiftId(shift.getId());
         if (sales.isEmpty()) {
             sales = saleRepository.findByCashShiftId(shift.getId());
@@ -615,9 +624,9 @@ public class CashShiftService {
             }
         }
 
-        response.setGrossSales(gross);
-        response.setDiscountTotal(discount);
-        response.setNetSales(net);
+        response.setGrossSales(hideBlindTotals ? null : gross);
+        response.setDiscountTotal(hideBlindTotals ? null : discount);
+        response.setNetSales(hideBlindTotals ? null : net);
         response.setTransactionCount(transactions);
         response.setVoidedCount(voided);
         response.setPaymentBreakdown(breakdown);

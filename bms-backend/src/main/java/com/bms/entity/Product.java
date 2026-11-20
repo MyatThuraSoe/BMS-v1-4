@@ -40,6 +40,13 @@ public class Product {
     private BigDecimal costPrice;
     
     @Column(name = "tax_rate", precision = 5, scale = 2)
+    /**
+     * @deprecated Per-product tax is dead (D7). Tax comes exclusively from the
+     * shop-level tax percentage (ShopInfo.taxPercentage). This column is kept
+     * only so existing shop databases are not broken; it is never read by
+     * pricing or journaling logic.
+     */
+    @Deprecated
     private BigDecimal taxRate = BigDecimal.ZERO;
     
     @Column(name = "stock_quantity", nullable = false)
@@ -160,7 +167,9 @@ public class Product {
     public BigDecimal getCostPrice() { return costPrice; }
     public void setCostPrice(BigDecimal costPrice) { this.costPrice = costPrice; }
     
+    @Deprecated
     public BigDecimal getTaxRate() { return taxRate; }
+    @Deprecated
     public void setTaxRate(BigDecimal taxRate) { this.taxRate = taxRate; }
     
     public Integer getStockQuantity() { return stockQuantity; }
