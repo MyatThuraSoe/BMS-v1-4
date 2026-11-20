@@ -180,12 +180,12 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * the shift closed, hence the upper bound.
      */
     @Query("""
-        SELECT COALESCE(SUM(r.totalReturnAmount), 0)
+        SELECT COALESCE(SUM(r.refundAmount), 0)
         FROM SaleReturn r
         WHERE r.returnDate >= :shiftStart AND r.returnDate <= :shiftEnd
           AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
-          AND (r.sale.saleType <> com.bms.entity.Sale.SaleType.CREDIT
-               OR r.sale.paymentStatus = com.bms.entity.Sale.PaymentStatus.PAID)
+          AND r.refundMethod = com.bms.entity.PaymentMethod.CASH
+          AND r.sale.isVoided = false
         """)
     BigDecimal sumRefundsBetween(@Param("shiftStart") LocalDateTime shiftStart,
                                  @Param("shiftEnd") LocalDateTime shiftEnd);
@@ -200,14 +200,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * before a refund carried a shift still fall back to that shift's window.
      */
     @Query("""
-        SELECT COALESCE(SUM(r.totalReturnAmount), 0)
+        SELECT COALESCE(SUM(r.refundAmount), 0)
         FROM SaleReturn r
         WHERE (r.employeeShift.id = :shiftId
                OR (r.employeeShift IS NULL
                    AND r.returnDate >= :shiftStart AND r.returnDate <= :shiftEnd))
           AND r.sale.isActive = true AND r.sale.deletedAt IS NULL
-          AND (r.sale.saleType <> com.bms.entity.Sale.SaleType.CREDIT
-               OR r.sale.paymentStatus = com.bms.entity.Sale.PaymentStatus.PAID)
+          AND r.refundMethod = com.bms.entity.PaymentMethod.CASH
+          AND r.sale.isVoided = false
         """)
     BigDecimal sumRefundsForShift(@Param("shiftId") Long shiftId,
                                   @Param("shiftStart") LocalDateTime shiftStart,
