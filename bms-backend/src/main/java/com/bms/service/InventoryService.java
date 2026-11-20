@@ -145,6 +145,13 @@ public class InventoryService {
             int qty = row[1] != null ? ((Number) row[1]).intValue() : 0;
             LocalDateTime when = toLocalDateTime(row[2]);
             String refType = row[3] != null ? ((StockMovement.ReferenceType) row[3]).name() : "UNKNOWN";
+            String reasonCode = row[4] != null ? row[4].toString() : null;
+
+            // Skip write-off returns: the units already left stock at sale time,
+            // so counting them as outflow again inflates totalOut/netChange.
+            if ("RETURN_WRITE_OFF".equals(reasonCode)) {
+                continue;
+            }
 
             boolean isIn = type == StockMovement.MovementType.IN
                     || type == StockMovement.MovementType.ADJUSTMENT_IN
