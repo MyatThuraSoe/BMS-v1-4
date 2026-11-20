@@ -601,6 +601,11 @@ public class SaleService {
         BigDecimal taxAmount = order.getTaxAmount();
         BigDecimal totalAmount = order.getTotalAmount();
 
+        // Zero-total sale: no payment needed
+        if (!isCredit && totalAmount.signum() == 0) {
+            amountPaid = BigDecimal.ZERO;
+        }
+
         // The order being converted still holds its own reservation, so stock checks
         // must NOT count that reservation against itself. Compute the order's reserved
         // share per product (aggregated, since a product can appear on multiple lines).
@@ -682,9 +687,17 @@ public class SaleService {
         SalePaymentRequest paymentLine = new SalePaymentRequest();
         paymentLine.setMethod(entityMethod.name());
         paymentLine.setAmount(totalAmount);
-        List<SalePaymentRequest> paymentLines = List.of(paymentLine);
-        paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
-                isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+        List<SalePaymentRequest> paymentLines;
+        if (totalAmount.signum() == 0 && !isCredit) {
+            // Zero-total sale: no payment needed, skip validation
+            paymentLines = List.of();
+            sale.setAmountPaid(BigDecimal.ZERO);
+            sale.setChangeGiven(BigDecimal.ZERO);
+        } else {
+            paymentLines = List.of(paymentLine);
+            paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
+                    isCredit ? Sale.SaleType.CREDIT : Sale.SaleType.CASH);
+        }
 
         if (isCredit) {
             BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
