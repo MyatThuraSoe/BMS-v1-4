@@ -1,0 +1,142 @@
+
+
+# BMS‑v1‑4 — Consolidated Fix Brief 
+
+**Repo:** `MyatThuraSoe/BMS-v1-4`, branch `main` @ `ff5ed18`. **Scope:** `bms-backend` + `frontend`. **Do NOT touch `Android/`.** Base path `bms-backend/src/main/java/com/bms`; `svc` = `service`, `repo` = `repository`.
+
+**Rules**
+- Money = `BigDecimal`, scale 2 (costs scale 6). Never `double`. Keep existing `@Transactional` + `findByIdForUpdate` locks.
+- One task = one commit + one Mockito test (style of `src/test/java/com/bms/service`). Run `cd bms-backend && mvn -q test -Dtest=<TestClass>` then full `mvn -q test`.
+- Locate by the **Anchor** string, not the line number.
+
+**Already fixed in `901de06` — DO NOT redo:** void cash/store‑credit netting; `verifyCart` effective‑price compare; offline count‑sync snapshot; negative‑stock guard on count approval; previous‑period expense definition; `updateExpense` future‑date guard; role‑change token bump; payables‑aging skips ORDERED; daily‑report BigDecimal sort; zero‑total **direct** sale.
+
+---
+
+## P0 — Correctness (actively wrong now)
+
+### TASK‑1 (High): AR/void journal posts one‑sided reversals
+**Files:** `repo/ArPaymentRepository.java` (`findForJournal`), `svc/GlService.java` (`postVoidTenderSplit`, `postVoidReversal`, `postArPayments`).
+**Anchor:** `AND p.reversedAt IS NULL` (inside `findForJournal`); `case CREDIT -> GlMapping.EventType.TENDER_CLEARING;`.
+**Problem:** `findForJournal` excludes reversed payments, so a reversed AR payment loses its collection entry while `findReversedForJournal` still posts the reversal → AR inflated, cash understated. The round‑4 `postVoidTenderSplit` (CREDIT→TENDER_CLEARING) made it worse. Verified: credit sale 100 + AR cash 100 + void currently nets **AR +200 / CASH −100 / TC −100** (should be all 0).
+**Fix (complete model):**
+1. `findForJournal`: delete `AND p.reversedAt IS NULL` (always post the collection at `paymentDate`).
+2. `postArPayments`: skip the `ARP‑REV` reversal entry when `payment.getInvoice().getIsVoided()` is true (the void reversal handles it).
+3. `postVoidReversal`: replace the single tender leg with the same netting `SaleService.voidSale` uses — credit **AR** for the still‑outstanding portion, **CASH** for net cash refunded (`cashCollected − priorRefunds`), **REFUND_LIABILITY** for net non‑cash converted; keep revenue/tax/COGS net of returns. Remove `postVoidTenderSplit`.
+**Verify (journal nets):** paid+void → AR 0/CASH 0/REV 0; paid+return 30+void → AR 0/CASH 0/REV 0; unpaid credit void → AR 0/REV 0; partial‑paid 40+return 30(debt)+void → AR 0/CASH 0/REV 0.
+**Test:** build these four scenarios, assert per‑account debit−credit nets.
+
+### TASK‑2 (Medium): Write‑off return double‑counts outflow in movement stats
+**Files:** `svc/SaleReturnService.java` (write‑off branch), `svc/InventoryService.java` (`getMovementStats`), `repo/StockMovementRepository.java` (`findMovementsSince`).
+**Anchor:** `loss.setReasonCode("RETURN_WRITE_OFF");`; `boolean isIn = type == StockMovement.MovementType.IN`.
+**Problem:** Round‑4 re‑added the write‑off `ADJUSTMENT_OUT` movement (good for traceability) but `getMovementStats` counts it as outflow, though the units already left at sale time → `totalOut`/`netChange` inflated (regression of a round‑3 fix).
+**Fix:** add `reasonCode` to the `findMovementsSince` projection; in `getMovementStats` skip rows with `reasonCode = "RETURN_WRITE_OFF"` from the IN/OUT accumulation. (Stock/ledger are already correct — stats only.)
+**Test:** sale 5 + write‑off return 5 → `totalOut` reflects 5 (the sale), not 10.
+
+### TASK‑3 (Medium): Manual stock adjustment still drifts the SHOP bucket
+**File:** `svc/ProductService.java` (`adjustStock`).
+**Anchor:** `product.setStockQuantity(newQuantity);` near `logAction(userId, "STOCK_ADJUSTMENT"`.
+**Problem:** Round‑4 added `LocationService.setShopStock` everywhere **except** here → bucket drifts → false `"stock drift detected"` on the next transfer.
+**Fix:** after that line add `locationService.setShopStock(product, newQuantity);` (inject `LocationService` if absent).
+**Test:** create product, sell 1 (creates bucket), adjust stock +5, then shop→backroom transfer of the full stock → succeeds (no drift error).
+
+### TASK‑4 (Medium): Blind drawer close still leaks expected cash
+**File:** `svc/CashShiftService.java` (`toResponse`, `populateStats`).
+**Anchor:** `response.setDrawerCashSalesTotal(`.
+**Problem:** Round‑4 hid `cashSalesTotal/nonCashSalesTotal/returnsTotal` for an open blind shift, but `drawerCashSalesTotal` (whole‑drawer cash sales) is still set unconditionally, and `grossSales/netSales` remain → cashier can reconstruct expected cash.
+**Fix:** under the same open‑blind condition used in `populateStats`, null out `drawerCashSalesTotal` (and `grossSales/netSales/discountTotal`) in `toResponse`.
+**Test:** open blind cash shift, `GET /api/shifts/current` → `drawerCashSalesTotal`, `netSales`, `expectedAmount` all null.
+
+---
+
+## P1 — Functional bugs
+
+### TASK‑5 (Medium): Fully‑discounted (zero‑total) order can't be converted
+**File:** `svc/SaleService.java` (`createSaleFromOrder`).
+**Anchor:** `Amount paid is required and must be positive`; `paymentLine.setAmount(totalAmount);`.
+**Problem:** Round‑4 zero‑total fix only patched `createSale`. Conversion still requires `amountPaid > 0` and builds a 0‑amount payment line → `verifyForSale` rejects.
+**Fix:** mirror `createSale`: when `totalAmount.signum() == 0`, skip the amountPaid guard and payment validation, set `paymentMethod=CASH`, `amountPaid=0`, `changeGiven=0`, `paymentLines=List.of()`.
+**Test:** order with 100% shop discount (total 0) converts successfully; stock deducted; no payment rows.
+
+### TASK‑6 (Medium): Two inventory‑value reports disagree
+**File:** `svc/ReportService.java` (`getInventoryReport`).
+**Anchor:** `int stock = product.getStockQuantity() == null ? 0 : product.getStockQuantity();`.
+**Problem:** Values shop stock only; `InventoryService.getSummary` values all owned stock (round‑3 BUG‑4 missed this path).
+**Fix:** use `locationService.totalOwnedUnits(product)` (inject `LocationService`) for the unit count/valuation so it matches `getInventoryValues`.
+**Test:** product with 5 shop + 7 backroom → both reports value 12 units.
+
+### TASK‑7 (Medium): Order below‑cost check ignores the header discount
+**Files:** `svc/OrderService.java` (`createOrder`), `svc/SaleService.java` (`createSaleFromOrder`).
+**Anchor:** `effectiveUnitPrice.compareTo(lineCost) < 0`; `linePrice.compareTo(lineCost) < 0`.
+**Problem:** Both check the pre‑header‑discount unit price; direct sales check the allocated net price (`assertNetPriceRespectsCostPolicy`). A discounted order can sell below cost without the manager gate.
+**Fix:** allocate the header discount to lines (reuse `SaleDiscountUtils.allocateDiscounts` logic) and compare the **net** unit price vs cost, exactly like `createSale`.
+**Test:** REQUIRE_MANAGER policy + shop discount that pushes a line below cost → cashier order create/convert throws; manager passes.
+
+---
+
+## P2 — Report accuracy
+
+### TASK‑8 (Low): LTV / customer spend / top‑products ignore returns
+**File:** `repo/SaleRepository.java` (`findCustomerLtvData`, `sumTotalAmountByCustomerIdAndDateAfter`, `findTopProductsByCustomerId`).
+**Anchor:** `SUM(s.totalAmount)` in `findCustomerLtvData`; `SUM(si.quantity)` in `findTopProductsByCustomerId`.
+**Fix:** subtract returned value/qty (join `SaleReturn`/`quantityRefunded`) so spend and rankings are net of returns.
+**Test:** customer buys 100, returns 30 → LTV/totalSpent = 70; top‑product qty excludes refunded units.
+
+### TASK‑9 (Low): Category inventory breakdown drops uncategorized products
+**File:** `repo/ProductRepository.java` (`getCategoryInventoryBreakdown`).
+**Anchor:** `JOIN p.category c`.
+**Fix:** `LEFT JOIN p.category c` + `COALESCE(c.id,-1)`/`COALESCE(c.name,'Uncategorized')` so the breakdown reconciles to the all‑products total.
+**Test:** one uncategorized product with stock → appears under "Uncategorized"; breakdown sum == summary total.
+
+### TASK‑10 (Low): Dead‑stock / most‑sold query gaps
+**File:** `repo/ProductRepository.java` (`findDeadStock`, `findMostSoldProducts`, `searchMostSoldProducts`, `findLeastSoldProducts`, `searchLeastSoldProducts`).
+**Anchor:** `LEFT JOIN SaleItem si ON si.product.id = p.id AND si.sale.isVoided = false`.
+**Fix:** add `AND si.sale.isActive = true AND si.sale.deletedAt IS NULL` to the sale join; rank by `SUM(si.quantity - COALESCE(si.quantityRefunded,0))`; keep products whose only sales are voided (they should appear as 0‑sold, not vanish).
+**Test:** product with only a soft‑deleted recent sale → shows as dead stock; product with only voided sales → appears in least‑sold with 0.
+
+### TASK‑11 (Low): Legacy shift refund fallback counts non‑cash refunds
+**File:** `repo/SaleRepository.java` (`sumRefundsForShift`, `sumRefundsBetween`).
+**Anchor:** `SELECT COALESCE(SUM(r.totalReturnAmount), 0)`.
+**Problem:** Sums `totalReturnAmount` for card/store‑credit refunds (no drawer cash) and gates on the sale's **current** `paymentStatus`. Only affects pre‑upgrade shifts without a drawer session.
+**Fix:** sum `r.refundAmount` where `r.refundMethod = CASH` (cash actually handed back), instead of `totalReturnAmount` with the sale‑status proxy.
+**Test:** cash sale refunded via STORE_CREDIT during a legacy shift → expected cash unchanged.
+
+---
+
+## P3 — Hardening / cleanup / decisions
+
+### TASK‑12 (Low): Invalid CORS private‑range pattern
+**File:** `config/SecurityConfig.java`.
+**Anchor:** `"http://172.16-31.*:*"`.
+**Problem:** Not a valid Spring `allowedOriginPatterns` range; 172.16–31.x clients are rejected.
+**Fix:** replace with explicit patterns `http://172.16.*:*` … `http://172.31.*:*` (16 entries) or a single correct wildcard if appropriate.
+**Test:** CORS preflight from `http://172.20.0.5:5173` is allowed.
+
+### TASK‑13 (Low): Per‑product `taxRate` is a dead field
+**File:** `svc/ProductService.java` (+ product DTOs/UI).
+**Anchor:** `product.setTaxRate(`.
+**Problem:** Stored/edited/exported/returned but pricing always uses the shop‑wide rate → misleading.
+**Fix (decision):** either (a) apply `product.taxRate` when set (else shop rate) in `applyDiscountedLineTaxes`, or (b) remove/hide the field. Minimal = (b): drop it from create/update/response/export or mark read‑only "unused".
+**Test:** whichever path chosen, behavior matches the UI promise.
+
+### TASK‑14 (Low): Remove dead variables in `voidSale`
+**File:** `svc/SaleService.java` (`voidSale`).
+**Anchor:** `BigDecimal netRemaining =`; `BigDecimal convertedNonCash = BigDecimal.ZERO;`.
+**Fix:** delete `netRemaining`, `totalSettled` (only feeds `netRemaining`), and `convertedNonCash` (unused after the netting fix). No behavior change.
+
+### TASK‑15 (Low, VERIFY‑FIRST): Deleting a closed‑short PO orphans its variance expense
+**File:** `svc/PurchaseService.java` (`deletePurchase`).
+**Anchor:** `public void deletePurchase`.
+**Verify:** confirm `deletePurchase` still does not reverse the `PURCHASE_VARIANCE` `Expense` created by `recomputeTotalsOnClose` (it didn't at `ab743d1`; may be unchanged).
+**Fix (if present):** on delete, reverse/remove the linked `PURCHASE_VARIANCE` expense (and its profit‑ledger row) so the P&L doesn't keep a stale variance.
+**Test:** close a PO short (creates variance), delete it → variance expense reversed; P&L expense returns to baseline.
+
+### TASK‑16 (Feature/decision, not a quick bug): Store credit is unredeemable
+**Files:** `svc/PaymentValidationService.java`, `svc/SaleService.java`, `svc/CustomerService.java`.
+**Problem:** `creditBalance` only ever grows; `STORE_CREDIT` is blocked as tender; customers with credit can't be deleted. Known "phase‑2" gap.
+**Fix (only if owner wants redeemable credit):** allow `STORE_CREDIT` tender with a customer, lock the customer, require `creditBalance >= amount`, subtract it, post a GL entry; then relax the delete guard. Otherwise leave as‑is and document.
+
+---
+
+### Suggested order
+`TASK‑1 → 2 → 3 → 4` (P0), then `5 → 6 → 7` (P1), then P2/P3. Each is localized; TASK‑1 is the only multi‑file one and has a concrete verification table above.
