@@ -189,13 +189,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     List<Object[]> getInventoryValues();
 
     @Query("""
-        SELECT c.id, c.name,
+        SELECT COALESCE(c.id,-1), COALESCE(c.name,'Uncategorized'),
                COUNT(p),
                COALESCE(SUM(p.stockQuantity + COALESCE(ls.non_shop_qty, 0)), 0),
                COALESCE(SUM(COALESCE(p.costPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0),
                COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0)
         FROM Product p
-        JOIN p.category c
+        LEFT JOIN p.category c
         LEFT JOIN (
             SELECT ls.product.id AS pid, SUM(ls.quantity) AS non_shop_qty
             FROM LocationStock ls
@@ -204,7 +204,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             GROUP BY ls.product.id
         ) ls ON ls.pid = p.id
         WHERE p.isActive = true AND p.deletedAt IS NULL
-        GROUP BY c.id, c.name
+        GROUP BY COALESCE(c.id,-1), COALESCE(c.name,'Uncategorized')
         ORDER BY COALESCE(SUM(COALESCE(p.unitPrice, 0) * (p.stockQuantity + COALESCE(ls.non_shop_qty, 0))), 0) DESC
         """)
     List<Object[]> getCategoryInventoryBreakdown();
