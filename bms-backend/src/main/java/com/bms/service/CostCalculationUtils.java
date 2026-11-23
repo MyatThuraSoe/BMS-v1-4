@@ -91,7 +91,11 @@ public final class CostCalculationUtils {
 
     public static BigDecimal calculateCogs(BigDecimal costPriceAtSale, int quantity) {
         if (costPriceAtSale == null) {
-            return BigDecimal.ZERO;
+            // BUG-8: a missing cost must never become zero COGS. Posting the
+            // units for free overstates both inventory and profit, and nothing
+            // else fails, so surface it exactly as calculateProfit does.
+            throw new com.bms.exception.BusinessException(
+                    "Cannot compute COGS: cost price at sale is missing");
         }
         return costPriceAtSale.multiply(BigDecimal.valueOf(quantity)).setScale(COST_SCALE, RoundingMode.HALF_UP);
     }

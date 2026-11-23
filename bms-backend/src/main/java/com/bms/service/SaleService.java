@@ -94,6 +94,9 @@ public class SaleService {
     private LedgerPostingService ledgerPostingService;
 
     @Autowired
+    private InventoryLedgerRepository inventoryLedgerRepository;
+
+    @Autowired
     private PeriodGuard periodGuard;
 
     @Autowired
@@ -292,7 +295,7 @@ public class SaleService {
             item.setSale(sale);
             item.setProduct(product);
             item.setQuantity(itemRequest.getQuantity());
-            item.setCostPriceAtSale(product.getCostPrice());
+            item.setCostPriceAtSale(resolveCostPriceAtSale(product));
 
             PricingQuote quote = promotionService.calculateBestPrice(
                     product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
@@ -486,6 +489,37 @@ public class SaleService {
                 (contact != null ? " (" + contact + ")" : "");
     }
 
+    /**
+     * BUG-8: a sale must never be costed at an implicit zero. Use the POS cost
+     * cache when present; a legacy/imported row without one can still fall back
+     * to the latest valued ledger balance. When neither exists the sale is
+     * rejected rather than relieving inventory for free.
+     */
+    private BigDecimal resolveCostPriceAtSale(Product product) {
+        if (product.getCostPrice() != null) {
+            return product.getCostPrice();
+        }
+        BigDecimal ledgerCost = inventoryLedgerRepository
+                .findTopByProductIdOrderByIdDesc(product.getId())
+                .map(InventoryLedger::getUnitCostAfter)
+                .filter(java.util.Objects::nonNull)
+                .orElse(null);
+        if (ledgerCost != null) {
+            return ledgerCost;
+        }
+        throw new BusinessException("Product '" + product.getName()
+                + "' has no cost price; set one before selling");
+    }
+
+    private BigDecimal requireCostAtSale(SaleItem item) {
+        BigDecimal cost = item.getCostPriceAtSale();
+        if (cost == null) {
+            throw new BusinessException("Product '" + item.getProduct().getName()
+                    + "' has no cost price; set one before selling");
+        }
+        return cost;
+    }
+
     private void processStockDeduction(Sale sale, Long userId) {
         for (SaleItem item : sale.getItems()) {
             Product product = item.getProduct();
@@ -498,7 +532,7 @@ public class SaleService {
             }
 
             // P1/O8: inventory relief at costPriceAtSale, posted before stock moves.
-            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(item);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
                     "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),
@@ -649,7 +683,7 @@ public class SaleService {
             item.setTaxAmount(orderItem.getTaxAmount());
             // P2: COGS uses the cost in force at fulfilment (read under the product lock above),
             // not the order-time quote. costPriceAtOrder stays for margin quoting only.
-            item.setCostPriceAtSale(product.getCostPrice());
+            item.setCostPriceAtSale(resolveCostPriceAtSale(product));
             // O6: the pricing the order was created with has to survive onto the
             // sale line, otherwise promotion reports miss every converted order.
             item.setOriginalUnitPrice(orderItem.getOriginalUnitPrice());
@@ -766,7 +800,7 @@ public class SaleService {
                         + " unit(s) other pending orders reserve; restock the product or cancel those orders first");
             }
             // P1/O8: inventory relief at fulfilment cost, posted before stock moves.
-            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(item);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
                     "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),

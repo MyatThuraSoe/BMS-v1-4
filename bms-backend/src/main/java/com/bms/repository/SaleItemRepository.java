@@ -16,6 +16,9 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
 
     boolean existsByProductId(Long productId);
 
+    /** BUG-8: sale lines whose historical cost was never captured. */
+    long countByCostPriceAtSaleIsNull();
+
     @Query("""
         SELECT si.sale.customer.id, si.sale.customer.firstName, si.sale.customer.lastName,
                si.sale.customer.phone,

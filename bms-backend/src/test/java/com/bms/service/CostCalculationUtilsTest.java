@@ -41,6 +41,13 @@ class CostCalculationUtilsTest {
     }
 
     @Test
+    void cogsThrowsOnNullCostInsteadOfSilentlyPostingZero() {
+        // BUG-8: zero COGS relieves the stock for free and overstates profit.
+        org.junit.jupiter.api.Assertions.assertThrows(com.bms.exception.BusinessException.class,
+                () -> CostCalculationUtils.calculateCogs(null, 2));
+    }
+
+    @Test
     void removesPurchaseCostAtItsOwnUnitCost() {
         // 110 units from 100 @ 20 plus 10 @ 10 -> average 2100/110. Reversing the
         // 10 @ 10 must restore 100 units at 20.00. C7 keeps scale 6 so the rounded

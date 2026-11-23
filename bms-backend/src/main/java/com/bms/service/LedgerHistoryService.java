@@ -542,6 +542,12 @@ public class LedgerHistoryService {
     }
 
     private static BigDecimal cogs(SaleItem item, int quantity) {
+        if (item.getCostPriceAtSale() == null) {
+            // The history scan above already records this as a blocking issue.
+            // Keep the audit running so the operator sees every problem at once
+            // instead of the first exception aborting the report.
+            return money(BigDecimal.ZERO);
+        }
         return money(CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(), quantity));
     }
 
