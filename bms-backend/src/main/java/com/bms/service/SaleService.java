@@ -1003,7 +1003,7 @@ public class SaleService {
             ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
 
             // P1/O8: void restores inventory at costPriceAtSale, dated on the void.
-            BigDecimal costAtSale = lockedItem.getCostPriceAtSale() != null ? lockedItem.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(lockedItem);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.VOID,
                     "SALE_VOID", sale.getId(), String.valueOf(lockedItem.getId()), quantityToRestore,
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(quantityToRestore)),

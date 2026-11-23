@@ -244,9 +244,10 @@ public class SaleReturnService {
 
             // P9: value the returned units at the cost they carried at sale time, not
             // today's average, so inventory value stays consistent if cost moved since.
+            // A legacy sale line with a missing cost cannot be returned — the operator
+            // must set a cost first (admin repair).
             SaleReturnItem.ReturnDisposition disposition = resolveDisposition(itemRequest.getDisposition());
-            BigDecimal costAtSale = saleItem.getCostPriceAtSale() != null
-                    ? saleItem.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(saleItem);
             BigDecimal lineValuation = costAtSale.multiply(BigDecimal.valueOf(requestedQuantity))
                     .setScale(CostCalculationUtils.COST_SCALE, RoundingMode.HALF_UP);
 
@@ -652,6 +653,19 @@ public class SaleReturnService {
         } catch (IllegalArgumentException ex) {
             throw new BusinessException("Unknown return disposition: " + raw);
         }
+    }
+
+    /**
+     * BUG-8: a returned unit must never be valued at zero. A legacy sale line
+     * with a missing cost cannot be returned until the cost is repaired.
+     */
+    private BigDecimal requireCostAtSale(SaleItem saleItem) {
+        BigDecimal cost = saleItem.getCostPriceAtSale();
+        if (cost == null) {
+            throw new BusinessException("Product '" + saleItem.getProduct().getName()
+                    + "' has no cost price; set one before returning");
+        }
+        return cost;
     }
 
     /** Read-only load: the return dialog must not write-lock the sale while the till is busy. */
