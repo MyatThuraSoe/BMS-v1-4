@@ -27,6 +27,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     List<Product> findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc();
 
+    /** BUG-8: products that would otherwise post zero COGS. */
+    long countByCostPriceIsNullAndDeletedAtIsNull();
+
     @Query("""
         SELECT p FROM Product p
         WHERE p.isActive = true AND p.deletedAt IS NULL

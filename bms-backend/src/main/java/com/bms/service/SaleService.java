@@ -94,6 +94,9 @@ public class SaleService {
     private LedgerPostingService ledgerPostingService;
 
     @Autowired
+    private InventoryLedgerRepository inventoryLedgerRepository;
+
+    @Autowired
     private PeriodGuard periodGuard;
 
     @Autowired
@@ -283,31 +286,34 @@ public class SaleService {
         LocalDateTime pricingMoment = sale.getSaleDate();
         List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
 
-        // Second pass: create items and calculate totals (use locked products)
-        for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+        // Second pass: create items and calculate totals (use locked products).
+        // TASK-3: merge request lines by product before pricing, so each product
+        // is priced once on its total quantity. Volume tiers are evaluated on the
+        // full cart quantity, not per line. requestedByProduct already sums qty by
+        // product from the first pass, so reuse it here.
+        for (Map.Entry<Long, Integer> entry : requestedByProduct.entrySet()) {
+            Product product = productRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+
+            int mergedQty = entry.getValue();
 
             SaleItem item = new SaleItem();
             item.setSale(sale);
             item.setProduct(product);
-            item.setQuantity(itemRequest.getQuantity());
-            item.setCostPriceAtSale(product.getCostPrice());
+            item.setQuantity(mergedQty);
+            item.setCostPriceAtSale(resolveCostPriceAtSale(product));
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
+                    product, mergedQty, pricingCustomer, pricingMoment, activePromotions);
             BigDecimal effectiveUnitPrice = quote.getUnitPrice();
 
-            // P10/O5: the below-cost guard runs on the net price after the header
-            // discount has been allocated, so it happens once for the whole cart
-            // below instead of per line here.
             item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
             item.setUnitPrice(effectiveUnitPrice);
             item.setLineDiscount(quote.getLineDiscount());
             item.setPromotionId(quote.getPromotionId());
             item.setPromotionName(quote.getPromotionName());
 
-            BigDecimal itemTotal = lineGross(effectiveUnitPrice, itemRequest.getQuantity());
+            BigDecimal itemTotal = lineGross(effectiveUnitPrice, mergedQty);
             item.setTotalPrice(itemTotal);
 
             sale.getItems().add(item);
@@ -486,6 +492,41 @@ public class SaleService {
                 (contact != null ? " (" + contact + ")" : "");
     }
 
+    /**
+     * BUG-8: a sale must never be costed at an implicit zero. Use the POS cost
+     * cache when present; a legacy/imported row without one can still fall back
+     * to the latest valued ledger balance. When neither exists the sale is
+     * rejected rather than relieving inventory for free.
+     */
+    private BigDecimal resolveCostPriceAtSale(Product product) {
+        if (product.getCostPrice() != null) {
+            return product.getCostPrice();
+        }
+        BigDecimal ledgerCost = inventoryLedgerRepository
+                .findTopByProductIdOrderByIdDesc(product.getId())
+                .map(InventoryLedger::getUnitCostAfter)
+                .filter(java.util.Objects::nonNull)
+                .orElse(null);
+        if (ledgerCost != null) {
+            return ledgerCost;
+        }
+        throw new BusinessException("Product '" + product.getName()
+                + "' has no cost price and no inventory ledger history. "
+                + "Set a cost on the product, or use the admin cost-repair endpoint "
+                + "(POST /api/accounting/cost-repair) to backfill legacy sale lines.");
+    }
+
+    private BigDecimal requireCostAtSale(SaleItem item) {
+        BigDecimal cost = item.getCostPriceAtSale();
+        if (cost == null) {
+            throw new BusinessException("Sale line " + item.getId() + " for product '"
+                    + item.getProduct().getName() + "' has no cost price at sale. "
+                    + "Use the admin cost-repair endpoint (POST /api/accounting/cost-repair) "
+                    + "to backfill it from the inventory ledger, then retry.");
+        }
+        return cost;
+    }
+
     private void processStockDeduction(Sale sale, Long userId) {
         for (SaleItem item : sale.getItems()) {
             Product product = item.getProduct();
@@ -498,7 +539,7 @@ public class SaleService {
             }
 
             // P1/O8: inventory relief at costPriceAtSale, posted before stock moves.
-            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(item);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
                     "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),
@@ -649,7 +690,7 @@ public class SaleService {
             item.setTaxAmount(orderItem.getTaxAmount());
             // P2: COGS uses the cost in force at fulfilment (read under the product lock above),
             // not the order-time quote. costPriceAtOrder stays for margin quoting only.
-            item.setCostPriceAtSale(product.getCostPrice());
+            item.setCostPriceAtSale(resolveCostPriceAtSale(product));
             // O6: the pricing the order was created with has to survive onto the
             // sale line, otherwise promotion reports miss every converted order.
             item.setOriginalUnitPrice(orderItem.getOriginalUnitPrice());
@@ -766,7 +807,7 @@ public class SaleService {
                         + " unit(s) other pending orders reserve; restock the product or cancel those orders first");
             }
             // P1/O8: inventory relief at fulfilment cost, posted before stock moves.
-            BigDecimal costAtSale = item.getCostPriceAtSale() != null ? item.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(item);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.SALE,
                     "SALE", sale.getId(), String.valueOf(item.getId()), -item.getQuantity(),
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(item.getQuantity())).negate(),
@@ -969,7 +1010,7 @@ public class SaleService {
             ledgerPostingService.postVoidProfit(sale, lockedItem, quantityToRestore, sale.getVoidedAt());
 
             // P1/O8: void restores inventory at costPriceAtSale, dated on the void.
-            BigDecimal costAtSale = lockedItem.getCostPriceAtSale() != null ? lockedItem.getCostPriceAtSale() : BigDecimal.ZERO;
+            BigDecimal costAtSale = requireCostAtSale(lockedItem);
             ledgerPostingService.postInventory(product, InventoryLedger.EventType.VOID,
                     "SALE_VOID", sale.getId(), String.valueOf(lockedItem.getId()), quantityToRestore,
                     costAtSale, costAtSale.multiply(BigDecimal.valueOf(quantityToRestore)),

@@ -18,7 +18,9 @@ import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
+import com.bms.exception.BusinessException;
 import com.bms.repository.CashDrawerSessionRepository;
+import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
@@ -27,6 +29,7 @@ import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
 import com.bms.repository.LocationStockRepository;
+import com.bms.repository.SystemSettingRepository;
 import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -77,6 +80,9 @@ public class ReportService {
 
     @Autowired
     private LedgerReadService ledgerReadService;
+
+    @Autowired
+    private SystemSettingRepository systemSettingRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -436,18 +442,30 @@ public class ReportService {
     }
 
     public Map<String, Object> getProfitSummary(LocalDate startDate, LocalDate endDate) {
-        if (!ledgerReadService.isActive()) return getLegacyProfitSummary(startDate, endDate);
-        BigDecimal[] totals = ledgerReadService.totals(shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
-        BigDecimal grossProfit = totals[0].subtract(totals[1]);
-        Map<String, Object> summary = new LinkedHashMap<>();
-        summary.put("revenue", totals[0]);
-        summary.put("cogs", totals[1]);
-        summary.put("grossProfit", grossProfit);
-        summary.put("grossMarginPercent", totals[0].signum() > 0
-                ? grossProfit.multiply(BigDecimal.valueOf(100)).divide(totals[0], 2, RoundingMode.HALF_UP)
-                : BigDecimal.ZERO);
-        summary.put("outstandingAr", saleRepository.sumOutstandingAr());
-        return summary;
+        if (ledgerReadService.isActive()) {
+            BigDecimal[] totals = ledgerReadService.totals(shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
+            BigDecimal grossProfit = totals[0].subtract(totals[1]);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("revenue", totals[0]);
+            summary.put("cogs", totals[1]);
+            summary.put("grossProfit", grossProfit);
+            summary.put("grossMarginPercent", totals[0].signum() > 0
+                    ? grossProfit.multiply(BigDecimal.valueOf(100)).divide(totals[0], 2, RoundingMode.HALF_UP)
+                    : BigDecimal.ZERO);
+            summary.put("outstandingAr", saleRepository.sumOutstandingAr());
+            return summary;
+        }
+        if (legacyEnabled()) {
+            return getLegacyProfitSummary(startDate, endDate);
+        }
+        throw new BusinessException("Ledger cutover not completed: the legacy report path is disabled. "
+                + "Backfill history and activate ledger reads, or enable accounting.ledger.legacy.enabled.");
+    }
+
+    private boolean legacyEnabled() {
+        return systemSettingRepository.findBySettingKey(LedgerReadService.LEGACY_ENABLED_KEY)
+                .map(setting -> "true".equalsIgnoreCase(setting.getSettingValue()))
+                .orElse(false);
     }
 
     Map<String, Object> getLegacyProfitSummary(LocalDate startDate, LocalDate endDate) {

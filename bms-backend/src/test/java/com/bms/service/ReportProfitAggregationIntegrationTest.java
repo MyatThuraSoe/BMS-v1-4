@@ -3,6 +3,8 @@ package com.bms.service;
 import com.bms.dto.response.AccountingSummaryResponse;
 import com.bms.dto.response.DailySalesTrendDto;
 import com.bms.entity.Product;
+import com.bms.entity.SystemSetting;
+import com.bms.repository.SystemSettingRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.SpringBootConfiguration;
@@ -24,6 +26,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.Mockito.lenient;
 
 /**
  * P7 acceptance (spec 6.3): with 60,000 sales in the range the reported
@@ -50,6 +53,7 @@ class ReportProfitAggregationIntegrationTest {
     @MockBean private CashShiftService cashShiftService;
     @MockBean private CashDrawerSessionService cashDrawerSessionService;
     @MockBean private SystemSettingService systemSettingService;
+    @MockBean private SystemSettingRepository systemSettingRepository;
 
     private static final int BULK_SALES = 60_000;
     private static final BigDecimal PRICE = new BigDecimal("100.00");
@@ -148,6 +152,12 @@ class ReportProfitAggregationIntegrationTest {
         long expectedTransactions = liveBulk + 2L;
 
         LocalDate start = today.minusDays(12);
+
+        var legacy = new SystemSetting();
+        legacy.setSettingKey("accounting.ledger.legacy.enabled");
+        legacy.setSettingValue("true");
+        lenient().when(systemSettingRepository.findBySettingKey("accounting.ledger.legacy.enabled"))
+                .thenReturn(java.util.Optional.of(legacy));
 
         Map<String, Object> summary = reportService.getProfitSummary(start, today);
         assertMoney(expectedRevenue, (BigDecimal) summary.get("revenue"));

@@ -154,6 +154,8 @@ public class DatabaseSeeder implements CommandLineRunner {
                 "Close accounting periods in sequence and refuse to skip earlier months", "BOOLEAN"});
         defaults.put("accounting.ledger.cutover", new String[]{"",
                 "Ledger read cutover timestamp after historical reconciliation", "STRING"});
+        defaults.put("accounting.ledger.legacy.enabled", new String[]{"false",
+                "Enable the legacy (pre-cutover) GL and report path; default off, migration-only", "BOOLEAN"});
         defaults.put("shop.customer.allowWriteOff", new String[]{"false",
                 "Allow admin write-off flow for customer debt before deletion", "BOOLEAN"});
         defaults.put("auth.token.requireVersionClaim", new String[]{"false",

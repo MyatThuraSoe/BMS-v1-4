@@ -178,6 +178,7 @@ class SaleServiceVoidCashTrailTest {
         saleItem.setQuantityRefunded(0);
         saleItem.setUnitPrice(new BigDecimal("100.00"));
         saleItem.setTotalPrice(new BigDecimal("100.00"));
+        saleItem.setCostPriceAtSale(new BigDecimal("60.00"));
         sale.getItems().add(saleItem);
 
         CashShift originalShift = new CashShift();

@@ -45,6 +45,10 @@ public class SaleItem {
     @Column(name = "quantity_refunded", nullable = false)
     private Integer quantityRefunded = 0;
 
+    /** True when cost_price_at_sale was backfilled by the admin cost repair. */
+    @Column(name = "estimated", nullable = false, columnDefinition = "numeric(1,0) default 0")
+    private Boolean estimated = false;
+
     /** List price before promotions / price-list pricing. */
     @Column(name = "original_unit_price", precision = 10, scale = 2)
     private BigDecimal originalUnitPrice;
@@ -93,6 +97,9 @@ public class SaleItem {
 
     public Integer getQuantityRefunded() { return quantityRefunded; }
     public void setQuantityRefunded(Integer quantityRefunded) { this.quantityRefunded = quantityRefunded; }
+
+    public Boolean getEstimated() { return estimated != null ? estimated : false; }
+    public void setEstimated(Boolean estimated) { this.estimated = estimated; }
 
     public BigDecimal getOriginalUnitPrice() {
         return originalUnitPrice != null ? originalUnitPrice : unitPrice;

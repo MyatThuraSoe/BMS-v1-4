@@ -3,6 +3,7 @@ package com.bms.controller;
 import com.bms.dto.response.ApiResponse;
 import com.bms.entity.PeriodClose;
 import com.bms.exception.BusinessException;
+import com.bms.service.AccountingIntegrityService;
 import com.bms.service.AccountingPeriodService;
 import com.bms.service.LedgerHistoryService;
 import com.bms.service.UserService;
@@ -32,15 +33,17 @@ public class AccountingController {
     private final LedgerHistoryService historyService;
     private final AccountingPeriodService periodService;
     private final UserService userService;
+    private final AccountingIntegrityService accountingIntegrityService;
 
     @org.springframework.beans.factory.annotation.Autowired
     private com.bms.service.InventoryHistoryService inventoryHistoryService;
 
     public AccountingController(LedgerHistoryService historyService, AccountingPeriodService periodService,
-                                 UserService userService) {
+                                 UserService userService, AccountingIntegrityService accountingIntegrityService) {
         this.historyService = historyService;
         this.periodService = periodService;
         this.userService = userService;
+        this.accountingIntegrityService = accountingIntegrityService;
     }
 
     @PostMapping("/profit-backfill")
@@ -81,6 +84,13 @@ public class AccountingController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> cutover(Authentication authentication) {
         return ResponseEntity.ok(new ApiResponse<>(true, "Ledger reads activated",
                 periodService.activateLedgerReads(userId(authentication))));
+    }
+
+    @PostMapping("/cost-repair")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> costRepair(@RequestBody BackfillRequest request,
+                                                                       Authentication authentication) {
+        return ResponseEntity.ok(new ApiResponse<>(true, "Null cost repair result",
+                accountingIntegrityService.repairNullCostLines(request.backupConfirmed(), userId(authentication))));
     }
 
     @GetMapping("/periods")

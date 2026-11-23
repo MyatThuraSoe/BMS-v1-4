@@ -45,6 +45,18 @@ public class GlService {
     private LedgerReadService ledgerReadService;
 
     @Autowired
+    private SystemSettingRepository systemSettingRepository;
+
+    private static final String LEGACY_KEY = LedgerReadService.LEGACY_ENABLED_KEY;
+
+    /** True when the legacy (pre-cutover) GL and report path is explicitly enabled. */
+    private boolean legacyEnabled() {
+        return systemSettingRepository.findBySettingKey(LEGACY_KEY)
+                .map(setting -> "true".equalsIgnoreCase(setting.getSettingValue()))
+                .orElse(false);
+    }
+
+    @Autowired
     private ProfitLedgerRepository profitLedgerRepository;
 
     @Autowired
@@ -225,12 +237,15 @@ public class GlService {
 
         if (ledgerReadService.isActive()) {
             postLedger(entries, accounts, startTs, endTs);
-        } else {
+        } else if (legacyEnabled()) {
             postPurchases(entries, accounts, start, end);
             postSales(entries, accounts, startTs, endTs);
             postSaleReturns(entries, accounts, startTs, endTs);
             postExpenses(entries, accounts, start, end);
             postStockMovements(entries, accounts, startTs, endTs);
+        } else {
+            throw new BusinessException("Ledger cutover not completed: the legacy GL path is disabled. "
+                    + "Backfill history and activate ledger reads, or enable accounting.ledger.legacy.enabled.");
         }
         postArPayments(entries, accounts, startTs, endTs);
         postPurchasePayments(entries, accounts, startTs, endTs);
@@ -448,7 +463,7 @@ public class GlService {
             add(entries, accounts, date, reference, "Sales tax",
                     GlMapping.EventType.SALES_TAX_PAYABLE, BigDecimal.ZERO, tax);
         }
-        BigDecimal cogs = netCogs(sale);
+        BigDecimal cogs = grossCogs(sale);
         if (cogs.signum() > 0) {
             addPair(entries, accounts, date, reference, "Cost of goods sold",
                     GlMapping.EventType.COST_OF_GOODS_SOLD, GlMapping.EventType.INVENTORY, cogs);
@@ -607,9 +622,11 @@ public class GlService {
     }
 
     // Returns reverse revenue and tax at the return date and credit the refund
-    // tender. COGS is NOT reversed here: P4.2 already nets refunded quantity at
-    // the sale date, so a second reversal would double count. Restocked inventory
-    // valuation arrives with P9 (RETURN movements are unvalued until then).
+    // tender. COGS is also reversed here, for the units this return actually
+    // sent back: the sale date booked the full sold quantity, so without this
+    // reversal a month's COGS would only be correct by mutating the original
+    // period through SaleItem.quantityRefunded. Dated reversal keeps every
+    // month frozen once it is reported.
     private void postSaleReturns(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
                                  LocalDateTime startTs, LocalDateTime endTs) {
         for (SaleReturn ret : saleReturnRepository.findForJournal(startTs, endTs)) {
@@ -637,6 +654,11 @@ public class GlService {
                 add(entries, accounts, date, reference, "Sales return tax",
                         GlMapping.EventType.SALES_TAX_PAYABLE, taxShare, BigDecimal.ZERO);
             }
+            BigDecimal returnedCogs = returnCogs(ret);
+            if (returnedCogs.signum() > 0) {
+                addPair(entries, accounts, date, reference, "Sales return COGS",
+                        GlMapping.EventType.INVENTORY, GlMapping.EventType.COST_OF_GOODS_SOLD, returnedCogs);
+            }
             if (debtReduction.signum() > 0) {
                 add(entries, accounts, date, reference, "Sales return debt reduction",
                         GlMapping.EventType.ACCOUNTS_RECEIVABLE, BigDecimal.ZERO, debtReduction);
@@ -647,6 +669,15 @@ public class GlService {
                         BigDecimal.ZERO, refundDue);
             }
         }
+    }
+
+    /** COGS of the units this return sent back, valued at the original sale cost. */
+    private BigDecimal returnCogs(SaleReturn ret) {
+        return ret.getItems().stream()
+                .map(item -> CostCalculationUtils.calculateCogs(
+                        item.getSaleItem().getCostPriceAtSale(),
+                        item.getQuantityReturned() != null ? item.getQuantityReturned() : 0))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
     private void postArPayments(List<JournalEntryResponse> entries, Map<GlMapping.EventType, GlAccount> accounts,
@@ -822,7 +853,24 @@ public class GlService {
         }
     }
 
-    /** COGS on the effective sold quantity (quantity minus refunded), scale 6 (P4.2). */
+    /**
+     * COGS booked on the sale date at the full sold quantity. The original
+     * journal entry must never depend on the mutable quantityRefunded counter,
+     * otherwise reporting (or re-reporting) an earlier month changes its COGS
+     * every time a later refund happens.
+     */
+    private BigDecimal grossCogs(Sale sale) {
+        return sale.getItems().stream()
+                .map(item -> CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(),
+                        item.getQuantity() != null ? item.getQuantity() : 0))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
+    /**
+     * COGS still carried by the sale after its returns: the void reversal books
+     * this remainder, because postSaleReturns already reversed the returned
+     * units on their own dates.
+     */
     private BigDecimal netCogs(Sale sale) {
         return sale.getItems().stream()
                 .map(item -> CostCalculationUtils.calculateCogs(item.getCostPriceAtSale(),

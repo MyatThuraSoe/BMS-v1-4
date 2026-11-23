@@ -139,7 +139,15 @@ public class LedgerPostingService {
             seed.setValueAfter(valueBefore);
             seed.setUnitCostAfter(costBefore);
             seed.setReason("Opening balance seeded from current owned stock");
-            seed.setOccurredAt(at);
+            // TASK-4: date the seed at the product's creation date when available
+            // and not after the event date, so the seed never lands in a later month
+            // than the product's creation. Do not route through periodGuard — it is
+            // not a new posting into a closed period.
+            LocalDateTime seedAt = at;
+            if (product.getCreatedAt() != null && !product.getCreatedAt().isAfter(at)) {
+                seedAt = product.getCreatedAt();
+            }
+            seed.setOccurredAt(seedAt);
             seed.setCreatedBy(createdBy);
             inventoryLedgerRepository.save(seed);
         }
