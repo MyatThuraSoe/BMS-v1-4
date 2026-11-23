@@ -286,31 +286,34 @@ public class SaleService {
         LocalDateTime pricingMoment = sale.getSaleDate();
         List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
 
-        // Second pass: create items and calculate totals (use locked products)
-        for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+        // Second pass: create items and calculate totals (use locked products).
+        // TASK-3: merge request lines by product before pricing, so each product
+        // is priced once on its total quantity. Volume tiers are evaluated on the
+        // full cart quantity, not per line. requestedByProduct already sums qty by
+        // product from the first pass, so reuse it here.
+        for (Map.Entry<Long, Integer> entry : requestedByProduct.entrySet()) {
+            Product product = productRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+
+            int mergedQty = entry.getValue();
 
             SaleItem item = new SaleItem();
             item.setSale(sale);
             item.setProduct(product);
-            item.setQuantity(itemRequest.getQuantity());
+            item.setQuantity(mergedQty);
             item.setCostPriceAtSale(resolveCostPriceAtSale(product));
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
+                    product, mergedQty, pricingCustomer, pricingMoment, activePromotions);
             BigDecimal effectiveUnitPrice = quote.getUnitPrice();
 
-            // P10/O5: the below-cost guard runs on the net price after the header
-            // discount has been allocated, so it happens once for the whole cart
-            // below instead of per line here.
             item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
             item.setUnitPrice(effectiveUnitPrice);
             item.setLineDiscount(quote.getLineDiscount());
             item.setPromotionId(quote.getPromotionId());
             item.setPromotionName(quote.getPromotionName());
 
-            BigDecimal itemTotal = lineGross(effectiveUnitPrice, itemRequest.getQuantity());
+            BigDecimal itemTotal = lineGross(effectiveUnitPrice, mergedQty);
             item.setTotalPrice(itemTotal);
 
             sale.getItems().add(item);

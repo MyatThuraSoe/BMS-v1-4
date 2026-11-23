@@ -131,20 +131,36 @@ public class OrderService {
         BigDecimal priceListDiscount = BigDecimal.ZERO;
 
         // Validate + reserve stock while building items
-        Map<Long, Integer> reservedByProduct = new java.util.HashMap<>();
+        // TASK-3: merge order lines by product before pricing, so each product
+        // is priced once on its total quantity. Volume tiers are evaluated on the
+        // full order quantity, not per line.
+        Map<Long, Integer> mergedQtyByProduct = new java.util.HashMap<>();
         for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
-            Product product = productRepository.findByIdForUpdate(itemRequest.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+            mergedQtyByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
+        }
+        Map<Long, Integer> reservedByProduct = new java.util.HashMap<>();
+        for (Map.Entry<Long, Integer> entry : mergedQtyByProduct.entrySet()) {
+            Product product = productRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
             if (!Boolean.TRUE.equals(product.getIsActive()) || product.getDeletedAt() != null) {
-                throw new ResourceNotFoundException("Product not found: " + itemRequest.getProductId());
+                throw new ResourceNotFoundException("Product not found: " + entry.getKey());
             }
-            if (product.getAvailableQuantity() < itemRequest.getQuantity()) {
+            int mergedQty = entry.getValue();
+            if (product.getAvailableQuantity() < mergedQty) {
                 throw new BusinessException("Insufficient available stock for product '" + product.getName()
-                        + "'. Available: " + product.getAvailableQuantity() + ", Requested: " + itemRequest.getQuantity());
+                        + "'. Available: " + product.getAvailableQuantity() + ", Requested: " + mergedQty);
             }
+            reservedByProduct.put(entry.getKey(), mergedQty);
+        }
+
+        // Price each merged product once on its total quantity.
+        for (Map.Entry<Long, Integer> entry : mergedQtyByProduct.entrySet()) {
+            Product product = productRepository.findByIdForUpdate(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+            int mergedQty = entry.getValue();
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), order.getCustomer(), pricingMoment, activePromotions);
+                    product, mergedQty, order.getCustomer(), pricingMoment, activePromotions);
             BigDecimal effectiveUnitPrice = quote.getUnitPrice();
             BigDecimal lineCost = product.getCostPrice();
             if (lineCost != null && effectiveUnitPrice.compareTo(lineCost) < 0) {
@@ -161,14 +177,14 @@ public class OrderService {
             OrderItem item = new OrderItem();
             item.setOrder(order);
             item.setProduct(product);
-            item.setQuantity(itemRequest.getQuantity());
+            item.setQuantity(mergedQty);
             item.setUnitPrice(effectiveUnitPrice);
             item.setOriginalUnitPrice(quote.getOriginalUnitPrice());
             item.setLineDiscount(quote.getLineDiscount());
             item.setPromotionId(quote.getPromotionId());
             item.setPromotionName(quote.getPromotionName());
             item.setCostPriceAtOrder(product.getCostPrice());
-            BigDecimal itemTotal = effectiveUnitPrice.multiply(BigDecimal.valueOf(itemRequest.getQuantity()))
+            BigDecimal itemTotal = effectiveUnitPrice.multiply(BigDecimal.valueOf(mergedQty))
                     .setScale(2, RoundingMode.HALF_UP);
             item.setTotalPrice(itemTotal);
 
@@ -179,8 +195,6 @@ public class OrderService {
             } else if ("PRICE_LIST".equals(quote.getSource())) {
                 priceListDiscount = priceListDiscount.add(quote.getLineDiscount());
             }
-
-            reservedByProduct.merge(product.getId(), itemRequest.getQuantity(), Integer::sum);
         }
 
         BigDecimal discountAmount = computeShopDiscount(subtotal);
