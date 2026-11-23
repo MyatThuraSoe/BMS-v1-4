@@ -28,6 +28,7 @@ import com.bms.repository.PurchaseRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.repository.SystemSettingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -48,6 +49,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.lenient;
 
 /**
  * Phase 3 acceptance (spec 6.1): one month containing a promotion+tax sale, a
@@ -91,6 +93,7 @@ class GlJournalIntegrationTest {
     @MockBean private CashShiftService cashShiftService;
     @MockBean private CashDrawerSessionService cashDrawerSessionService;
     @MockBean private SystemSettingService systemSettingService;
+    @MockBean private SystemSettingRepository systemSettingRepository;
 
     private static final LocalDate START = LocalDate.of(2026, 11, 1);
     private static final LocalDate END = LocalDate.of(2026, 11, 30);
@@ -133,6 +136,17 @@ class GlJournalIntegrationTest {
         secondProduct.setStockQuantity(100);
         em.persist(secondProduct);
         em.flush();
+        lenient().when(systemSettingRepository.findBySettingKey("accounting.ledger.legacy.enabled"))
+                .thenReturn(java.util.Optional.of(legacySetting()));
+        lenient().when(systemSettingRepository.findBySettingKey(com.bms.service.LedgerReadService.CUTOVER_KEY))
+                .thenReturn(java.util.Optional.empty());
+    }
+
+    private com.bms.entity.SystemSetting legacySetting() {
+        com.bms.entity.SystemSetting setting = new com.bms.entity.SystemSetting();
+        setting.setSettingKey("accounting.ledger.legacy.enabled");
+        setting.setSettingValue("true");
+        return setting;
     }
 
     @Test

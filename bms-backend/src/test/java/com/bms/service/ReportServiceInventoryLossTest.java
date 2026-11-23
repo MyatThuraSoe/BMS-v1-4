@@ -85,7 +85,10 @@ class ReportServiceInventoryLossTest {
                 cashDrawerMovementRepository);
         ReflectionTestUtils.setField(glService, "ledgerReadService", ledgerReadService);
         ReflectionTestUtils.setField(glService, "purchasePaymentRepository", purchasePaymentRepository);
+        ReflectionTestUtils.setField(glService, "systemSettingRepository", systemSettingRepository);
         lenient().when(purchasePaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
+        lenient().when(systemSettingRepository.findBySettingKey("accounting.ledger.legacy.enabled"))
+                .thenReturn(java.util.Optional.of(legacySetting()));
 
         List<GlMapping> mappings = new ArrayList<>();
         for (GlMapping.EventType type : GlMapping.EventType.values()) {
@@ -219,5 +222,12 @@ class ReportServiceInventoryLossTest {
         assertMoney("120.00", summary.getTotalInventoryLoss());
         assertEquals(1, summary.getInventoryLossByReason().size());
         assertEquals("SPOILAGE_EXPIRY", summary.getInventoryLossByReason().get(0).getCategory());
+    }
+
+    private com.bms.entity.SystemSetting legacySetting() {
+        com.bms.entity.SystemSetting setting = new com.bms.entity.SystemSetting();
+        setting.setSettingKey("accounting.ledger.legacy.enabled");
+        setting.setSettingValue("true");
+        return setting;
     }
 }
