@@ -7,6 +7,7 @@ import com.bms.entity.InventoryLedger;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
 import com.bms.entity.Sale;
+import com.bms.entity.SaleItem;
 import com.bms.entity.ShopInfo;
 import com.bms.entity.SystemSetting;
 import com.bms.entity.User;
@@ -219,5 +220,62 @@ class SaleServiceCostAtSaleTest {
         BigDecimal costAtSale = captor.getValue().getItems().get(0).getCostPriceAtSale();
         assertEquals(0, new BigDecimal("42.50").compareTo(costAtSale),
                 "the sale line must carry the ledger cost, never an implicit zero");
+    }
+
+    @Test
+    void voidSaleOnOldLineWithNullCostFailsBeforeAnyStockIsRestored() {
+        // Old sale line has null cost_price_at_sale (legacy data). The void must
+        // reject with a clear business error and not restore stock or post ledgers.
+        Product product = product(1L, "100.00");
+        product.setCostPrice(new BigDecimal("60.00"));
+
+        Sale sale = new Sale();
+        sale.setId(100L);
+        sale.setInvoiceNumber("INV-OLD");
+        sale.setSaleDate(java.time.LocalDateTime.now().minusDays(1));
+        sale.setIsVoided(false);
+        sale.setVoidedAt(null);
+        sale.setVoidedBy(null);
+        sale.setVoidedReason(null);
+        sale.setSaleType(Sale.SaleType.CASH);
+        sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+        sale.setPaymentStatus(Sale.PaymentStatus.PAID);
+        sale.setCashierId(9L);
+
+        SaleItem item = new SaleItem();
+        item.setId(1000L);
+        item.setSale(sale);
+        item.setProduct(product);
+        item.setQuantity(1);
+        item.setQuantityRefunded(0);
+        item.setUnitPrice(new BigDecimal("100.00"));
+        item.setTotalPrice(new BigDecimal("100.00"));
+        // costPriceAtSale deliberately null — legacy row
+        sale.getItems().add(item);
+
+        User voidingUser = new User();
+        voidingUser.setId(1L);
+        voidingUser.setUsername("admin");
+        voidingUser.setPassword("hash");
+        com.bms.entity.Role role = new com.bms.entity.Role();
+        role.setName(com.bms.entity.Role.RoleName.ROLE_ADMIN);
+        voidingUser.setRole(role);
+
+        lenient().when(saleRepository.findByIdForUpdate(100L)).thenReturn(Optional.of(sale));
+        lenient().when(userRepository.findById(1L)).thenReturn(Optional.of(voidingUser));
+        lenient().when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(100L))
+                .thenReturn(new ArrayList<>());
+        lenient().when(saleReturnRepository.sumRefundedAmountBySaleId(100L)).thenReturn(null);
+        lenient().when(saleItemRepository.findByIdForUpdate(1000L)).thenReturn(Optional.of(item));
+        lenient().when(productRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(product));
+        lenient().when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
+        lenient().when(stockMovementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        org.mockito.Mockito.doNothing().when(periodGuard).assertOpen(any(java.time.LocalDateTime.class));
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
+
+        assertTrue(ex.getMessage().contains("no cost price"), ex.getMessage());
+        verify(saleItemRepository, never()).save(any());
     }
 }
