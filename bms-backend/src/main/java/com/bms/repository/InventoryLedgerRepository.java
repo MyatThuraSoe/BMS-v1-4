@@ -21,6 +21,10 @@ public interface InventoryLedgerRepository extends JpaRepository<InventoryLedger
 
     List<InventoryLedger> findByProductIdOrderByOccurredAtAscIdAsc(Long productId);
 
+    /** BUG-8 repair: nearest ledger cost at or before a given date. */
+    List<InventoryLedger> findByProductIdAndOccurredAtLessThanEqualOrderByOccurredAtDescIdDesc(
+            Long productId, LocalDateTime at);
+
     List<InventoryLedger> findByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAscIdAsc(
             LocalDateTime from, LocalDateTime to);
 

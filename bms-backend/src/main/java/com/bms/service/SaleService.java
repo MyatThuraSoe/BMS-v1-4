@@ -511,14 +511,18 @@ public class SaleService {
             return ledgerCost;
         }
         throw new BusinessException("Product '" + product.getName()
-                + "' has no cost price; set one before selling");
+                + "' has no cost price and no inventory ledger history. "
+                + "Set a cost on the product, or use the admin cost-repair endpoint "
+                + "(POST /api/accounting/cost-repair) to backfill legacy sale lines.");
     }
 
     private BigDecimal requireCostAtSale(SaleItem item) {
         BigDecimal cost = item.getCostPriceAtSale();
         if (cost == null) {
-            throw new BusinessException("Product '" + item.getProduct().getName()
-                    + "' has no cost price; set one before selling");
+            throw new BusinessException("Sale line " + item.getId() + " for product '"
+                    + item.getProduct().getName() + "' has no cost price at sale. "
+                    + "Use the admin cost-repair endpoint (POST /api/accounting/cost-repair) "
+                    + "to backfill it from the inventory ledger, then retry.");
         }
         return cost;
     }

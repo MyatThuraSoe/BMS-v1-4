@@ -19,6 +19,9 @@ public interface SaleItemRepository extends JpaRepository<SaleItem, Long> {
     /** BUG-8: sale lines whose historical cost was never captured. */
     long countByCostPriceAtSaleIsNull();
 
+    /** BUG-8: sale lines whose historical cost was never captured, for admin repair. */
+    List<SaleItem> findByCostPriceAtSaleIsNull();
+
     @Query("""
         SELECT si.sale.customer.id, si.sale.customer.firstName, si.sale.customer.lastName,
                si.sale.customer.phone,

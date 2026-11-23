@@ -662,8 +662,10 @@ public class SaleReturnService {
     private BigDecimal requireCostAtSale(SaleItem saleItem) {
         BigDecimal cost = saleItem.getCostPriceAtSale();
         if (cost == null) {
-            throw new BusinessException("Product '" + saleItem.getProduct().getName()
-                    + "' has no cost price; set one before returning");
+            throw new BusinessException("Sale line " + saleItem.getId() + " for product '"
+                    + saleItem.getProduct().getName() + "' has no cost price at sale. "
+                    + "Use the admin cost-repair endpoint (POST /api/accounting/cost-repair) "
+                    + "to backfill it from the inventory ledger, then retry.");
         }
         return cost;
     }

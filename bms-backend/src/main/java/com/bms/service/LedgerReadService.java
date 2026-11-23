@@ -23,6 +23,7 @@ public class LedgerReadService {
     private ShopTimeService shopTimeService;
 
     public static final String CUTOVER_KEY = "accounting.ledger.cutover";
+    public static final String LEGACY_ENABLED_KEY = "accounting.ledger.legacy.enabled";
 
     private final JdbcTemplate jdbcTemplate;
     private final SystemSettingRepository systemSettingRepository;

@@ -47,7 +47,7 @@ public class GlService {
     @Autowired
     private SystemSettingRepository systemSettingRepository;
 
-    private static final String LEGACY_KEY = "accounting.ledger.legacy.enabled";
+    private static final String LEGACY_KEY = LedgerReadService.LEGACY_ENABLED_KEY;
 
     /** True when the legacy (pre-cutover) GL and report path is explicitly enabled. */
     private boolean legacyEnabled() {

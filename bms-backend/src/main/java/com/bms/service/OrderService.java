@@ -133,12 +133,13 @@ public class OrderService {
         // Validate + reserve stock while building items
         // TASK-3: merge order lines by product before pricing, so each product
         // is priced once on its total quantity. Volume tiers are evaluated on the
-        // full order quantity, not per line.
-        Map<Long, Integer> mergedQtyByProduct = new java.util.HashMap<>();
+        // full order quantity, not per line. TreeMap keeps lock order deterministic
+        // (same as SaleService), avoiding deadlocks between concurrent orders.
+        Map<Long, Integer> mergedQtyByProduct = new java.util.TreeMap<>();
         for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
             mergedQtyByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
         }
-        Map<Long, Integer> reservedByProduct = new java.util.HashMap<>();
+        Map<Long, Integer> reservedByProduct = new java.util.TreeMap<>();
         for (Map.Entry<Long, Integer> entry : mergedQtyByProduct.entrySet()) {
             Product product = productRepository.findByIdForUpdate(entry.getKey())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
