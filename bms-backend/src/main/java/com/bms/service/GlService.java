@@ -45,6 +45,18 @@ public class GlService {
     private LedgerReadService ledgerReadService;
 
     @Autowired
+    private SystemSettingRepository systemSettingRepository;
+
+    private static final String LEGACY_KEY = "accounting.ledger.legacy.enabled";
+
+    /** True when the legacy (pre-cutover) GL and report path is explicitly enabled. */
+    private boolean legacyEnabled() {
+        return systemSettingRepository.findBySettingKey(LEGACY_KEY)
+                .map(setting -> "true".equalsIgnoreCase(setting.getSettingValue()))
+                .orElse(false);
+    }
+
+    @Autowired
     private ProfitLedgerRepository profitLedgerRepository;
 
     @Autowired
@@ -225,12 +237,15 @@ public class GlService {
 
         if (ledgerReadService.isActive()) {
             postLedger(entries, accounts, startTs, endTs);
-        } else {
+        } else if (legacyEnabled()) {
             postPurchases(entries, accounts, start, end);
             postSales(entries, accounts, startTs, endTs);
             postSaleReturns(entries, accounts, startTs, endTs);
             postExpenses(entries, accounts, start, end);
             postStockMovements(entries, accounts, startTs, endTs);
+        } else {
+            throw new BusinessException("Ledger cutover not completed: the legacy GL path is disabled. "
+                    + "Backfill history and activate ledger reads, or enable accounting.ledger.legacy.enabled.");
         }
         postArPayments(entries, accounts, startTs, endTs);
         postPurchasePayments(entries, accounts, startTs, endTs);
