@@ -8,6 +8,7 @@ import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
+import com.bms.entity.SaleReturnItem;
 import com.bms.entity.StockMovement;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CashDrawerMovementRepository;
@@ -315,7 +316,10 @@ class GlServiceJournalBalanceTest {
     }
 
     @Test
-    void p42_refundedUnitsAreExcludedFromCogsWithoutLosingPrecision() {
+    void p42_saleBooksCogsAtTheFullSoldQuantityRegardlessOfLaterRefunds() {
+        // GL/P&L divergence: quantityRefunded is mutable. Posting net-of-refunds
+        // on the sale date rewrites an earlier month every time a later return
+        // happens, so the sale month can never be frozen.
         Sale sale = sale("INV-RETURNED", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
         SaleItem item = sale.getItems().get(0);
         item.setQuantity(3);
@@ -324,9 +328,72 @@ class GlServiceJournalBalanceTest {
 
         List<JournalEntryResponse> entries = entriesFor(sale.getInvoiceNumber());
 
-        assertMoney("0.675670", eventDebit(entries, "COST_OF_GOODS_SOLD"));
-        assertMoney("0.675670", eventCredit(entries, "INVENTORY"));
+        assertMoney("1.013505", eventDebit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("1.013505", eventCredit(entries, "INVENTORY"));
         assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void glp_returnReversesCogsOnItsOwnDateInsteadOfDoubleCounting() {
+        Sale sale = sale("INV-RETCOGS", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        SaleItem item = sale.getItems().get(0);
+        item.setQuantity(3);
+        item.setCostPriceAtSale(new BigDecimal("10.00"));
+        SaleReturn ret = saleReturn(77L, sale, item, 1, item);
+        lenient().when(saleReturnRepository.findForJournal(any(), any())).thenReturn(List.of(ret));
+
+        List<JournalEntryResponse> entries = glService.journal(
+                LocalDate.now().withDayOfMonth(1), LocalDate.now());
+
+        // Sale date: all 3 units (30). Return date: 1 unit back (10).
+        assertMoney("30.00", eventDebit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("10.00", eventCredit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("10.00", eventDebit(entries, "INVENTORY"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void glp_voidReversesOnlyTheCogsTheReturnsDidNotAlreadyReverse() {
+        Sale sale = sale("INV-VOIDCOGS", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        SaleItem item = sale.getItems().get(0);
+        item.setQuantity(3);
+        item.setQuantityRefunded(1);
+        item.setCostPriceAtSale(new BigDecimal("10.00"));
+        sale.setVoidedAt(LocalDateTime.now());
+        lenient().when(saleRepository.findVoidedForJournal(any(), any())).thenReturn(List.of(sale));
+
+        List<JournalEntryResponse> entries = entriesFor("INV-VOIDCOGS");
+
+        // Original 30 debit; void reverses the 2 units no return took back.
+        assertMoney("30.00", eventDebit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("20.00", eventCredit(entries, "COST_OF_GOODS_SOLD"));
+        assertMoney("20.00", eventDebit(entries, "INVENTORY"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
+    }
+
+    @Test
+    void glp_missingCostAtSaleFailsTheJournalInsteadOfPostingZeroCogs() {
+        Sale sale = sale("INV-NOCOST", BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
+        sale.getItems().get(0).setCostPriceAtSale(null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(com.bms.exception.BusinessException.class,
+                () -> glService.journal(LocalDate.now().withDayOfMonth(1), LocalDate.now()));
+    }
+
+    private SaleReturn saleReturn(long id, Sale sale, SaleItem item, int quantity, SaleItem costSource) {
+        SaleReturn ret = new SaleReturn();
+        ret.setId(id);
+        ret.setSale(sale);
+        ret.setReturnDate(LocalDateTime.now());
+        ret.setTotalReturnAmount(item.getUnitPrice().multiply(BigDecimal.valueOf(quantity)));
+        ret.setRefundMethod(PaymentMethod.CASH);
+        SaleReturnItem returned = new SaleReturnItem();
+        returned.setSaleReturn(ret);
+        returned.setSaleItem(costSource);
+        returned.setQuantityReturned(quantity);
+        returned.setReturnAmount(ret.getTotalReturnAmount());
+        ret.getItems().add(returned);
+        return ret;
     }
 
     @Test
