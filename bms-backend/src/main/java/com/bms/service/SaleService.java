@@ -259,7 +259,10 @@ public class SaleService {
 
         Map<Long, Integer> requestedByProduct = new TreeMap<>();
         for (SaleCreateRequest.SaleItemRequest itemRequest : request.getItems()) {
-            if (itemRequest.getQuantity() <= 0) {
+            if (itemRequest.getProductId() == null) {
+                throw new BusinessException("Product is required");
+            }
+            if (itemRequest.getQuantity() == null || itemRequest.getQuantity() <= 0) {
                 throw new BusinessException("Quantity must be positive");
             }
             requestedByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
@@ -294,6 +297,13 @@ public class SaleService {
         for (Map.Entry<Long, Integer> entry : requestedByProduct.entrySet()) {
             Product product = productRepository.findByIdForUpdate(entry.getKey())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+
+            if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
+                    && product.getExpiryDate().isBefore(shopTimeService.today())
+                    && !isManagerOrAdmin(cashierId)) {
+                throw new BusinessException("Product '" + product.getName()
+                    + "' is expired; manager approval required");
+            }
 
             int mergedQty = entry.getValue();
 
@@ -669,8 +679,18 @@ public class SaleService {
         List<OrderItem> lockedItems = new ArrayList<>(order.getItems());
         lockedItems.sort(Comparator.comparing(oi -> oi.getProduct().getId()));
         for (OrderItem orderItem : lockedItems) {
+            if (orderItem.getQuantity() == null || orderItem.getQuantity() <= 0) {
+                throw new BusinessException("Order item quantity must be positive");
+            }
             Product product = productRepository.findByIdForUpdate(orderItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + orderItem.getProduct().getId()));
+
+            if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
+                    && product.getExpiryDate().isBefore(shopTimeService.today())
+                    && !isManagerOrAdmin(cashierId)) {
+                throw new BusinessException("Product '" + product.getName()
+                    + "' is expired; manager approval required");
+            }
 
             int selfReserved = orderReservedByProduct.getOrDefault(orderItem.getProduct().getId(), 0);
             int neededSoFar = demandCheckedByProduct.merge(product.getId(), orderItem.getQuantity(), Integer::sum);
@@ -1253,6 +1273,11 @@ public class SaleService {
 
             PricingQuote quote = promotionService.calculateBestPrice(
                     product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
+
+            if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
+                    && product.getExpiryDate().isBefore(shopTimeService.today())) {
+                messages.add(product.getName() + " is expired (" + product.getExpiryDate() + ")");
+            }
 
             CartVerifyResponse.CartVerifyItemResult result = new CartVerifyResponse.CartVerifyItemResult();
             result.setProductId(product.getId());

@@ -129,4 +129,10 @@ public class Supplier {
 
     public List<SupplierPhone> getPhones() { return phones; }
     public void setPhones(List<SupplierPhone> phones) { this.phones = phones; }
+
+    @Override
+    public String toString() {
+        return "Supplier{id=" + id + ", name=" + name + ", email=" + email
+            + ", taxId=" + taxId + ", active=" + isActive + "}";
+    }
 }

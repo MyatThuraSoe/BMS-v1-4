@@ -161,4 +161,12 @@ public class User implements UserDetails {
     public boolean isEnabled() {
         return isActive && deletedAt == null;
     }
+
+    @Override
+    public String toString() {
+        return "User{id=" + id + ", username=" + username + ", email=" + email
+            + ", name=" + firstName + " " + lastName + ", role="
+            + (role != null && role.getName() != null ? role.getName().name() : null)
+            + ", active=" + isActive + "}";
+    }
 }

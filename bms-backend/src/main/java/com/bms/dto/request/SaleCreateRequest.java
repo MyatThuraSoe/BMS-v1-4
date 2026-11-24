@@ -8,6 +8,7 @@ import java.time.LocalDate;
 import java.util.List;
 public class SaleCreateRequest {
     @NotEmpty(message = "Cart items are required")
+    @jakarta.validation.Valid
     private List<SaleItemRequest> items;
 
     private Long customerId;

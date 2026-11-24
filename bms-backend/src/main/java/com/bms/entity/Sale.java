@@ -292,4 +292,12 @@ public class Sale {
 
     public List<SaleItem> getItems() { return items; }
     public void setItems(List<SaleItem> items) { this.items = items; }
+
+    @Override
+    public String toString() {
+        return "Sale{id=" + id + ", invoice=" + invoiceNumber + ", type=" + saleType
+            + ", subtotal=" + subtotal + ", discount=" + discountAmount + ", tax=" + taxAmount
+            + ", total=" + totalAmount + ", paid=" + amountPaid + ", status=" + paymentStatus
+            + ", voided=" + isVoided + "}";
+    }
 }

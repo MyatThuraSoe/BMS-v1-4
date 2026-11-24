@@ -16,6 +16,7 @@ import com.bms.exception.BusinessException;
 import com.bms.repository.PeriodCloseRepository;
 import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.StockMovementRepository;
+import com.bms.service.LedgerReadService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -46,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 @DataJpaTest
 @ContextConfiguration(classes = SaleBulkDeleteTest.JpaConfig.class)
-@Import({DataRetentionService.class, ShopTimeService.class})
+@Import({DataRetentionService.class, ShopTimeService.class, LedgerReadService.class})
 class SaleBulkDeleteTest {
 
     @SpringBootConfiguration

@@ -179,4 +179,12 @@ public class Order {
 
     public List<OrderItem> getItems() { return items; }
     public void setItems(List<OrderItem> items) { this.items = items; }
+
+    @Override
+    public String toString() {
+        return "Order{id=" + id + ", number=" + orderNumber + ", status=" + status
+            + ", subtotal=" + subtotal + ", discount=" + discountAmount
+            + ", promo=" + promotionDiscount + ", priceList=" + priceListDiscount
+            + ", total=" + totalAmount + "}";
+    }
 }

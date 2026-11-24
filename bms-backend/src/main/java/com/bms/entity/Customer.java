@@ -174,4 +174,11 @@ public class Customer {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    @Override
+    public String toString() {
+        return "Customer{id=" + id + ", code=" + customerCode + ", name=" + firstName + " " + lastName
+            + ", creditLimit=" + creditLimit + ", balance=" + currentBalance
+            + ", credit=" + creditBalance + ", active=" + isActive + "}";
+    }
 }
