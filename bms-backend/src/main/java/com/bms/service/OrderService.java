@@ -257,6 +257,7 @@ public class OrderService {
         }
 
         order.setPromotionDiscount(promotionDiscount.setScale(2, RoundingMode.HALF_UP));
+        order.setPriceListDiscount(priceListDiscount.setScale(2, RoundingMode.HALF_UP));
         // P5: tax applies to the discounted line value, using the same proportional
         // allocation rule as sales so conversion reproduces identical line taxes.
         BigDecimal taxAmount = applyDiscountedLineTaxes(order, taxRate);

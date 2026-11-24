@@ -94,6 +94,20 @@ public final class SaleDiscountUtils {
         if (remainderTarget != null) {
             allocations.put(remainderTarget, discount.subtract(allocated)
                     .max(ZERO).setScale(2, RoundingMode.HALF_UP));
+            BigDecimal total = allocations.values().stream().reduce(ZERO, BigDecimal::add);
+            BigDecimal cent = new BigDecimal("0.01");
+            while (total.subtract(discount).compareTo(cent) >= 0) {
+                SaleItem biggest = null;
+                for (SaleItem it : items) {
+                    if (it == remainderTarget) continue;
+                    BigDecimal v = allocations.getOrDefault(it, ZERO);
+                    if (v.compareTo(cent) >= 0
+                            && (biggest == null || v.compareTo(allocations.get(biggest)) > 0)) biggest = it;
+                }
+                if (biggest == null) break;
+                allocations.put(biggest, allocations.get(biggest).subtract(cent));
+                total = total.subtract(cent);
+            }
         }
         return allocations;
     }

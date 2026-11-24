@@ -27,6 +27,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     List<Product> findByIsActiveTrueAndDeletedAtIsNullOrderByNameAsc();
 
+    boolean existsByCategoryIdAndDeletedAtIsNull(Long categoryId);
+
     /** BUG-8: products that would otherwise post zero COGS. */
     long countByCostPriceIsNullAndDeletedAtIsNull();
 

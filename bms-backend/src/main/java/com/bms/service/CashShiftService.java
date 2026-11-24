@@ -586,10 +586,7 @@ public class CashShiftService {
             }
             transactions++;
             gross = gross.add(nullSafe(sale.getSubtotal()));
-            discount = discount
-                    .add(nullSafe(sale.getDiscountAmount()))
-                    .add(nullSafe(sale.getPromotionDiscount()))
-                    .add(nullSafe(sale.getPriceListDiscount()));
+            discount = discount.add(nullSafe(sale.getDiscountAmount()));
             net = net.add(nullSafe(sale.getTotalAmount()));
         }
 

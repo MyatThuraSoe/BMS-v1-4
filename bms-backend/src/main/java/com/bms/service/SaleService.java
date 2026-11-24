@@ -25,6 +25,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Map;
 import java.util.HashMap;
 import java.util.TreeMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -202,6 +203,10 @@ public class SaleService {
         }
         if (saleType == Sale.SaleType.CREDIT && request.getDueDate() == null) {
             throw new IllegalArgumentException("error.credit.dueDate.required");
+        }
+        if (saleType == Sale.SaleType.CREDIT && request.getDueDate() != null
+                && request.getDueDate().isBefore(shopTimeService.today())) {
+            throw new BusinessException("Due date cannot be in the past");
         }
 
         // Credit invoices get a CR- prefixed, per-day locked sequence number.
@@ -614,6 +619,9 @@ public class SaleService {
         if (isCredit && dueDate == null) {
             throw new IllegalArgumentException("error.credit.dueDate.required");
         }
+        if (isCredit && dueDate != null && dueDate.isBefore(shopTimeService.today())) {
+            throw new BusinessException("Due date cannot be in the past");
+        }
         if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
             throw new BusinessException("Amount paid is required and must be positive for cash sales");
         }
@@ -761,7 +769,7 @@ public class SaleService {
         paymentLine.setMethod(entityMethod.name());
         paymentLine.setAmount(totalAmount);
         List<SalePaymentRequest> paymentLines;
-        if (totalAmount.signum() == 0 && !isCredit) {
+        if (totalAmount.signum() == 0) {
             // Zero-total sale: no payment needed, skip validation
             paymentLines = List.of();
             sale.setAmountPaid(BigDecimal.ZERO);
@@ -1267,17 +1275,41 @@ public class SaleService {
         LocalDateTime pricingMoment = shopTimeService.now();
         List<Promotion> activePromotions = promotionService.getActivePromotions(pricingMoment);
 
+        // F14: aggregate request lines by product before pricing, so volume tiers
+        // and BOGO are evaluated on the total quantity per product (mirror createSale).
+        // Keep response item order stable by re-using merged pricing per original line.
+        Map<Long, Integer> mergedQtyByProduct = new TreeMap<>();
         for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
-            Product product = productRepository.findById(itemRequest.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+            mergedQtyByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
+        }
+
+        // Price each merged product once on its total quantity.
+        Map<Long, PricingQuote> mergedQuotes = new LinkedHashMap<>();
+        Map<Long, BigDecimal> mergedLineTotals = new LinkedHashMap<>();
+        for (Map.Entry<Long, Integer> entry : mergedQtyByProduct.entrySet()) {
+            Product product = productRepository.findById(entry.getKey())
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
+            int mergedQty = entry.getValue();
 
             PricingQuote quote = promotionService.calculateBestPrice(
-                    product, itemRequest.getQuantity(), pricingCustomer, pricingMoment, activePromotions);
+                    product, mergedQty, pricingCustomer, pricingMoment, activePromotions);
+            mergedQuotes.put(product.getId(), quote);
+            mergedLineTotals.put(product.getId(), lineGross(quote.getUnitPrice(), mergedQty));
 
             if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
                     && product.getExpiryDate().isBefore(shopTimeService.today())) {
                 messages.add(product.getName() + " is expired (" + product.getExpiryDate() + ")");
             }
+        }
+
+        // Build per-line results using merged pricing.
+        for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
+            Long productId = itemRequest.getProductId();
+            Product product = productRepository.findById(productId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+            PricingQuote quote = mergedQuotes.get(productId);
+            BigDecimal mergedTotal = mergedLineTotals.get(productId);
+            int mergedQty = mergedQtyByProduct.get(productId);
 
             CartVerifyResponse.CartVerifyItemResult result = new CartVerifyResponse.CartVerifyItemResult();
             result.setProductId(product.getId());
@@ -1291,10 +1323,6 @@ public class SaleService {
             result.setPricingSource(quote.getSource());
             result.setTaxRate(taxRate);
             result.setAvailableStock(product.getAvailableQuantity());
-
-            // P10/O5: the below-cost flag is set once the header discount has been
-            // allocated to the lines, so the POS warns about the price the
-            // customer really pays. See the allocation pass below.
 
             // Compare against the effective (promo/contract) price, not the base
             // shelf price. The POS caches the effective unit price after the first
@@ -1320,8 +1348,9 @@ public class SaleService {
                 messages.add(String.format("%s: %s applied", product.getName(), quote.getPromotionName()));
             }
 
+            // Line total for the requested quantity at the merged unit price.
             BigDecimal lineTotal = lineGross(quote.getUnitPrice(), itemRequest.getQuantity());
-            result.setLineTotal(lineTotal); // pre-tax gross; tax follows the discount allocation
+            result.setLineTotal(lineTotal);
             subtotal = subtotal.add(lineTotal);
             SaleItem taxLine = new SaleItem();
             taxLine.setQuantity(itemRequest.getQuantity());

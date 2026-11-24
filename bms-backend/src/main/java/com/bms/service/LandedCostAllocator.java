@@ -159,13 +159,23 @@ public final class LandedCostAllocator {
             Line line = lines.get(i);
             BigDecimal share;
             if (i == remainderIndex) {
-                share = remaining.setScale(2, RoundingMode.HALF_UP);
+                share = remaining.max(BigDecimal.ZERO).setScale(2, RoundingMode.HALF_UP);
             } else {
                 share = amount.multiply(weights.get(line.getId()))
                         .divide(totalWeight, 2, RoundingMode.HALF_UP);
                 remaining = remaining.subtract(share);
             }
             shares.put(line.getId(), share);
+        }
+        BigDecimal allocated = shares.values().stream().reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal leftover = amount.subtract(allocated);
+        BigDecimal cent = new BigDecimal("0.01");
+        while (leftover.compareTo(cent) >= 0) {
+            for (Line line : lines) {
+                if (leftover.compareTo(cent) < 0) break;
+                shares.put(line.getId(), shares.get(line.getId()).add(cent));
+                leftover = leftover.subtract(cent);
+            }
         }
         return shares;
     }
