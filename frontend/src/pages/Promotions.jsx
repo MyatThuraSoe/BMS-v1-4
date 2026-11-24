@@ -331,7 +331,7 @@ const Promotions = () => {
                   <TableCell>
                     {promotion.startDate ? String(promotion.startDate).slice(0, 10) : '—'}
                     {' → '}
-                    {promotion.endDate ? String(promotion.endDate).slice(0, 10) : '—'}
+                    {promotion.endDate ? String(promotion.endDate).slice(0, 16).replace('T', ' ') : '—'}
                   </TableCell>
                   <TableCell align="right">{promotion.priority}</TableCell>
                   <TableCell>

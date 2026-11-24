@@ -1,6 +1,7 @@
 package com.bms.service;
 
 import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SaleRepository;
@@ -28,6 +29,7 @@ class AccountingIntegrityServiceTest {
     @Mock private SaleItemRepository saleItemRepository;
     @Mock private SaleRepository saleRepository;
     @Mock private InventoryLedgerRepository inventoryLedgerRepository;
+    @Mock private ProfitLedgerRepository profitLedgerRepository;
     @Mock private LedgerReadService ledgerReadService;
     @Mock private SystemSettingRepository systemSettingRepository;
     @Mock private ShopTimeService shopTimeService;
@@ -45,8 +47,8 @@ class AccountingIntegrityServiceTest {
 
         AccountingIntegrityService.Report report =
                 new AccountingIntegrityService(productRepository, saleItemRepository, saleRepository,
-                        inventoryLedgerRepository, ledgerReadService, systemSettingRepository,
-                        shopTimeService, auditLogService).audit();
+                        inventoryLedgerRepository, profitLedgerRepository, ledgerReadService,
+                        systemSettingRepository, shopTimeService, auditLogService).audit();
 
         assertEquals(3L, report.productsMissingCost());
         assertEquals(7L, report.saleItemsMissingCost());
@@ -70,8 +72,8 @@ class AccountingIntegrityServiceTest {
 
         AccountingIntegrityService.Report report =
                 new AccountingIntegrityService(productRepository, saleItemRepository, saleRepository,
-                        inventoryLedgerRepository, ledgerReadService, systemSettingRepository,
-                        shopTimeService, auditLogService).audit();
+                        inventoryLedgerRepository, profitLedgerRepository, ledgerReadService,
+                        systemSettingRepository, shopTimeService, auditLogService).audit();
 
         assertTrue(report.productsMissingCost() == 0 && report.saleItemsMissingCost() == 0);
         assertTrue(report.ledgerReadsActive());
@@ -91,8 +93,8 @@ class AccountingIntegrityServiceTest {
 
         AccountingIntegrityService service =
                 new AccountingIntegrityService(productRepository, saleItemRepository, saleRepository,
-                        inventoryLedgerRepository, ledgerReadService, systemSettingRepository,
-                        shopTimeService, auditLogService);
+                        inventoryLedgerRepository, profitLedgerRepository, ledgerReadService,
+                        systemSettingRepository, shopTimeService, auditLogService);
 
         assertTrue(service.legacyEnabled());
     }
@@ -106,8 +108,8 @@ class AccountingIntegrityServiceTest {
 
         AccountingIntegrityService service =
                 new AccountingIntegrityService(productRepository, saleItemRepository, saleRepository,
-                        inventoryLedgerRepository, ledgerReadService, systemSettingRepository,
-                        shopTimeService, auditLogService);
+                        inventoryLedgerRepository, profitLedgerRepository, ledgerReadService,
+                        systemSettingRepository, shopTimeService, auditLogService);
 
         assertFalse(service.legacyEnabled());
     }

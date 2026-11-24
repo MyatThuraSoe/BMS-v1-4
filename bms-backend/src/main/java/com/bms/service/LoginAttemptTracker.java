@@ -270,6 +270,8 @@ public class LoginAttemptTracker {
     private void makeRoomForAddressKey() {
         attempts.entrySet().stream()
                 .filter(entry -> !entry.getKey().startsWith(ADDRESS_PREFIX))
+                .filter(entry -> entry.getValue().lockedUntil() == null
+                        || !now().isBefore(entry.getValue().lockedUntil()))
                 .min(Comparator.comparing(entry -> entry.getValue().lastAttempt()))
                 .map(Map.Entry::getKey)
                 .ifPresent(attempts::remove);

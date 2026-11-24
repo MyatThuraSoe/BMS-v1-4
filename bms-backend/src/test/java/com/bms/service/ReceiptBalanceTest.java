@@ -4,9 +4,11 @@ import com.bms.dto.receipt.ArPaymentReceiptDto;
 import com.bms.dto.receipt.ReceiptDto;
 import com.bms.entity.ArPayment;
 import com.bms.entity.Sale;
+import com.bms.entity.SaleReturn;
 import com.bms.exception.StateConflictException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.SaleRepository;
+import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +21,9 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyLong;
+import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -38,14 +43,17 @@ class ReceiptBalanceTest {
 
     private SaleRepository saleRepository;
     private ArPaymentRepository arPaymentRepository;
+    private SaleReturnRepository saleReturnRepository;
     private ReceiptService receiptService;
 
     @BeforeEach
     void wire() {
         saleRepository = mock(SaleRepository.class);
         arPaymentRepository = mock(ArPaymentRepository.class);
+        saleReturnRepository = mock(SaleReturnRepository.class);
         receiptService = new ReceiptService(saleRepository, mock(UserRepository.class));
         ReflectionTestUtils.setField(receiptService, "arPaymentRepository", arPaymentRepository);
+        ReflectionTestUtils.setField(receiptService, "saleReturnRepository", saleReturnRepository);
     }
 
     /** A credit invoice of {@code total} with {@code paid} collected and {@code returned} handed back. */
@@ -85,6 +93,9 @@ class ReceiptBalanceTest {
     /** Everything collected on this invoice after the given row, which the service asks the ledger for. */
     private void laterCollectionsOf(long paymentId, String amount) {
         when(arPaymentRepository.sumAmountByInvoiceIdAndIdGreaterThanExcludingReversed(INVOICE_ID, paymentId))
+                .thenReturn(new BigDecimal(amount));
+        when(arPaymentRepository.sumAmountByInvoiceIdAndPaymentDateAfterExcludingReversed(
+                anyLong(), any(LocalDateTime.class)))
                 .thenReturn(new BigDecimal(amount));
     }
 
@@ -157,6 +168,13 @@ class ReceiptBalanceTest {
         Sale sale = invoice("80.00", "50.00", "10.00");
         paymentIs(collection(11L, "30.00", sale));
         laterCollectionsOf(11L, "20.00");
+        SaleReturn sr = new SaleReturn();
+        sr.setId(1L);
+        sr.setSale(sale);
+        sr.setReturnDate(LocalDateTime.of(2026, 1, 1, 11, 0));
+        sr.setTotalReturnAmount(new BigDecimal("10.00"));
+        when(saleReturnRepository.findBySaleIdOrderByReturnDateDesc(INVOICE_ID))
+                .thenReturn(java.util.List.of(sr));
 
         ArPaymentReceiptDto first = receiptService.getArPaymentReceipt(11L);
 

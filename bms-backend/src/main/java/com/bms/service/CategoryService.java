@@ -5,6 +5,7 @@ import com.bms.dto.category.CategoryResponseDto;
 import com.bms.entity.Category;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CategoryRepository;
+import com.bms.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -29,6 +30,9 @@ public class CategoryService {
     private ShopTimeService shopTimeService;
 
     private final CategoryRepository categoryRepository;
+
+    @Autowired
+    private ProductRepository productRepository;
 
     @Transactional(readOnly = true)
     public Page<CategoryResponseDto> getAllCategories(Pageable pageable) {
@@ -82,6 +86,9 @@ public class CategoryService {
     @Transactional
     @CacheEvict(cacheNames = "categoriesActive", allEntries = true)
     public CategoryResponseDto createCategory(CategoryRequestDto request) {
+        if (categoryRepository.existsByNameIgnoreCase(request.getName())) {
+            throw new com.bms.exception.BusinessException("Category with this name already exists");
+        }
         Category category = new Category();
         category.setName(request.getName());
         category.setDescription(request.getDescription());
@@ -97,6 +104,9 @@ public class CategoryService {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
         
+        if (categoryRepository.existsByNameIgnoreCaseAndIdNot(request.getName(), id)) {
+            throw new com.bms.exception.BusinessException("Category with this name already exists");
+        }
         category.setName(request.getName());
         category.setDescription(request.getDescription());
         
@@ -110,6 +120,9 @@ public class CategoryService {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Category not found with id: " + id));
         
+        if (productRepository.existsByCategoryIdAndDeletedAtIsNull(id)) {
+            throw new com.bms.exception.BusinessException("Cannot delete a category that still has products");
+        }
         category.setIsActive(false);
         category.setDeletedAt(shopTimeService.now());
         categoryRepository.save(category);

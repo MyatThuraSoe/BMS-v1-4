@@ -12,12 +12,14 @@ import com.bms.entity.CashShift;
 import com.bms.entity.Customer;
 import com.bms.entity.DrawerMovementType;
 import com.bms.entity.PaymentMethod;
+import com.bms.entity.PaymentStatus;
 import com.bms.entity.Sale;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CustomerRepository;
+import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
 import com.bms.service.PeriodGuard;
@@ -51,6 +53,9 @@ public class ArService {
 
     @Autowired
     private SaleRepository saleRepository;
+
+    @Autowired
+    private SalePaymentRepository salePaymentRepository;
 
     @Autowired
     private CustomerRepository customerRepository;
@@ -280,6 +285,12 @@ public class ArService {
                 ? Sale.PaymentStatus.PAID
                 : Sale.PaymentStatus.PARTIAL);
         saleRepository.save(sale);
+
+        // Complete any pending CREDIT payment lines on this sale now that it is settled
+        salePaymentRepository.findBySaleIdOrderByPaidAtAsc(sale.getId()).stream()
+                .filter(p -> p.getPaymentMethod() == PaymentMethod.CREDIT
+                        && p.getPaymentStatus() == PaymentStatus.PENDING)
+                .forEach(p -> { p.setPaymentStatus(PaymentStatus.COMPLETED); salePaymentRepository.save(p); });
 
         // Reduce the customer's outstanding balance (row already not locked
         // here, so lock it explicitly to serialize with concurrent credit sales)

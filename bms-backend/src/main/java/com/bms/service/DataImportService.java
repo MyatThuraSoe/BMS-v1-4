@@ -602,10 +602,22 @@ public class DataImportService {
                 existingRows.putIfAbsent(id, existing);
             }
 
+            java.util.Set<String> existingKeys = new java.util.HashSet<>();
+            if (businessKey != null) {
+                for (T existing : existingRows.values()) {
+                    String k = businessKey.apply(existing);
+                    if (k != null && !k.isBlank()) existingKeys.add(k.toLowerCase(java.util.Locale.ROOT));
+                }
+            }
             List<T> fresh = new ArrayList<>();
             for (T row : incoming) {
                 Object id = idOf(row);
                 if (id == null || !existingIds.contains(id)) {
+                    String k = businessKey == null ? null : businessKey.apply(row);
+                    if (k != null && !k.isBlank()
+                            && existingKeys.contains(k.toLowerCase(java.util.Locale.ROOT))) {
+                        continue;
+                    }
                     fresh.add(row);
                     continue;
                 }
@@ -675,6 +687,7 @@ public class DataImportService {
         return incoming.stream()
                 .filter(u -> u.getUsername() == null || usernames.contains(u.getUsername().toLowerCase()))
                 .filter(u -> u.getEmail() == null || emails.contains(u.getEmail().toLowerCase()))
+                .peek(u -> { if (u.getId() != null && userRepository.existsById(u.getId())) u.setId(null); })
                 .collect(java.util.stream.Collectors.toList());
     }
 

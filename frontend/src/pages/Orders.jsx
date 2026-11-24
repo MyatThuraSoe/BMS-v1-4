@@ -243,7 +243,7 @@ const Orders = () => {
     } else {
       if (!convertOrder?.customerId) err = t('no_customer_for_credit');
       if (!err && !convertDueDate) err = t('due_date_required');
-      if (!err && convertDueDate < new Date().toISOString().slice(0, 10)) err = t('due_date_past');
+      if (!err && convertDueDate < `${new Date().getFullYear()}-${String(new Date().getMonth()+1).padStart(2,'0')}-${String(new Date().getDate()).padStart(2,'0')}`) err = t('due_date_past');
     }
     if (err) {
       setConvertError(err);

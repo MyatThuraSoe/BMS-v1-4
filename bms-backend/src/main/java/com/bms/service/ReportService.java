@@ -730,9 +730,15 @@ public class ReportService {
     public List<SupplierProfitDto> getProfitBySupplier(LocalDate startDate, LocalDate endDate) {
         String sql = """
             SELECT s.id, s.name,
-                   COALESCE(SUM(pi.unit_cost * pi.quantity), 0) as total_supplied_cost,
+                   COALESCE(SUM(pi.unit_cost * (CASE WHEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) > 0 THEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) ELSE 0 END)), 0) as total_supplied_cost,
                    COALESCE((
-                       SELECT SUM(si.unit_price * si.quantity)
+                       SELECT SUM(ROUND((COALESCE(si.total_price, si.unit_price * si.quantity)
+                            - (CASE WHEN COALESCE(sal.subtotal,0) > 0
+                                    THEN COALESCE(si.total_price, si.unit_price * si.quantity)
+                                         * COALESCE(sal.discount_amount,0) / sal.subtotal
+                                    ELSE 0 END))
+                            * (COALESCE(si.quantity,0) - COALESCE(si.quantity_refunded,0))
+                            / (CASE WHEN COALESCE(si.quantity,0) > 0 THEN si.quantity ELSE 1 END), 2))
                        FROM sale_items si
                        INNER JOIN sales sal ON si.sale_id = sal.id
                        WHERE sal.is_voided = false
@@ -975,15 +981,16 @@ public class ReportService {
             totalInventoryValue = totalInventoryValue.add(value);
 
             int minStock = product.getMinStockLevel() == null ? 0 : product.getMinStockLevel();
+            int sellable = product.getStockQuantity() != null ? product.getStockQuantity() : 0;
 
-            if (stock <= minStock) {
+            if (sellable <= minStock) {
                 lowStockProducts++;
                 Map<String, Object> item = new HashMap<>();
                 item.put("productId", product.getId());
                 item.put("productName", product.getName());
-                item.put("currentStock", stock);
+                item.put("currentStock", sellable);
                 item.put("minStockLevel", minStock);
-                item.put("shortage", minStock - stock);
+                item.put("shortage", minStock - sellable);
                 lowStockList.add(item);
             }
         }
@@ -1168,10 +1175,7 @@ public class ReportService {
             }
             transactionCount++;
             grossSales = grossSales.add(toBigDecimal(sale.getSubtotal()));
-            discounts = discounts
-                    .add(toBigDecimal(sale.getDiscountAmount()))
-                    .add(toBigDecimal(sale.getPromotionDiscount()))
-                    .add(toBigDecimal(sale.getPriceListDiscount()));
+            discounts = discounts.add(toBigDecimal(sale.getDiscountAmount()));
             BigDecimal total = toBigDecimal(sale.getTotalAmount());
             netSales = netSales.add(total);
 
@@ -1215,10 +1219,14 @@ public class ReportService {
         List<SaleReturn> returns = saleReturnRepository.findByReturnDateBetween(start, end);
         BigDecimal refundTotal = BigDecimal.ZERO;
         Map<String, BigDecimal> refundsByMethod = new LinkedHashMap<>();
+        BigDecimal debtReductionTotal = BigDecimal.ZERO;
         for (SaleReturn saleReturn : returns) {
-            BigDecimal amount = toBigDecimal(saleReturn.getTotalReturnAmount());
+            BigDecimal amount = toBigDecimal(saleReturn.getRefundAmount());
             refundTotal = refundTotal.add(amount);
-            refundsByMethod.merge(saleReturn.getRefundMethod().name(), amount, BigDecimal::add);
+            if (amount.signum() > 0) {
+                refundsByMethod.merge(saleReturn.getRefundMethod().name(), amount, BigDecimal::add);
+            }
+            debtReductionTotal = debtReductionTotal.add(toBigDecimal(saleReturn.getDebtReductionAmount()));
         }
 
         Map<String, Object> business = new LinkedHashMap<>();
@@ -1227,6 +1235,7 @@ public class ReportService {
         business.put("grossSales", grossSales);
         business.put("discounts", discounts);
         business.put("refunds", refundTotal);
+        business.put("debtReductionTotal", debtReductionTotal);
         business.put("netSales", netSales);
         business.put("averageSale", transactionCount == 0 ? BigDecimal.ZERO
                 : netSales.divide(BigDecimal.valueOf(transactionCount), 2, RoundingMode.HALF_UP));

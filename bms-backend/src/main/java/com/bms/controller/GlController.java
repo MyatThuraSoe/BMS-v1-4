@@ -37,7 +37,7 @@ public class GlController {
     }
 
     @PostMapping("/accounts")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<GlAccount>> createAccount(
             @Valid @RequestBody GlAccountRequest request) {
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -46,7 +46,7 @@ public class GlController {
     }
 
     @PutMapping("/accounts/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<GlAccount>> updateAccount(
             @PathVariable Long id, @Valid @RequestBody GlAccountRequest request) {
         return ResponseEntity.ok(new ApiResponse<>(true, "GL account updated successfully",
@@ -61,7 +61,7 @@ public class GlController {
     }
 
     @PostMapping("/mappings")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<GlMapping>> upsertMapping(
             @Valid @RequestBody GlMappingRequest request) {
         return ResponseEntity.ok(new ApiResponse<>(true, "GL mapping saved successfully",
@@ -69,7 +69,7 @@ public class GlController {
     }
 
     @DeleteMapping("/mappings/{id}")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MANAGER')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ApiResponse<Void>> deleteMapping(@PathVariable Long id) {
         glService.deleteMapping(id);
         return ResponseEntity.ok(new ApiResponse<>(true, "GL mapping deleted successfully", null));

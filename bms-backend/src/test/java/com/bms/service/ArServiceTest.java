@@ -13,6 +13,7 @@ import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CustomerRepository;
+import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -46,6 +47,7 @@ class ArServiceTest {
     @Mock private SaleRepository saleRepository;
     @Mock private CustomerRepository customerRepository;
     @Mock private ArPaymentRepository arPaymentRepository;
+    @Mock private SalePaymentRepository salePaymentRepository;
     @Mock private UserRepository userRepository;
     @Mock private AuditLogService auditLogService;
     @Mock private PaymentValidationService paymentValidationService;
@@ -64,6 +66,7 @@ class ArServiceTest {
         ReflectionTestUtils.setField(service, "saleRepository", saleRepository);
         ReflectionTestUtils.setField(service, "customerRepository", customerRepository);
         ReflectionTestUtils.setField(service, "arPaymentRepository", arPaymentRepository);
+        ReflectionTestUtils.setField(service, "salePaymentRepository", salePaymentRepository);
         ReflectionTestUtils.setField(service, "userRepository", userRepository);
         ReflectionTestUtils.setField(service, "auditLogService", auditLogService);
         ReflectionTestUtils.setField(service, "paymentValidationService", paymentValidationService);

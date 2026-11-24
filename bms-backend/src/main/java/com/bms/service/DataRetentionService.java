@@ -42,6 +42,9 @@ public class DataRetentionService {
     @Autowired
     private AuditLogService auditLogService;
 
+    @Autowired
+    private LedgerReadService ledgerReadService;
+
     @PersistenceContext
     private EntityManager entityManager;
 
@@ -52,6 +55,10 @@ public class DataRetentionService {
         }
         if (years < 1) {
             throw new BusinessException("Years must be at least 1");
+        }
+        if (ledgerReadService.isActive()) {
+            throw new BusinessException("Retention deletion is disabled after ledger cutover: "
+                + "ledger rows are append-only. Use a complete database restore instead.");
         }
 
         LocalDateTime cutoff = shopTimeService.today().minusYears(years).atStartOfDay();

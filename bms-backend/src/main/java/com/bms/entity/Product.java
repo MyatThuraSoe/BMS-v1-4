@@ -230,4 +230,11 @@ public class Product {
 
     public String getImageType() { return imageType; }
     public void setImageType(String imageType) { this.imageType = imageType; }
+
+    @Override
+    public String toString() {
+        return "Product{id=" + id + ", sku=" + sku + ", name=" + name
+            + ", price=" + unitPrice + ", cost=" + costPrice + ", stock=" + stockQuantity
+            + ", reserved=" + reservedQuantity + ", active=" + isActive + "}";
+    }
 }

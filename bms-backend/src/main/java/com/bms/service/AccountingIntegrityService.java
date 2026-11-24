@@ -5,6 +5,7 @@ import com.bms.entity.Product;
 import com.bms.entity.SaleItem;
 import com.bms.exception.BusinessException;
 import com.bms.repository.InventoryLedgerRepository;
+import com.bms.repository.ProfitLedgerRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SaleRepository;
@@ -54,6 +55,7 @@ public class AccountingIntegrityService {
     private final SaleItemRepository saleItemRepository;
     private final SaleRepository saleRepository;
     private final InventoryLedgerRepository inventoryLedgerRepository;
+    private final ProfitLedgerRepository profitLedgerRepository;
     private final LedgerReadService ledgerReadService;
     private final SystemSettingRepository systemSettingRepository;
     private final ShopTimeService shopTimeService;
@@ -63,6 +65,7 @@ public class AccountingIntegrityService {
                                       SaleItemRepository saleItemRepository,
                                       SaleRepository saleRepository,
                                       InventoryLedgerRepository inventoryLedgerRepository,
+                                      ProfitLedgerRepository profitLedgerRepository,
                                       LedgerReadService ledgerReadService,
                                       SystemSettingRepository systemSettingRepository,
                                       ShopTimeService shopTimeService,
@@ -71,6 +74,7 @@ public class AccountingIntegrityService {
         this.saleItemRepository = saleItemRepository;
         this.saleRepository = saleRepository;
         this.inventoryLedgerRepository = inventoryLedgerRepository;
+        this.profitLedgerRepository = profitLedgerRepository;
         this.ledgerReadService = ledgerReadService;
         this.systemSettingRepository = systemSettingRepository;
         this.shopTimeService = shopTimeService;
@@ -165,7 +169,9 @@ public class AccountingIntegrityService {
             line.setEstimated(true);
             saleItemRepository.save(line);
             repaired++;
-            needsAdjustment.add(line.getId());
+            if (profitLedgerRepository.existsZeroCogsSaleRow(String.valueOf(line.getId()))) {
+                needsAdjustment.add(line.getId());
+            }
         }
         auditLogService.logAction(userId, "COST_REPAIR",
                 "Null cost_price_at_sale lines repaired: " + repaired,

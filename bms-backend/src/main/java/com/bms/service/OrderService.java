@@ -137,6 +137,10 @@ public class OrderService {
         // (same as SaleService), avoiding deadlocks between concurrent orders.
         Map<Long, Integer> mergedQtyByProduct = new java.util.TreeMap<>();
         for (OrderCreateRequest.OrderItemRequest itemRequest : request.getItems()) {
+            if (itemRequest.getProductId() == null || itemRequest.getQuantity() == null
+                    || itemRequest.getQuantity() <= 0) {
+                throw new BusinessException("Order item quantity must be positive");
+            }
             mergedQtyByProduct.merge(itemRequest.getProductId(), itemRequest.getQuantity(), Integer::sum);
         }
         Map<Long, Integer> reservedByProduct = new java.util.TreeMap<>();
@@ -253,6 +257,7 @@ public class OrderService {
         }
 
         order.setPromotionDiscount(promotionDiscount.setScale(2, RoundingMode.HALF_UP));
+        order.setPriceListDiscount(priceListDiscount.setScale(2, RoundingMode.HALF_UP));
         // P5: tax applies to the discounted line value, using the same proportional
         // allocation rule as sales so conversion reproduces identical line taxes.
         BigDecimal taxAmount = applyDiscountedLineTaxes(order, taxRate);

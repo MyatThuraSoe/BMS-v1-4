@@ -554,7 +554,9 @@ public class CashDrawerSessionService {
                     ? List.of()
                     : movements.stream().map(this::toMovementResponse).collect(Collectors.toList()));
         }
-        response.setContributingEmployees(buildEmployeeContributions(session.getId()));
+        response.setContributingEmployees(hideExpected
+                ? java.util.List.of() : buildEmployeeContributions(session.getId()));
+        if (hideExpected) { response.setOpeningFloat(null); }
         return response;
     }
 

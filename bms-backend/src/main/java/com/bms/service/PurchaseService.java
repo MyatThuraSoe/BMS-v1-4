@@ -348,6 +348,7 @@ public class PurchaseService {
         if (variance.signum() > 0) {
             Expense varianceExpense = new Expense();
             varianceExpense.setCategory(Expense.ExpenseCategory.PURCHASE_VARIANCE);
+            varianceExpense.setSourcePurchaseId(purchase.getId());
             varianceExpense.setDescription("Unabsorbed landed cost on purchase "
                     + purchase.getPurchaseNumber());
             varianceExpense.setAmount(variance);
@@ -1101,15 +1102,11 @@ public class PurchaseService {
         // Reverse the PURCHASE_VARIANCE expense created when this PO was closed,
         // so the P&L doesn't keep a stale expense for a deleted invoice.
         if (purchase.getVarianceAmount() != null && purchase.getVarianceAmount().signum() > 0) {
-            for (Expense varianceExpense : expenseRepository.findFiltered(
-                    Expense.ExpenseCategory.PURCHASE_VARIANCE, null, null)) {
-                if (varianceExpense.getDescription() != null
-                        && varianceExpense.getDescription().contains(purchase.getPurchaseNumber())) {
-                    ledgerPostingService.reverseExpense(varianceExpense,
-                            varianceExpense.getExpenseDate().atStartOfDay());
-                    varianceExpense.setDeletedAt(shopTimeService.now());
-                    expenseRepository.save(varianceExpense);
-                }
+            for (Expense varianceExpense : expenseRepository.findBySourcePurchaseId(purchase.getId())) {
+                ledgerPostingService.reverseExpense(varianceExpense,
+                        varianceExpense.getExpenseDate().atStartOfDay());
+                varianceExpense.setDeletedAt(shopTimeService.now());
+                expenseRepository.save(varianceExpense);
             }
         }
 

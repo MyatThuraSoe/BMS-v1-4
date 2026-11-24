@@ -383,6 +383,22 @@ public class GlService {
                 if (received <= 0) {
                     continue;
                 }
+                if (recoverable) {
+                    int ordered = item.getQuantity() != null ? item.getQuantity() : 0;
+                    BigDecimal taxShare = taxShares.getOrDefault(item.getId(), BigDecimal.ZERO);
+                    if (ordered > 0 && taxShare.signum() > 0) {
+                        BigDecimal receivedTax = taxShare.multiply(BigDecimal.valueOf(received))
+                                .divide(BigDecimal.valueOf(ordered), 2, RoundingMode.HALF_UP)
+                                .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+                        if (receivedTax.signum() > 0) {
+                            addPair(entries, accounts, date,
+                                    purchase.getPurchaseNumber() + "-tax-" + item.getId(),
+                                    "Recoverable input tax on purchase " + purchase.getPurchaseNumber(),
+                                    GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE,
+                                    receivedTax);
+                        }
+                    }
+                }
                 boolean alreadyJournaled = !stockMovementRepository
                         .findByReferenceAndPurchaseItem(
                                 StockMovement.ReferenceType.RECEIVING, purchase.getId(), item.getId())
@@ -403,25 +419,6 @@ public class GlService {
                 // Goods value to inventory, credited against the supplier payable.
                 addPair(entries, accounts, date, reference, description,
                         GlMapping.EventType.INVENTORY, GlMapping.EventType.ACCOUNTS_PAYABLE, itemAmount);
-                if (recoverable) {
-                    int ordered = item.getQuantity() != null ? item.getQuantity() : 0;
-                    BigDecimal taxShare = taxShares.getOrDefault(item.getId(), BigDecimal.ZERO);
-                    if (ordered > 0 && taxShare.signum() > 0) {
-                        // Recoverable input tax is an asset (Input Tax Recoverable),
-                        // not part of inventory cost. Pro-rate to the received qty.
-                        BigDecimal receivedTax = taxShare.multiply(BigDecimal.valueOf(received))
-                                .divide(BigDecimal.valueOf(ordered), 2, RoundingMode.HALF_UP)
-                                .multiply(fx).setScale(2, RoundingMode.HALF_UP);
-                        if (receivedTax.signum() > 0) {
-                            addPair(entries, accounts, date,
-                                    purchase.getPurchaseNumber() + "-tax-" + item.getId(),
-                                    "Recoverable input tax on purchase "
-                                            + purchase.getPurchaseNumber(),
-                                    GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE,
-                                    receivedTax);
-                        }
-                    }
-                }
             }
         }
     }

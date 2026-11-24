@@ -586,10 +586,7 @@ public class CashShiftService {
             }
             transactions++;
             gross = gross.add(nullSafe(sale.getSubtotal()));
-            discount = discount
-                    .add(nullSafe(sale.getDiscountAmount()))
-                    .add(nullSafe(sale.getPromotionDiscount()))
-                    .add(nullSafe(sale.getPriceListDiscount()));
+            discount = discount.add(nullSafe(sale.getDiscountAmount()));
             net = net.add(nullSafe(sale.getTotalAmount()));
         }
 
@@ -629,7 +626,7 @@ public class CashShiftService {
         response.setNetSales(hideBlindTotals ? null : net);
         response.setTransactionCount(transactions);
         response.setVoidedCount(voided);
-        response.setPaymentBreakdown(breakdown);
+        response.setPaymentBreakdown(hideBlindTotals ? null : breakdown);
         // Blind close: hide the component totals for an open cash-drawer shift so
         // a solo cashier cannot reconstruct the expected cash and "count to the
         // number". The totals are still computed internally for variance.

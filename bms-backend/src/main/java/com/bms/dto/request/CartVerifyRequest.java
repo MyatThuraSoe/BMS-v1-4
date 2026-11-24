@@ -8,6 +8,7 @@ import java.util.List;
 
 public class CartVerifyRequest {
     @NotEmpty(message = "Cart items are required")
+    @jakarta.validation.Valid
     private List<CartVerifyItem> items;
 
     // Cashier-entered discount (AMOUNT mode); ignored in PERCENTAGE mode

@@ -112,8 +112,7 @@ public class SequenceService {
                         fresh.setLastNumber(0);
                         return transferSequenceRepository.saveAndFlush(fresh);
                     } catch (DataIntegrityViolationException ex) {
-                        return transferSequenceRepository.findByDateForUpdate(today)
-                                .orElseThrow(() -> new BusinessException("Failed to acquire transfer sequence"));
+                        throw new BusinessException("Sequence row created concurrently; retry the operation.");
                     }
                 });
         int next = (sequence.getLastNumber() == null ? 0 : sequence.getLastNumber()) + 1;
@@ -136,8 +135,7 @@ public class SequenceService {
                         fresh.setLastNumber(seedCustomerNumber(today));
                         return customerSequenceRepository.saveAndFlush(fresh);
                     } catch (DataIntegrityViolationException ex) {
-                        return customerSequenceRepository.findByDateForUpdate(today)
-                                .orElseThrow(() -> new BusinessException("Failed to acquire customer sequence"));
+                        throw new BusinessException("Sequence row created concurrently; retry the operation.");
                     }
                 });
         int next = (sequence.getLastNumber() == null ? 0 : sequence.getLastNumber()) + 1;
@@ -168,9 +166,7 @@ public class SequenceService {
                         fresh.setLastNumber(0);
                         return invoiceSequenceRepository.saveAndFlush(fresh);
                     } catch (DataIntegrityViolationException ex) {
-                        // Another request created today's row first — re-read it under the lock
-                        return invoiceSequenceRepository.findByDateForUpdate(today)
-                                .orElseThrow(() -> new BusinessException("Failed to acquire invoice sequence"));
+                        throw new BusinessException("Sequence row created concurrently; retry the operation.");
                     }
                 });
     }
@@ -184,8 +180,7 @@ public class SequenceService {
                         fresh.setLastNumber(0);
                         return purchaseSequenceRepository.saveAndFlush(fresh);
                     } catch (DataIntegrityViolationException ex) {
-                        return purchaseSequenceRepository.findByDateForUpdate(today)
-                                .orElseThrow(() -> new BusinessException("Failed to acquire purchase sequence"));
+                        throw new BusinessException("Sequence row created concurrently; retry the operation.");
                     }
                 });
     }
@@ -199,8 +194,7 @@ public class SequenceService {
                         fresh.setLastNumber(0);
                         return orderSequenceRepository.saveAndFlush(fresh);
                     } catch (DataIntegrityViolationException ex) {
-                        return orderSequenceRepository.findByDateForUpdate(today)
-                                .orElseThrow(() -> new BusinessException("Failed to acquire order sequence"));
+                        throw new BusinessException("Sequence row created concurrently; retry the operation.");
                     }
                 });
     }

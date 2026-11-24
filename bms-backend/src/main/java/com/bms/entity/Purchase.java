@@ -228,4 +228,11 @@ public class Purchase {
 
     public List<PurchaseExpense> getExpenses() { return expenses; }
     public void setExpenses(List<PurchaseExpense> expenses) { this.expenses = expenses; }
+
+    @Override
+    public String toString() {
+        return "Purchase{id=" + id + ", number=" + purchaseNumber + ", status=" + receivingStatus
+            + ", subtotal=" + subtotal + ", discount=" + discountAmount + ", tax=" + taxAmount
+            + ", total=" + totalAmount + ", returned=" + returnedAmount + "}";
+    }
 }

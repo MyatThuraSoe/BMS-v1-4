@@ -127,14 +127,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("SELECT COUNT(s) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false")
     Long countInvoicesByCustomerId(@Param("customerId") Long customerId);
 
-    @Query("SELECT si.product.id, si.product.name, SUM(si.quantity - COALESCE(si.quantityRefunded, 0)) as totalQty, SUM(si.totalPrice) as totalAmt " +
+    @Query("SELECT si.product.id, si.product.name, SUM(si.quantity - COALESCE(si.quantityRefunded, 0)) as totalQty, SUM(ROUND((si.totalPrice - (CASE WHEN s.subtotal > 0 THEN si.totalPrice * COALESCE(s.discountAmount,0) / s.subtotal ELSE 0 END)) * (si.quantity - COALESCE(si.quantityRefunded,0)) / (CASE WHEN si.quantity > 0 THEN si.quantity ELSE 1 END), 2)) as totalAmt " +
             "FROM SaleItem si JOIN si.sale s " +
             "WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false " +
             "GROUP BY si.product.id, si.product.name " +
             "ORDER BY totalQty DESC")
     List<Object[]> findTopProductsByCustomerId(@Param("customerId") Long customerId, org.springframework.data.domain.Pageable pageable);
 
-    @Query("SELECT CAST(s.saleDate AS DATE), SUM(s.totalAmount) " +
+    @Query("SELECT CAST(s.saleDate AS DATE), SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) " +
             "FROM Sale s " +
             "WHERE s.customer.id = :customerId " +
             "AND YEAR(s.saleDate) = :year " +
