@@ -22,4 +22,7 @@ public interface ExpenseRepository extends JpaRepository<Expense, Long> {
     List<Expense> findFiltered(@Param("category") Expense.ExpenseCategory category,
                                @Param("startDate") LocalDate startDate,
                                @Param("endDate") LocalDate endDate);
+
+    @Query("SELECT e FROM Expense e WHERE e.sourcePurchaseId = :sourcePurchaseId AND e.deletedAt IS NULL")
+    java.util.List<Expense> findBySourcePurchaseId(@Param("sourcePurchaseId") Long sourcePurchaseId);
 }

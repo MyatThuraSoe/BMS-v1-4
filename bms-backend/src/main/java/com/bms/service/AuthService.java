@@ -83,7 +83,7 @@ public class AuthService {
 
         if (attemptTracker.isLocked(key)) {
             log.warn("Login rejected for locked account: username={} from {}", key, clientAddress);
-            throw new BusinessException("auth.login.locked");
+            throw new BusinessException("auth.login.failed");
         }
 
         try {
@@ -213,10 +213,12 @@ public class AuthService {
             if (userRepository.count() > 0) {
                 throw new BusinessException("auth.firstadmin.notallowed");
             }
-            if (userRepository.existsByUsername(registerRequest.getUsername())) {
+            if (userRepository.existsByUsernameNormalized(normalizeKey(registerRequest.getUsername()))
+                    || userRepository.existsByUsernameIgnoreCase(registerRequest.getUsername())) {
                 throw new BusinessException("validation.duplicate.username");
             }
-            if (userRepository.existsByEmail(registerRequest.getEmail())) {
+            if (userRepository.existsByEmailNormalized(normalizeKey(registerRequest.getEmail()))
+                    || userRepository.existsByEmailIgnoreCase(registerRequest.getEmail())) {
                 throw new BusinessException("validation.duplicate.email");
             }
 

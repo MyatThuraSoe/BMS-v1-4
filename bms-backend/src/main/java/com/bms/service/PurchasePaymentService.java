@@ -206,6 +206,10 @@ public class PurchasePaymentService {
             throw new ResourceNotFoundException("Purchase not found: " + purchaseId);
         }
 
+        if (purchase.getReceivingStatus() == Purchase.ReceivingStatus.ORDERED) {
+            throw new BusinessException("Receive the purchase before recording a supplier payment.");
+        }
+
         BigDecimal paidSoFar = paidAmount(purchaseId);
         BigDecimal outstanding = purchase.getPayableAmount().subtract(paidSoFar).max(BigDecimal.ZERO);
         if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {

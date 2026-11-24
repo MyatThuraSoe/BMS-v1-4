@@ -378,7 +378,8 @@ public class SaleService {
             paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
             sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
         } else {
-            sale.setPaymentMethod(Sale.PaymentMethod.CASH);
+            sale.setPaymentMethod(saleType == Sale.SaleType.CREDIT
+                    ? Sale.PaymentMethod.CREDIT : Sale.PaymentMethod.CASH);
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
         }
@@ -874,6 +875,10 @@ public class SaleService {
         periodGuard.assertOpen(shopTimeService.now());
         Sale sale = saleRepository.findByIdForUpdate(saleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Sale not found: " + saleId));
+
+        if (!Boolean.TRUE.equals(sale.getIsActive()) || sale.getDeletedAt() != null) {
+            throw new ResourceNotFoundException("Sale not found: " + saleId);
+        }
 
         if (sale.getIsVoided()) {
             throw new BusinessException("Sale is already voided");

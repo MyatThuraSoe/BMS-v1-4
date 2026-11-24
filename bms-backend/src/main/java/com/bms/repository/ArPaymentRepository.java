@@ -55,4 +55,13 @@ public interface ArPaymentRepository extends JpaRepository<ArPayment, Long> {
         """)
     BigDecimal sumAmountByInvoiceIdAndIdGreaterThanExcludingReversed(
             @Param("invoiceId") Long invoiceId, @Param("paymentId") Long paymentId);
+
+    // Date-based replacement for receipt reprints: collections after this payment's
+    // date, excluding reversed ones.
+    @Query("""
+        SELECT COALESCE(SUM(p.amount), 0) FROM ArPayment p
+        WHERE p.invoice.id = :invoiceId AND p.paymentDate > :afterDate AND p.reversedAt IS NULL
+        """)
+    BigDecimal sumAmountByInvoiceIdAndPaymentDateAfterExcludingReversed(
+            @Param("invoiceId") Long invoiceId, @Param("afterDate") LocalDateTime afterDate);
 }

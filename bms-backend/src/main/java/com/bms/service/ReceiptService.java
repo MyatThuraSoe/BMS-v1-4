@@ -6,11 +6,13 @@ import com.bms.dto.receipt.ReceiptItemDto;
 import com.bms.entity.ArPayment;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
+import com.bms.entity.SaleReturn;
 import com.bms.entity.User;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.exception.StateConflictException;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.SaleRepository;
+import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +43,9 @@ public class ReceiptService {
 
     @Autowired
     private ArPaymentRepository arPaymentRepository;
+
+    @Autowired
+    private SaleReturnRepository saleReturnRepository;
 
 //    // ✅ ADD THIS CONSTRUCTOR to make the red lines disappear
 //    public ReceiptService(SaleRepository saleRepository, UserRepository userRepository) {
@@ -197,10 +202,16 @@ public class ReceiptService {
         // total less every collection recorded after this one. Reprints are asked for
         // at the counter to prove what was settled that day, not to show today's book.
         BigDecimal collectedSince = amount(arPaymentRepository
-                .sumAmountByInvoiceIdAndIdGreaterThanExcludingReversed(sale.getId(), payment.getId()));
+                .sumAmountByInvoiceIdAndPaymentDateAfterExcludingReversed(sale.getId(), payment.getPaymentDate()));
         BigDecimal paidAtThatTime = amount(sale.getAmountPaid()).subtract(collectedSince);
 
-        dto.setAmountReturned(amount(sale.getAmountReturned()));
+        BigDecimal returnedAtThatTime = saleReturnRepository.findBySaleIdOrderByReturnDateDesc(sale.getId())
+                .stream()
+                .filter(r -> r.getReturnDate() != null
+                        && !r.getReturnDate().isAfter(payment.getPaymentDate()))
+                .map(r -> amount(r.getTotalReturnAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        dto.setAmountReturned(returnedAtThatTime);
         // Returns are counted whole, whenever they happened: the invoice the customer
         // is holding has that much less on it, and hiding it would disagree with the AR screen.
         dto.setBalanceAfter(nonNegative(sale.getTotalAmount()

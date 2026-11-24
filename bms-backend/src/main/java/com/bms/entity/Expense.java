@@ -76,6 +76,13 @@ public class Expense {
     @Column(name = "purchase_expense_id")
     private Long purchaseExpenseId;
 
+    /**
+     * F28: links a PURCHASE_VARIANCE expense back to the purchase that generated it,
+     * so deleting a purchase can reverse exactly its variance expense rows.
+     */
+    @Column(name = "source_purchase_id")
+    private Long sourcePurchaseId;
+
     public long getLedgerRevision() { return ledgerRevision; }
     public void setLedgerRevision(long ledgerRevision) { this.ledgerRevision = ledgerRevision; }
 
@@ -84,6 +91,9 @@ public class Expense {
 
     public Long getPurchaseExpenseId() { return purchaseExpenseId; }
     public void setPurchaseExpenseId(Long purchaseExpenseId) { this.purchaseExpenseId = purchaseExpenseId; }
+
+    public Long getSourcePurchaseId() { return sourcePurchaseId; }
+    public void setSourcePurchaseId(Long v) { this.sourcePurchaseId = v; }
 
     /** True when this cost belongs to inventory valuation, not the P&L. */
     public boolean isCapitalized() {

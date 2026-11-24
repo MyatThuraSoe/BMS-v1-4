@@ -687,6 +687,7 @@ public class DataImportService {
         return incoming.stream()
                 .filter(u -> u.getUsername() == null || usernames.contains(u.getUsername().toLowerCase()))
                 .filter(u -> u.getEmail() == null || emails.contains(u.getEmail().toLowerCase()))
+                .peek(u -> { if (u.getId() != null && userRepository.existsById(u.getId())) u.setId(null); })
                 .collect(java.util.stream.Collectors.toList());
     }
 

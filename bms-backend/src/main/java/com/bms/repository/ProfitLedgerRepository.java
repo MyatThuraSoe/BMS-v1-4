@@ -46,4 +46,10 @@ public interface ProfitLedgerRepository extends JpaRepository<ProfitLedger, Long
     @Query("SELECT p.productId, SUM(p.quantity), SUM(p.netRevenue), SUM(p.cogs) FROM ProfitLedger p "
             + "WHERE p.occurredAt >= :from AND p.occurredAt < :to GROUP BY p.productId")
     List<Object[]> sumGroupedByProduct(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
+    /** F30: does a sale line profit row exist with cogs = 0 (old zero-cost posting)? */
+    @Query("SELECT COUNT(p) > 0 FROM ProfitLedger p WHERE p.sourceType = 'SALE' "
+         + "AND p.eventType = com.bms.entity.ProfitLedger.EventType.SALE "
+         + "AND p.lineKey = :lineKey AND p.cogs = 0")
+    boolean existsZeroCogsSaleRow(@Param("lineKey") String lineKey);
 }
