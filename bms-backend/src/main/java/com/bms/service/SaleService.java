@@ -1533,19 +1533,22 @@ public class SaleService {
         if (!shopDiscountIsCashierEntered()) {
             return;
         }
+        // A manager credential clears the cashier cap, but it must be judged against
+        // the manager cap rather than lifting the ceiling entirely (audit item 15).
         boolean manager = isManagerOrAdmin(cashierId);
-        BigDecimal limitPercent = discountLimitPercent(manager);
+        boolean effectiveManager = manager || managerOverride;
+        BigDecimal limitPercent = discountLimitPercent(effectiveManager);
         BigDecimal maxAmount = subtotal.multiply(limitPercent)
                 .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
         if (entered.compareTo(maxAmount) <= 0) {
             return;
         }
-        if (!manager && managerOverride) {
-            return;
-        }
+        String remedy = managerOverride
+                ? "manager cap exceeded"
+                : "manager approval is required";
         throw new BusinessException("Discount " + entered.setScale(2, java.math.RoundingMode.HALF_UP)
                 + " exceeds the allowed " + limitPercent.stripTrailingZeros().toPlainString()
-                + "% of this sale (max " + maxAmount + "); manager approval is required");
+                + "% of this sale (max " + maxAmount + "); " + remedy);
     }
 
     /**
