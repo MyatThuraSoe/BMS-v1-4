@@ -262,6 +262,7 @@ public class StockCountService {
         if (entries.size() != request.getItems().size()) {
             throw new BusinessException("Duplicate count entries");
         }
+        snapshotSystemQuantitiesAtCountTime(items);
         for (CountSheetItem item : items) {
             CountSubmitRequest.Entry entry = entries.get(item.getId());
             if (entry == null || entry.getCountedQuantity() == null) {
@@ -296,6 +297,36 @@ public class StockCountService {
             countSheetRepository.save(sheet);
         }
         return toResponse(sheet, false);
+    }
+
+    /**
+     * Defect 1: the sheet snapshot is taken when the sheet is built (often at
+     * 03:00). Anything sold between then and the physical count must remain a
+     * sale, not a shrinkage. Re-read each product under a row lock at submission
+     * and use that live quantity as the count-time snapshot. Sorted ids keep the
+     * lock order stable against other stock-adjustment paths.
+     */
+    private void snapshotSystemQuantitiesAtCountTime(List<CountSheetItem> items) {
+        java.util.Map<Long, Product> locked = new java.util.TreeMap<>();
+        for (CountSheetItem item : items) {
+            Product product = item.getProduct();
+            if (product == null || product.getId() == null || locked.containsKey(product.getId())) {
+                continue;
+            }
+            Product live = productRepository.findByIdForUpdate(product.getId())
+                    .orElseThrow(() -> new BusinessException("Product not found: " + product.getId()));
+            locked.put(product.getId(), live);
+        }
+        for (CountSheetItem item : items) {
+            Product product = item.getProduct();
+            if (product == null || product.getId() == null) {
+                continue;
+            }
+            Product live = locked.get(product.getId());
+            if (live != null) {
+                item.setSystemQuantity(live.getStockQuantity() != null ? live.getStockQuantity() : 0);
+            }
+        }
     }
 
     public CountSheetResponse approve(Long id, Long userId) {
