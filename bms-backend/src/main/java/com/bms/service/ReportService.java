@@ -122,8 +122,9 @@ public class ReportService {
         String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
                 + "COALESCE(MAX(p.sku), '') AS sku, SUM(l.qty_sold) AS quantity_sold, "
                 + "SUM(l.line_revenue) AS revenue, SUM(l.prorated_tax) AS tax, SUM(l.line_cogs) AS cost "
-                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
-                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + "FROM (" + salesLineSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startOfDay, endOfDay);
 
         BigDecimal totalRevenue = BigDecimal.ZERO;
@@ -155,10 +156,13 @@ public class ReportService {
         itemSales.sort(Comparator.comparing((Map<String, Object> r) ->
                 toBigDecimal(r.get("totalPrice"))).reversed());
 
-        Long transactions = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
-                        + "AND s.is_voided = false AND s.sale_date >= ? AND s.sale_date < ?",
-                Long.class, startOfDay, endOfDay);
+        // A ledger-backed report counts the sale events dated by occurred_at;
+        // returns and voids stay in the money columns but do not create sales.
+        String transactionSql = ledgerReadService.isActive()
+                ? "SELECT COUNT(DISTINCT t.sale_id) FROM (" + salesRevenueSql() + ") t WHERE t.sale_count > 0"
+                : "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
+                        + "AND s.is_voided = false AND s.sale_date >= ? AND s.sale_date < ?";
+        Long transactions = jdbcTemplate.queryForObject(transactionSql, Long.class, startOfDay, endOfDay);
         int totalTransactions = transactions != null ? transactions.intValue() : 0;
 
         Map<String, Object> report = new HashMap<>();
@@ -182,8 +186,8 @@ public class ReportService {
         LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
         LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        String sql = "SELECT COALESCE(SUM(t.sale_revenue), 0), COUNT(*) FROM ("
-                + perSaleRevenueSql() + ") t";
+        String sql = "SELECT COALESCE(SUM(t.sale_revenue), 0), COALESCE(SUM(t.sale_count), 0) FROM ("
+                + salesRevenueSql() + ") t";
         BigDecimal[] totals = jdbcTemplate.queryForObject(sql,
                 (rs, rowNum) -> new BigDecimal[]{
                         toBigDecimal(rs.getObject(1)), BigDecimal.valueOf(rs.getLong(2))},
@@ -208,8 +212,9 @@ public class ReportService {
 
         String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
                 + "SUM(l.qty_sold) AS quantity_sold, SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
-                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + "FROM (" + salesLineSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -244,8 +249,9 @@ public class ReportService {
         LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
         String sql = "SELECT t.cashier_id, SUM(t.sale_revenue) AS total_sales, "
-                + "COUNT(*) AS tx_count, SUM(t.items_sold) AS item_count "
-                + "FROM (" + perSaleRevenueSql() + ") t GROUP BY t.cashier_id";
+                + "COALESCE(SUM(t.sale_count), 0) AS tx_count, SUM(t.items_sold) AS item_count "
+                + "FROM (" + salesRevenueSql() + ") t "
+                + "WHERE t.cashier_id IS NOT NULL GROUP BY t.cashier_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -284,13 +290,13 @@ public class ReportService {
             trendByDate.put(date, new DailySalesTrendDto(date, BigDecimal.ZERO, 0));
         }
 
-        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        String sql = "SELECT t.sale_date, t.sale_revenue, t.sale_count FROM (" + salesRevenueSql() + ") t";
         jdbcTemplate.query(sql, rs -> {
             LocalDate saleDate = toLocalDateTime(rs.getObject("sale_date")).toLocalDate();
             DailySalesTrendDto dto = trendByDate.get(saleDate);
             if (dto != null) {
                 dto.setTotalSales(dto.getTotalSales().add(toBigDecimal(rs.getObject("sale_revenue"))));
-                dto.setTransactionCount(dto.getTransactionCount() + 1);
+                dto.setTransactionCount(dto.getTransactionCount() + rs.getInt("sale_count"));
             }
         }, startDateTime, endDateTime);
 
@@ -350,10 +356,11 @@ public class ReportService {
         String currentSql = "SELECT COALESCE(c.id, -1) AS category_id, "
                 + "COALESCE(MAX(c.name), 'Uncategorized') AS category_name, "
                 + "SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l "
+                + "FROM (" + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY COALESCE(c.id, -1)";
         List<Map<String, Object>> currentRows = jdbcTemplate.queryForList(currentSql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         for (Map<String, Object> row : currentRows) {
@@ -413,10 +420,11 @@ public class ReportService {
         }
         String sql = "SELECT l.sale_id, l.sale_date, COALESCE(c.id, -1) AS category_id, "
                 + "SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l "
+                + "FROM (" + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 AND COALESCE(c.id, -1) IN (" + placeholders + ") "
+                + "WHERE " + (ledgerReadService.isActive() ? "" : "l.qty_sold > 0 AND ")
+                + "COALESCE(c.id, -1) IN (" + placeholders + ") "
                 + "GROUP BY l.sale_id, l.sale_date, COALESCE(c.id, -1)";
 
         // day -> (categoryId -> revenue)
@@ -838,7 +846,7 @@ public class ReportService {
         // Key: dayOfWeek (1=Mon..7=Sun) + hourOfDay
         Map<String, SalesTimingDto> map = new LinkedHashMap<>();
 
-        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + salesRevenueSql() + ") t";
         jdbcTemplate.query(sql, rs -> {
             LocalDateTime saleDate = toLocalDateTime(rs.getObject("sale_date"));
             int dayOfWeek = saleDate.getDayOfWeek().getValue(); // 1=Mon..7=Sun
@@ -1481,8 +1489,52 @@ public class ReportService {
                 + "CASE WHEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) > 0 "
                 + "THEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) "
                 + "ELSE 0 END AS sale_revenue, "
+                + "1 AS sale_count, "
                 + "SUM(t.qty_sold) AS items_sold "
                 + "FROM (" + lineRevenueSql() + ") t "
+                + "GROUP BY t.sale_id, t.sale_date, t.cashier_id";
+    }
+
+    /**
+     * Uniform sale-line view for the sales reports. With ledger reads active it
+     * uses profit_ledger rows dated by occurred_at (including negative return
+     * and void rows); otherwise it keeps the legacy sale-date derivation.
+     * Both variants take two ? params: start and end (half-open).
+     */
+    private String salesLineSql() {
+        return ledgerReadService.isActive() ? ledgerSalesLineSql() : lineRevenueSql();
+    }
+
+    /**
+     * Profit ledger lines shaped like {@link #lineRevenueSql()}. The original
+     * sale is resolved for returns and voids so cashier reports keep working;
+     * source_type is retained so transaction counts only count real sales.
+     */
+    private String ledgerSalesLineSql() {
+        return "SELECT l.product_id, COALESCE(l.quantity, 0) AS qty_sold, "
+                + "l.net_revenue AS line_revenue, l.tax_amount AS prorated_tax, "
+                + "l.cogs AS line_cogs, l.occurred_at AS sale_date, "
+                + "COALESCE(s.id, rs.id) AS sale_id, "
+                + "COALESCE(s.cashier_id, rs.cashier_id) AS cashier_id, "
+                + "l.source_type "
+                + "FROM profit_ledger l "
+                + "LEFT JOIN sales s ON l.source_type IN ('SALE', 'SALE_VOID') AND s.id = l.source_id "
+                + "LEFT JOIN sale_returns sr ON l.source_type = 'SALE_RETURN' AND sr.id = l.source_id "
+                + "LEFT JOIN sales rs ON rs.id = sr.sale_id "
+                + "WHERE l.source_type IN ('SALE', 'SALE_VOID', 'SALE_RETURN') "
+                + "AND l.occurred_at >= ? AND l.occurred_at < ?";
+    }
+
+    /** Per-sale view with a transaction flag for both the legacy and ledger paths. */
+    private String salesRevenueSql() {
+        if (!ledgerReadService.isActive()) {
+            return perSaleRevenueSql();
+        }
+        return "SELECT t.sale_id, t.sale_date, t.cashier_id, "
+                + "SUM(t.line_revenue) AS sale_revenue, "
+                + "SUM(CASE WHEN t.source_type = 'SALE' THEN 1 ELSE 0 END) AS sale_count, "
+                + "SUM(t.qty_sold) AS items_sold "
+                + "FROM (" + ledgerSalesLineSql() + ") t "
                 + "GROUP BY t.sale_id, t.sale_date, t.cashier_id";
     }
 
@@ -1523,7 +1575,9 @@ public class ReportService {
 
     private Map<Long, BigDecimal> computeProductRevenue(LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT l.product_id, SUM(l.line_revenue) AS revenue FROM ("
-                + lineRevenueSql() + ") l WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + salesLineSql() + ") l "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
@@ -1536,10 +1590,11 @@ public class ReportService {
 
     private Map<Long, BigDecimal> computeCategoryRevenue(LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT COALESCE(c.id, -1) AS category_id, SUM(l.line_revenue) AS revenue FROM ("
-                + lineRevenueSql() + ") l "
+                + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY COALESCE(c.id, -1)";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByCategory = new HashMap<>();
