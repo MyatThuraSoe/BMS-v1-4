@@ -302,6 +302,7 @@ public class GlService {
                     || row.getEventType() == ProfitLedger.EventType.PURCHASE_VARIANCE) {
                 addSignedPair(entries, accounts, date, reference, "Ledger operating expense", GlMapping.EventType.OPERATING_EXPENSE,
                         GlMapping.EventType.EXPENSE_PAYABLE, row.getExpense());
+                settlePaidExpense(entries, accounts, row, date, reference);
             }
         }
         for (InventoryLedger row : inventoryLedgerRepository
@@ -319,6 +320,22 @@ public class GlService {
                     row.getReason() != null ? row.getReason() : type.name(),
                     GlMapping.EventType.INVENTORY, offset, row.getValueDelta());
         }
+    }
+
+    /** A cash-settled expense must clear the payable instead of leaving it unpaid. */
+    private void settlePaidExpense(List<JournalEntryResponse> entries,
+                                   Map<GlMapping.EventType, GlAccount> accounts,
+                                   ProfitLedger row, LocalDate date, String reference) {
+        if (!"EXPENSE".equals(row.getSourceType()) || row.getSourceId() == null
+                || money(row.getExpense()).signum() <= 0) {
+            return;
+        }
+        Expense expense = expenseRepository.findById(row.getSourceId()).orElse(null);
+        if (expense == null || !Boolean.TRUE.equals(expense.getSettled())) {
+            return;
+        }
+        addPair(entries, accounts, date, reference, "Cash payment of " + reference,
+                GlMapping.EventType.EXPENSE_PAYABLE, GlMapping.EventType.CASH, money(expense.getAmount()));
     }
 
     /**
@@ -827,9 +844,15 @@ public class GlService {
             if (amount.signum() == 0) {
                 continue;
             }
-            addPair(entries, accounts, expense.getExpenseDate(), "EXP-" + expense.getId(),
+            String reference = "EXP-" + expense.getId();
+            addPair(entries, accounts, expense.getExpenseDate(), reference,
                     expense.getDescription() != null ? expense.getDescription() : "Expense",
                     GlMapping.EventType.OPERATING_EXPENSE, GlMapping.EventType.EXPENSE_PAYABLE, amount);
+            if (Boolean.TRUE.equals(expense.getSettled())) {
+                addPair(entries, accounts, expense.getExpenseDate(), reference,
+                        "Cash payment of " + reference,
+                        GlMapping.EventType.EXPENSE_PAYABLE, GlMapping.EventType.CASH, amount);
+            }
         }
     }
 
@@ -843,7 +866,7 @@ public class GlService {
             String refType = movement.getReferenceType() != null
                     ? movement.getReferenceType().trim().toUpperCase() : "";
             if (refType.equals("SALE") || refType.equals("SALE_RETURN") || refType.equals("AR_PAYMENT")
-                    || refType.equals("PURCHASE_PAYMENT")) {
+                    || refType.equals("PURCHASE_PAYMENT") || refType.equals("EXPENSE")) {
                 continue;
             }
             if (movement.getMovementType() == DrawerMovementType.CASH_SALE
