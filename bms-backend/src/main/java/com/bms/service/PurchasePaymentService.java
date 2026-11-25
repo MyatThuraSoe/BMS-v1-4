@@ -154,7 +154,10 @@ public class PurchasePaymentService {
                         .divide(purchase.getSubtotal(), 2, RoundingMode.HALF_UP);
             }
             BigDecimal outstanding = payable.subtract(paid);
-            if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+            // A fully paid PO that was later returned to the vendor owes the
+            // shop money. Keep that negative balance visible as supplier credit
+            // instead of dropping the supplier from aging entirely.
+            if (outstanding.compareTo(BigDecimal.ZERO) == 0) {
                 continue;
             }
             BigDecimal baseOutstanding = outstanding.multiply(purchase.getExchangeRate())

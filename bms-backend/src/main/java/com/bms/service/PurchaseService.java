@@ -1266,7 +1266,9 @@ public class PurchaseService {
         BigDecimal paidAmount = purchasePaymentService.paidAmount(purchase.getId());
         BigDecimal payable = purchase.getPayableAmount();
         response.setPaidAmount(paidAmount);
-        response.setOutstandingAmount(payable.subtract(paidAmount).max(BigDecimal.ZERO));
+        // Negative means the supplier owes us after a return; show it instead
+        // of hiding the credit behind a zero balance.
+        response.setOutstandingAmount(payable.subtract(paidAmount));
         response.setPaymentStatus(PurchasePaymentService.deriveStatus(payable, paidAmount).name());
         response.setReceivingStatus(purchase.getReceivingStatus().name());
         response.setCurrencyCode(purchase.getCurrencyCode());
