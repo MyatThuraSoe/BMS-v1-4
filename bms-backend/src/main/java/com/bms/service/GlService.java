@@ -689,7 +689,11 @@ public class GlService {
         // postVoidReversal (which nets against returns), so skip the standalone
         // ARP-REV row here to avoid double-counting.
         for (ArPayment payment : arPaymentRepository.findReversedForJournal(startTs, endTs)) {
-            if (payment.getInvoice() != null && payment.getInvoice().getIsVoided()) {
+            // Legacy voids are reversed by postVoidReversal, which nets returns.
+            // The ledger path has no equivalent standalone reversal, so the
+            // dated ARP-REV rows must be journaled there or AR and Cash drift.
+            if (!ledgerReadService.isActive()
+                    && payment.getInvoice() != null && payment.getInvoice().getIsVoided()) {
                 continue;
             }
             BigDecimal amount = money(payment.getAmount());
