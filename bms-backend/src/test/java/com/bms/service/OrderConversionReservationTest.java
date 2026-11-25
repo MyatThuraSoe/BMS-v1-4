@@ -2,6 +2,7 @@ package com.bms.service;
 
 import com.bms.dto.order.OrderCreateRequest;
 import com.bms.entity.CashShift;
+import com.bms.entity.Customer;
 import com.bms.entity.InventoryLedger;
 import com.bms.entity.Order;
 import com.bms.entity.OrderItem;
@@ -13,6 +14,7 @@ import com.bms.entity.SaleItem;
 import com.bms.entity.ShopInfo;
 import com.bms.entity.User;
 import com.bms.exception.BusinessException;
+import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.InventoryLedgerRepository;
@@ -31,6 +33,7 @@ import com.bms.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -55,6 +58,9 @@ import static org.mockito.ArgumentMatchers.anyString;
 import org.mockito.InOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * F22: converting one order must not take the units another pending order is
@@ -256,6 +262,57 @@ class OrderConversionReservationTest {
 
     private void convert(Order order) {
         saleService.createSaleFromOrder(order, "CASH", order.getTotalAmount(), null, 7L);
+    }
+
+    @Test
+    void zeroTotalCashOrderConvertsWithoutAFakeAmountPaid() {
+        Product product = product(1L, 10);
+        product.setUnitPrice(BigDecimal.ZERO);
+        Order order = order(1L, 1);
+
+        saleService.createSaleFromOrder(order, "CASH", null, null, 7L);
+
+        ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).save(captor.capture());
+        assertEquals(0, BigDecimal.ZERO.compareTo(captor.getValue().getAmountPaid()));
+    }
+
+    @Test
+    void inactiveCreditCustomerBlocksOrderConversion() {
+        Product product = product(1L, 10);
+        Order order = order(1L, 1);
+        Customer customer = customer(false, null);
+        order.setCustomer(customer);
+        when(customerRepository.findByIdForUpdate(55L)).thenReturn(Optional.of(customer));
+
+        assertThrows(ResourceNotFoundException.class, () -> saleService.createSaleFromOrder(
+                order, "CREDIT", null, java.time.LocalDate.now().plusDays(1), 7L));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void deletedCreditCustomerBlocksOrderConversion() {
+        Product product = product(1L, 10);
+        Order order = order(1L, 1);
+        Customer customer = customer(true, java.time.LocalDateTime.now());
+        order.setCustomer(customer);
+        when(customerRepository.findByIdForUpdate(55L)).thenReturn(Optional.of(customer));
+
+        assertThrows(ResourceNotFoundException.class, () -> saleService.createSaleFromOrder(
+                order, "CREDIT", null, java.time.LocalDate.now().plusDays(1), 7L));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    private Customer customer(boolean active, java.time.LocalDateTime deletedAt) {
+        Customer customer = new Customer();
+        customer.setId(55L);
+        customer.setFirstName("Credit Customer");
+        customer.setIsActive(active);
+        customer.setDeletedAt(deletedAt);
+        customer.setCurrentBalance(BigDecimal.ZERO);
+        customer.setCreditLimit(new BigDecimal("1000.00"));
+        customer.setCreditBalance(BigDecimal.ZERO);
+        return customer;
     }
 
     private Order order(long productId, int... quantities) {
