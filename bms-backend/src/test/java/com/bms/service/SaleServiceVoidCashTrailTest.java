@@ -59,6 +59,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * P6: voids must always leave a cash trail.
@@ -338,6 +339,45 @@ class SaleServiceVoidCashTrailTest {
                 eq(todaySession), eq(DrawerMovementType.PAY_OUT), amountCaptor.capture(),
                 eq("SALE"), eq(100L), any(), any(), anyString());
         assertEquals(0, amountCaptor.getValue().compareTo(new BigDecimal("-70.00")));
+    }
+
+    @Test
+    void lateVoidUsesTheVoidingUsersOwnOpenDrawer() {
+        CashDrawer otherDrawer = new CashDrawer();
+        otherDrawer.setId(71L);
+        CashDrawerSession otherSession = new CashDrawerSession();
+        otherSession.setId(82L);
+        otherSession.setDrawer(otherDrawer);
+        otherSession.setStatus(DrawerSessionStatus.OPEN);
+        CashShift ownShift = new CashShift();
+        ownShift.setId(91L);
+        ownShift.setShiftType(ShiftType.CASH_DRAWER);
+        ownShift.setDrawerSession(todaySession);
+
+        when(cashDrawerSessionService.getActiveDrawers()).thenReturn(List.of(otherDrawer, currentDrawer));
+        when(cashDrawerSessionService.getOpenSession(71L)).thenReturn(otherSession);
+        when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(todaySession);
+        when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN")).thenReturn(Optional.of(ownShift));
+
+        saleService.voidSale(100L, 1L, "Duplicate receipt");
+
+        verify(cashDrawerSessionService).recordFinancialMovement(
+                eq(todaySession), eq(DrawerMovementType.PAY_OUT), eq(new BigDecimal("-100.00")),
+                eq("SALE"), eq(100L), any(), eq(ownShift), anyString());
+        verify(cashDrawerSessionService, never()).recordFinancialMovement(
+                eq(otherSession), any(), any(), anyString(), anyLong(), any(), any(), anyString());
+    }
+
+    @Test
+    void lateVoidRequiresTheVoidingUsersOwnOpenDrawer() {
+        when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN")).thenReturn(Optional.empty());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
+        assertTrue(ex.getMessage().toLowerCase().contains("cash drawer shift"), ex.getMessage());
+        assertFalse(sale.getIsVoided());
+        verify(cashDrawerSessionService, never()).recordFinancialMovement(
+                any(), any(), any(), anyString(), anyLong(), any(), any(), anyString());
     }
 
     @Test
