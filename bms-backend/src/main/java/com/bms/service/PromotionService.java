@@ -108,6 +108,9 @@ public class PromotionService {
         promotion.setMinQuantity(request.getMinQuantity() != null ? request.getMinQuantity() : 1);
         promotion.setDiscountValue(request.getDiscountValue() != null
                 ? request.getDiscountValue() : BigDecimal.ZERO);
+        if (promotion.getDiscountValue().signum() < 0) {
+            throw new BusinessException("Discount value cannot be negative");
+        }
         promotion.setStartDate(request.getStartDate());
         promotion.setEndDate(request.getEndDate());
         promotion.setPriority(request.getPriority() != null ? request.getPriority() : 0);
@@ -122,12 +125,21 @@ public class PromotionService {
                 || promotion.getGetQuantity() == null || promotion.getGetQuantity() <= 0)) {
             throw new BusinessException("BOGO promotions require positive buy and get quantities");
         }
+        if ((promotion.getType() == Promotion.PromotionType.PERCENT_DISCOUNT
+                || promotion.getType() == Promotion.PromotionType.FLASH_SALE)
+                && promotion.getDiscountValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+            throw new BusinessException("Percent discount cannot exceed 100");
+        }
 
         promotion.getTiers().clear();
         if (request.getTiers() != null) {
             for (PromotionRequest.Tier tierRequest : request.getTiers()) {
                 if (tierRequest.getMinQuantity() == null || tierRequest.getDiscountPercent() == null) {
                     throw new BusinessException("Every tier needs a minimum quantity and discount percent");
+                }
+                if (tierRequest.getDiscountPercent().signum() < 0
+                        || tierRequest.getDiscountPercent().compareTo(BigDecimal.valueOf(100)) > 0) {
+                    throw new BusinessException("Tier discount percent must be between 0 and 100");
                 }
                 PromotionTier tier = new PromotionTier();
                 tier.setPromotion(promotion);
