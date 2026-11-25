@@ -12,6 +12,7 @@ import com.bms.entity.SaleItem;
 import com.bms.entity.ShopInfo;
 import com.bms.entity.User;
 import com.bms.exception.InsufficientCreditException;
+import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CashShiftRepository;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.ProductRepository;
@@ -37,6 +38,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -222,6 +224,49 @@ class SaleServiceZeroTotalCreditTest {
         request.setDueDate(LocalDate.now().plusDays(1));
 
         assertThrows(InsufficientCreditException.class,
+                () -> saleService.createSale(request, 9L));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void cashSaleForInactiveCustomerIsRejected() {
+        product(1L, "50.00", "0.00");
+        Customer inactive = new Customer();
+        inactive.setId(101L);
+        inactive.setFirstName("Inactive");
+        inactive.setLastName("Customer");
+        inactive.setIsActive(false);
+        inactive.setCurrentBalance(BigDecimal.ZERO);
+        inactive.setCreditLimit(BigDecimal.ZERO);
+        lenient().when(customerRepository.findById(101L)).thenReturn(Optional.of(inactive));
+
+        SaleCreateRequest request = request(null, 1L, 1);
+        request.setCustomerId(101L);
+        request.setDueDate(LocalDate.now().plusDays(1));
+
+        assertThrows(ResourceNotFoundException.class,
+                () -> saleService.createSale(request, 9L));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void cashSaleForDeletedCustomerIsRejected() {
+        product(1L, "50.00", "0.00");
+        Customer deleted = new Customer();
+        deleted.setId(102L);
+        deleted.setFirstName("Deleted");
+        deleted.setLastName("Customer");
+        deleted.setIsActive(true);
+        deleted.setDeletedAt(LocalDateTime.now());
+        deleted.setCurrentBalance(BigDecimal.ZERO);
+        deleted.setCreditLimit(BigDecimal.ZERO);
+        lenient().when(customerRepository.findById(102L)).thenReturn(Optional.of(deleted));
+
+        SaleCreateRequest request = request(null, 1L, 1);
+        request.setCustomerId(102L);
+        request.setDueDate(LocalDate.now().plusDays(1));
+
+        assertThrows(ResourceNotFoundException.class,
                 () -> saleService.createSale(request, 9L));
         verify(saleRepository, never()).save(any(Sale.class));
     }
