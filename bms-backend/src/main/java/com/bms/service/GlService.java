@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -237,6 +238,7 @@ public class GlService {
 
         if (ledgerReadService.isActive()) {
             postLedger(entries, accounts, startTs, endTs);
+            postLedgerPurchaseTax(entries, accounts, startTs, endTs);
         } else if (legacyEnabled()) {
             postPurchases(entries, accounts, start, end);
             postSales(entries, accounts, startTs, endTs);
@@ -316,6 +318,87 @@ public class GlService {
             addSignedPair(entries, accounts, row.getOccurredAt().toLocalDate(), row.getSourceType() + "-" + row.getSourceId(),
                     row.getReason() != null ? row.getReason() : type.name(),
                     GlMapping.EventType.INVENTORY, offset, row.getValueDelta());
+        }
+    }
+
+    /**
+     * Defect 3: the inventory ledger only carries the goods value of a receipt,
+     * while the supplier payable (and therefore the supplier payment) includes
+     * recoverable tax. Post that tax as an asset at the same event date, and
+     * reverse it on the matching RTV row, so AP settles to zero.
+     */
+    private void postLedgerPurchaseTax(List<JournalEntryResponse> entries,
+                                       Map<GlMapping.EventType, GlAccount> accounts,
+                                       LocalDateTime startTs, LocalDateTime endTs) {
+        Map<Long, Purchase> purchases = new HashMap<>();
+        Map<Long, Map<Long, BigDecimal>> taxShares = new HashMap<>();
+        for (InventoryLedger row : inventoryLedgerRepository
+                .findByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAscIdAsc(startTs, endTs)) {
+            boolean receipt = row.getEventType() == InventoryLedger.EventType.RECEIPT
+                    && "PURCHASE".equals(row.getSourceType());
+            boolean rtv = row.getEventType() == InventoryLedger.EventType.RTV
+                    && "PURCHASE_RTV".equals(row.getSourceType());
+            if ((!receipt && !rtv) || row.getSourceId() == null || row.getQtyDelta() == null
+                    || row.getLineKey() == null) {
+                continue;
+            }
+            Purchase purchase = purchases.computeIfAbsent(row.getSourceId(),
+                    id -> purchaseRepository.findById(id).orElse(null));
+            if (purchase == null || !purchase.isTaxRecoverable()) {
+                continue;
+            }
+            BigDecimal tax = money(purchase.getTaxAmount());
+            if (tax.signum() == 0) {
+                continue;
+            }
+            Long itemId = parseLedgerItemId(row.getLineKey());
+            if (itemId == null) {
+                continue;
+            }
+            Map<Long, BigDecimal> shares = taxShares.computeIfAbsent(purchase.getId(), id -> {
+                List<LandedCostAllocator.Line> lines = new ArrayList<>();
+                for (PurchaseItem item : purchase.getItems()) {
+                    int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                    lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
+                            item.getProduct().getWeight()));
+                }
+                return LandedCostAllocator.allocateByValue(lines, tax);
+            });
+            PurchaseItem item = purchase.getItems().stream()
+                    .filter(candidate -> itemId.equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            int ordered = item != null && item.getQuantity() != null ? item.getQuantity() : 0;
+            if (ordered <= 0) {
+                continue;
+            }
+            BigDecimal share = shares.getOrDefault(itemId, BigDecimal.ZERO);
+            BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
+            BigDecimal amount = share.divide(BigDecimal.valueOf(ordered), 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(Math.abs(row.getQtyDelta())))
+                    .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+            if (amount.signum() == 0) {
+                continue;
+            }
+            LocalDate date = row.getOccurredAt().toLocalDate();
+            String reference = purchase.getPurchaseNumber() + "-tax-" + itemId;
+            if (receipt) {
+                addPair(entries, accounts, date, reference,
+                        "Recoverable input tax on purchase " + purchase.getPurchaseNumber(),
+                        GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE, amount);
+            } else {
+                addPair(entries, accounts, date, reference,
+                        "Recoverable input tax reversed on return to vendor " + purchase.getPurchaseNumber(),
+                        GlMapping.EventType.ACCOUNTS_PAYABLE, GlMapping.EventType.INPUT_TAX, amount);
+            }
+        }
+    }
+
+    private static Long parseLedgerItemId(String lineKey) {
+        int colon = lineKey.indexOf(':');
+        try {
+            return Long.valueOf(colon > 0 ? lineKey.substring(0, colon) : lineKey);
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 
