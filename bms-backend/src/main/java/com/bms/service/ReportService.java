@@ -1076,6 +1076,7 @@ public class ReportService {
         BigDecimal grossSales = BigDecimal.ZERO;
         BigDecimal discounts = BigDecimal.ZERO;
         BigDecimal refunds = BigDecimal.ZERO;
+        BigDecimal debtReductionTotal = BigDecimal.ZERO;
         BigDecimal netSales = BigDecimal.ZERO;
         BigDecimal cashSales = BigDecimal.ZERO;
         BigDecimal nonCashSales = BigDecimal.ZERO;
@@ -1088,6 +1089,7 @@ public class ReportService {
             grossSales = grossSales.add(toBigDecimal(shift.getGrossSales()));
             discounts = discounts.add(toBigDecimal(shift.getDiscountTotal()));
             refunds = refunds.add(toBigDecimal(shift.getReturnsTotal()));
+            debtReductionTotal = debtReductionTotal.add(toBigDecimal(shift.getDebtReductionTotal()));
             netSales = netSales.add(toBigDecimal(shift.getNetSales()));
             cashSales = cashSales.add(toBigDecimal(shift.getCashSalesTotal()));
             nonCashSales = nonCashSales.add(toBigDecimal(shift.getNonCashSalesTotal()));
@@ -1112,6 +1114,7 @@ public class ReportService {
         report.put("grossSales", grossSales);
         report.put("discounts", discounts);
         report.put("refunds", refunds);
+        report.put("debtReductionTotal", debtReductionTotal);
         report.put("netSales", netSales);
         report.put("cashSales", cashSales);
         report.put("nonCashSales", nonCashSales);

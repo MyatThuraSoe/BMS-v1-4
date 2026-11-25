@@ -91,12 +91,17 @@ class ShiftRefundReportingTest {
                 10L, DrawerMovementType.CASH_SALE)).thenReturn(BigDecimal.ZERO);
         when(cashDrawerMovementRepository.sumAmountByEmployeeShiftAndType(
                 10L, DrawerMovementType.CASH_REFUND)).thenReturn(BigDecimal.ZERO);
-        // Existing repository method: SUM(totalReturnAmount) = 60 refunded + 40 store-credit debt reduction.
-        when(saleReturnRepository.sumTotalByEmployeeShiftId(10L)).thenReturn(new BigDecimal("100.00"));
+        when(saleReturnRepository.sumRefundAmountByEmployeeShiftId(10L))
+                .thenReturn(new BigDecimal("60.00"));
+        when(saleReturnRepository.sumDebtReductionByEmployeeShiftId(10L))
+                .thenReturn(new BigDecimal("40.00"));
 
         CashShiftResponse response = service.getShiftById(10L);
 
         assertEquals(0, new BigDecimal("60.00").compareTo(response.getReturnsTotal()),
                 "expected 60.00 actually returned but was " + response.getReturnsTotal());
+        assertEquals(0, new BigDecimal("40.00").compareTo(response.getDebtReductionTotal()),
+                "expected the 40.00 debt reduction to be reported separately but was "
+                        + response.getDebtReductionTotal());
     }
 }

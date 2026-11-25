@@ -611,10 +611,13 @@ public class CashShiftService {
 
         BigDecimal cashRefunds = nullSafe(cashDrawerMovementRepository
                 .sumAmountByEmployeeShiftAndType(shift.getId(), DrawerMovementType.CASH_REFUND)).abs();
-        BigDecimal returnsTotal = saleReturnRepository.sumTotalByEmployeeShiftId(shift.getId());
-        if (returnsTotal == null) {
-            returnsTotal = BigDecimal.ZERO;
-        }
+        // A return can settle a credit balance without handing money back. The
+        // shift's refund figure is the cash-equivalent money returned; the
+        // debt reduction is reported alongside it, not added to it.
+        BigDecimal returnsTotal = nullSafe(saleReturnRepository
+                .sumRefundAmountByEmployeeShiftId(shift.getId()));
+        BigDecimal debtReductionTotal = nullSafe(saleReturnRepository
+                .sumDebtReductionByEmployeeShiftId(shift.getId()));
         if (shift.getShiftType() == ShiftType.CASH_DRAWER) {
             if (cashRefunds.compareTo(BigDecimal.ZERO) > 0) {
                 returnsTotal = cashRefunds;
@@ -636,6 +639,7 @@ public class CashShiftService {
             response.setCashSalesTotal(shiftCashSales);
             response.setNonCashSalesTotal(nonCash);
             response.setReturnsTotal(returnsTotal);
+            response.setDebtReductionTotal(debtReductionTotal);
         }
 
         CashDrawerSession session = shift.getDrawerSession();

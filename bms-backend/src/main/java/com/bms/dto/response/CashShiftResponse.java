@@ -19,6 +19,8 @@ public class CashShiftResponse {
     private String notes;
     private BigDecimal cashSalesTotal;
     private BigDecimal returnsTotal;
+    /** Returns that reduced a customer's credit balance rather than paying out cash. */
+    private BigDecimal debtReductionTotal;
     /** Employee cash sales + refunds for this shift (not drawer-wide). */
     private BigDecimal drawerCashSalesTotal;
     private BigDecimal nonCashSalesTotal;
@@ -90,6 +92,9 @@ public class CashShiftResponse {
 
     public BigDecimal getReturnsTotal() { return returnsTotal; }
     public void setReturnsTotal(BigDecimal returnsTotal) { this.returnsTotal = returnsTotal; }
+
+    public BigDecimal getDebtReductionTotal() { return debtReductionTotal; }
+    public void setDebtReductionTotal(BigDecimal debtReductionTotal) { this.debtReductionTotal = debtReductionTotal; }
 
     public BigDecimal getDrawerCashSalesTotal() { return drawerCashSalesTotal; }
     public void setDrawerCashSalesTotal(BigDecimal drawerCashSalesTotal) { this.drawerCashSalesTotal = drawerCashSalesTotal; }
