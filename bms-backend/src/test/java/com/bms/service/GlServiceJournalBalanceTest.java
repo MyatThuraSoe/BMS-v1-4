@@ -4,12 +4,16 @@ import com.bms.dto.response.JournalEntryResponse;
 import com.bms.entity.GlAccount;
 import com.bms.entity.GlMapping;
 import com.bms.entity.PaymentMethod;
+import com.bms.entity.Product;
+import com.bms.entity.Purchase;
+import com.bms.entity.PurchaseItem;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
 import com.bms.entity.SaleReturnItem;
 import com.bms.entity.StockMovement;
+import com.bms.entity.Supplier;
 import com.bms.repository.ArPaymentRepository;
 import com.bms.repository.CashDrawerMovementRepository;
 import com.bms.repository.ExpenseRepository;
@@ -574,5 +578,58 @@ class GlServiceJournalBalanceTest {
         setting.setSettingKey("accounting.ledger.legacy.enabled");
         setting.setSettingValue("true");
         return setting;
+    }
+
+    /**
+     * Defect 3: with the legacy path on, a received purchase item must post an
+     * INVENTORY debit and an ACCOUNTS_PAYABLE credit. The removed
+     * "alreadyJournaled" dedup previously skipped every received item because
+     * receiving movements are persisted to the DB.
+     */
+    @Test
+    void legacyJournalPostsPurchaseGoodsForReceivedItem() {
+        Supplier supplier = new Supplier();
+        supplier.setId(1L);
+        supplier.setName("SUP-1");
+        PurchaseItem it = new PurchaseItem();
+        it.setId(1L);
+        it.setUnitCost(new BigDecimal("100.00"));
+        it.setQuantity(10);
+        it.setReceivedQuantity(4); // 4 of 10 received -> 400.00 of goods value
+        Product prod = new Product();
+        prod.setId(100L);
+        prod.setWeight(BigDecimal.ONE);
+        it.setProduct(prod);
+        Purchase po = new Purchase();
+        po.setId(1L);
+        po.setPurchaseNumber("PO-1");
+        po.setSupplier(supplier);
+        po.setPurchaseDate(LocalDate.of(2026, 1, 10));
+        po.setReceivingStatus(Purchase.ReceivingStatus.PARTIAL);
+        po.setSubtotal(new BigDecimal("1000.00"));
+        po.setTotalAmount(new BigDecimal("1000.00"));
+        po.setExchangeRate(BigDecimal.ONE);
+        po.setItems(List.of(it));
+
+        lenient().when(purchaseRepository.findForJournal(any(), any())).thenReturn(List.of(po));
+
+        List<JournalEntryResponse> entries = glService.journal(
+                LocalDate.of(2026, 1, 1), LocalDate.of(2026, 1, 31));
+
+        JournalEntryResponse inventory = findEntry(entries, "INVENTORY");
+        JournalEntryResponse payable = findEntry(entries, "ACCOUNTS_PAYABLE");
+        assertEquals(new BigDecimal("400.00"), inventory.getDebit(),
+                "received goods value must debit inventory");
+        assertEquals(new BigDecimal("400.00"), payable.getCredit(),
+                "received goods value must credit the supplier payable");
+    }
+
+    private JournalEntryResponse findEntry(List<JournalEntryResponse> entries, String accountCode) {
+        for (JournalEntryResponse e : entries) {
+            if (accountCode.equals(e.getAccountCode())) {
+                return e;
+            }
+        }
+        throw new IllegalStateException("no journal entry for account " + accountCode);
     }
 }
