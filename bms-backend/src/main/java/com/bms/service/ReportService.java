@@ -1450,13 +1450,135 @@ public class ReportService {
     /**
      * P7: per-line revenue/COGS aggregation in SQL, mirroring
      * SaleDiscountUtils.allocateDiscounts + netItemRevenue and
-     * CostCalculationUtils.calculateCogs exactly (proportional discount
-     * shares rounded HALF_UP to 2dp, remainder on the last positive line,
-     * revenue prorated over non-refunded units). Two ? params: start, end
-     * (half-open). Window functions keep this one pass over the lines.
+     * CostCalculationUtils.calculateCogs exactly. Proportional shares are
+     * rounded HALF_UP to 2dp, the rounding remainder goes to the highest-id
+     * positive line, and any over-allocation is trimmed a cent at a time from
+     * the largest shares (lowest id first on ties), just like the Java loop.
+     * Two ? params: start, end (half-open).
      */
     private String lineRevenueSql() {
         return """
+            WITH base AS (
+                SELECT si.id AS item_id, si.sale_id AS sale_id, s.sale_date AS sale_date,
+                       s.cashier_id AS cashier_id, si.product_id AS product_id,
+                       COALESCE(si.quantity, 0) AS qty,
+                       CASE WHEN COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) < 0 THEN 0
+                            ELSE COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) END AS qty_sold,
+                       COALESCE(si.quantity_refunded, 0) AS qty_refunded,
+                       ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) AS gross_line,
+                       COALESCE(si.cost_price_at_sale, 0) AS cost_at_sale,
+                       COALESCE(si.tax_amount, 0) AS line_tax,
+                       COALESCE(s.discount_amount, 0) AS sale_discount,
+                       SUM(ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2))
+                           OVER (PARTITION BY si.sale_id) AS gross_total,
+                       MAX(CASE WHEN ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) > 0
+                                THEN si.id END) OVER (PARTITION BY si.sale_id) AS remainder_item_id
+                FROM sale_items si
+                JOIN sales s ON s.id = si.sale_id
+                WHERE s.is_active = true AND s.deleted_at IS NULL AND s.is_voided = false
+                  AND s.sale_date >= ? AND s.sale_date < ?
+            ),
+            discounts AS (
+                SELECT b.*,
+                    CASE WHEN b.sale_discount > 0 AND b.gross_total > 0
+                         THEN CASE WHEN b.sale_discount > b.gross_total THEN b.gross_total
+                                   ELSE b.sale_discount END
+                         ELSE 0 END AS eff_discount
+                FROM base b
+            ),
+            shares AS (
+                SELECT d.*,
+                    CASE WHEN d.eff_discount <= 0 OR d.gross_total <= 0 OR d.gross_line <= 0
+                              OR d.item_id = d.remainder_item_id
+                         THEN 0
+                         ELSE ROUND(d.eff_discount * d.gross_line / CAST(d.gross_total AS DECIMAL(19,6)), 2)
+                    END AS proportional_share
+                FROM discounts d
+            ),
+            /* The Java trim loop repeatedly removes a cent from the largest
+               non-remainder share, lowest id first on ties. Expanding one row
+               per cent level made H2 rescan the CTE for every line and never
+               finished on the 60k-sale fixture. A ranked window describes the
+               same sequence of cent removals in a single pass. */
+            ranked AS (
+                SELECT s.*,
+                    SUM(s.proportional_share) OVER (PARTITION BY s.sale_id) AS other_shares,
+                    CAST(ROUND((SUM(s.proportional_share) OVER (PARTITION BY s.sale_id)
+                                - s.eff_discount) * 100, 0) AS INTEGER) AS over_cents,
+                    CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER) AS share_cents,
+                    COUNT(*) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS share_rank,
+                    SUM(CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER)) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS cum_cents,
+                    LEAD(CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER)) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                    ) AS next_cents
+                FROM shares s
+            ),
+            cut AS (
+                SELECT r.*,
+                    CASE WHEN r.over_cents > 0 THEN
+                        CAST(FLOOR(CAST(r.cum_cents + r.share_rank - r.over_cents AS DECIMAL(19,6))
+                                   / CAST(r.share_rank AS DECIMAL(19,6))) AS INTEGER)
+                    END AS candidate
+                FROM ranked r
+            ),
+            /* The last row of the tied block that contains the trim level owns
+               the cutoff: its candidate is <= its own share but still above the
+               next share. Lines trimmed into the cutoff rejoin the tie pool,
+               exactly as the Java loop sees them on its next pass. */
+            chosen AS (
+                SELECT c.*,
+                    CASE WHEN c.candidate IS NOT NULL
+                              AND c.candidate <= c.share_cents
+                              AND c.candidate > COALESCE(c.next_cents, -1)
+                         THEN c.candidate END AS cutoff
+                FROM cut c
+            ),
+            params AS (
+                SELECT ch.*,
+                    COALESCE(MAX(ch.cutoff) OVER (PARTITION BY ch.sale_id), ch.share_cents) AS threshold,
+                    MAX(CASE WHEN ch.cutoff IS NOT NULL THEN ch.share_rank END)
+                        OVER (PARTITION BY ch.sale_id) AS top_rank,
+                    MAX(CASE WHEN ch.cutoff IS NOT NULL THEN ch.cum_cents END)
+                        OVER (PARTITION BY ch.sale_id) AS top_cents
+                FROM chosen ch
+            ),
+            tied AS (
+                SELECT p.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p.sale_id,
+                                     CASE WHEN p.share_rank <= p.top_rank THEN 1 ELSE 0 END
+                        ORDER BY p.item_id
+                    ) AS tie_rank
+                FROM params p
+            ),
+            final_alloc AS (
+                SELECT t.*,
+                    CASE
+                        WHEN t.other_shares <= t.eff_discount THEN
+                            CASE WHEN t.item_id = t.remainder_item_id THEN
+                                     CASE WHEN t.eff_discount - t.other_shares < 0 THEN 0
+                                          ELSE t.eff_discount - t.other_shares END
+                                 ELSE t.proportional_share END
+                        WHEN t.share_cents <= 0 THEN 0
+                        ELSE CAST(
+                            t.share_cents
+                            - CASE WHEN t.share_cents > t.threshold
+                                   THEN t.share_cents - t.threshold ELSE 0 END
+                            - CASE WHEN t.share_cents >= t.threshold
+                                        AND t.share_rank <= t.top_rank
+                                        AND t.tie_rank <= t.over_cents
+                                            - (t.top_cents - t.top_rank * t.threshold)
+                                   THEN 1 ELSE 0 END
+                            AS DECIMAL(19,2)) / 100
+                    END AS alloc_share
+                FROM tied t
+            )
             SELECT z.*,
                 CASE WHEN z.qty_sold > 0 AND z.qty > 0
                      THEN ROUND((CASE WHEN z.gross_line - z.alloc_share < 0 THEN 0
@@ -1473,50 +1595,7 @@ public class ReportService {
                      ELSE 0 END AS refunded_revenue_line,
                 CASE WHEN z.qty <= 0 OR z.qty_sold >= z.qty THEN z.line_tax
                      ELSE ROUND(z.line_tax * z.qty_sold / CAST(z.qty AS DECIMAL(19,6)), 2) END AS prorated_tax
-            FROM (
-                SELECT x.*,
-                    CASE
-                        WHEN x.eff_discount <= 0 OR x.gross_total <= 0 THEN 0
-                        WHEN x.gross_line <= 0 THEN 0
-                        WHEN x.item_id = x.remainder_item_id THEN
-                            CASE WHEN x.eff_discount - x.other_shares < 0 THEN 0
-                                 ELSE x.eff_discount - x.other_shares END
-                        ELSE ROUND(x.eff_discount * x.gross_line / CAST(x.gross_total AS DECIMAL(19,6)), 2)
-                    END AS alloc_share
-                FROM (
-                    SELECT b.*,
-                        SUM(CASE WHEN b.item_id <> b.remainder_item_id AND b.gross_line > 0 AND b.eff_discount > 0
-                                 THEN ROUND(b.eff_discount * b.gross_line / CAST(b.gross_total AS DECIMAL(19,6)), 2)
-                                 ELSE 0 END) OVER (PARTITION BY b.sale_id) AS other_shares
-                    FROM (
-                        SELECT a.*,
-                            CASE WHEN a.sale_discount > 0 AND a.gross_total > 0
-                                 THEN CASE WHEN a.sale_discount > a.gross_total THEN a.gross_total
-                                           ELSE a.sale_discount END
-                                 ELSE 0 END AS eff_discount
-                        FROM (
-                            SELECT si.id AS item_id, si.sale_id AS sale_id, s.sale_date AS sale_date,
-                                s.cashier_id AS cashier_id, si.product_id AS product_id,
-                                COALESCE(si.quantity, 0) AS qty,
-                                CASE WHEN COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) < 0 THEN 0
-                                     ELSE COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) END AS qty_sold,
-                                COALESCE(si.quantity_refunded, 0) AS qty_refunded,
-                                ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) AS gross_line,
-                                COALESCE(si.cost_price_at_sale, 0) AS cost_at_sale,
-                                COALESCE(si.tax_amount, 0) AS line_tax,
-                                COALESCE(s.discount_amount, 0) AS sale_discount,
-                                SUM(ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2))
-                                    OVER (PARTITION BY si.sale_id) AS gross_total,
-                                MAX(CASE WHEN ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) > 0
-                                         THEN si.id END) OVER (PARTITION BY si.sale_id) AS remainder_item_id
-                            FROM sale_items si
-                            JOIN sales s ON s.id = si.sale_id
-                            WHERE s.is_active = true AND s.deleted_at IS NULL AND s.is_voided = false
-                              AND s.sale_date >= ? AND s.sale_date < ?
-                        ) a
-                    ) b
-                ) x
-            ) z
+            FROM final_alloc z
             """;
     }
 
