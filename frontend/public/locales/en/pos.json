@@ -3,6 +3,7 @@
   "product": "Product",
   "price": "Price",
   "quantity": "Qty",
+  "enter_quantity": "Enter a quantity",
   "subtotal": "Subtotal",
   "tax": "Tax",
   "discount_pct_label": "Discount ({{pct}}%)",
