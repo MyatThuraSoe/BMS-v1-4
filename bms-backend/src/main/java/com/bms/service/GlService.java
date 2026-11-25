@@ -399,13 +399,6 @@ public class GlService {
                         }
                     }
                 }
-                boolean alreadyJournaled = !stockMovementRepository
-                        .findByReferenceAndPurchaseItem(
-                                StockMovement.ReferenceType.RECEIVING, purchase.getId(), item.getId())
-                        .isEmpty();
-                if (alreadyJournaled) {
-                    continue;
-                }
                 BigDecimal itemAmount = item.getUnitCost() != null
                         ? item.getUnitCost().multiply(BigDecimal.valueOf(received)).setScale(2, RoundingMode.HALF_UP)
                         : BigDecimal.ZERO;
