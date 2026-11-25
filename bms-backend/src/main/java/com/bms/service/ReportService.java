@@ -1503,10 +1503,12 @@ public class ReportService {
     }
 
     private LocalDate resolveStartDate(String period, LocalDate endDate) {
+        // Both endpoints are inclusive, so a seven-day week starts six days back
+        // and a rolling month starts the day after the same date last month.
         return switch (period != null ? period.toUpperCase(Locale.ROOT) : "MONTH") {
-            case "WEEK" -> endDate.minusWeeks(1);
+            case "WEEK" -> endDate.minusDays(6);
             case "YEAR" -> endDate.minusYears(1);
-            default -> endDate.minusMonths(1);
+            default -> endDate.minusMonths(1).plusDays(1);
         };
     }
 
