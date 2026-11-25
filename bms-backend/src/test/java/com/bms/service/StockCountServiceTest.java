@@ -313,6 +313,33 @@ class StockCountServiceTest {
         verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
     }
 
+    /**
+     * Defect 1: the system quantity must be captured when the count is taken,
+     * not when the sheet is created. Units sold in between belong to sales and
+     * must not be resurrected by the count.
+     */
+    @Test
+    void d1_snapshotIsCapturedAtCountTimeNotWhenSheetIsCreated() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10); // creation snapshot: 10
+        product.setStockQuantity(7); // three units sold before the physical count
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        CountSheetResponse response = stockCountService.submit(
+                sheet.getId(), submitRequest(7, "MISCOUNT"), 99L);
+
+        assertEquals(0, sheet.getItems().get(0).getVariance(),
+                "system quantity must snapshot the count-time stock of 7");
+        assertEquals(7, product.getStockQuantity());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+        verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
+        assertEquals("APPROVED", response.getStatus());
+        assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
+    }
+
     @Test
     void f17_reasonRequiredAfterRecompute() {
         Product product = product(6, "5.00");
