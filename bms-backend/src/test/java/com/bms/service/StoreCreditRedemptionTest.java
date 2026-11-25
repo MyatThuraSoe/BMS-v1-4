@@ -249,6 +249,8 @@ class StoreCreditRedemptionTest {
         invoice.setSaleType(Sale.SaleType.CREDIT);
         invoice.setPaymentStatus(Sale.PaymentStatus.UNPAID);
         invoice.setTotalAmount(new BigDecimal("100.00"));
+        // The customer owes this invoice; the store-credit settlement reduces it.
+        customer.setCurrentBalance(new BigDecimal("100.00"));
         invoice.setAmountPaid(BigDecimal.ZERO);
         invoice.setAmountReturned(BigDecimal.ZERO);
         invoice.setIsActive(true);

@@ -587,20 +587,25 @@ public class GlService {
         BigDecimal cashPaid = moneyVoidCash(sale);
         BigDecimal arCashPaid = moneyVoidArCash(sale);
         BigDecimal arNonCashPaid = moneyVoidArNonCash(sale);
-        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale);
+        BigDecimal storeCreditPaid = moneyVoidStoreCredit(sale);
+        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale).subtract(storeCreditPaid).max(BigDecimal.ZERO);
         BigDecimal cashAlreadyRefunded = safeSumVoid(sale);
 
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
         BigDecimal nonCashCollected = arNonCashPaid.add(saleNonCashPaid);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
-        BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
-                .max(BigDecimal.ZERO);
+        BigDecimal refundsAfterCash = cashAlreadyRefunded.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstNonCash = refundsAfterCash.min(nonCashCollected);
         BigDecimal remainingCashOwed = cashCollected.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
         BigDecimal remainingNonCashOwed = nonCashCollected.subtract(refundsAgainstNonCash)
                 .max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstStoreCredit = refundsAfterCash.subtract(refundsAgainstNonCash)
+                .min(storeCreditPaid);
+        BigDecimal remainingStoreCreditOwed = storeCreditPaid.subtract(refundsAgainstStoreCredit)
+                .max(BigDecimal.ZERO);
 
         BigDecimal netCashRefund = remainingCashOwed;
-        BigDecimal netNonCashRefund = remainingNonCashOwed;
+        BigDecimal netNonCashRefund = remainingNonCashOwed.add(remainingStoreCreditOwed);
 
         boolean isCreditSale = sale.getSaleType() == Sale.SaleType.CREDIT;
 
@@ -608,12 +613,17 @@ public class GlService {
             add(entries, accounts, date, reference, "Void reversal",
                     GlMapping.EventType.CASH, BigDecimal.ZERO, netCashRefund);
         }
-        if (netNonCashRefund.signum() > 0) {
+        if (remainingStoreCreditOwed.signum() > 0) {
+            add(entries, accounts, date, reference, "Void store credit",
+                    GlMapping.EventType.REFUND_LIABILITY, BigDecimal.ZERO, remainingStoreCreditOwed);
+        }
+        BigDecimal otherNonCashRefund = netNonCashRefund.subtract(remainingStoreCreditOwed);
+        if (otherNonCashRefund.signum() > 0) {
             GlMapping.EventType nonCashAccount = isCreditSale
                     ? GlMapping.EventType.REFUND_LIABILITY
                     : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, "Void reversal",
-                    nonCashAccount, BigDecimal.ZERO, netNonCashRefund);
+                    nonCashAccount, BigDecimal.ZERO, otherNonCashRefund);
         }
         BigDecimal outstanding = voidTender.subtract(netCashRefund).subtract(netNonCashRefund);
         if (outstanding.signum() > 0) {
@@ -677,6 +687,14 @@ public class GlService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    private BigDecimal moneyVoidStoreCredit(Sale sale) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        return payments.stream()
+                .filter(p -> p.getPaymentMethod() == PaymentMethod.STORE_CREDIT)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private BigDecimal safeSumVoid(Sale sale) {
         return safeSum(saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
     }
@@ -705,7 +723,9 @@ public class GlService {
             GlMapping.EventType account = payment.getPaymentMethod() == PaymentMethod.CASH
                     ? GlMapping.EventType.CASH
                     : payment.getPaymentMethod() == PaymentMethod.CREDIT
-                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.TENDER_CLEARING;
+                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE
+                    : payment.getPaymentMethod() == PaymentMethod.STORE_CREDIT
+                    ? GlMapping.EventType.REFUND_LIABILITY : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, description, account,
                     part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
         }
@@ -778,7 +798,9 @@ public class GlService {
                 continue;
             }
             GlMapping.EventType debit = payment.getPaymentMethod() == PaymentMethod.CASH
-                    ? GlMapping.EventType.CASH : GlMapping.EventType.TENDER_CLEARING;
+                    ? GlMapping.EventType.CASH
+                    : payment.getPaymentMethod() == PaymentMethod.STORE_CREDIT
+                    ? GlMapping.EventType.REFUND_LIABILITY : GlMapping.EventType.TENDER_CLEARING;
             addPair(entries, accounts, payment.getPaymentDate().toLocalDate(), "ARP-" + payment.getId(),
                     "AR collection", debit, GlMapping.EventType.ACCOUNTS_RECEIVABLE, amount);
         }

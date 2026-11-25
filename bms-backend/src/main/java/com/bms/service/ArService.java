@@ -235,6 +235,23 @@ public class ArService {
                 ? PaymentMethod.CASH
                 : paymentValidationService.parseSettlementMethod(request.getPaymentMethod());
 
+        // Spending store credit debits the liability owed to this customer, so
+        // lock the row before writing the payment and cap it at the balance.
+        Customer lockedStoreCreditCustomer = null;
+        if (paymentMethod == PaymentMethod.STORE_CREDIT) {
+            if (sale.getCustomer() == null) {
+                throw new BusinessException("PAYMENT_INVALID: Store credit requires a customer on the invoice.");
+            }
+            lockedStoreCreditCustomer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Customer not found: " + sale.getCustomer().getId()));
+            BigDecimal available = lockedStoreCreditCustomer.getCreditBalance();
+            if (available.compareTo(amount) < 0) {
+                throw new BusinessException("PAYMENT_INVALID: Store credit balance " + available
+                        + " is less than payment " + amount + ".");
+            }
+        }
+
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
         if (paymentMethod == PaymentMethod.CASH) {
             if (employeeShift == null) {
@@ -294,12 +311,23 @@ public class ArService {
 
         // Reduce the customer's outstanding balance (row already not locked
         // here, so lock it explicitly to serialize with concurrent credit sales)
-        if (sale.getCustomer() != null) {
-            var customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
+        Customer customer = lockedStoreCreditCustomer;
+        if (customer == null && sale.getCustomer() != null) {
+            customer = customerRepository.findByIdForUpdate(sale.getCustomer().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + sale.getCustomer().getId()));
+        }
+        if (customer != null) {
             BigDecimal newBalance = customer.getCurrentBalance().subtract(amount)
                     .setScale(2, RoundingMode.HALF_UP);
-            if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
+            if (paymentMethod == PaymentMethod.STORE_CREDIT) {
+                // Credit is being spent, not received: never mint it back as
+                // change, and never let the invoice debt go negative.
+                if (newBalance.signum() < 0) {
+                    newBalance = BigDecimal.ZERO;
+                }
+                customer.setCreditBalance(customer.getCreditBalance()
+                        .subtract(amount).setScale(2, RoundingMode.HALF_UP));
+            } else if (newBalance.compareTo(BigDecimal.ZERO) < 0) {
                 // O1: an overpayment is customer credit, never silently dropped.
                 customer.setCreditBalance(customer.getCreditBalance()
                         .add(newBalance.negate()).setScale(2, RoundingMode.HALF_UP));

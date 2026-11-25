@@ -110,7 +110,7 @@ class ArServiceTest {
                     return response;
                 });
         lenient().when(paymentValidationService.parseSettlementMethod("STORE_CREDIT"))
-                .thenThrow(new BusinessException("PAYMENT_INVALID: STORE_CREDIT is not a valid settlement method."));
+                .thenReturn(PaymentMethod.STORE_CREDIT);
         lenient().when(paymentValidationService.parseSettlementMethod("CREDIT"))
                 .thenThrow(new BusinessException("PAYMENT_INVALID: CREDIT is not a valid settlement method."));
         lenient().when(paymentValidationService.parseSettlementMethod("CASH"))
@@ -119,7 +119,7 @@ class ArServiceTest {
     }
 
     @Test
-    void recordPaymentRejectsStoreCredit() {
+    void recordPaymentRejectsStoreCreditWhenBalanceIsInsufficient() {
         ArPaymentRequest request = new ArPaymentRequest();
         request.setAmount(new BigDecimal("50.00"));
         request.setPaymentMethod("STORE_CREDIT");

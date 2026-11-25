@@ -317,6 +317,7 @@ public class LedgerPostingService {
         row.setSettlementCash(BigDecimal.ZERO.setScale(MONEY_SCALE));
         row.setSettlementClearing(BigDecimal.ZERO.setScale(MONEY_SCALE));
         row.setSettlementAr(BigDecimal.ZERO.setScale(MONEY_SCALE));
+        row.setSettlementRefundLiability(BigDecimal.ZERO.setScale(MONEY_SCALE));
         List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
         if (payments.isEmpty()) {
             setSettlementAmount(row, saleTender(sale), settlement);
@@ -424,6 +425,8 @@ public class LedgerPostingService {
             row.setSettlementAr(money(row.getSettlementAr()).add(scaled));
         } else if (GlMapping.EventType.TENDER_CLEARING == account) {
             row.setSettlementClearing(money(row.getSettlementClearing()).add(scaled));
+        } else if (GlMapping.EventType.REFUND_LIABILITY == account) {
+            row.setSettlementRefundLiability(money(row.getSettlementRefundLiability()).add(scaled));
         }
     }
 
@@ -432,6 +435,7 @@ public class LedgerPostingService {
         return switch (method) {
             case CASH -> GlMapping.EventType.CASH;
             case CREDIT -> GlMapping.EventType.ACCOUNTS_RECEIVABLE;
+            case STORE_CREDIT -> GlMapping.EventType.REFUND_LIABILITY;
             default -> GlMapping.EventType.TENDER_CLEARING;
         };
     }

@@ -257,6 +257,11 @@ public class PurchasePaymentService {
                 || request.getPaymentMethod().isBlank())
                 ? PaymentMethod.CASH
                 : paymentValidationService.parseSettlementMethod(request.getPaymentMethod());
+        // Store credit is a shop liability to CUSTOMERS, never a supplier tender.
+        if (paymentMethod == PaymentMethod.STORE_CREDIT) {
+            throw new BusinessException(
+                    "PAYMENT_INVALID: STORE_CREDIT is not a valid supplier settlement method.");
+        }
 
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
         if (paymentMethod == PaymentMethod.CASH) {
