@@ -243,6 +243,9 @@ public class SaleService {
         } else if (request.getCustomerId() != null) {
             Customer customer = customerRepository.findById(request.getCustomerId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
+            if (!Boolean.TRUE.equals(customer.getIsActive()) || customer.getDeletedAt() != null) {
+                throw new ResourceNotFoundException("Customer not found: " + request.getCustomerId());
+            }
             sale.setCustomer(customer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
             pricingCustomer = customer;
