@@ -736,6 +736,44 @@ public class ReportService {
     }
 
     public List<SupplierProfitDto> getProfitBySupplier(LocalDate startDate, LocalDate endDate) {
+        if (!ledgerReadService.isActive()) {
+            return getLegacyProfitBySupplier(startDate, endDate);
+        }
+
+        // Ledger path: base the figure on sold goods, not goods purchased in the
+        // window. Revenue and COGS both come from the base-currency profit ledger;
+        // the supplier is the last receipt's purchase supplier for that product.
+        String sql = """
+            SELECT s.id, s.name,
+                   COALESCE(SUM(pl.cogs), 0) AS total_supplied_cost,
+                   COALESCE(SUM(pl.net_revenue), 0) AS estimated_revenue
+            FROM profit_ledger pl
+            JOIN inventory_ledger il ON il.id = (
+                SELECT il2.id
+                FROM inventory_ledger il2
+                JOIN purchases p2 ON p2.id = il2.source_id
+                WHERE il2.product_id = pl.product_id
+                  AND il2.event_type = 'RECEIPT'
+                  AND il2.source_type = 'PURCHASE'
+                  AND il2.occurred_at <= pl.occurred_at
+                ORDER BY il2.occurred_at DESC, il2.id DESC
+                LIMIT 1
+            )
+            JOIN purchases p ON p.id = il.source_id
+                 AND p.is_active = true AND p.deleted_at IS NULL
+            JOIN suppliers s ON s.id = p.supplier_id
+                 AND s.is_active = true AND s.deleted_at IS NULL
+            WHERE pl.source_type IN ('SALE', 'SALE_RETURN', 'SALE_VOID')
+              AND pl.occurred_at >= ? AND pl.occurred_at < ?
+            GROUP BY s.id, s.name
+            ORDER BY estimated_revenue DESC
+            """;
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
+                shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
+        return toSupplierProfitDtos(rows);
+    }
+
+    private List<SupplierProfitDto> getLegacyProfitBySupplier(LocalDate startDate, LocalDate endDate) {
         String sql = """
             SELECT s.id, s.name,
                    COALESCE(SUM(pi.unit_cost * (CASE WHEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) > 0 THEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) ELSE 0 END)), 0) as total_supplied_cost,
@@ -782,7 +820,10 @@ public class ReportService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
             java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate.plusDays(1)),
             java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate));
+        return toSupplierProfitDtos(rows);
+    }
 
+    private List<SupplierProfitDto> toSupplierProfitDtos(List<Map<String, Object>> rows) {
         List<SupplierProfitDto> result = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             SupplierProfitDto dto = new SupplierProfitDto();
