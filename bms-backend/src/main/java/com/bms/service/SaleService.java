@@ -635,10 +635,6 @@ public class SaleService {
         if (isCredit && dueDate != null && dueDate.isBefore(shopTimeService.today())) {
             throw new BusinessException("Due date cannot be in the past");
         }
-        if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
-            throw new BusinessException("Amount paid is required and must be positive for cash sales");
-        }
-
         String invoiceNumber = isCredit
                 ? sequenceService.nextCreditInvoiceNumber()
                 : generateInvoiceNumber();
@@ -659,6 +655,9 @@ public class SaleService {
         if (isCredit) {
             creditCustomer = customerRepository.findByIdForUpdate(order.getCustomer().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            if (!Boolean.TRUE.equals(creditCustomer.getIsActive()) || creditCustomer.getDeletedAt() != null) {
+                throw new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId());
+            }
             sale.setCustomer(creditCustomer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
         } else if (order.getCustomer() != null) {
@@ -679,9 +678,12 @@ public class SaleService {
         BigDecimal taxAmount = order.getTaxAmount();
         BigDecimal totalAmount = order.getTotalAmount();
 
-        // Zero-total sale: no payment needed
+        // Zero-total sale: no payment needed. Check this before requiring a
+        // positive amountPaid so a fully discounted order can still convert.
         if (!isCredit && totalAmount.signum() == 0) {
             amountPaid = BigDecimal.ZERO;
+        } else if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new BusinessException("Amount paid is required and must be positive for cash sales");
         }
 
         // The order being converted still holds its own reservation, so stock checks
