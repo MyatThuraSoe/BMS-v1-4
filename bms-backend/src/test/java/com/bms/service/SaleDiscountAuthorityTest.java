@@ -286,6 +286,45 @@ class SaleDiscountAuthorityTest {
     }
 
     @Test
+    void managerCredentialsAreStillCappedByTheManagerLimit() {
+        product(1L, "100.00", "60.00");
+        setting("shop.discount.maxPercentCashier", "10");
+        setting("shop.discount.maxPercentManager", "50");
+        User manager = user(3L, "manager", Role.RoleName.ROLE_MANAGER);
+        when(userRepository.findActiveByUsernameIgnoreCase("manager")).thenReturn(Optional.of(manager));
+        when(passwordEncoder.matches("hunter2", "stored-hash")).thenReturn(true);
+
+        SaleCreateRequest request = request("60.00", 1L, 1);
+        request.setManagerUsername("manager");
+        request.setManagerPassword("hunter2");
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> saleService.createSale(request, 9L));
+
+        assertTrue(ex.getMessage().contains("50"), ex.getMessage());
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void managerCredentialsAllowADiscountInsideTheManagerLimit() {
+        product(1L, "100.00", "60.00");
+        setting("shop.discount.maxPercentCashier", "10");
+        setting("shop.discount.maxPercentManager", "50");
+        User manager = user(3L, "manager", Role.RoleName.ROLE_MANAGER);
+        when(userRepository.findActiveByUsernameIgnoreCase("manager")).thenReturn(Optional.of(manager));
+        when(passwordEncoder.matches("hunter2", "stored-hash")).thenReturn(true);
+
+        SaleCreateRequest request = request("50.00", 1L, 1);
+        request.setManagerUsername("manager");
+        request.setManagerPassword("hunter2");
+        saleService.createSale(request, 9L);
+
+        ArgumentCaptor<Sale> captor = ArgumentCaptor.forClass(Sale.class);
+        verify(saleRepository).save(captor.capture());
+        assertEquals(0, new BigDecimal("50.00").compareTo(captor.getValue().getDiscountAmount()));
+    }
+
+    @Test
     void wrongManagerCredentialsAreRejected() {
         product(1L, "100.00", "60.00");
         setting("shop.discount.maxPercentCashier", "10");
