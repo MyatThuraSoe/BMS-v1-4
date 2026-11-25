@@ -378,10 +378,15 @@ public class SaleService {
             paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
             sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
         } else {
+            // Zero-total sale (100% discount, zero tax): no payment is needed and
+            // nothing is owed, so mark it PAID. For credit sales this prevents the
+            // invoice from being stuck UNPAID forever (ArService.recordPayment
+            // rejects a zero amount, so it could never be settled otherwise).
             sale.setPaymentMethod(saleType == Sale.SaleType.CREDIT
                     ? Sale.PaymentMethod.CREDIT : Sale.PaymentMethod.CASH);
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
+            sale.setPaymentStatus(Sale.PaymentStatus.PAID);
         }
 
         if (saleType == Sale.SaleType.CREDIT) {
@@ -390,10 +395,14 @@ public class SaleService {
             // sale time (phase 1: store credit is not a valid tender), so the
             // check is currentBalance + total against the limit, matching
             // createSaleFromOrder.
-            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
-            if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
-                throw new InsufficientCreditException(
-                    "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+            // No debt is added on a zero-total invoice, so an already-over-limit
+            // customer must not be blocked on a $0 sale.
+            if (totalAmount.signum() > 0) {
+                BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
+                if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
+                    throw new InsufficientCreditException(
+                        "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+                }
             }
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
@@ -775,6 +784,12 @@ public class SaleService {
             paymentLines = List.of();
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
+            if (isCredit) {
+                // Nothing is owed on a $0 credit invoice, so mark it PAID; it can
+                // never be settled through ArService.recordPayment (which rejects
+                // a zero amount) otherwise.
+                sale.setPaymentStatus(Sale.PaymentStatus.PAID);
+            }
         } else {
             paymentLines = List.of(paymentLine);
             paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount,
@@ -782,10 +797,14 @@ public class SaleService {
         }
 
         if (isCredit) {
-            BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
-            if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
-                throw new InsufficientCreditException(
-                    "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+            // No debt is added on a zero-total invoice, so an already-over-limit
+            // customer must not be blocked on a $0 sale.
+            if (totalAmount.signum() > 0) {
+                BigDecimal newBalance = creditCustomer.getCurrentBalance().add(totalAmount);
+                if (newBalance.compareTo(creditCustomer.getCreditLimit()) > 0) {
+                    throw new InsufficientCreditException(
+                        "error.credit.limit.exceeded", creditCustomer.getCreditLimit());
+                }
             }
             sale.setAmountPaid(BigDecimal.ZERO);
             sale.setChangeGiven(BigDecimal.ZERO);
