@@ -138,7 +138,22 @@ public class PurchasePaymentService {
                 continue;
             }
             BigDecimal paid = paidByPurchase.getOrDefault(purchase.getId(), BigDecimal.ZERO);
-            BigDecimal outstanding = purchase.getPayableAmount().subtract(paid);
+            // A PARTIAL receipt means only part of the goods has landed, so only that
+            // share of the payable is outstanding yet. ORDERED POs are skipped above;
+            // RECEIVED POs are fully outstanding; PARTIAL POs are scaled by the
+            // received share of the ordered goods value.
+            BigDecimal payable = purchase.getPayableAmount();
+            if (purchase.getReceivingStatus() == Purchase.ReceivingStatus.PARTIAL
+                    && purchase.getSubtotal() != null && purchase.getSubtotal().signum() > 0) {
+                BigDecimal receivedSubtotal = purchase.getItems().stream()
+                        .map(i -> i.getUnitCost() != null
+                                ? i.getUnitCost().multiply(BigDecimal.valueOf(i.getReceivedQuantity()))
+                                : BigDecimal.ZERO)
+                        .reduce(BigDecimal.ZERO, BigDecimal::add);
+                payable = payable.multiply(receivedSubtotal)
+                        .divide(purchase.getSubtotal(), 2, RoundingMode.HALF_UP);
+            }
+            BigDecimal outstanding = payable.subtract(paid);
             if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
                 continue;
             }

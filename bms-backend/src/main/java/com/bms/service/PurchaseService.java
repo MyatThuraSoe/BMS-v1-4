@@ -133,6 +133,9 @@ public class PurchaseService {
         for (PurchaseCreateRequest.PurchaseItemRequest itemRequest : request.getItems()) {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + itemRequest.getProductId()));
+            if (!Boolean.TRUE.equals(product.getIsActive()) || product.getDeletedAt() != null) {
+                throw new BusinessException("Product '" + product.getName() + "' is inactive");
+            }
 
             PurchaseItem item = new PurchaseItem();
             item.setPurchase(purchase);
@@ -1186,6 +1189,9 @@ public class PurchaseService {
             Product product = productRepository.findById(itemRequest.getProductId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Product not found: " + itemRequest.getProductId()));
+            if (!Boolean.TRUE.equals(product.getIsActive()) || product.getDeletedAt() != null) {
+                throw new BusinessException("Product '" + product.getName() + "' is inactive");
+            }
             PurchaseItem item = new PurchaseItem();
             item.setPurchase(purchase);
             item.setProduct(product);
