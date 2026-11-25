@@ -1051,12 +1051,20 @@ public class SaleService {
             if (originalSession != null && originalSession.getStatus() == DrawerSessionStatus.OPEN) {
                 reversalSession = originalSession;
             } else {
-                for (CashDrawer drawer : cashDrawerSessionService.getActiveDrawers()) {
-                    reversalSession = cashDrawerSessionService.getOpenSession(drawer.getId());
-                    if (reversalSession != null) {
-                        break;
-                    }
+                // The first active drawer may belong to another cashier. A late
+                // cash void must come out of the voiding user's own drawer so
+                // nobody else is debited for this refund (audit item 6).
+                CashShift voidingShift = cashShiftRepository
+                        .findByCashierIdAndStatus(userId, "OPEN")
+                        .filter(shift -> shift.getShiftType() == ShiftType.CASH_DRAWER
+                                && shift.getDrawerSession() != null)
+                        .orElse(null);
+                if (voidingShift == null) {
+                    throw new BusinessException(
+                            "Open your cash drawer shift to void this cash sale");
                 }
+                reversalSession = cashDrawerSessionService
+                        .getOpenSession(voidingShift.getDrawerSession().getId());
                 if (reversalSession == null) {
                     throw new BusinessException(
                             "No cash drawer is open. Open a drawer before voiding this cash sale.");
