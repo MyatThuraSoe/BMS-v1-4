@@ -239,6 +239,10 @@ public class PurchasePaymentService {
         if (paymentDay.isAfter(shopTimeService.today())) {
             throw new BusinessException("Payment date cannot be in the future");
         }
+        if (purchase.getPurchaseDate() != null && paymentDay.isBefore(purchase.getPurchaseDate())) {
+            throw new BusinessException("Payment date cannot be before the purchase date "
+                    + purchase.getPurchaseDate());
+        }
         LocalDateTime paymentDate = request.getPaymentDate() != null
                 ? paymentDay.atStartOfDay() : shopTimeService.now();
         periodGuard.assertOpen(paymentDate);
