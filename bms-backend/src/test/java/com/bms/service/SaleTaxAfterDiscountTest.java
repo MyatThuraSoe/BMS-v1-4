@@ -60,6 +60,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * P5: tax must be computed on the discounted line value, not the gross.
@@ -420,6 +421,69 @@ class SaleTaxAfterDiscountTest {
         CartVerifyResponse response = saleService.verifyCart(request);
         assertEquals(0, response.getTaxAmount().compareTo(sale.getTaxAmount()));
         assertEquals(0, response.getTotalAmount().compareTo(sale.getTotalAmount()));
+    }
+
+    @Test
+    void t6_9_verifyCartDoesNotDoubleCountMergedPromotionDiscount() {
+        product(1L, "10.00");
+        when(promotionService.calculateBestPrice(any(Product.class), anyInt(), any(), any(), any()))
+                .thenAnswer(inv -> new PricingQuote(new BigDecimal("10.00"), new BigDecimal("9.00"),
+                        BigDecimal.valueOf(inv.getArgument(1, Integer.class)),
+                        5L, "4+ promo", null, null, "PROMOTION"));
+
+        Sale sale = createAndCapture(saleRequest(BigDecimal.ZERO,
+                new long[]{1L, 1L}, new int[]{2, 2}));
+        assertMoney("4.00", sale.getPromotionDiscount());
+
+        CartVerifyRequest request = new CartVerifyRequest();
+        List<CartVerifyRequest.CartVerifyItem> items = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            CartVerifyRequest.CartVerifyItem item = new CartVerifyRequest.CartVerifyItem();
+            item.setProductId(1L);
+            item.setQuantity(2);
+            item.setExpectedUnitPrice(new BigDecimal("10.00"));
+            items.add(item);
+        }
+        request.setItems(items);
+        request.setDiscountAmount(BigDecimal.ZERO);
+
+        CartVerifyResponse response = saleService.verifyCart(request);
+
+        assertMoney("4.00", response.getPromotionDiscount());
+        BigDecimal itemDiscount = response.getItems().stream()
+                .map(CartVerifyResponse.CartVerifyItemResult::getLineDiscount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        assertMoney("4.00", itemDiscount);
+        assertMoney(sale.getTotalAmount().toPlainString(), response.getTotalAmount());
+    }
+
+    @Test
+    void t6_9_verifyCartUsesTheMergedLineRounding() {
+        product(1L, "10.00");
+        when(promotionService.calculateBestPrice(any(Product.class), anyInt(), any(), any(), any()))
+                .thenAnswer(inv -> new PricingQuote(new BigDecimal("10.00"), new BigDecimal("0.005"),
+                        BigDecimal.ZERO, null, null, null, null, "BASE"));
+
+        Sale sale = createAndCapture(saleRequest(BigDecimal.ZERO,
+                new long[]{1L, 1L, 1L}, new int[]{1, 1, 1}));
+        assertMoney("0.02", sale.getSubtotal());
+
+        CartVerifyRequest request = new CartVerifyRequest();
+        List<CartVerifyRequest.CartVerifyItem> items = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            CartVerifyRequest.CartVerifyItem item = new CartVerifyRequest.CartVerifyItem();
+            item.setProductId(1L);
+            item.setQuantity(1);
+            item.setExpectedUnitPrice(new BigDecimal("10.00"));
+            items.add(item);
+        }
+        request.setItems(items);
+        request.setDiscountAmount(BigDecimal.ZERO);
+
+        CartVerifyResponse response = saleService.verifyCart(request);
+
+        assertMoney(sale.getSubtotal().toPlainString(), response.getSubtotal());
+        assertMoney(sale.getTotalAmount().toPlainString(), response.getTotalAmount());
     }
 
     @Test
