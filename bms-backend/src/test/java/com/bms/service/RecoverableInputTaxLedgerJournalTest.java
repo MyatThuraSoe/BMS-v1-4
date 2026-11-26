@@ -99,6 +99,23 @@ class RecoverableInputTaxLedgerJournalTest {
         assertEquals(0, netDebits(entries).compareTo(netCredits(entries)), "journal must balance");
     }
 
+    @Test
+    void reversalOfAReceivedPurchaseAlsoReversesRecoverableTax() {
+        Purchase purchase = recoverablePurchase();
+        PurchaseItem item = purchase.getItems().get(0);
+        receiptLedgerRow(purchase, item);
+        reversalLedgerRow(purchase, item, new BigDecimal("10.00"));
+
+        List<JournalEntryResponse> entries = glService.journal(START, END);
+        assertFalse(entries.isEmpty());
+
+        assertEquals(0, netDebit(entries, "INPUT_TAX").compareTo(BigDecimal.ZERO),
+                "the old input-tax asset must be reversed with the goods: " + entries);
+        assertEquals(0, netDebit(entries, "ACCOUNTS_PAYABLE").compareTo(BigDecimal.ZERO),
+                "the payable cleared by the payment must not leave a stale tax credit: " + entries);
+        assertEquals(0, netDebits(entries).compareTo(netCredits(entries)), "journal must balance");
+    }
+
     // ------------------------------------------------------------------
     // Fixtures
     // ------------------------------------------------------------------
@@ -164,6 +181,25 @@ class RecoverableInputTaxLedgerJournalTest {
         row.setReason("Purchase receipt");
         row.setOccurredAt(LocalDateTime.of(2026, 11, 6, 10, 0));
         row.setPostedAt(LocalDateTime.of(2026, 11, 6, 10, 0));
+        em.persistAndFlush(row);
+    }
+
+    private void reversalLedgerRow(Purchase purchase, PurchaseItem item, BigDecimal taxReversal) {
+        InventoryLedger row = new InventoryLedger();
+        row.setEventType(InventoryLedger.EventType.ADJUSTMENT);
+        row.setSourceType("PURCHASE_REVERSAL");
+        row.setSourceId(purchase.getId());
+        row.setLineKey(item.getId() + ":1:" + taxReversal.toPlainString());
+        row.setProductId(item.getProduct().getId());
+        row.setQtyDelta(-1);
+        row.setQtyAfter(0);
+        row.setUnitCost(COST);
+        row.setUnitCostAfter(COST);
+        row.setValueDelta(COST.negate());
+        row.setValueAfter(BigDecimal.ZERO);
+        row.setReason("Purchase update");
+        row.setOccurredAt(LocalDateTime.of(2026, 11, 8, 10, 0));
+        row.setPostedAt(LocalDateTime.of(2026, 11, 8, 10, 0));
         em.persistAndFlush(row);
     }
 
