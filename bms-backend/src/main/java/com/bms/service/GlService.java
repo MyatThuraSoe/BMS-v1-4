@@ -588,7 +588,9 @@ public class GlService {
         BigDecimal arCashPaid = moneyVoidArCash(sale);
         BigDecimal arNonCashPaid = moneyVoidArNonCash(sale);
         BigDecimal storeCreditPaid = moneyVoidStoreCredit(sale);
-        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale).subtract(storeCreditPaid).max(BigDecimal.ZERO);
+        // Store credit is handled separately; the debt CREDIT row is not a
+        // collected tender at all (see SettledTenderUtils).
+        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale);
         BigDecimal cashAlreadyRefunded = safeSumVoid(sale);
 
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
@@ -680,11 +682,10 @@ public class GlService {
     }
 
     private BigDecimal moneyVoidSaleNonCash(Sale sale) {
-        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
-        return payments.stream()
-                .filter(p -> p.getPaymentMethod() != PaymentMethod.CASH)
-                .map(p -> money(p.getAmount()))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        // Audit T6-6: only real settled tenders (card, bank, etc.) belong in
+        // the non-cash refund split. CREDIT is the invoice's own debt row and
+        // STORE_CREDIT is restored separately to the refund-liability account.
+        return SettledTenderUtils.settledNonCashTender(sale.getPayments());
     }
 
     private BigDecimal moneyVoidStoreCredit(Sale sale) {
