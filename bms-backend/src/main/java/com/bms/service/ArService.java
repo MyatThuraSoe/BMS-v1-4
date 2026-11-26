@@ -303,11 +303,18 @@ public class ArService {
                 : Sale.PaymentStatus.PARTIAL);
         saleRepository.save(sale);
 
-        // Complete any pending CREDIT payment lines on this sale now that it is settled
-        salePaymentRepository.findBySaleIdOrderByPaidAtAsc(sale.getId()).stream()
-                .filter(p -> p.getPaymentMethod() == PaymentMethod.CREDIT
-                        && p.getPaymentStatus() == PaymentStatus.PENDING)
-                .forEach(p -> { p.setPaymentStatus(PaymentStatus.COMPLETED); salePaymentRepository.save(p); });
+        // Audit T6-4: the CREDIT line represents the whole invoice debt. It is
+        // settled only when the invoice is fully paid; a partial collection must
+        // leave it pending so summaries and void logic cannot treat it as cash.
+        if (sale.getPaymentStatus() == Sale.PaymentStatus.PAID) {
+            salePaymentRepository.findBySaleIdOrderByPaidAtAsc(sale.getId()).stream()
+                    .filter(p -> p.getPaymentMethod() == PaymentMethod.CREDIT
+                            && p.getPaymentStatus() == PaymentStatus.PENDING)
+                    .forEach(p -> {
+                        p.setPaymentStatus(PaymentStatus.COMPLETED);
+                        salePaymentRepository.save(p);
+                    });
+        }
 
         // Reduce the customer's outstanding balance (row already not locked
         // here, so lock it explicitly to serialize with concurrent credit sales)
