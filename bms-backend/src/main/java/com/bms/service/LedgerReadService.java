@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.time.YearMonth;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -38,8 +39,34 @@ public class LedgerReadService {
 
     public boolean isActive() {
         return systemSettingRepository.findBySettingKey(CUTOVER_KEY)
-                .map(setting -> setting.getSettingValue() != null && !setting.getSettingValue().isBlank())
+                .map(setting -> isCutoverValueActive(setting.getSettingValue()))
                 .orElse(false);
+    }
+
+    /**
+     * The cutover setting is written as an ISO timestamp by the activation flow.
+     * Accept explicit boolean flags too, but never let an arbitrary non-blank
+     * string (especially "false"/"0"/"off") silently switch reports to the ledger.
+     */
+    private static boolean isCutoverValueActive(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase();
+        if (normalized.equals("false") || normalized.equals("0")
+                || normalized.equals("no") || normalized.equals("off")) {
+            return false;
+        }
+        if (normalized.equals("true") || normalized.equals("1")
+                || normalized.equals("yes") || normalized.equals("on")) {
+            return true;
+        }
+        try {
+            LocalDateTime.parse(value.trim());
+            return true;
+        } catch (DateTimeParseException ignored) {
+            return false;
+        }
     }
 
     public BigDecimal[] totals(LocalDateTime from, LocalDateTime to) {
