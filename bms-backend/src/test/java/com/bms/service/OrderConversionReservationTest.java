@@ -303,6 +303,35 @@ class OrderConversionReservationTest {
         verify(saleRepository, never()).save(any(Sale.class));
     }
 
+    @Test
+    void inactiveNonCreditCustomerBlocksOrderConversion() {
+        product(1L, 10);
+        Order order = order(1L, 1);
+        Customer customer = customer(false, null);
+        order.setCustomer(customer);
+        when(customerRepository.findById(55L)).thenReturn(Optional.of(customer));
+
+        assertThrows(ResourceNotFoundException.class, () -> saleService.createSaleFromOrder(
+                order, "CASH", order.getTotalAmount(), null, 7L));
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void expiredProductCannotBeReservedByAnOrder() {
+        Product product = product(1L, 10);
+        product.setHasExpiry(true);
+        product.setExpiryDate(java.time.LocalDate.now().minusDays(1));
+
+        OrderCreateRequest request = new OrderCreateRequest();
+        OrderCreateRequest.OrderItemRequest item = new OrderCreateRequest.OrderItemRequest();
+        item.setProductId(1L);
+        item.setQuantity(1);
+        request.setItems(List.of(item));
+
+        assertThrows(BusinessException.class, () -> orderService.createOrder(request, 7L));
+        assertEquals(0, product.getReservedQuantity(), "a refused order reserves nothing");
+    }
+
     private Customer customer(boolean active, java.time.LocalDateTime deletedAt) {
         Customer customer = new Customer();
         customer.setId(55L);
