@@ -1016,11 +1016,11 @@ public class SaleService {
                 .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.STORE_CREDIT)
                 .map(SalePayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
-        BigDecimal otherNonCashPaid = arNonCashPaid.add(salePayments.stream()
-                .filter(payment -> payment.getPaymentMethod() != com.bms.entity.PaymentMethod.CASH
-                        && payment.getPaymentMethod() != com.bms.entity.PaymentMethod.STORE_CREDIT)
-                .map(SalePayment::getAmount)
-                .reduce(BigDecimal.ZERO, BigDecimal::add));
+        // Audit T6-1: the SalePayment(method=CREDIT) row is the invoice's own
+        // debt placeholder, not money the shop collected. Only settled non-cash
+        // tenders may become a refund liability when this sale is voided.
+        BigDecimal otherNonCashPaid = arNonCashPaid.add(
+                SettledTenderUtils.settledNonCashTender(salePayments));
         BigDecimal cashAlreadyRefunded = safeSum(
                 saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
 
@@ -1030,7 +1030,6 @@ public class SaleService {
         // refund on a card sale doesn't cause the customer to receive store credit
         // for money already given back.
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
-        BigDecimal totalSettled = cashCollected.add(otherNonCashPaid).add(storeCreditPaid);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
         BigDecimal refundsAfterCash = cashAlreadyRefunded.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
         BigDecimal refundsAgainstNonCash = refundsAfterCash.min(otherNonCashPaid);
