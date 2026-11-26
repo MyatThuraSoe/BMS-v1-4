@@ -154,7 +154,10 @@ public class PurchasePaymentService {
                         .divide(purchase.getSubtotal(), 2, RoundingMode.HALF_UP);
             }
             BigDecimal outstanding = payable.subtract(paid);
-            if (outstanding.compareTo(BigDecimal.ZERO) <= 0) {
+            // A fully paid PO that was later returned to the vendor owes the
+            // shop money. Keep that negative balance visible as supplier credit
+            // instead of dropping the supplier from aging entirely.
+            if (outstanding.compareTo(BigDecimal.ZERO) == 0) {
                 continue;
             }
             BigDecimal baseOutstanding = outstanding.multiply(purchase.getExchangeRate())
@@ -239,6 +242,10 @@ public class PurchasePaymentService {
         if (paymentDay.isAfter(shopTimeService.today())) {
             throw new BusinessException("Payment date cannot be in the future");
         }
+        if (purchase.getPurchaseDate() != null && paymentDay.isBefore(purchase.getPurchaseDate())) {
+            throw new BusinessException("Payment date cannot be before the purchase date "
+                    + purchase.getPurchaseDate());
+        }
         LocalDateTime paymentDate = request.getPaymentDate() != null
                 ? paymentDay.atStartOfDay() : shopTimeService.now();
         periodGuard.assertOpen(paymentDate);
@@ -250,6 +257,11 @@ public class PurchasePaymentService {
                 || request.getPaymentMethod().isBlank())
                 ? PaymentMethod.CASH
                 : paymentValidationService.parseSettlementMethod(request.getPaymentMethod());
+        // Store credit is a shop liability to CUSTOMERS, never a supplier tender.
+        if (paymentMethod == PaymentMethod.STORE_CREDIT) {
+            throw new BusinessException(
+                    "PAYMENT_INVALID: STORE_CREDIT is not a valid supplier settlement method.");
+        }
 
         CashShift employeeShift = paymentValidationService.findOpenShift(userId);
         if (paymentMethod == PaymentMethod.CASH) {

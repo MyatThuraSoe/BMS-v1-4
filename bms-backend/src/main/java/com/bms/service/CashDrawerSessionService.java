@@ -282,10 +282,16 @@ public class CashDrawerSessionService {
         BigDecimal variance = CashVarianceUtil.variance(counted, expected);
 
         BigDecimal tolerance = systemSettingService.cashVarianceTolerance();
-        if (!managerOrAdmin && CashVarianceUtil.exceedsTolerance(variance, tolerance)) {
+        boolean blind = Boolean.TRUE.equals(session.getBlindClose());
+        boolean outsideTolerance = CashVarianceUtil.exceedsTolerance(variance, tolerance);
+        boolean reviewRequired = blind && outsideTolerance && !managerOrAdmin;
+        if (!managerOrAdmin && outsideTolerance && !blind) {
             throw new BusinessException(
                     "Drawer variance exceeds the allowed tolerance. Manager approval is required to close.");
         }
+        // A blind close must never tell the cashier how far off the count was:
+        // rejecting on variance lets them count up to the expected cash. Accept
+        // the count and flag it for a manager instead (audit item 5).
 
         LocalDateTime closedAt = shopTimeService.now();
         session.setStatus(DrawerSessionStatus.CLOSED);
@@ -294,7 +300,11 @@ public class CashDrawerSessionService {
         session.setExpectedCash(expected);
         session.setCountedCash(counted);
         session.setVarianceAmount(variance);
-        session.setClosingNote(request.getClosingNote());
+        String reviewNote = "Manager review required: blind close variance outside tolerance.";
+        String closingNote = request.getClosingNote();
+        session.setClosingNote(reviewRequired
+                ? (closingNote == null || closingNote.isBlank() ? reviewNote : closingNote + "\n" + reviewNote)
+                : closingNote);
         if (Boolean.TRUE.equals(request.getForceClose())) {
             session.setForceClosed(true);
             session.setForceCloseReason(request.getForceReason());
@@ -331,10 +341,29 @@ public class CashDrawerSessionService {
                 "Drawer closed. Expected: " + expected + ", Counted: " + counted
                         + ", Variance: " + variance
                         + CashVarianceUtil.describeVariance(variance, expected, tolerance)
-                        + " (tolerance " + tolerance + ")",
+                        + " (tolerance " + tolerance + ")"
+                        + (reviewRequired ? " BLIND_CLOSE_REVIEW: manager review required." : ""),
                 "CashDrawerSession", sessionId, null, null);
 
-        return toResponse(session, true, true);
+        DrawerSessionResponse response = toResponse(session, true, managerOrAdmin);
+        if (reviewRequired) {
+            // The audit trail keeps the full count for managers, but the cashier
+            // gets none of the figures that could be used to probe the target.
+            response.setExpectedCash(null);
+            response.setCountedCash(null);
+            response.setVariance(null);
+            response.setCashSales(null);
+            response.setCashRefunds(null);
+            response.setSafeDrops(null);
+            response.setPayIns(null);
+            response.setPayOuts(null);
+            response.setAdjustments(null);
+            response.setMovementBreakdown(null);
+            response.setMovements(List.of());
+            response.setMovementCount(0);
+            response.setContributingEmployees(List.of());
+        }
+        return response;
     }
 
     /**

@@ -51,6 +51,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { notifySuccess, notifyError, notifyWarning } from '../utils/notify';
 import { formatAmountPlain, formatCurrency, formatReceiptDateTime } from '../utils/helpers';
+import { validateCartQuantities } from '../utils/cartQuantity';
 
 import ProductImage from '../components/ProductImage';
 import ShopLogo from '../components/ShopLogo';
@@ -370,18 +371,13 @@ const POS = () => {
   };
 
   const handleQuantityInputBlur = (productId) => {
-    setCart((prevCart) =>
-      prevCart.map((item) => {
-        if (item.productId === productId) {
-          const qty = parseInt(item.quantity, 10);
-          if (isNaN(qty) || qty <= 0) {
-            return { ...item, quantity: 1 }; // Default to 1 if left empty or invalid
-          }
-          return item;
-        }
-        return item;
-      })
-    );
+    // A blank or non-positive quantity means the cashier wants the line gone.
+    // Never turn it into a sale of one unit.
+    setCart((prevCart) => prevCart.filter((item) => {
+      if (item.productId !== productId) return true;
+      const qty = parseInt(item.quantity, 10);
+      return Number.isInteger(qty) && qty > 0;
+    }));
   };
 
   const removeFromCart = (productId) => {
@@ -787,14 +783,13 @@ const POS = () => {
       return;
     }
 
-    // Sanitize quantities before proceeding to ensure no empty quantities are sent
-    const sanitizedCart = cart.map(item => {
-      const qty = parseInt(item.quantity, 10);
-      if (isNaN(qty) || qty <= 0) {
-        return { ...item, quantity: 1 };
-      }
-      return item;
-    });
+    // An empty or zero quantity must block checkout, never be sold as one unit.
+    const quantityCheck = validateCartQuantities(cart);
+    if (!quantityCheck.ok) {
+      setError(t('enter_quantity'));
+      return;
+    }
+    const sanitizedCart = quantityCheck.cart;
     setCart(sanitizedCart);
 
     if (saleType === 'CREDIT') {
@@ -864,7 +859,7 @@ const POS = () => {
       return {
         items: cart.map((item) => ({
           productId: item.productId,
-          quantity: parseInt(item.quantity, 10) || 1,
+          quantity: Number(item.quantity),
           price: item.price,
         })),
         customerId: selectedCustomer?.id ?? null,
@@ -881,7 +876,7 @@ const POS = () => {
     return {
       items: cart.map((item) => ({
         productId: item.productId,
-        quantity: parseInt(item.quantity, 10) || 1, // Fallback to 1 just in case
+        quantity: Number(item.quantity),
         price: item.price,
       })),
       customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,

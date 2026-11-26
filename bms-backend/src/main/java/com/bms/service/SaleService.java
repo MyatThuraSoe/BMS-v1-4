@@ -197,6 +197,13 @@ public class SaleService {
 
         Sale.SaleType saleType = resolveSaleType(request.getSaleType());
 
+        // Store credit is a liability owed to a specific customer, so it cannot
+        // be tendered by a walk-in. Resolve it before the customer row is loaded.
+        BigDecimal storeCreditUsed = storeCreditTotal(request.getPayments());
+        if (storeCreditUsed.signum() > 0 && request.getCustomerId() == null) {
+            throw new BusinessException("PAYMENT_INVALID: Store credit requires a registered customer.");
+        }
+
         // Credit sales REQUIRE a registered customer and a due date.
         if (saleType == Sale.SaleType.CREDIT && request.getCustomerId() == null) {
             throw new IllegalArgumentException("error.credit.customer.required");
@@ -230,6 +237,7 @@ public class SaleService {
         // PESSIMISTIC_WRITE from the start so concurrent credit sales
         // serialize on this customer and never race currentBalance.
         Customer creditCustomer = null;
+        Customer redeemedCustomer = null;
         Customer pricingCustomer = null;
         if (saleType == Sale.SaleType.CREDIT) {
             creditCustomer = customerRepository.findByIdForUpdate(request.getCustomerId())
@@ -241,11 +249,16 @@ public class SaleService {
             sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
             pricingCustomer = creditCustomer;
         } else if (request.getCustomerId() != null) {
-            Customer customer = customerRepository.findById(request.getCustomerId())
+            // Redeeming store credit spends the customer's stored balance, so
+            // lock that row just as credit-sale balance changes do.
+            Customer customer = (storeCreditUsed.signum() > 0
+                    ? customerRepository.findByIdForUpdate(request.getCustomerId())
+                    : customerRepository.findById(request.getCustomerId()))
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + request.getCustomerId()));
             if (!Boolean.TRUE.equals(customer.getIsActive()) || customer.getDeletedAt() != null) {
                 throw new ResourceNotFoundException("Customer not found: " + request.getCustomerId());
             }
+            redeemedCustomer = customer;
             sale.setCustomer(customer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
             pricingCustomer = customer;
@@ -379,6 +392,13 @@ public class SaleService {
             paymentLines = paymentValidationService.resolvePayments(
                     request.getPayments(), totalAmount, saleType);
             paymentValidationService.verifyForSale(openShift, paymentLines, totalAmount, saleType);
+            if (storeCreditUsed.signum() > 0) {
+                BigDecimal available = redeemedCustomer.getCreditBalance();
+                if (available.compareTo(storeCreditUsed) < 0) {
+                    throw new BusinessException("PAYMENT_INVALID: Store credit balance " + available
+                            + " is less than tendered " + storeCreditUsed + ".");
+                }
+            }
             sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
         } else {
             // Zero-total sale (100% discount, zero tax): no payment is needed and
@@ -452,6 +472,14 @@ public class SaleService {
         Sale savedSale = saleRepository.save(sale);
         paymentValidationService.saveSalePayments(savedSale, openShift, paymentLines);
 
+        // Spending store credit consumes the refund liability already owed to
+        // this customer. The row is locked until this transaction commits.
+        if (storeCreditUsed.signum() > 0) {
+            redeemedCustomer.setCreditBalance(redeemedCustomer.getCreditBalance()
+                    .subtract(storeCreditUsed).setScale(2, RoundingMode.HALF_UP));
+            customerRepository.save(redeemedCustomer);
+        }
+
         // Credit sales raise the customer's outstanding balance by the full
         // invoice total (same transaction, customer row already locked).
         if (saleType == Sale.SaleType.CREDIT) {
@@ -475,6 +503,26 @@ public class SaleService {
         }
 
         return convertToResponse(savedSale);
+    }
+
+    private BigDecimal storeCreditTotal(List<SalePaymentRequest> payments) {
+        if (payments == null) {
+            return BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        }
+        return payments.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(p -> p.getAmount() != null && p.getAmount().signum() > 0)
+                .filter(p -> {
+                    try {
+                        return paymentValidationService.parseMethod(p.getMethod())
+                                == PaymentMethod.STORE_CREDIT;
+                    } catch (RuntimeException ex) {
+                        return false;
+                    }
+                })
+                .map(SalePaymentRequest::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add)
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     private Sale.SaleType resolveSaleType(String saleType) {
@@ -618,12 +666,10 @@ public class SaleService {
             entityMethod = com.bms.entity.PaymentMethod.CREDIT;
         } else {
             entityMethod = paymentValidationService.parseMethod(method);
-            // Store credit is not redeemable as payment (D4): it is a liability
-            // the shop owes the customer, issued only on returns. It can never
-            // tender money toward a new sale.
-            if (entityMethod == com.bms.entity.PaymentMethod.STORE_CREDIT) {
-                throw new BusinessException("PAYMENT_INVALID: Store credit cannot be used as a payment method.");
-            }
+        }
+        boolean storeCreditTender = entityMethod == com.bms.entity.PaymentMethod.STORE_CREDIT;
+        if (storeCreditTender && order.getCustomer() == null) {
+            throw new BusinessException("PAYMENT_INVALID: Store credit requires a registered customer.");
         }
 
         if (isCredit && order.getCustomer() == null) {
@@ -635,10 +681,6 @@ public class SaleService {
         if (isCredit && dueDate != null && dueDate.isBefore(shopTimeService.today())) {
             throw new BusinessException("Due date cannot be in the past");
         }
-        if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
-            throw new BusinessException("Amount paid is required and must be positive for cash sales");
-        }
-
         String invoiceNumber = isCredit
                 ? sequenceService.nextCreditInvoiceNumber()
                 : generateInvoiceNumber();
@@ -656,14 +698,21 @@ public class SaleService {
                 (order.getNotes() != null ? ". " + order.getNotes() : ""));
 
         Customer creditCustomer = null;
+        Customer redeemedCustomer = null;
         if (isCredit) {
             creditCustomer = customerRepository.findByIdForUpdate(order.getCustomer().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            if (!Boolean.TRUE.equals(creditCustomer.getIsActive()) || creditCustomer.getDeletedAt() != null) {
+                throw new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId());
+            }
             sale.setCustomer(creditCustomer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(creditCustomer));
         } else if (order.getCustomer() != null) {
-            Customer customer = customerRepository.findById(order.getCustomer().getId())
+            Customer customer = (storeCreditTender
+                    ? customerRepository.findByIdForUpdate(order.getCustomer().getId())
+                    : customerRepository.findById(order.getCustomer().getId()))
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            redeemedCustomer = customer;
             sale.setCustomer(customer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(customer));
         } else {
@@ -679,9 +728,12 @@ public class SaleService {
         BigDecimal taxAmount = order.getTaxAmount();
         BigDecimal totalAmount = order.getTotalAmount();
 
-        // Zero-total sale: no payment needed
+        // Zero-total sale: no payment needed. Check this before requiring a
+        // positive amountPaid so a fully discounted order can still convert.
         if (!isCredit && totalAmount.signum() == 0) {
             amountPaid = BigDecimal.ZERO;
+        } else if (!isCredit && (amountPaid == null || amountPaid.compareTo(BigDecimal.ZERO) <= 0)) {
+            throw new BusinessException("Amount paid is required and must be positive for cash sales");
         }
 
         // The order being converted still holds its own reservation, so stock checks
@@ -826,9 +878,22 @@ public class SaleService {
             }
         }
 
+        BigDecimal storeCreditUsed = storeCreditTender
+                ? totalAmount.setScale(2, RoundingMode.HALF_UP) : BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
+        if (storeCreditUsed.signum() > 0
+                && redeemedCustomer.getCreditBalance().compareTo(storeCreditUsed) < 0) {
+            throw new BusinessException("PAYMENT_INVALID: Store credit balance "
+                    + redeemedCustomer.getCreditBalance() + " is less than tendered " + storeCreditUsed + ".");
+        }
+
         Sale savedSale = saleRepository.save(sale);
         paymentValidationService.saveSalePayments(savedSale, openShift, paymentLines);
 
+        if (storeCreditUsed.signum() > 0) {
+            redeemedCustomer.setCreditBalance(redeemedCustomer.getCreditBalance()
+                    .subtract(storeCreditUsed).setScale(2, RoundingMode.HALF_UP));
+            customerRepository.save(redeemedCustomer);
+        }
         if (isCredit) {
             creditCustomer.setCurrentBalance(creditCustomer.getCurrentBalance().add(totalAmount));
             customerRepository.save(creditCustomer);
@@ -947,6 +1012,15 @@ public class SaleService {
                         && payment.getPaymentMethod() != com.bms.entity.PaymentMethod.CASH)
                 .map(ArPayment::getAmount)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal storeCreditPaid = salePayments.stream()
+                .filter(payment -> payment.getPaymentMethod() == com.bms.entity.PaymentMethod.STORE_CREDIT)
+                .map(SalePayment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal otherNonCashPaid = arNonCashPaid.add(salePayments.stream()
+                .filter(payment -> payment.getPaymentMethod() != com.bms.entity.PaymentMethod.CASH
+                        && payment.getPaymentMethod() != com.bms.entity.PaymentMethod.STORE_CREDIT)
+                .map(SalePayment::getAmount)
+                .reduce(BigDecimal.ZERO, BigDecimal::add));
         BigDecimal cashAlreadyRefunded = safeSum(
                 saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
 
@@ -956,12 +1030,16 @@ public class SaleService {
         // refund on a card sale doesn't cause the customer to receive store credit
         // for money already given back.
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
-        BigDecimal totalSettled = cashCollected.add(arNonCashPaid);
+        BigDecimal totalSettled = cashCollected.add(otherNonCashPaid).add(storeCreditPaid);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
-        BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
-                .max(BigDecimal.ZERO);
+        BigDecimal refundsAfterCash = cashAlreadyRefunded.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstNonCash = refundsAfterCash.min(otherNonCashPaid);
+        BigDecimal refundsAgainstStoreCredit = refundsAfterCash.subtract(refundsAgainstNonCash)
+                .min(storeCreditPaid);
         BigDecimal remainingCashOwed = cashCollected.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
-        BigDecimal remainingNonCashOwed = arNonCashPaid.subtract(refundsAgainstNonCash)
+        BigDecimal remainingNonCashOwed = otherNonCashPaid.subtract(refundsAgainstNonCash)
+                .max(BigDecimal.ZERO);
+        BigDecimal remainingStoreCreditOwed = storeCreditPaid.subtract(refundsAgainstStoreCredit)
                 .max(BigDecimal.ZERO);
         BigDecimal cashToReturn = remainingCashOwed;
 
@@ -973,12 +1051,20 @@ public class SaleService {
             if (originalSession != null && originalSession.getStatus() == DrawerSessionStatus.OPEN) {
                 reversalSession = originalSession;
             } else {
-                for (CashDrawer drawer : cashDrawerSessionService.getActiveDrawers()) {
-                    reversalSession = cashDrawerSessionService.getOpenSession(drawer.getId());
-                    if (reversalSession != null) {
-                        break;
-                    }
+                // The first active drawer may belong to another cashier. A late
+                // cash void must come out of the voiding user's own drawer so
+                // nobody else is debited for this refund (audit item 6).
+                CashShift voidingShift = cashShiftRepository
+                        .findByCashierIdAndStatus(userId, "OPEN")
+                        .filter(shift -> shift.getShiftType() == ShiftType.CASH_DRAWER
+                                && shift.getDrawerSession() != null)
+                        .orElse(null);
+                if (voidingShift == null) {
+                    throw new BusinessException(
+                            "Open your cash drawer shift to void this cash sale");
                 }
+                reversalSession = cashDrawerSessionService
+                        .getOpenSession(voidingShift.getDrawerSession().getId());
                 if (reversalSession == null) {
                     throw new BusinessException(
                             "No cash drawer is open. Open a drawer before voiding this cash sale.");
@@ -1128,6 +1214,18 @@ public class SaleService {
                     customerRepository.save(creditCustomer);
                 }
             }
+        }
+
+        // Store credit tendered at the till is reversed by restoring the same
+        // amount of the customer's credit (and crediting the liability in GL).
+        if (remainingStoreCreditOwed.signum() > 0 && sale.getCustomer() != null) {
+            Customer storeCreditCustomer = customerRepository
+                    .findByIdForUpdate(sale.getCustomer().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Customer not found: " + sale.getCustomer().getId()));
+            storeCreditCustomer.setCreditBalance(storeCreditCustomer.getCreditBalance()
+                    .add(remainingStoreCreditOwed).setScale(2, java.math.RoundingMode.HALF_UP));
+            customerRepository.save(storeCreditCustomer);
         }
 
         return convertToResponse(updatedSale);
@@ -1533,19 +1631,22 @@ public class SaleService {
         if (!shopDiscountIsCashierEntered()) {
             return;
         }
+        // A manager credential clears the cashier cap, but it must be judged against
+        // the manager cap rather than lifting the ceiling entirely (audit item 15).
         boolean manager = isManagerOrAdmin(cashierId);
-        BigDecimal limitPercent = discountLimitPercent(manager);
+        boolean effectiveManager = manager || managerOverride;
+        BigDecimal limitPercent = discountLimitPercent(effectiveManager);
         BigDecimal maxAmount = subtotal.multiply(limitPercent)
                 .divide(BigDecimal.valueOf(100), 2, java.math.RoundingMode.HALF_UP);
         if (entered.compareTo(maxAmount) <= 0) {
             return;
         }
-        if (!manager && managerOverride) {
-            return;
-        }
+        String remedy = managerOverride
+                ? "manager cap exceeded"
+                : "manager approval is required";
         throw new BusinessException("Discount " + entered.setScale(2, java.math.RoundingMode.HALF_UP)
                 + " exceeds the allowed " + limitPercent.stripTrailingZeros().toPlainString()
-                + "% of this sale (max " + maxAmount + "); manager approval is required");
+                + "% of this sale (max " + maxAmount + "); " + remedy);
     }
 
     /**

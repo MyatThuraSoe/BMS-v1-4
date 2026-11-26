@@ -194,6 +194,7 @@ class StockCountServiceTest {
         CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
         stubSettings();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
 
         CountSheetResponse response = stockCountService.submit(
                 sheet.getId(), submitRequest(13, "THEFT_SHRINKAGE"), 99L);
@@ -201,7 +202,7 @@ class StockCountServiceTest {
         assertEquals("PENDING_REVIEW", response.getStatus());
         assertEquals(CountSheet.CountStatus.PENDING_REVIEW, sheet.getStatus());
         assertEquals(50, product.getStockQuantity());
-        verify(productRepository, never()).findByIdForUpdate(anyLong());
+        verify(productRepository).findByIdForUpdate(7L);
         verify(productRepository, never()).save(any(Product.class));
         verify(stockMovementRepository, never()).save(any(StockMovement.class));
         verify(countSheetRepository).save(sheet);
@@ -213,6 +214,7 @@ class StockCountServiceTest {
         CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
         stubSettings();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
         when(systemSettingRepository.findBySettingKey("stockCountAutoApproveLineValue"))
                 .thenReturn(Optional.of(setting("stockCountAutoApproveLineValue", "20.00")));
 
@@ -311,6 +313,33 @@ class StockCountServiceTest {
         assertEquals(7, product.getStockQuantity());
         verify(stockMovementRepository, never()).save(any(StockMovement.class));
         verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
+    }
+
+    /**
+     * Defect 1: the system quantity must be captured when the count is taken,
+     * not when the sheet is created. Units sold in between belong to sales and
+     * must not be resurrected by the count.
+     */
+    @Test
+    void d1_snapshotIsCapturedAtCountTimeNotWhenSheetIsCreated() {
+        Product product = product(10, "5.00");
+        CountSheet sheet = inProgressSheet(product, 10); // creation snapshot: 10
+        product.setStockQuantity(7); // three units sold before the physical count
+        stubSheetLookup(sheet);
+        stubSettings();
+        stubApplyPersistence();
+        when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
+
+        CountSheetResponse response = stockCountService.submit(
+                sheet.getId(), submitRequest(7, "MISCOUNT"), 99L);
+
+        assertEquals(0, sheet.getItems().get(0).getVariance(),
+                "system quantity must snapshot the count-time stock of 7");
+        assertEquals(7, product.getStockQuantity());
+        verify(stockMovementRepository, never()).save(any(StockMovement.class));
+        verify(ledgerPostingService, never()).postOperatingLoss(any(StockMovement.class));
+        assertEquals("APPROVED", response.getStatus());
+        assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
     }
 
     @Test
@@ -424,25 +453,23 @@ class StockCountServiceTest {
     }
 
     /**
-     * S1: the counts matched the sheet's snapshot, but stock moved afterwards,
-     * so the live recompute needs a reason the counter never gave. Auto-approval
-     * has to step aside and keep the submission instead of rolling it back.
+     * S1: with the count-time snapshot taken at submission, a large shortfall is
+     * a real variance. Even with a reason code it stays pending review instead
+     * of being silently auto-applied while the counter's work is preserved.
      */
     @Test
     void s1_submitNeedingANewReasonCodeStaysInPendingReviewWithTheCountsSaved() {
         Product product = product(10, "5.00");
-        // Snapshot at count time matches what was counted (8 = 8), so no variance
-        // and auto-approval succeeds. Live stock (10) is irrelevant to the variance.
-        CountSheet sheet = inProgressSheet(product, 8);
+        CountSheet sheet = inProgressSheet(product, 10);
         stubSheetLookup(sheet);
-        stubApplyPersistence();
         when(productRepository.findByIdForUpdate(7L)).thenReturn(Optional.of(product));
 
-        CountSheetResponse response = stockCountService.submit(sheet.getId(), submitRequest(8, null), 99L);
+        CountSheetResponse response = stockCountService.submit(sheet.getId(), submitRequest(4, "MISCOUNT"), 99L);
 
-        assertEquals("APPROVED", response.getStatus());
-        assertEquals(CountSheet.CountStatus.APPROVED, sheet.getStatus());
-        assertEquals(8, sheet.getItems().get(0).getCountedQuantity(), "the counter's work must survive");
+        assertEquals("PENDING_REVIEW", response.getStatus());
+        assertEquals(CountSheet.CountStatus.PENDING_REVIEW, sheet.getStatus());
+        assertEquals(4, sheet.getItems().get(0).getCountedQuantity(), "the counter's work must survive");
+        assertEquals(-6, sheet.getItems().get(0).getVariance());
         assertEquals(10, product.getStockQuantity());
         verify(countSheetRepository).save(sheet);
         verify(stockMovementRepository, never()).save(any(StockMovement.class));

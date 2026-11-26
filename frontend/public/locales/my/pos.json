@@ -3,6 +3,7 @@
   "product": "ကုန်ပစ္စည်း",
   "price": "ဈေးနှုန်း",
   "quantity": "အရေအတွက်",
+  "enter_quantity": "အရေအတွက်ထည့်ပါ",
   "subtotal": "ကျသင့်ငွေ",
   "tax": "အခွန်",
   "discount_pct_label": "လျှော့စျေး ({{pct}}%)",

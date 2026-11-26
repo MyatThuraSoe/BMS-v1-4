@@ -122,8 +122,9 @@ public class ReportService {
         String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
                 + "COALESCE(MAX(p.sku), '') AS sku, SUM(l.qty_sold) AS quantity_sold, "
                 + "SUM(l.line_revenue) AS revenue, SUM(l.prorated_tax) AS tax, SUM(l.line_cogs) AS cost "
-                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
-                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + "FROM (" + salesLineSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startOfDay, endOfDay);
 
         BigDecimal totalRevenue = BigDecimal.ZERO;
@@ -155,10 +156,13 @@ public class ReportService {
         itemSales.sort(Comparator.comparing((Map<String, Object> r) ->
                 toBigDecimal(r.get("totalPrice"))).reversed());
 
-        Long transactions = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
-                        + "AND s.is_voided = false AND s.sale_date >= ? AND s.sale_date < ?",
-                Long.class, startOfDay, endOfDay);
+        // A ledger-backed report counts the sale events dated by occurred_at;
+        // returns and voids stay in the money columns but do not create sales.
+        String transactionSql = ledgerReadService.isActive()
+                ? "SELECT COUNT(DISTINCT t.sale_id) FROM (" + salesRevenueSql() + ") t WHERE t.sale_count > 0"
+                : "SELECT COUNT(*) FROM sales s WHERE s.is_active = true AND s.deleted_at IS NULL "
+                        + "AND s.is_voided = false AND s.sale_date >= ? AND s.sale_date < ?";
+        Long transactions = jdbcTemplate.queryForObject(transactionSql, Long.class, startOfDay, endOfDay);
         int totalTransactions = transactions != null ? transactions.intValue() : 0;
 
         Map<String, Object> report = new HashMap<>();
@@ -182,8 +186,8 @@ public class ReportService {
         LocalDateTime startDateTime = shopTimeService.startOfDay(startDate);
         LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
-        String sql = "SELECT COALESCE(SUM(t.sale_revenue), 0), COUNT(*) FROM ("
-                + perSaleRevenueSql() + ") t";
+        String sql = "SELECT COALESCE(SUM(t.sale_revenue), 0), COALESCE(SUM(t.sale_count), 0) FROM ("
+                + salesRevenueSql() + ") t";
         BigDecimal[] totals = jdbcTemplate.queryForObject(sql,
                 (rs, rowNum) -> new BigDecimal[]{
                         toBigDecimal(rs.getObject(1)), BigDecimal.valueOf(rs.getLong(2))},
@@ -208,8 +212,9 @@ public class ReportService {
 
         String sql = "SELECT l.product_id, COALESCE(MAX(p.name), '') AS product_name, "
                 + "SUM(l.qty_sold) AS quantity_sold, SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
-                + "WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + "FROM (" + salesLineSql() + ") l LEFT JOIN products p ON p.id = l.product_id "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -244,8 +249,9 @@ public class ReportService {
         LocalDateTime endDateTime = shopTimeService.endOfDayExclusive(endDate);
 
         String sql = "SELECT t.cashier_id, SUM(t.sale_revenue) AS total_sales, "
-                + "COUNT(*) AS tx_count, SUM(t.items_sold) AS item_count "
-                + "FROM (" + perSaleRevenueSql() + ") t GROUP BY t.cashier_id";
+                + "COALESCE(SUM(t.sale_count), 0) AS tx_count, SUM(t.items_sold) AS item_count "
+                + "FROM (" + salesRevenueSql() + ") t "
+                + "WHERE t.cashier_id IS NOT NULL GROUP BY t.cashier_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, startDateTime, endDateTime);
 
         List<Map<String, Object>> report = new ArrayList<>();
@@ -284,13 +290,13 @@ public class ReportService {
             trendByDate.put(date, new DailySalesTrendDto(date, BigDecimal.ZERO, 0));
         }
 
-        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        String sql = "SELECT t.sale_date, t.sale_revenue, t.sale_count FROM (" + salesRevenueSql() + ") t";
         jdbcTemplate.query(sql, rs -> {
             LocalDate saleDate = toLocalDateTime(rs.getObject("sale_date")).toLocalDate();
             DailySalesTrendDto dto = trendByDate.get(saleDate);
             if (dto != null) {
                 dto.setTotalSales(dto.getTotalSales().add(toBigDecimal(rs.getObject("sale_revenue"))));
-                dto.setTransactionCount(dto.getTransactionCount() + 1);
+                dto.setTransactionCount(dto.getTransactionCount() + rs.getInt("sale_count"));
             }
         }, startDateTime, endDateTime);
 
@@ -350,10 +356,11 @@ public class ReportService {
         String currentSql = "SELECT COALESCE(c.id, -1) AS category_id, "
                 + "COALESCE(MAX(c.name), 'Uncategorized') AS category_name, "
                 + "SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l "
+                + "FROM (" + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY COALESCE(c.id, -1)";
         List<Map<String, Object>> currentRows = jdbcTemplate.queryForList(currentSql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         for (Map<String, Object> row : currentRows) {
@@ -413,10 +420,11 @@ public class ReportService {
         }
         String sql = "SELECT l.sale_id, l.sale_date, COALESCE(c.id, -1) AS category_id, "
                 + "SUM(l.line_revenue) AS revenue "
-                + "FROM (" + lineRevenueSql() + ") l "
+                + "FROM (" + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 AND COALESCE(c.id, -1) IN (" + placeholders + ") "
+                + "WHERE " + (ledgerReadService.isActive() ? "" : "l.qty_sold > 0 AND ")
+                + "COALESCE(c.id, -1) IN (" + placeholders + ") "
                 + "GROUP BY l.sale_id, l.sale_date, COALESCE(c.id, -1)";
 
         // day -> (categoryId -> revenue)
@@ -728,6 +736,44 @@ public class ReportService {
     }
 
     public List<SupplierProfitDto> getProfitBySupplier(LocalDate startDate, LocalDate endDate) {
+        if (!ledgerReadService.isActive()) {
+            return getLegacyProfitBySupplier(startDate, endDate);
+        }
+
+        // Ledger path: base the figure on sold goods, not goods purchased in the
+        // window. Revenue and COGS both come from the base-currency profit ledger;
+        // the supplier is the last receipt's purchase supplier for that product.
+        String sql = """
+            SELECT s.id, s.name,
+                   COALESCE(SUM(pl.cogs), 0) AS total_supplied_cost,
+                   COALESCE(SUM(pl.net_revenue), 0) AS estimated_revenue
+            FROM profit_ledger pl
+            JOIN inventory_ledger il ON il.id = (
+                SELECT il2.id
+                FROM inventory_ledger il2
+                JOIN purchases p2 ON p2.id = il2.source_id
+                WHERE il2.product_id = pl.product_id
+                  AND il2.event_type = 'RECEIPT'
+                  AND il2.source_type = 'PURCHASE'
+                  AND il2.occurred_at <= pl.occurred_at
+                ORDER BY il2.occurred_at DESC, il2.id DESC
+                LIMIT 1
+            )
+            JOIN purchases p ON p.id = il.source_id
+                 AND p.is_active = true AND p.deleted_at IS NULL
+            JOIN suppliers s ON s.id = p.supplier_id
+                 AND s.is_active = true AND s.deleted_at IS NULL
+            WHERE pl.source_type IN ('SALE', 'SALE_RETURN', 'SALE_VOID')
+              AND pl.occurred_at >= ? AND pl.occurred_at < ?
+            GROUP BY s.id, s.name
+            ORDER BY estimated_revenue DESC
+            """;
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
+                shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
+        return toSupplierProfitDtos(rows);
+    }
+
+    private List<SupplierProfitDto> getLegacyProfitBySupplier(LocalDate startDate, LocalDate endDate) {
         String sql = """
             SELECT s.id, s.name,
                    COALESCE(SUM(pi.unit_cost * (CASE WHEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) > 0 THEN COALESCE(pi.received_quantity,0) - COALESCE(pi.returned_quantity,0) ELSE 0 END)), 0) as total_supplied_cost,
@@ -774,7 +820,10 @@ public class ReportService {
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
             java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate.plusDays(1)),
             java.sql.Date.valueOf(startDate), java.sql.Date.valueOf(endDate));
+        return toSupplierProfitDtos(rows);
+    }
 
+    private List<SupplierProfitDto> toSupplierProfitDtos(List<Map<String, Object>> rows) {
         List<SupplierProfitDto> result = new ArrayList<>();
         for (Map<String, Object> row : rows) {
             SupplierProfitDto dto = new SupplierProfitDto();
@@ -838,7 +887,7 @@ public class ReportService {
         // Key: dayOfWeek (1=Mon..7=Sun) + hourOfDay
         Map<String, SalesTimingDto> map = new LinkedHashMap<>();
 
-        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + perSaleRevenueSql() + ") t";
+        String sql = "SELECT t.sale_date, t.sale_revenue FROM (" + salesRevenueSql() + ") t";
         jdbcTemplate.query(sql, rs -> {
             LocalDateTime saleDate = toLocalDateTime(rs.getObject("sale_date"));
             int dayOfWeek = saleDate.getDayOfWeek().getValue(); // 1=Mon..7=Sun
@@ -1027,6 +1076,7 @@ public class ReportService {
         BigDecimal grossSales = BigDecimal.ZERO;
         BigDecimal discounts = BigDecimal.ZERO;
         BigDecimal refunds = BigDecimal.ZERO;
+        BigDecimal debtReductionTotal = BigDecimal.ZERO;
         BigDecimal netSales = BigDecimal.ZERO;
         BigDecimal cashSales = BigDecimal.ZERO;
         BigDecimal nonCashSales = BigDecimal.ZERO;
@@ -1039,6 +1089,7 @@ public class ReportService {
             grossSales = grossSales.add(toBigDecimal(shift.getGrossSales()));
             discounts = discounts.add(toBigDecimal(shift.getDiscountTotal()));
             refunds = refunds.add(toBigDecimal(shift.getReturnsTotal()));
+            debtReductionTotal = debtReductionTotal.add(toBigDecimal(shift.getDebtReductionTotal()));
             netSales = netSales.add(toBigDecimal(shift.getNetSales()));
             cashSales = cashSales.add(toBigDecimal(shift.getCashSalesTotal()));
             nonCashSales = nonCashSales.add(toBigDecimal(shift.getNonCashSalesTotal()));
@@ -1063,6 +1114,7 @@ public class ReportService {
         report.put("grossSales", grossSales);
         report.put("discounts", discounts);
         report.put("refunds", refunds);
+        report.put("debtReductionTotal", debtReductionTotal);
         report.put("netSales", netSales);
         report.put("cashSales", cashSales);
         report.put("nonCashSales", nonCashSales);
@@ -1401,13 +1453,135 @@ public class ReportService {
     /**
      * P7: per-line revenue/COGS aggregation in SQL, mirroring
      * SaleDiscountUtils.allocateDiscounts + netItemRevenue and
-     * CostCalculationUtils.calculateCogs exactly (proportional discount
-     * shares rounded HALF_UP to 2dp, remainder on the last positive line,
-     * revenue prorated over non-refunded units). Two ? params: start, end
-     * (half-open). Window functions keep this one pass over the lines.
+     * CostCalculationUtils.calculateCogs exactly. Proportional shares are
+     * rounded HALF_UP to 2dp, the rounding remainder goes to the highest-id
+     * positive line, and any over-allocation is trimmed a cent at a time from
+     * the largest shares (lowest id first on ties), just like the Java loop.
+     * Two ? params: start, end (half-open).
      */
     private String lineRevenueSql() {
         return """
+            WITH base AS (
+                SELECT si.id AS item_id, si.sale_id AS sale_id, s.sale_date AS sale_date,
+                       s.cashier_id AS cashier_id, si.product_id AS product_id,
+                       COALESCE(si.quantity, 0) AS qty,
+                       CASE WHEN COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) < 0 THEN 0
+                            ELSE COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) END AS qty_sold,
+                       COALESCE(si.quantity_refunded, 0) AS qty_refunded,
+                       ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) AS gross_line,
+                       COALESCE(si.cost_price_at_sale, 0) AS cost_at_sale,
+                       COALESCE(si.tax_amount, 0) AS line_tax,
+                       COALESCE(s.discount_amount, 0) AS sale_discount,
+                       SUM(ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2))
+                           OVER (PARTITION BY si.sale_id) AS gross_total,
+                       MAX(CASE WHEN ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) > 0
+                                THEN si.id END) OVER (PARTITION BY si.sale_id) AS remainder_item_id
+                FROM sale_items si
+                JOIN sales s ON s.id = si.sale_id
+                WHERE s.is_active = true AND s.deleted_at IS NULL AND s.is_voided = false
+                  AND s.sale_date >= ? AND s.sale_date < ?
+            ),
+            discounts AS (
+                SELECT b.*,
+                    CASE WHEN b.sale_discount > 0 AND b.gross_total > 0
+                         THEN CASE WHEN b.sale_discount > b.gross_total THEN b.gross_total
+                                   ELSE b.sale_discount END
+                         ELSE 0 END AS eff_discount
+                FROM base b
+            ),
+            shares AS (
+                SELECT d.*,
+                    CASE WHEN d.eff_discount <= 0 OR d.gross_total <= 0 OR d.gross_line <= 0
+                              OR d.item_id = d.remainder_item_id
+                         THEN 0
+                         ELSE ROUND(d.eff_discount * d.gross_line / CAST(d.gross_total AS DECIMAL(19,6)), 2)
+                    END AS proportional_share
+                FROM discounts d
+            ),
+            /* The Java trim loop repeatedly removes a cent from the largest
+               non-remainder share, lowest id first on ties. Expanding one row
+               per cent level made H2 rescan the CTE for every line and never
+               finished on the 60k-sale fixture. A ranked window describes the
+               same sequence of cent removals in a single pass. */
+            ranked AS (
+                SELECT s.*,
+                    SUM(s.proportional_share) OVER (PARTITION BY s.sale_id) AS other_shares,
+                    CAST(ROUND((SUM(s.proportional_share) OVER (PARTITION BY s.sale_id)
+                                - s.eff_discount) * 100, 0) AS INTEGER) AS over_cents,
+                    CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER) AS share_cents,
+                    COUNT(*) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS share_rank,
+                    SUM(CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER)) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                    ) AS cum_cents,
+                    LEAD(CAST(ROUND(s.proportional_share * 100, 0) AS INTEGER)) OVER (
+                        PARTITION BY s.sale_id ORDER BY s.proportional_share DESC, s.item_id
+                    ) AS next_cents
+                FROM shares s
+            ),
+            cut AS (
+                SELECT r.*,
+                    CASE WHEN r.over_cents > 0 THEN
+                        CAST(FLOOR(CAST(r.cum_cents + r.share_rank - r.over_cents AS DECIMAL(19,6))
+                                   / CAST(r.share_rank AS DECIMAL(19,6))) AS INTEGER)
+                    END AS candidate
+                FROM ranked r
+            ),
+            /* The last row of the tied block that contains the trim level owns
+               the cutoff: its candidate is <= its own share but still above the
+               next share. Lines trimmed into the cutoff rejoin the tie pool,
+               exactly as the Java loop sees them on its next pass. */
+            chosen AS (
+                SELECT c.*,
+                    CASE WHEN c.candidate IS NOT NULL
+                              AND c.candidate <= c.share_cents
+                              AND c.candidate > COALESCE(c.next_cents, -1)
+                         THEN c.candidate END AS cutoff
+                FROM cut c
+            ),
+            params AS (
+                SELECT ch.*,
+                    COALESCE(MAX(ch.cutoff) OVER (PARTITION BY ch.sale_id), ch.share_cents) AS threshold,
+                    MAX(CASE WHEN ch.cutoff IS NOT NULL THEN ch.share_rank END)
+                        OVER (PARTITION BY ch.sale_id) AS top_rank,
+                    MAX(CASE WHEN ch.cutoff IS NOT NULL THEN ch.cum_cents END)
+                        OVER (PARTITION BY ch.sale_id) AS top_cents
+                FROM chosen ch
+            ),
+            tied AS (
+                SELECT p.*,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY p.sale_id,
+                                     CASE WHEN p.share_rank <= p.top_rank THEN 1 ELSE 0 END
+                        ORDER BY p.item_id
+                    ) AS tie_rank
+                FROM params p
+            ),
+            final_alloc AS (
+                SELECT t.*,
+                    CASE
+                        WHEN t.other_shares <= t.eff_discount THEN
+                            CASE WHEN t.item_id = t.remainder_item_id THEN
+                                     CASE WHEN t.eff_discount - t.other_shares < 0 THEN 0
+                                          ELSE t.eff_discount - t.other_shares END
+                                 ELSE t.proportional_share END
+                        WHEN t.share_cents <= 0 THEN 0
+                        ELSE CAST(
+                            t.share_cents
+                            - CASE WHEN t.share_cents > t.threshold
+                                   THEN t.share_cents - t.threshold ELSE 0 END
+                            - CASE WHEN t.share_cents >= t.threshold
+                                        AND t.share_rank <= t.top_rank
+                                        AND t.tie_rank <= t.over_cents
+                                            - (t.top_cents - t.top_rank * t.threshold)
+                                   THEN 1 ELSE 0 END
+                            AS DECIMAL(19,2)) / 100
+                    END AS alloc_share
+                FROM tied t
+            )
             SELECT z.*,
                 CASE WHEN z.qty_sold > 0 AND z.qty > 0
                      THEN ROUND((CASE WHEN z.gross_line - z.alloc_share < 0 THEN 0
@@ -1424,50 +1598,7 @@ public class ReportService {
                      ELSE 0 END AS refunded_revenue_line,
                 CASE WHEN z.qty <= 0 OR z.qty_sold >= z.qty THEN z.line_tax
                      ELSE ROUND(z.line_tax * z.qty_sold / CAST(z.qty AS DECIMAL(19,6)), 2) END AS prorated_tax
-            FROM (
-                SELECT x.*,
-                    CASE
-                        WHEN x.eff_discount <= 0 OR x.gross_total <= 0 THEN 0
-                        WHEN x.gross_line <= 0 THEN 0
-                        WHEN x.item_id = x.remainder_item_id THEN
-                            CASE WHEN x.eff_discount - x.other_shares < 0 THEN 0
-                                 ELSE x.eff_discount - x.other_shares END
-                        ELSE ROUND(x.eff_discount * x.gross_line / CAST(x.gross_total AS DECIMAL(19,6)), 2)
-                    END AS alloc_share
-                FROM (
-                    SELECT b.*,
-                        SUM(CASE WHEN b.item_id <> b.remainder_item_id AND b.gross_line > 0 AND b.eff_discount > 0
-                                 THEN ROUND(b.eff_discount * b.gross_line / CAST(b.gross_total AS DECIMAL(19,6)), 2)
-                                 ELSE 0 END) OVER (PARTITION BY b.sale_id) AS other_shares
-                    FROM (
-                        SELECT a.*,
-                            CASE WHEN a.sale_discount > 0 AND a.gross_total > 0
-                                 THEN CASE WHEN a.sale_discount > a.gross_total THEN a.gross_total
-                                           ELSE a.sale_discount END
-                                 ELSE 0 END AS eff_discount
-                        FROM (
-                            SELECT si.id AS item_id, si.sale_id AS sale_id, s.sale_date AS sale_date,
-                                s.cashier_id AS cashier_id, si.product_id AS product_id,
-                                COALESCE(si.quantity, 0) AS qty,
-                                CASE WHEN COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) < 0 THEN 0
-                                     ELSE COALESCE(si.quantity, 0) - COALESCE(si.quantity_refunded, 0) END AS qty_sold,
-                                COALESCE(si.quantity_refunded, 0) AS qty_refunded,
-                                ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) AS gross_line,
-                                COALESCE(si.cost_price_at_sale, 0) AS cost_at_sale,
-                                COALESCE(si.tax_amount, 0) AS line_tax,
-                                COALESCE(s.discount_amount, 0) AS sale_discount,
-                                SUM(ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2))
-                                    OVER (PARTITION BY si.sale_id) AS gross_total,
-                                MAX(CASE WHEN ROUND(COALESCE(si.total_price, COALESCE(si.unit_price, 0) * COALESCE(si.quantity, 0)), 2) > 0
-                                         THEN si.id END) OVER (PARTITION BY si.sale_id) AS remainder_item_id
-                            FROM sale_items si
-                            JOIN sales s ON s.id = si.sale_id
-                            WHERE s.is_active = true AND s.deleted_at IS NULL AND s.is_voided = false
-                              AND s.sale_date >= ? AND s.sale_date < ?
-                        ) a
-                    ) b
-                ) x
-            ) z
+            FROM final_alloc z
             """;
     }
 
@@ -1481,8 +1612,52 @@ public class ReportService {
                 + "CASE WHEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) > 0 "
                 + "THEN MAX(t.gross_total) - MAX(t.eff_discount) - SUM(t.refunded_revenue_line) "
                 + "ELSE 0 END AS sale_revenue, "
+                + "1 AS sale_count, "
                 + "SUM(t.qty_sold) AS items_sold "
                 + "FROM (" + lineRevenueSql() + ") t "
+                + "GROUP BY t.sale_id, t.sale_date, t.cashier_id";
+    }
+
+    /**
+     * Uniform sale-line view for the sales reports. With ledger reads active it
+     * uses profit_ledger rows dated by occurred_at (including negative return
+     * and void rows); otherwise it keeps the legacy sale-date derivation.
+     * Both variants take two ? params: start and end (half-open).
+     */
+    private String salesLineSql() {
+        return ledgerReadService.isActive() ? ledgerSalesLineSql() : lineRevenueSql();
+    }
+
+    /**
+     * Profit ledger lines shaped like {@link #lineRevenueSql()}. The original
+     * sale is resolved for returns and voids so cashier reports keep working;
+     * source_type is retained so transaction counts only count real sales.
+     */
+    private String ledgerSalesLineSql() {
+        return "SELECT l.product_id, COALESCE(l.quantity, 0) AS qty_sold, "
+                + "l.net_revenue AS line_revenue, l.tax_amount AS prorated_tax, "
+                + "l.cogs AS line_cogs, l.occurred_at AS sale_date, "
+                + "COALESCE(s.id, rs.id) AS sale_id, "
+                + "COALESCE(s.cashier_id, rs.cashier_id) AS cashier_id, "
+                + "l.source_type "
+                + "FROM profit_ledger l "
+                + "LEFT JOIN sales s ON l.source_type IN ('SALE', 'SALE_VOID') AND s.id = l.source_id "
+                + "LEFT JOIN sale_returns sr ON l.source_type = 'SALE_RETURN' AND sr.id = l.source_id "
+                + "LEFT JOIN sales rs ON rs.id = sr.sale_id "
+                + "WHERE l.source_type IN ('SALE', 'SALE_VOID', 'SALE_RETURN') "
+                + "AND l.occurred_at >= ? AND l.occurred_at < ?";
+    }
+
+    /** Per-sale view with a transaction flag for both the legacy and ledger paths. */
+    private String salesRevenueSql() {
+        if (!ledgerReadService.isActive()) {
+            return perSaleRevenueSql();
+        }
+        return "SELECT t.sale_id, t.sale_date, t.cashier_id, "
+                + "SUM(t.line_revenue) AS sale_revenue, "
+                + "SUM(CASE WHEN t.source_type = 'SALE' THEN 1 ELSE 0 END) AS sale_count, "
+                + "SUM(t.qty_sold) AS items_sold "
+                + "FROM (" + ledgerSalesLineSql() + ") t "
                 + "GROUP BY t.sale_id, t.sale_date, t.cashier_id";
     }
 
@@ -1503,10 +1678,12 @@ public class ReportService {
     }
 
     private LocalDate resolveStartDate(String period, LocalDate endDate) {
+        // Both endpoints are inclusive, so a seven-day week starts six days back
+        // and a rolling month starts the day after the same date last month.
         return switch (period != null ? period.toUpperCase(Locale.ROOT) : "MONTH") {
-            case "WEEK" -> endDate.minusWeeks(1);
+            case "WEEK" -> endDate.minusDays(6);
             case "YEAR" -> endDate.minusYears(1);
-            default -> endDate.minusMonths(1);
+            default -> endDate.minusMonths(1).plusDays(1);
         };
     }
 
@@ -1521,7 +1698,9 @@ public class ReportService {
 
     private Map<Long, BigDecimal> computeProductRevenue(LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT l.product_id, SUM(l.line_revenue) AS revenue FROM ("
-                + lineRevenueSql() + ") l WHERE l.qty_sold > 0 GROUP BY l.product_id";
+                + salesLineSql() + ") l "
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY l.product_id";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByProduct = new HashMap<>();
@@ -1534,10 +1713,11 @@ public class ReportService {
 
     private Map<Long, BigDecimal> computeCategoryRevenue(LocalDate startDate, LocalDate endDate) {
         String sql = "SELECT COALESCE(c.id, -1) AS category_id, SUM(l.line_revenue) AS revenue FROM ("
-                + lineRevenueSql() + ") l "
+                + salesLineSql() + ") l "
                 + "LEFT JOIN products p ON p.id = l.product_id "
                 + "LEFT JOIN categories c ON c.id = p.category_id "
-                + "WHERE l.qty_sold > 0 GROUP BY COALESCE(c.id, -1)";
+                + (ledgerReadService.isActive() ? "" : "WHERE l.qty_sold > 0 ")
+                + "GROUP BY COALESCE(c.id, -1)";
         List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql,
                 shopTimeService.startOfDay(startDate), shopTimeService.endOfDayExclusive(endDate));
         Map<Long, BigDecimal> revenueByCategory = new HashMap<>();

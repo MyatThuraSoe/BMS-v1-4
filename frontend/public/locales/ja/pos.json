@@ -3,6 +3,7 @@
   "product": "商品",
   "price": "価格",
   "quantity": "数量",
+  "enter_quantity": "数量を入力してください",
   "subtotal": "小計",
   "tax": "税",
   "discount_pct_label": "割引 ({{pct}}%)",

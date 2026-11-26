@@ -18,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -237,6 +238,7 @@ public class GlService {
 
         if (ledgerReadService.isActive()) {
             postLedger(entries, accounts, startTs, endTs);
+            postLedgerPurchaseTax(entries, accounts, startTs, endTs);
         } else if (legacyEnabled()) {
             postPurchases(entries, accounts, start, end);
             postSales(entries, accounts, startTs, endTs);
@@ -300,6 +302,7 @@ public class GlService {
                     || row.getEventType() == ProfitLedger.EventType.PURCHASE_VARIANCE) {
                 addSignedPair(entries, accounts, date, reference, "Ledger operating expense", GlMapping.EventType.OPERATING_EXPENSE,
                         GlMapping.EventType.EXPENSE_PAYABLE, row.getExpense());
+                settlePaidExpense(entries, accounts, row, date, reference);
             }
         }
         for (InventoryLedger row : inventoryLedgerRepository
@@ -316,6 +319,103 @@ public class GlService {
             addSignedPair(entries, accounts, row.getOccurredAt().toLocalDate(), row.getSourceType() + "-" + row.getSourceId(),
                     row.getReason() != null ? row.getReason() : type.name(),
                     GlMapping.EventType.INVENTORY, offset, row.getValueDelta());
+        }
+    }
+
+    /** A cash-settled expense must clear the payable instead of leaving it unpaid. */
+    private void settlePaidExpense(List<JournalEntryResponse> entries,
+                                   Map<GlMapping.EventType, GlAccount> accounts,
+                                   ProfitLedger row, LocalDate date, String reference) {
+        if (!"EXPENSE".equals(row.getSourceType()) || row.getSourceId() == null
+                || money(row.getExpense()).signum() <= 0) {
+            return;
+        }
+        Expense expense = expenseRepository.findById(row.getSourceId()).orElse(null);
+        if (expense == null || !Boolean.TRUE.equals(expense.getSettled())) {
+            return;
+        }
+        addPair(entries, accounts, date, reference, "Cash payment of " + reference,
+                GlMapping.EventType.EXPENSE_PAYABLE, GlMapping.EventType.CASH, money(expense.getAmount()));
+    }
+
+    /**
+     * Defect 3: the inventory ledger only carries the goods value of a receipt,
+     * while the supplier payable (and therefore the supplier payment) includes
+     * recoverable tax. Post that tax as an asset at the same event date, and
+     * reverse it on the matching RTV row, so AP settles to zero.
+     */
+    private void postLedgerPurchaseTax(List<JournalEntryResponse> entries,
+                                       Map<GlMapping.EventType, GlAccount> accounts,
+                                       LocalDateTime startTs, LocalDateTime endTs) {
+        Map<Long, Purchase> purchases = new HashMap<>();
+        Map<Long, Map<Long, BigDecimal>> taxShares = new HashMap<>();
+        for (InventoryLedger row : inventoryLedgerRepository
+                .findByOccurredAtGreaterThanEqualAndOccurredAtLessThanOrderByOccurredAtAscIdAsc(startTs, endTs)) {
+            boolean receipt = row.getEventType() == InventoryLedger.EventType.RECEIPT
+                    && "PURCHASE".equals(row.getSourceType());
+            boolean rtv = row.getEventType() == InventoryLedger.EventType.RTV
+                    && "PURCHASE_RTV".equals(row.getSourceType());
+            if ((!receipt && !rtv) || row.getSourceId() == null || row.getQtyDelta() == null
+                    || row.getLineKey() == null) {
+                continue;
+            }
+            Purchase purchase = purchases.computeIfAbsent(row.getSourceId(),
+                    id -> purchaseRepository.findById(id).orElse(null));
+            if (purchase == null || !purchase.isTaxRecoverable()) {
+                continue;
+            }
+            BigDecimal tax = money(purchase.getTaxAmount());
+            if (tax.signum() == 0) {
+                continue;
+            }
+            Long itemId = parseLedgerItemId(row.getLineKey());
+            if (itemId == null) {
+                continue;
+            }
+            Map<Long, BigDecimal> shares = taxShares.computeIfAbsent(purchase.getId(), id -> {
+                List<LandedCostAllocator.Line> lines = new ArrayList<>();
+                for (PurchaseItem item : purchase.getItems()) {
+                    int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                    lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
+                            item.getProduct().getWeight()));
+                }
+                return LandedCostAllocator.allocateByValue(lines, tax);
+            });
+            PurchaseItem item = purchase.getItems().stream()
+                    .filter(candidate -> itemId.equals(candidate.getId()))
+                    .findFirst().orElse(null);
+            int ordered = item != null && item.getQuantity() != null ? item.getQuantity() : 0;
+            if (ordered <= 0) {
+                continue;
+            }
+            BigDecimal share = shares.getOrDefault(itemId, BigDecimal.ZERO);
+            BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
+            BigDecimal amount = share.divide(BigDecimal.valueOf(ordered), 6, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(Math.abs(row.getQtyDelta())))
+                    .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+            if (amount.signum() == 0) {
+                continue;
+            }
+            LocalDate date = row.getOccurredAt().toLocalDate();
+            String reference = purchase.getPurchaseNumber() + "-tax-" + itemId;
+            if (receipt) {
+                addPair(entries, accounts, date, reference,
+                        "Recoverable input tax on purchase " + purchase.getPurchaseNumber(),
+                        GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE, amount);
+            } else {
+                addPair(entries, accounts, date, reference,
+                        "Recoverable input tax reversed on return to vendor " + purchase.getPurchaseNumber(),
+                        GlMapping.EventType.ACCOUNTS_PAYABLE, GlMapping.EventType.INPUT_TAX, amount);
+            }
+        }
+    }
+
+    private static Long parseLedgerItemId(String lineKey) {
+        int colon = lineKey.indexOf(':');
+        try {
+            return Long.valueOf(colon > 0 ? lineKey.substring(0, colon) : lineKey);
+        } catch (NumberFormatException ex) {
+            return null;
         }
     }
 
@@ -487,20 +587,25 @@ public class GlService {
         BigDecimal cashPaid = moneyVoidCash(sale);
         BigDecimal arCashPaid = moneyVoidArCash(sale);
         BigDecimal arNonCashPaid = moneyVoidArNonCash(sale);
-        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale);
+        BigDecimal storeCreditPaid = moneyVoidStoreCredit(sale);
+        BigDecimal saleNonCashPaid = moneyVoidSaleNonCash(sale).subtract(storeCreditPaid).max(BigDecimal.ZERO);
         BigDecimal cashAlreadyRefunded = safeSumVoid(sale);
 
         BigDecimal cashCollected = cashPaid.add(arCashPaid);
         BigDecimal nonCashCollected = arNonCashPaid.add(saleNonCashPaid);
         BigDecimal refundsAgainstCash = cashAlreadyRefunded.min(cashCollected);
-        BigDecimal refundsAgainstNonCash = cashAlreadyRefunded.subtract(refundsAgainstCash)
-                .max(BigDecimal.ZERO);
+        BigDecimal refundsAfterCash = cashAlreadyRefunded.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstNonCash = refundsAfterCash.min(nonCashCollected);
         BigDecimal remainingCashOwed = cashCollected.subtract(refundsAgainstCash).max(BigDecimal.ZERO);
         BigDecimal remainingNonCashOwed = nonCashCollected.subtract(refundsAgainstNonCash)
                 .max(BigDecimal.ZERO);
+        BigDecimal refundsAgainstStoreCredit = refundsAfterCash.subtract(refundsAgainstNonCash)
+                .min(storeCreditPaid);
+        BigDecimal remainingStoreCreditOwed = storeCreditPaid.subtract(refundsAgainstStoreCredit)
+                .max(BigDecimal.ZERO);
 
         BigDecimal netCashRefund = remainingCashOwed;
-        BigDecimal netNonCashRefund = remainingNonCashOwed;
+        BigDecimal netNonCashRefund = remainingNonCashOwed.add(remainingStoreCreditOwed);
 
         boolean isCreditSale = sale.getSaleType() == Sale.SaleType.CREDIT;
 
@@ -508,12 +613,17 @@ public class GlService {
             add(entries, accounts, date, reference, "Void reversal",
                     GlMapping.EventType.CASH, BigDecimal.ZERO, netCashRefund);
         }
-        if (netNonCashRefund.signum() > 0) {
+        if (remainingStoreCreditOwed.signum() > 0) {
+            add(entries, accounts, date, reference, "Void store credit",
+                    GlMapping.EventType.REFUND_LIABILITY, BigDecimal.ZERO, remainingStoreCreditOwed);
+        }
+        BigDecimal otherNonCashRefund = netNonCashRefund.subtract(remainingStoreCreditOwed);
+        if (otherNonCashRefund.signum() > 0) {
             GlMapping.EventType nonCashAccount = isCreditSale
                     ? GlMapping.EventType.REFUND_LIABILITY
                     : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, "Void reversal",
-                    nonCashAccount, BigDecimal.ZERO, netNonCashRefund);
+                    nonCashAccount, BigDecimal.ZERO, otherNonCashRefund);
         }
         BigDecimal outstanding = voidTender.subtract(netCashRefund).subtract(netNonCashRefund);
         if (outstanding.signum() > 0) {
@@ -577,6 +687,14 @@ public class GlService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
     }
 
+    private BigDecimal moneyVoidStoreCredit(Sale sale) {
+        List<SalePayment> payments = sale.getPayments() != null ? sale.getPayments() : List.of();
+        return payments.stream()
+                .filter(p -> p.getPaymentMethod() == PaymentMethod.STORE_CREDIT)
+                .map(p -> money(p.getAmount()))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+    }
+
     private BigDecimal safeSumVoid(Sale sale) {
         return safeSum(saleReturnRepository.sumRefundedAmountBySaleId(sale.getId()));
     }
@@ -605,7 +723,9 @@ public class GlService {
             GlMapping.EventType account = payment.getPaymentMethod() == PaymentMethod.CASH
                     ? GlMapping.EventType.CASH
                     : payment.getPaymentMethod() == PaymentMethod.CREDIT
-                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE : GlMapping.EventType.TENDER_CLEARING;
+                    ? GlMapping.EventType.ACCOUNTS_RECEIVABLE
+                    : payment.getPaymentMethod() == PaymentMethod.STORE_CREDIT
+                    ? GlMapping.EventType.REFUND_LIABILITY : GlMapping.EventType.TENDER_CLEARING;
             add(entries, accounts, date, reference, description, account,
                     part.max(BigDecimal.ZERO), part.negate().max(BigDecimal.ZERO));
         }
@@ -678,7 +798,9 @@ public class GlService {
                 continue;
             }
             GlMapping.EventType debit = payment.getPaymentMethod() == PaymentMethod.CASH
-                    ? GlMapping.EventType.CASH : GlMapping.EventType.TENDER_CLEARING;
+                    ? GlMapping.EventType.CASH
+                    : payment.getPaymentMethod() == PaymentMethod.STORE_CREDIT
+                    ? GlMapping.EventType.REFUND_LIABILITY : GlMapping.EventType.TENDER_CLEARING;
             addPair(entries, accounts, payment.getPaymentDate().toLocalDate(), "ARP-" + payment.getId(),
                     "AR collection", debit, GlMapping.EventType.ACCOUNTS_RECEIVABLE, amount);
         }
@@ -689,7 +811,11 @@ public class GlService {
         // postVoidReversal (which nets against returns), so skip the standalone
         // ARP-REV row here to avoid double-counting.
         for (ArPayment payment : arPaymentRepository.findReversedForJournal(startTs, endTs)) {
-            if (payment.getInvoice() != null && payment.getInvoice().getIsVoided()) {
+            // Legacy voids are reversed by postVoidReversal, which nets returns.
+            // The ledger path has no equivalent standalone reversal, so the
+            // dated ARP-REV rows must be journaled there or AR and Cash drift.
+            if (!ledgerReadService.isActive()
+                    && payment.getInvoice() != null && payment.getInvoice().getIsVoided()) {
                 continue;
             }
             BigDecimal amount = money(payment.getAmount());
@@ -740,9 +866,15 @@ public class GlService {
             if (amount.signum() == 0) {
                 continue;
             }
-            addPair(entries, accounts, expense.getExpenseDate(), "EXP-" + expense.getId(),
+            String reference = "EXP-" + expense.getId();
+            addPair(entries, accounts, expense.getExpenseDate(), reference,
                     expense.getDescription() != null ? expense.getDescription() : "Expense",
                     GlMapping.EventType.OPERATING_EXPENSE, GlMapping.EventType.EXPENSE_PAYABLE, amount);
+            if (Boolean.TRUE.equals(expense.getSettled())) {
+                addPair(entries, accounts, expense.getExpenseDate(), reference,
+                        "Cash payment of " + reference,
+                        GlMapping.EventType.EXPENSE_PAYABLE, GlMapping.EventType.CASH, amount);
+            }
         }
     }
 
@@ -756,7 +888,7 @@ public class GlService {
             String refType = movement.getReferenceType() != null
                     ? movement.getReferenceType().trim().toUpperCase() : "";
             if (refType.equals("SALE") || refType.equals("SALE_RETURN") || refType.equals("AR_PAYMENT")
-                    || refType.equals("PURCHASE_PAYMENT")) {
+                    || refType.equals("PURCHASE_PAYMENT") || refType.equals("EXPENSE")) {
                 continue;
             }
             if (movement.getMovementType() == DrawerMovementType.CASH_SALE

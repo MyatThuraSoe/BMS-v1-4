@@ -15,6 +15,7 @@ import com.bms.entity.Location;
 import com.bms.entity.PaymentMethod;
 import com.bms.entity.Product;
 import com.bms.entity.ProductPriceHistory;
+import com.bms.entity.Promotion;
 import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
@@ -27,6 +28,7 @@ import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.CustomerRepository;
 import com.bms.repository.ProductRepository;
 import com.bms.repository.ProductPriceHistoryRepository;
+import com.bms.repository.PromotionRepository;
 import com.bms.repository.SaleItemRepository;
 import com.bms.repository.SalePaymentRepository;
 import com.bms.repository.SaleRepository;
@@ -100,6 +102,10 @@ public class SaleReturnService {
 
     @Autowired
     private ShopTimeService shopTimeService;
+
+    /** Optional so unit tests and installs without promotions keep working. */
+    @Autowired(required = false)
+    private PromotionRepository promotionRepository;
 
     /**
      * Snapshot of what can still be returned for a sale. Prices come straight
@@ -228,16 +234,12 @@ public class SaleReturnService {
                         + ". Returnable quantity is " + returnableQuantity);
             }
 
-            // Return the tax-inclusive original sale price (tax was charged at sale time,
-            // so it must be given back too — otherwise returns silently leak tax). The
-            // customer's share of any sale-level discount is deducted first, otherwise a
-            // return on a discounted sale refunds more than was actually paid.
+            // P7: re-price the units the customer KEEPS under the original
+            // promotion. Returning part of a BOGO/tiered deal must not leave the
+            // remaining units at the old discounted average.
             int remainingAfter = returnableQuantity - requestedQuantity;
-            BigDecimal returnAmount = SaleDiscountUtils.netItemRevenue(sale, saleItem, returnableQuantity)
-                    .subtract(SaleDiscountUtils.netItemRevenue(sale, saleItem, remainingAfter))
-                    .add(SaleDiscountUtils.taxForQuantity(saleItem, returnableQuantity)
-                            .subtract(SaleDiscountUtils.taxForQuantity(saleItem, remainingAfter)))
-                    .setScale(2, RoundingMode.HALF_UP);
+            BigDecimal returnAmount = promotionalReturnAmount(sale, saleItem,
+                    returnableQuantity, remainingAfter);
 
             Product product = productRepository.findByIdForUpdate(saleItem.getProduct().getId())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + saleItem.getProduct().getId()));
@@ -629,6 +631,57 @@ public class SaleReturnService {
         }
         creditCustomer.setCurrentBalance(newBalance);
         customerRepository.save(creditCustomer);
+    }
+
+    /**
+     * Refund the difference between what was paid for the returnable units and
+     * what the units the customer keeps would cost under the promotion that was
+     * applied at sale time. Clamped to the amount originally paid for the line.
+     */
+    private BigDecimal promotionalReturnAmount(Sale sale, SaleItem item,
+                                                int returnableBefore, int keptAfter) {
+        BigDecimal paid = SaleDiscountUtils.netItemRevenue(sale, item, returnableBefore)
+                .add(SaleDiscountUtils.taxForQuantity(item, returnableBefore))
+                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal keptValue = keptLineValue(sale, item, keptAfter)
+                .add(SaleDiscountUtils.taxForQuantity(item, keptAfter))
+                .setScale(2, RoundingMode.HALF_UP);
+        return paid.subtract(keptValue).setScale(2, RoundingMode.HALF_UP)
+                .max(BigDecimal.ZERO).min(paid).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /** Value of the units kept after the return, re-priced with the original deal. */
+    private BigDecimal keptLineValue(Sale sale, SaleItem item, int keptAfter) {
+        if (keptAfter <= 0) {
+            return BigDecimal.ZERO;
+        }
+        int soldQuantity = item.getQuantity() != null ? item.getQuantity() : 0;
+        if (soldQuantity <= 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal listPrice = item.getOriginalUnitPrice() != null
+                ? item.getOriginalUnitPrice() : item.getUnitPrice();
+        if (listPrice == null || listPrice.signum() == 0) {
+            return BigDecimal.ZERO;
+        }
+        BigDecimal unitPrice = listPrice;
+        if (item.getPromotionId() != null && promotionRepository != null) {
+            Promotion promotion = promotionRepository.findById(item.getPromotionId()).orElse(null);
+            if (promotion != null) {
+                BigDecimal dealPrice = PromotionService.priceForPromotion(promotion, listPrice, keptAfter);
+                if (dealPrice != null) {
+                    unitPrice = dealPrice.min(listPrice).max(BigDecimal.ZERO);
+                }
+            }
+        }
+        BigDecimal gross = unitPrice.multiply(BigDecimal.valueOf(keptAfter));
+        BigDecimal fullGross = listPrice.multiply(BigDecimal.valueOf(soldQuantity));
+        BigDecimal lineDiscount = SaleDiscountUtils.discountForItem(sale, item);
+        BigDecimal keptDiscount = fullGross.signum() > 0
+                ? lineDiscount.multiply(gross).divide(fullGross, 2, RoundingMode.HALF_UP)
+                        .min(gross).max(BigDecimal.ZERO)
+                : BigDecimal.ZERO;
+        return gross.subtract(keptDiscount).setScale(2, RoundingMode.HALF_UP).max(BigDecimal.ZERO);
     }
 
     /**

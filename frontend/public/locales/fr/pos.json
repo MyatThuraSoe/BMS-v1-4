@@ -3,6 +3,7 @@
   "product": "Produit",
   "price": "Prix",
   "quantity": "Qté",
+  "enter_quantity": "Saisissez une quantité",
   "subtotal": "Sous-total",
   "tax": "Taxe",
   "discount_pct_label": "Remise ({{pct}}%)",

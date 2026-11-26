@@ -121,7 +121,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     );
 
     // Customer Statics
-    @Query("SELECT SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false AND s.saleDate >= :startDate")
+    @Query("""
+        SELECT SUM(s.totalAmount - COALESCE(s.amountReturned, 0)
+            - CASE WHEN s.saleType = com.bms.entity.Sale.SaleType.CASH
+                  THEN COALESCE((SELECT SUM(r.totalReturnAmount) FROM SaleReturn r
+                                 WHERE r.sale.id = s.id), 0)
+                  ELSE 0 END)
+        FROM Sale s
+        WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL
+          AND s.isVoided = false AND s.saleDate >= :startDate
+        """)
     BigDecimal sumTotalAmountByCustomerIdAndDateAfter(@Param("customerId") Long customerId, @Param("startDate") java.time.LocalDateTime startDate);
 
     @Query("SELECT COUNT(s) FROM Sale s WHERE s.customer.id = :customerId AND s.isActive = true AND s.deletedAt IS NULL AND s.isVoided = false")
@@ -134,7 +143,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             "ORDER BY totalQty DESC")
     List<Object[]> findTopProductsByCustomerId(@Param("customerId") Long customerId, org.springframework.data.domain.Pageable pageable);
 
-    @Query("SELECT CAST(s.saleDate AS DATE), SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) " +
+    @Query("SELECT CAST(s.saleDate AS DATE), " +
+            "SUM(s.totalAmount - COALESCE(s.amountReturned, 0) " +
+            "- CASE WHEN s.saleType = com.bms.entity.Sale.SaleType.CASH " +
+            "THEN COALESCE((SELECT SUM(r.totalReturnAmount) FROM SaleReturn r WHERE r.sale.id = s.id), 0) " +
+            "ELSE 0 END) " +
             "FROM Sale s " +
             "WHERE s.customer.id = :customerId " +
             "AND YEAR(s.saleDate) = :year " +
@@ -217,7 +230,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     // net of returns.
     @Query("""
         SELECT s.customer.id, s.customer.firstName, s.customer.lastName, s.customer.phone,
-               COUNT(s.id), SUM(s.totalAmount - COALESCE(s.amountReturned, 0)),
+               COUNT(s.id), SUM(s.totalAmount - COALESCE(s.amountReturned, 0)
+                   - CASE WHEN s.saleType = com.bms.entity.Sale.SaleType.CASH
+                         THEN COALESCE((SELECT SUM(r.totalReturnAmount) FROM SaleReturn r
+                                        WHERE r.sale.id = s.id), 0)
+                         ELSE 0 END),
                MIN(s.saleDate), MAX(s.saleDate)
         FROM Sale s
         WHERE s.customer IS NOT NULL
@@ -225,7 +242,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
           AND s.isActive = true
           AND s.deletedAt IS NULL
         GROUP BY s.customer.id, s.customer.firstName, s.customer.lastName, s.customer.phone
-        ORDER BY SUM(s.totalAmount - COALESCE(s.amountReturned, 0)) DESC
+        ORDER BY SUM(s.totalAmount - COALESCE(s.amountReturned, 0)
+                   - CASE WHEN s.saleType = com.bms.entity.Sale.SaleType.CASH
+                         THEN COALESCE((SELECT SUM(r.totalReturnAmount) FROM SaleReturn r
+                                        WHERE r.sale.id = s.id), 0)
+                         ELSE 0 END) DESC
         """)
     List<Object[]> findCustomerLtvData();
 

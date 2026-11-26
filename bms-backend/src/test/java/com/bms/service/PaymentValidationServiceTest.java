@@ -250,23 +250,22 @@ class PaymentValidationServiceTest {
         assertEquals("NO_OPEN_SHIFT", response.getCode());
     }
 
-    // BUG-2: store credit and CREDIT are not valid settlement/payment methods
+    // D4: store credit is a real tender; the balance cap is enforced by the
+    // caller under a customer lock, not by this generic shift validator.
     @Test
-    void verifyForSaleRejectsStoreCreditLine() {
-        BusinessException ex = assertThrows(BusinessException.class, () ->
-                paymentValidationService.verifyForSale(
-                        shift(ShiftType.CASH_DRAWER, DrawerSessionStatus.OPEN),
-                        List.of(payment("STORE_CREDIT", "10000")),
-                        new BigDecimal("10000"),
-                        Sale.SaleType.CASH));
-        assertTrue(ex.getMessage().startsWith("PAYMENT_INVALID"));
+    void verifyForSaleAcceptsStoreCreditLine() {
+        paymentValidationService.verifyForSale(
+                shift(ShiftType.CASH_DRAWER, DrawerSessionStatus.OPEN),
+                List.of(payment("STORE_CREDIT", "10000")),
+                new BigDecimal("10000"),
+                Sale.SaleType.CASH);
     }
 
     @Test
-    void parseSettlementMethodRejectsCreditAndStoreCredit() {
+    void parseSettlementMethodRejectsOnlyCredit() {
         assertThrows(BusinessException.class, () ->
                 paymentValidationService.parseSettlementMethod("CREDIT"));
-        assertThrows(BusinessException.class, () ->
+        assertEquals(PaymentMethod.STORE_CREDIT,
                 paymentValidationService.parseSettlementMethod("STORE_CREDIT"));
     }
 

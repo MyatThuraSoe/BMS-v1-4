@@ -339,7 +339,8 @@ public class PromotionService {
         }
     }
 
-    private BigDecimal priceForPromotion(Promotion promotion, BigDecimal original, int quantity) {
+    /** Unit price for a quantity under the promotion's original quantity rule. */
+    public static BigDecimal priceForPromotion(Promotion promotion, BigDecimal original, int quantity) {
         switch (promotion.getType()) {
             case PERCENT_DISCOUNT:
             case FLASH_SALE:
@@ -375,7 +376,7 @@ public class PromotionService {
         }
     }
 
-    private BigDecimal percentOff(BigDecimal price, BigDecimal percent) {
+    private static BigDecimal percentOff(BigDecimal price, BigDecimal percent) {
         if (percent == null || percent.compareTo(BigDecimal.ZERO) <= 0) {
             return null;
         }

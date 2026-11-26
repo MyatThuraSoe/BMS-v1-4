@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .js,.jsx",
     "lint:fix": "eslint src --ext .js,.jsx --fix",
-    "test": "node --test src/utils/returnEstimate.test.js",
+    "test": "node --test src/utils/*.test.js",
     "e2e": "playwright test"
   },
   "dependencies": {

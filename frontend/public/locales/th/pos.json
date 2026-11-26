@@ -3,6 +3,7 @@
   "product": "สินค้า",
   "price": "ราคา",
   "quantity": "จำนวน",
+  "enter_quantity": "กรุณาใส่จำนวน",
   "subtotal": "ยอดรวมย่อย",
   "tax": "ภาษี",
   "discount_pct_label": "ส่วนลด ({{pct}}%)",

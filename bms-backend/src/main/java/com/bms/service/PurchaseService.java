@@ -108,12 +108,20 @@ public class PurchaseService {
         return mapToResponse(purchase);
     }
 
+    /** Products already get this check on purchases; suppliers must too. */
+    private static void assertSupplierActive(Supplier supplier) {
+        if (!Boolean.TRUE.equals(supplier.getIsActive()) || supplier.getDeletedAt() != null) {
+            throw new BusinessException("Supplier '" + supplier.getName() + "' is inactive");
+        }
+    }
+
     public PurchaseResponse createPurchase(PurchaseCreateRequest request, Long userId) {
         periodGuard.assertOpen(LocalDate.parse(request.getPurchaseDate(), DateTimeFormatter.ISO_LOCAL_DATE));
         Supplier supplier = null;
         if (request.getSupplierId() != null) {
             supplier = supplierRepository.findById(request.getSupplierId())
                     .orElseThrow(() -> new ResourceNotFoundException("Supplier not found: " + request.getSupplierId()));
+            assertSupplierActive(supplier);
         }
 
         if (request.getItems() == null || request.getItems().isEmpty()) {
@@ -1161,6 +1169,7 @@ public class PurchaseService {
             supplier = supplierRepository.findById(request.getSupplierId())
                     .orElseThrow(() -> new ResourceNotFoundException(
                             "Supplier not found: " + request.getSupplierId()));
+            assertSupplierActive(supplier);
         }
         if (request.getItems() == null || request.getItems().isEmpty()) {
             throw new BusinessException("Purchase must have at least one item");
@@ -1257,7 +1266,9 @@ public class PurchaseService {
         BigDecimal paidAmount = purchasePaymentService.paidAmount(purchase.getId());
         BigDecimal payable = purchase.getPayableAmount();
         response.setPaidAmount(paidAmount);
-        response.setOutstandingAmount(payable.subtract(paidAmount).max(BigDecimal.ZERO));
+        // Negative means the supplier owes us after a return; show it instead
+        // of hiding the credit behind a zero balance.
+        response.setOutstandingAmount(payable.subtract(paidAmount));
         response.setPaymentStatus(PurchasePaymentService.deriveStatus(payable, paidAmount).name());
         response.setReceivingStatus(purchase.getReceivingStatus().name());
         response.setCurrencyCode(purchase.getCurrencyCode());

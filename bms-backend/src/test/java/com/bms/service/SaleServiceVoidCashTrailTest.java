@@ -59,6 +59,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * P6: voids must always leave a cash trail.
@@ -209,10 +210,17 @@ class SaleServiceVoidCashTrailTest {
         lenient().when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(stockMovementRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(saleReturnService.findBySaleId(100L)).thenReturn(List.of());
+        CashShift ownShift = new CashShift();
+        ownShift.setId(91L);
+        ownShift.setShiftType(ShiftType.CASH_DRAWER);
+        ownShift.setDrawerSession(todaySession);
         lenient().when(cashShiftRepository.findByCashierIdAndStatus(anyLong(), anyString()))
                 .thenReturn(Optional.empty());
+        lenient().when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN"))
+                .thenReturn(Optional.of(ownShift));
         lenient().when(cashDrawerSessionService.getActiveDrawers()).thenReturn(List.of(currentDrawer));
         lenient().when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(todaySession);
+        lenient().when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(todaySession);
         lenient().when(cashDrawerSessionService.recordFinancialMovement(
                 any(), any(), any(), anyString(), anyLong(), any(), any(), anyString()))
                 .thenAnswer(inv -> {
@@ -341,8 +349,47 @@ class SaleServiceVoidCashTrailTest {
     }
 
     @Test
+    void lateVoidUsesTheVoidingUsersOwnOpenDrawer() {
+        CashDrawer otherDrawer = new CashDrawer();
+        otherDrawer.setId(71L);
+        CashDrawerSession otherSession = new CashDrawerSession();
+        otherSession.setId(82L);
+        otherSession.setDrawer(otherDrawer);
+        otherSession.setStatus(DrawerSessionStatus.OPEN);
+        CashShift ownShift = new CashShift();
+        ownShift.setId(91L);
+        ownShift.setShiftType(ShiftType.CASH_DRAWER);
+        ownShift.setDrawerSession(todaySession);
+
+        when(cashDrawerSessionService.getActiveDrawers()).thenReturn(List.of(otherDrawer, currentDrawer));
+        when(cashDrawerSessionService.getOpenSession(71L)).thenReturn(otherSession);
+        when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(todaySession);
+        when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN")).thenReturn(Optional.of(ownShift));
+
+        saleService.voidSale(100L, 1L, "Duplicate receipt");
+
+        verify(cashDrawerSessionService).recordFinancialMovement(
+                eq(todaySession), eq(DrawerMovementType.PAY_OUT), eq(new BigDecimal("-100.00")),
+                eq("SALE"), eq(100L), any(), eq(ownShift), anyString());
+        verify(cashDrawerSessionService, never()).recordFinancialMovement(
+                eq(otherSession), any(), any(), anyString(), anyLong(), any(), any(), anyString());
+    }
+
+    @Test
+    void lateVoidRequiresTheVoidingUsersOwnOpenDrawer() {
+        when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN")).thenReturn(Optional.empty());
+
+        BusinessException ex = assertThrows(BusinessException.class,
+                () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
+        assertTrue(ex.getMessage().toLowerCase().contains("cash drawer shift"), ex.getMessage());
+        assertFalse(sale.getIsVoided());
+        verify(cashDrawerSessionService, never()).recordFinancialMovement(
+                any(), any(), any(), anyString(), anyLong(), any(), any(), anyString());
+    }
+
+    @Test
     void voidWithNoOpenDrawerIsRejected() {
-        lenient().when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(null);
+        lenient().when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(null);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
