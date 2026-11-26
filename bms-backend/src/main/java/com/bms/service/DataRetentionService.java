@@ -175,7 +175,10 @@ public class DataRetentionService {
 
     private void assertFullySettled(List<Sale> candidates) {
         List<String> blocked = candidates.stream()
-                .filter(sale -> sale.getPaymentStatus() != Sale.PaymentStatus.PAID)
+                // A voided invoice keeps its old UNPAID/PARTIAL status but owes
+                // nothing, so it must not hold historical cleanup hostage.
+                .filter(sale -> !Boolean.TRUE.equals(sale.getIsVoided())
+                        && sale.getPaymentStatus() != Sale.PaymentStatus.PAID)
                 .map(sale -> sale.getInvoiceNumber() + " (" + sale.getPaymentStatus() + ")")
                 .toList();
         if (!blocked.isEmpty()) {
