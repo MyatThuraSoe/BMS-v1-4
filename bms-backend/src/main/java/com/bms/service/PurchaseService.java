@@ -970,6 +970,30 @@ public class PurchaseService {
     // Reversal / update / delete
     // ------------------------------------------------------------------
 
+    /** Recoverable input tax attached to the units being reversed, in invoice currency. */
+    private BigDecimal recoverableTaxReversal(Purchase purchase, PurchaseItem item, int quantity) {
+        if (!purchase.isTaxRecoverable() || purchase.getTaxAmount() == null
+                || purchase.getTaxAmount().signum() <= 0 || quantity <= 0) {
+            return BigDecimal.ZERO;
+        }
+        int ordered = item.getQuantity() != null ? item.getQuantity() : 0;
+        if (ordered <= 0) {
+            return BigDecimal.ZERO;
+        }
+        List<LandedCostAllocator.Line> lines = new ArrayList<>();
+        for (PurchaseItem line : purchase.getItems()) {
+            int qty = line.getQuantity() != null ? line.getQuantity() : 0;
+            lines.add(new LandedCostAllocator.Line(line.getId(), line.getUnitCost(), qty,
+                    line.getProduct().getWeight()));
+        }
+        BigDecimal share = LandedCostAllocator.allocateByValue(lines, purchase.getTaxAmount())
+                .getOrDefault(item.getId(), BigDecimal.ZERO);
+        BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
+        return share.divide(BigDecimal.valueOf(ordered), 6, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(quantity))
+                .multiply(fx).setScale(2, RoundingMode.HALF_UP);
+    }
+
     /**
      * Reverses the stock and weighted-average cost contribution of one purchase
      * line. Exactly the received-minus-returned quantity is reversed, taken
@@ -992,10 +1016,17 @@ public class PurchaseService {
 
         // P1/O8: post the valued reversal BEFORE removing stock; sole writer of cost.
         // Removed units are valued at their own landed base cost over ALL owned units,
-        // with the C8 negative-value guard raising a reconciliation alert.
+        // with the C8 negative-value guard raising a reconciliation alert. The tax
+        // snapshot rides in the line key because an edit deletes these old PO lines
+        // before the journal is generated (audit T6-5).
+        String lineKey = item.getId() + ":" + quantity;
+        BigDecimal taxReversal = recoverableTaxReversal(purchase, item, quantity);
+        if (taxReversal.signum() > 0) {
+            lineKey = lineKey + ":" + taxReversal.toPlainString();
+        }
         InventoryLedger posting = ledgerPostingService.postInventory(
                 product, InventoryLedger.EventType.ADJUSTMENT, "PURCHASE_REVERSAL", purchase.getId(),
-                item.getId() + ":" + quantity, -quantity, item.getBaseUnitCost(),
+                lineKey, -quantity, item.getBaseUnitCost(),
                 item.getBaseUnitCost().multiply(BigDecimal.valueOf(quantity)).negate(),
                 null, "Purchase " + operation, shopTimeService.now(), userId,
                 message -> recordCostReconciliationAlert(userId, product, purchase, message));

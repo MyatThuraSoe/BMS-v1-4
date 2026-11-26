@@ -355,56 +355,70 @@ public class GlService {
                     && "PURCHASE".equals(row.getSourceType());
             boolean rtv = row.getEventType() == InventoryLedger.EventType.RTV
                     && "PURCHASE_RTV".equals(row.getSourceType());
-            if ((!receipt && !rtv) || row.getSourceId() == null || row.getQtyDelta() == null
+            boolean reversal = row.getEventType() == InventoryLedger.EventType.ADJUSTMENT
+                    && "PURCHASE_REVERSAL".equals(row.getSourceType());
+            if ((!receipt && !rtv && !reversal) || row.getSourceId() == null || row.getQtyDelta() == null
                     || row.getLineKey() == null) {
                 continue;
             }
+            // Purchase edits delete the original lines before the journal runs, so
+            // the reversal row carries its own tax snapshot in the line key.
+            BigDecimal embeddedTax = reversal ? parseLedgerTax(row.getLineKey()) : null;
             Purchase purchase = purchases.computeIfAbsent(row.getSourceId(),
                     id -> purchaseRepository.findById(id).orElse(null));
-            if (purchase == null || !purchase.isTaxRecoverable()) {
+            if (embeddedTax == null && (purchase == null || !purchase.isTaxRecoverable())) {
                 continue;
             }
-            BigDecimal tax = money(purchase.getTaxAmount());
+            BigDecimal tax = embeddedTax != null ? embeddedTax : money(purchase.getTaxAmount());
             if (tax.signum() == 0) {
                 continue;
             }
             Long itemId = parseLedgerItemId(row.getLineKey());
-            if (itemId == null) {
-                continue;
-            }
-            Map<Long, BigDecimal> shares = taxShares.computeIfAbsent(purchase.getId(), id -> {
-                List<LandedCostAllocator.Line> lines = new ArrayList<>();
-                for (PurchaseItem item : purchase.getItems()) {
-                    int qty = item.getQuantity() != null ? item.getQuantity() : 0;
-                    lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
-                            item.getProduct().getWeight()));
+            BigDecimal amount;
+            if (embeddedTax != null) {
+                amount = embeddedTax.setScale(2, RoundingMode.HALF_UP);
+            } else {
+                if (itemId == null) {
+                    continue;
                 }
-                return LandedCostAllocator.allocateByValue(lines, tax);
-            });
-            PurchaseItem item = purchase.getItems().stream()
-                    .filter(candidate -> itemId.equals(candidate.getId()))
-                    .findFirst().orElse(null);
-            int ordered = item != null && item.getQuantity() != null ? item.getQuantity() : 0;
-            if (ordered <= 0) {
-                continue;
+                Map<Long, BigDecimal> shares = taxShares.computeIfAbsent(purchase.getId(), id -> {
+                    List<LandedCostAllocator.Line> lines = new ArrayList<>();
+                    for (PurchaseItem item : purchase.getItems()) {
+                        int qty = item.getQuantity() != null ? item.getQuantity() : 0;
+                        lines.add(new LandedCostAllocator.Line(item.getId(), item.getUnitCost(), qty,
+                                item.getProduct().getWeight()));
+                    }
+                    return LandedCostAllocator.allocateByValue(lines, tax);
+                });
+                PurchaseItem item = purchase.getItems().stream()
+                        .filter(candidate -> itemId.equals(candidate.getId()))
+                        .findFirst().orElse(null);
+                int ordered = item != null && item.getQuantity() != null ? item.getQuantity() : 0;
+                if (ordered <= 0) {
+                    continue;
+                }
+                BigDecimal share = shares.getOrDefault(itemId, BigDecimal.ZERO);
+                BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
+                amount = share.divide(BigDecimal.valueOf(ordered), 6, RoundingMode.HALF_UP)
+                        .multiply(BigDecimal.valueOf(Math.abs(row.getQtyDelta())))
+                        .multiply(fx).setScale(2, RoundingMode.HALF_UP);
             }
-            BigDecimal share = shares.getOrDefault(itemId, BigDecimal.ZERO);
-            BigDecimal fx = purchase.getExchangeRate() != null ? purchase.getExchangeRate() : BigDecimal.ONE;
-            BigDecimal amount = share.divide(BigDecimal.valueOf(ordered), 6, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(Math.abs(row.getQtyDelta())))
-                    .multiply(fx).setScale(2, RoundingMode.HALF_UP);
             if (amount.signum() == 0) {
                 continue;
             }
             LocalDate date = row.getOccurredAt().toLocalDate();
-            String reference = purchase.getPurchaseNumber() + "-tax-" + itemId;
+            String reference = purchase != null && itemId != null
+                    ? purchase.getPurchaseNumber() + "-tax-" + itemId
+                    : row.getSourceType() + "-" + row.getSourceId() + "-tax";
             if (receipt) {
                 addPair(entries, accounts, date, reference,
                         "Recoverable input tax on purchase " + purchase.getPurchaseNumber(),
                         GlMapping.EventType.INPUT_TAX, GlMapping.EventType.ACCOUNTS_PAYABLE, amount);
             } else {
+                String event = rtv ? "return to vendor " : "reversal of ";
+                String number = purchase != null ? purchase.getPurchaseNumber() : String.valueOf(row.getSourceId());
                 addPair(entries, accounts, date, reference,
-                        "Recoverable input tax reversed on return to vendor " + purchase.getPurchaseNumber(),
+                        "Recoverable input tax reversed on " + event + number,
                         GlMapping.EventType.ACCOUNTS_PAYABLE, GlMapping.EventType.INPUT_TAX, amount);
             }
         }
@@ -414,6 +428,19 @@ public class GlService {
         int colon = lineKey.indexOf(':');
         try {
             return Long.valueOf(colon > 0 ? lineKey.substring(0, colon) : lineKey);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    /** Reversal rows append the tax snapshot as {@code itemId:qty:tax}. */
+    private static BigDecimal parseLedgerTax(String lineKey) {
+        String[] parts = lineKey.split(":", -1);
+        if (parts.length < 3) {
+            return null;
+        }
+        try {
+            return new BigDecimal(parts[2]);
         } catch (NumberFormatException ex) {
             return null;
         }
