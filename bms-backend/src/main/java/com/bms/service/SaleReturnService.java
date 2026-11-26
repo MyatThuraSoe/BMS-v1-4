@@ -582,13 +582,9 @@ public class SaleReturnService {
         if (methods.size() == 1) {
             return methods.iterator().next();
         }
-        // BUG-8b: a mixed-payment sale needs an explicit refund method — the default
-        // of CASH would refund a card portion in cash.
-        if (raw == null || raw.isBlank()) {
-            throw new BusinessException("Choose a refund method");
-        }
-        return methods.contains(PaymentMethod.CASH)
-                ? PaymentMethod.CASH : methods.iterator().next();
+        // BUG-8b: an explicit method was already returned above, so reaching
+        // here means the caller left a mixed-payment refund ambiguous.
+        throw new BusinessException("Choose a refund method");
     }
 
     /**
