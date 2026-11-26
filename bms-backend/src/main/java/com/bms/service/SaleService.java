@@ -401,6 +401,16 @@ public class SaleService {
             }
             sale.setPaymentMethod(resolveLegacyPaymentMethod(paymentLines));
         } else {
+            // Audit T6-3: a zero-total sale has nothing to settle. Positive
+            // payment lines bypassed validation here but still reached the
+            // store-credit debit below (and NPE'd on credit invoices).
+            boolean positivePaymentRequested = request.getPayments() != null
+                    && request.getPayments().stream().anyMatch(line -> line != null
+                            && line.getAmount() != null && line.getAmount().signum() > 0);
+            if (positivePaymentRequested) {
+                throw new BusinessException(
+                        "PAYMENT_INVALID: A zero-total sale cannot have a positive payment line.");
+            }
             // Zero-total sale (100% discount, zero tax): no payment is needed and
             // nothing is owed, so mark it PAID. For credit sales this prevents the
             // invoice from being stuck UNPAID forever (ArService.recordPayment
