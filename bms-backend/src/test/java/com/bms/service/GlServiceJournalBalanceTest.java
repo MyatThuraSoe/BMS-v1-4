@@ -1,6 +1,7 @@
 package com.bms.service;
 
 import com.bms.dto.response.JournalEntryResponse;
+import com.bms.entity.ArPayment;
 import com.bms.entity.GlAccount;
 import com.bms.entity.GlMapping;
 import com.bms.entity.PaymentMethod;
@@ -258,6 +259,32 @@ class GlServiceJournalBalanceTest {
         List<JournalEntryResponse> entries = entriesFor("INV-VOID-MIXED");
         assertMoney("60.00", descriptionCredit(entries, "Void reversal", "CASH"));
         assertMoney("40.00", descriptionCredit(entries, "Void reversal", "TENDER_CLEARING"));
+    }
+
+    @Test
+    void t6_voidReversalDoesNotTurnTheCreditDebtRowIntoRefundLiability() {
+        Sale sale = sale("INV-VOID-CREDIT-DEBT", BigDecimal.ZERO, BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO);
+        sale.setSaleType(Sale.SaleType.CREDIT);
+        sale.setPaymentMethod(Sale.PaymentMethod.CREDIT);
+        addPayment(sale, PaymentMethod.CREDIT, "100.00");
+
+        ArPayment collectedCash = new ArPayment();
+        collectedCash.setInvoice(sale);
+        collectedCash.setAmount(new BigDecimal("30.00"));
+        collectedCash.setPaymentMethod(PaymentMethod.CASH);
+        collectedCash.setPaymentDate(LocalDateTime.now());
+        lenient().when(arPaymentRepository.findByInvoiceIdOrderByPaymentDateAsc(sale.getId()))
+                .thenReturn(List.of(collectedCash));
+
+        sale.setVoidedAt(LocalDateTime.now());
+        lenient().when(saleRepository.findVoidedForJournal(any(), any())).thenReturn(List.of(sale));
+
+        List<JournalEntryResponse> entries = entriesFor("INV-VOID-CREDIT-DEBT");
+        assertMoney("0.00", descriptionCredit(entries, "Void reversal", "REFUND_LIABILITY"));
+        assertMoney("70.00", descriptionCredit(entries, "Void reversal", "ACCOUNTS_RECEIVABLE"));
+        assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)),
+                "void reversal must balance: " + entries);
     }
 
     @Test
