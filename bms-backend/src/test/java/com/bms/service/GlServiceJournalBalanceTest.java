@@ -25,8 +25,6 @@ import com.bms.repository.PurchaseRepository;
 import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
-import com.bms.repository.SystemSettingRepository;
-import com.bms.entity.SystemSetting;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,7 +40,6 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -68,7 +65,6 @@ class GlServiceJournalBalanceTest {
     @Mock private CashDrawerMovementRepository cashDrawerMovementRepository;
     @Mock private LedgerReadService ledgerReadService;
     @Mock private PurchasePaymentRepository purchasePaymentRepository;
-    @Mock private SystemSettingRepository systemSettingRepository;
 
     private GlService glService;
     private final List<Sale> journalSales = new ArrayList<>();
@@ -82,10 +78,7 @@ class GlServiceJournalBalanceTest {
                 cashDrawerMovementRepository);
         ReflectionTestUtils.setField(glService, "ledgerReadService", ledgerReadService);
         ReflectionTestUtils.setField(glService, "purchasePaymentRepository", purchasePaymentRepository);
-        ReflectionTestUtils.setField(glService, "systemSettingRepository", systemSettingRepository);
         lenient().when(ledgerReadService.isActive()).thenReturn(false);
-        lenient().when(systemSettingRepository.findBySettingKey("accounting.ledger.legacy.enabled"))
-                .thenReturn(Optional.of(legacySetting()));
         lenient().when(purchasePaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
 
         List<GlMapping> mappings = new ArrayList<>();
@@ -598,13 +591,6 @@ class GlServiceJournalBalanceTest {
         assertEquals(0, sumDebits(entries).compareTo(sumCredits(entries)));
         assertMoney("45.00", eventDebit(entries, "OPERATING_EXPENSE"));
         assertMoney("45.00", eventCredit(entries, "INVENTORY"));
-    }
-
-    private SystemSetting legacySetting() {
-        SystemSetting setting = new SystemSetting();
-        setting.setSettingKey("accounting.ledger.legacy.enabled");
-        setting.setSettingValue("true");
-        return setting;
     }
 
     /**

@@ -85,7 +85,6 @@ class ReportServiceInventoryLossTest {
                 cashDrawerMovementRepository);
         ReflectionTestUtils.setField(glService, "ledgerReadService", ledgerReadService);
         ReflectionTestUtils.setField(glService, "purchasePaymentRepository", purchasePaymentRepository);
-        ReflectionTestUtils.setField(glService, "systemSettingRepository", systemSettingRepository);
         lenient().when(purchasePaymentRepository.findForJournal(any(), any())).thenReturn(List.of());
         lenient().when(systemSettingRepository.findBySettingKey("accounting.ledger.legacy.enabled"))
                 .thenReturn(java.util.Optional.of(legacySetting()));
