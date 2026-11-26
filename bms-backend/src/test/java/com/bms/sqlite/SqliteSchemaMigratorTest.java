@@ -268,6 +268,72 @@ class SqliteSchemaMigratorTest {
                 + event + "','SALE','L" + id + "','" + postingKey + "')");
     }
 
+    /** The chart-of-accounts mapping table before recoverable input tax was added. */
+    private static final String LEGACY_GL_MAPPINGS = """
+            create table gl_mappings (
+                created_at timestamp not null,
+                gl_account_id bigint not null,
+                id integer,
+                event_type varchar(50) not null check (event_type in ('CASH','ACCOUNTS_RECEIVABLE',\
+            'SALES_REVENUE','SALES_DISCOUNT','SALES_TAX_PAYABLE','COST_OF_GOODS_SOLD','INVENTORY',\
+            'ACCOUNTS_PAYABLE','FREIGHT_IN','OPERATING_EXPENSE','INVENTORY_REVALUATION',\
+            'INVENTORY_ADJUSTMENT','EXPENSE_PAYABLE','REFUND_LIABILITY','TENDER_CLEARING',\
+            'CASH_CLEARING')),
+                description varchar(500),
+                primary key (id)
+            )""";
+
+    private static void insertMappingRow(Statement statement, int id, String event, String description)
+            throws SQLException {
+        statement.executeUpdate("insert into gl_mappings (created_at, gl_account_id, id, event_type, description)"
+                + " values ('2026-11-01 08:00:00', 1, " + id + ", '" + event + "', '" + description + "')");
+    }
+
+    @Test
+    void freshSchemaAllowsInputTaxMappingsAndSettlements() throws Exception {
+        Map<String, SqliteSchemaMigrator.Table> expected = SqliteSchemaMigrator.tables(script());
+
+        assertTrue(SqliteSchemaMigrator.enumValues(expected.get("gl_mappings").checks().get("event_type"))
+                        .contains("input_tax"),
+                "the GL mapping check must accept the input-tax event the ledger journal posts");
+        assertTrue(SqliteSchemaMigrator.enumValues(expected.get("profit_ledger").checks().get("settlement_account"))
+                        .contains("input_tax"),
+                "the profit ledger settlement check must accept input-tax reversals");
+    }
+
+    @Test
+    void anUpgradedGlMappingTableAcceptsInputTax(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("lumipos.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute(LEGACY_GL_MAPPINGS);
+            insertMappingRow(statement, 1, "CASH", "Cash receipts");
+            try {
+                insertMappingRow(statement, 2, "INPUT_TAX", "Recoverable purchase input tax");
+                throw new AssertionError("the old check list was expected to reject INPUT_TAX");
+            } catch (SQLException expected) {
+                assertTrue(expected.getMessage().contains("CHECK constraint failed"),
+                        "expected a check failure, got: " + expected.getMessage());
+            }
+        }
+
+        migrate(sqlite(file));
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            insertMappingRow(statement, 2, "INPUT_TAX", "Recoverable purchase input tax");
+            try (ResultSet rs = statement.executeQuery("select count(*) from gl_mappings")) {
+                rs.next();
+                assertEquals(2, rs.getInt(1), "the old mapping plus the new input-tax mapping must be present");
+            }
+            try (ResultSet rs = statement.executeQuery(
+                    "select description from gl_mappings where id = 1")) {
+                assertTrue(rs.next());
+                assertEquals("Cash receipts", rs.getString(1), "the existing mapping must survive the rebuild");
+            }
+        }
+    }
+
     @Test
     void anUpgradedTableAcceptsAnEventTheOldCheckListDidNotAllow(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("lumipos.db");
