@@ -1062,8 +1062,10 @@ public class SaleService {
                     throw new BusinessException(
                             "Open your cash drawer shift to void this cash sale");
                 }
-                reversalSession = cashDrawerSessionService
-                        .getOpenSession(voidingShift.getDrawerSession().getId());
+                // Audit T6-2: getOpenSession() resolves by physical drawer id,
+                // not by the drawer-session id held by the shift.
+                reversalSession = cashDrawerSessionService.getOpenSession(
+                        voidingShift.getDrawerSession().getDrawer().getId());
                 if (reversalSession == null) {
                     throw new BusinessException(
                             "No cash drawer is open. Open a drawer before voiding this cash sale.");

@@ -220,7 +220,6 @@ class SaleServiceVoidCashTrailTest {
                 .thenReturn(Optional.of(ownShift));
         lenient().when(cashDrawerSessionService.getActiveDrawers()).thenReturn(List.of(currentDrawer));
         lenient().when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(todaySession);
-        lenient().when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(todaySession);
         lenient().when(cashDrawerSessionService.recordFinancialMovement(
                 any(), any(), any(), anyString(), anyLong(), any(), any(), anyString()))
                 .thenAnswer(inv -> {
@@ -362,8 +361,7 @@ class SaleServiceVoidCashTrailTest {
         ownShift.setDrawerSession(todaySession);
 
         when(cashDrawerSessionService.getActiveDrawers()).thenReturn(List.of(otherDrawer, currentDrawer));
-        when(cashDrawerSessionService.getOpenSession(71L)).thenReturn(otherSession);
-        when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(todaySession);
+        when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(todaySession);
         when(cashShiftRepository.findByCashierIdAndStatus(1L, "OPEN")).thenReturn(Optional.of(ownShift));
 
         saleService.voidSale(100L, 1L, "Duplicate receipt");
@@ -389,7 +387,7 @@ class SaleServiceVoidCashTrailTest {
 
     @Test
     void voidWithNoOpenDrawerIsRejected() {
-        lenient().when(cashDrawerSessionService.getOpenSession(80L)).thenReturn(null);
+        lenient().when(cashDrawerSessionService.getOpenSession(70L)).thenReturn(null);
 
         BusinessException ex = assertThrows(BusinessException.class,
                 () -> saleService.voidSale(100L, 1L, "Duplicate receipt"));
