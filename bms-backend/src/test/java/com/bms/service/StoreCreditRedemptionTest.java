@@ -9,6 +9,7 @@ import com.bms.entity.CashShift;
 import com.bms.entity.Customer;
 import com.bms.entity.DrawerSessionStatus;
 import com.bms.entity.PaymentMethod;
+import com.bms.entity.PaymentStatus;
 import com.bms.entity.Product;
 import com.bms.entity.Sale;
 import com.bms.entity.SalePayment;
@@ -317,6 +318,51 @@ class StoreCreditRedemptionTest {
         assertTrue(message.contains("zero"), failure.getMessage());
         assertEquals(0, new BigDecimal("50.00").compareTo(customer.getCreditBalance()));
         verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void partialArPaymentLeavesTheCreditTenderLinePending() {
+        Sale sale = creditInvoice();
+        SalePayment creditLine = creditTenderLine(sale);
+        when(saleRepository.findByIdForUpdate(INVOICE_ID)).thenReturn(Optional.of(sale));
+        when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(INVOICE_ID))
+                .thenReturn(new ArrayList<>(List.of(creditLine)));
+
+        ArPaymentRequest request = new ArPaymentRequest();
+        request.setAmount(new BigDecimal("30.00"));
+        request.setPaymentMethod(PaymentMethod.CASH.name());
+
+        arService.recordPayment(INVOICE_ID, request, COLLECTOR_ID);
+
+        assertEquals(PaymentStatus.PENDING, creditLine.getPaymentStatus(),
+                "a 30.00 payment against a 100.00 invoice does not settle its debt line");
+    }
+
+    @Test
+    void fullArPaymentCompletesTheCreditTenderLine() {
+        Sale sale = creditInvoice();
+        SalePayment creditLine = creditTenderLine(sale);
+        when(saleRepository.findByIdForUpdate(INVOICE_ID)).thenReturn(Optional.of(sale));
+        when(salePaymentRepository.findBySaleIdOrderByPaidAtAsc(INVOICE_ID))
+                .thenReturn(new ArrayList<>(List.of(creditLine)));
+
+        ArPaymentRequest request = new ArPaymentRequest();
+        request.setAmount(new BigDecimal("100.00"));
+        request.setPaymentMethod(PaymentMethod.CASH.name());
+
+        arService.recordPayment(INVOICE_ID, request, COLLECTOR_ID);
+
+        assertEquals(PaymentStatus.COMPLETED, creditLine.getPaymentStatus());
+    }
+
+    private static SalePayment creditTenderLine(Sale sale) {
+        SalePayment payment = new SalePayment();
+        payment.setId(900L);
+        payment.setSale(sale);
+        payment.setPaymentMethod(PaymentMethod.CREDIT);
+        payment.setPaymentStatus(PaymentStatus.PENDING);
+        payment.setAmount(new BigDecimal("100.00"));
+        return payment;
     }
 
     @Test
