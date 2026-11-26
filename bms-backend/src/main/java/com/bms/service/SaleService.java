@@ -1404,9 +1404,12 @@ public class SaleService {
         BigDecimal promotionDiscount = BigDecimal.ZERO;
         BigDecimal priceListDiscount = BigDecimal.ZERO;
         boolean anyChanged = false;
-        // Ephemeral lines mirroring the cart so verifyCart allocates the header
-        // discount and computes tax exactly like createSale does.
+        // Ephemeral MERGED lines mirroring createSale: the header discount and
+        // tax are allocated once per product, never once per original request line.
         List<SaleItem> taxLines = new java.util.ArrayList<>();
+        Map<Long, SaleItem> mergedTaxLines = new LinkedHashMap<>();
+        Map<Long, List<Integer>> resultIndexesByProduct = new LinkedHashMap<>();
+        Map<Long, Integer> firstResultIndexByProduct = new LinkedHashMap<>();
 
         Customer pricingCustomer = request.getCustomerId() != null
                 ? customerRepository.findById(request.getCustomerId())
@@ -1427,7 +1430,6 @@ public class SaleService {
 
         // Price each merged product once on its total quantity.
         Map<Long, PricingQuote> mergedQuotes = new LinkedHashMap<>();
-        Map<Long, BigDecimal> mergedLineTotals = new LinkedHashMap<>();
         for (Map.Entry<Long, Integer> entry : mergedQtyByProduct.entrySet()) {
             Product product = productRepository.findById(entry.getKey())
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + entry.getKey()));
@@ -1436,7 +1438,21 @@ public class SaleService {
             PricingQuote quote = promotionService.calculateBestPrice(
                     product, mergedQty, pricingCustomer, pricingMoment, activePromotions);
             mergedQuotes.put(product.getId(), quote);
-            mergedLineTotals.put(product.getId(), lineGross(quote.getUnitPrice(), mergedQty));
+            BigDecimal mergedTotal = lineGross(quote.getUnitPrice(), mergedQty);
+
+            SaleItem mergedLine = new SaleItem();
+            mergedLine.setProduct(product);
+            mergedLine.setQuantity(mergedQty);
+            mergedLine.setTotalPrice(mergedTotal);
+            mergedLine.setCostPriceAtSale(resolveCostPriceAtSale(product));
+            mergedTaxLines.put(product.getId(), mergedLine);
+            taxLines.add(mergedLine);
+            subtotal = subtotal.add(mergedTotal);
+            if ("PROMOTION".equals(quote.getSource())) {
+                promotionDiscount = promotionDiscount.add(nvl(quote.getLineDiscount()));
+            } else if ("PRICE_LIST".equals(quote.getSource())) {
+                priceListDiscount = priceListDiscount.add(nvl(quote.getLineDiscount()));
+            }
 
             if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
                     && product.getExpiryDate().isBefore(shopTimeService.today())) {
@@ -1444,14 +1460,13 @@ public class SaleService {
             }
         }
 
-        // Build per-line results using merged pricing.
+        // Build one response row per original request line, but split the merged
+        // line's total and discount across those rows so neither is counted twice.
         for (CartVerifyRequest.CartVerifyItem itemRequest : request.getItems()) {
             Long productId = itemRequest.getProductId();
             Product product = productRepository.findById(productId)
                     .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
             PricingQuote quote = mergedQuotes.get(productId);
-            BigDecimal mergedTotal = mergedLineTotals.get(productId);
-            int mergedQty = mergedQtyByProduct.get(productId);
 
             CartVerifyResponse.CartVerifyItemResult result = new CartVerifyResponse.CartVerifyItemResult();
             result.setProductId(product.getId());
@@ -1459,7 +1474,6 @@ public class SaleService {
             result.setQuantity(itemRequest.getQuantity());
             result.setUnitPrice(quote.getUnitPrice());
             result.setOriginalUnitPrice(quote.getOriginalUnitPrice());
-            result.setLineDiscount(quote.getLineDiscount());
             result.setPromotionId(quote.getPromotionId());
             result.setPromotionName(quote.getPromotionName());
             result.setPricingSource(quote.getSource());
@@ -1490,23 +1504,25 @@ public class SaleService {
                 messages.add(String.format("%s: %s applied", product.getName(), quote.getPromotionName()));
             }
 
-            // Line total for the requested quantity at the merged unit price.
-            BigDecimal lineTotal = lineGross(quote.getUnitPrice(), itemRequest.getQuantity());
-            result.setLineTotal(lineTotal);
-            subtotal = subtotal.add(lineTotal);
-            SaleItem taxLine = new SaleItem();
-            taxLine.setQuantity(itemRequest.getQuantity());
-            taxLine.setTotalPrice(lineTotal);
-            taxLine.setProduct(product);
-            taxLine.setCostPriceAtSale(product.getCostPrice());
-            taxLines.add(taxLine);
-            if ("PROMOTION".equals(quote.getSource())) {
-                promotionDiscount = promotionDiscount.add(quote.getLineDiscount());
-            } else if ("PRICE_LIST".equals(quote.getSource())) {
-                priceListDiscount = priceListDiscount.add(quote.getLineDiscount());
-            }
-
+            resultIndexesByProduct.computeIfAbsent(productId, key -> new ArrayList<>()).add(results.size());
             results.add(result);
+        }
+
+        for (Map.Entry<Long, List<Integer>> entry : resultIndexesByProduct.entrySet()) {
+            List<Integer> indexes = entry.getValue();
+            List<Integer> quantities = indexes.stream()
+                    .map(index -> request.getItems().get(index).getQuantity())
+                    .toList();
+            List<BigDecimal> totals = allocateByQuantity(
+                    mergedTaxLines.get(entry.getKey()).getTotalPrice(), quantities);
+            List<BigDecimal> discounts = allocateByQuantity(
+                    nvl(mergedQuotes.get(entry.getKey()).getLineDiscount()), quantities);
+            firstResultIndexByProduct.put(entry.getKey(), indexes.get(0));
+            for (int i = 0; i < indexes.size(); i++) {
+                CartVerifyResponse.CartVerifyItemResult result = results.get(indexes.get(i));
+                result.setLineTotal(totals.get(i));
+                result.setLineDiscount(discounts.get(i));
+            }
         }
 
         response.setItems(results);
@@ -1533,7 +1549,10 @@ public class SaleService {
                     java.math.RoundingMode.HALF_UP);
             BigDecimal cost = line.getCostPriceAtSale();
             boolean belowCost = cost != null && netUnit.compareTo(cost) < 0;
-            results.get(i).setBelowCost(belowCost);
+            Integer resultIndex = firstResultIndexByProduct.get(line.getProduct().getId());
+            if (resultIndex != null) {
+                results.get(resultIndex).setBelowCost(belowCost);
+            }
             if (belowCost) {
                 messages.add(String.format("%s is priced below cost after discount (net %s, cost %s)",
                         line.getProduct().getName(), netUnit.setScale(2, java.math.RoundingMode.HALF_UP), cost));
@@ -1549,6 +1568,25 @@ public class SaleService {
     private BigDecimal lineGross(BigDecimal unitPrice, int quantity) {
         return unitPrice.multiply(BigDecimal.valueOf(quantity))
                 .setScale(2, java.math.RoundingMode.HALF_UP);
+    }
+
+    private static BigDecimal nvl(BigDecimal value) {
+        return value == null ? BigDecimal.ZERO : value;
+    }
+
+    /** Split one merged line amount across the original request lines without losing cents. */
+    private static List<BigDecimal> allocateByQuantity(BigDecimal total, List<Integer> quantities) {
+        int totalQuantity = quantities.stream().mapToInt(Integer::intValue).sum();
+        List<BigDecimal> shares = new ArrayList<>();
+        BigDecimal allocated = BigDecimal.ZERO;
+        for (int i = 0; i < quantities.size() - 1; i++) {
+            BigDecimal share = total.multiply(BigDecimal.valueOf(quantities.get(i)))
+                    .divide(BigDecimal.valueOf(totalQuantity), 2, RoundingMode.HALF_UP);
+            shares.add(share);
+            allocated = allocated.add(share);
+        }
+        shares.add(total.subtract(allocated));
+        return shares;
     }
 
     /**
