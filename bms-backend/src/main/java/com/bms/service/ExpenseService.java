@@ -2,10 +2,14 @@ package com.bms.service;
 
 import com.bms.dto.request.ExpenseRequest;
 import com.bms.dto.response.ExpenseResponse;
+import com.bms.entity.CashShift;
+import com.bms.entity.DrawerMovementType;
 import com.bms.entity.Expense;
+import com.bms.entity.User;
 import com.bms.exception.BusinessException;
 import com.bms.exception.ResourceNotFoundException;
 import com.bms.repository.ExpenseRepository;
+import com.bms.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,6 +17,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -37,6 +42,15 @@ public class ExpenseService {
 
     @Autowired
     private com.bms.repository.PurchaseExpenseRepository purchaseExpenseRepository;
+
+    @Autowired
+    private PaymentValidationService paymentValidationService;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private CashDrawerSessionService cashDrawerSessionService;
 
     public ExpenseService(ExpenseRepository expenseRepository) {
         this.expenseRepository = expenseRepository;
@@ -72,19 +86,45 @@ public class ExpenseService {
         if (request.getExpenseDate().isAfter(shopTimeService.today())) {
             throw new BusinessException("Expense date cannot be in the future");
         }
+        BigDecimal amount = requirePositive(request.getAmount()).setScale(2, RoundingMode.HALF_UP);
+        boolean paidFromDrawer = Boolean.TRUE.equals(request.getPaidFromDrawer());
+        CashShift settlementShift = null;
+        User settlementUser = null;
+        if (paidFromDrawer) {
+            settlementShift = paymentValidationService.findOpenShift(userId);
+            if (settlementShift == null || settlementShift.getDrawerSession() == null) {
+                throw new BusinessException(
+                        "CASH_PAYMENT_REQUIRES_DRAWER: Paying an expense from the till requires an open cash drawer shift.");
+            }
+            settlementUser = userRepository.findById(userId)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+        }
+
         Expense expense = new Expense();
         expense.setCategory(parseCategory(request.getCategory()));
         expense.setDescription(request.getDescription());
-        expense.setAmount(requirePositive(request.getAmount()));
+        expense.setAmount(amount);
         expense.setExpenseDate(request.getExpenseDate());
         expense.setCreatedBy(userId);
+        expense.setSettled(paidFromDrawer);
         applyCapitalization(expense, request);
         expenseRepository.save(expense);
+        if (paidFromDrawer) {
+            recordDrawerPayOut(expense, settlementUser, settlementShift, amount);
+        }
         ledgerPostingService.postExpense(expense);
         ExpenseResponse response = ExpenseResponse.fromEntity(expense);
         // O4: non-blocking duplicate hints against purchase-capitalised bills.
         response.setDuplicateWarnings(findDuplicateWarnings(expense));
         return response;
+    }
+
+    /** One physical PAY_OUT per settled expense; the GL skips this reference. */
+    private void recordDrawerPayOut(Expense expense, User user, CashShift shift, BigDecimal amount) {
+        cashDrawerSessionService.recordFinancialMovement(
+                shift.getDrawerSession(), DrawerMovementType.PAY_OUT, amount.negate(),
+                "EXPENSE", expense.getId(), user, shift,
+                "Expense paid from drawer: " + expense.getDescription());
     }
 
     public ExpenseResponse updateExpense(Long id, ExpenseRequest request, Long userId) {
@@ -93,6 +133,9 @@ public class ExpenseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found: " + id));
         if (expense.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Expense not found: " + id);
+        }
+        if (Boolean.TRUE.equals(expense.getSettled())) {
+            throw new BusinessException("A drawer-paid expense cannot be edited; reverse the pay-out first.");
         }
 
         periodGuard.assertOpen(expense.getExpenseDate());
@@ -177,6 +220,9 @@ public class ExpenseService {
                 .orElseThrow(() -> new ResourceNotFoundException("Expense not found: " + id));
         if (expense.getDeletedAt() != null) {
             throw new ResourceNotFoundException("Expense not found: " + id);
+        }
+        if (Boolean.TRUE.equals(expense.getSettled())) {
+            throw new BusinessException("A drawer-paid expense cannot be deleted; reverse the pay-out first.");
         }
         // Assert the period is open before reversing, even for capitalised
         // expenses whose reverseExpense returns early without calling postProfit.

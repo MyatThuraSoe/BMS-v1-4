@@ -24,6 +24,9 @@ public class ExpenseRequest {
     /** O4: optional link to the purchase_expenses row that capitalised it. */
     private Long purchaseExpenseId;
 
+    /** T6-7: true when cash was taken from the open till to pay this expense. */
+    private Boolean paidFromDrawer;
+
     public String getCategory() { return category; }
     public void setCategory(String category) { this.category = category; }
 
@@ -41,4 +44,7 @@ public class ExpenseRequest {
 
     public Long getPurchaseExpenseId() { return purchaseExpenseId; }
     public void setPurchaseExpenseId(Long purchaseExpenseId) { this.purchaseExpenseId = purchaseExpenseId; }
+
+    public Boolean getPaidFromDrawer() { return paidFromDrawer; }
+    public void setPaidFromDrawer(Boolean paidFromDrawer) { this.paidFromDrawer = paidFromDrawer; }
 }
