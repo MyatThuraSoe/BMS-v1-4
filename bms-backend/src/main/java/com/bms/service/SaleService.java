@@ -120,6 +120,12 @@ public class SaleService {
         return saleRepository.findNonVoidedSales(pageable);
     }
 
+    /** T6-8: query the requested range itself; filtering the newest page drops older matches. */
+    public Page<Sale> getSalesByDateRange(LocalDate startDate, LocalDate endDate) {
+        return saleRepository.findByDateRange(startDate.atStartOfDay(),
+                endDate.plusDays(1).atStartOfDay().minusNanos(1), Pageable.unpaged());
+    }
+
     public Page<Sale> getFilteredSales(String range, LocalDate startDate, LocalDate endDate, Long customerId, String invoice, Long cashierId, Boolean includeVoided, Pageable pageable) {
         LocalDate now = shopTimeService.today();
         if (range != null) {

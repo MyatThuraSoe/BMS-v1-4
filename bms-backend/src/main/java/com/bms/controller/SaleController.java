@@ -5,7 +5,6 @@ import com.bms.dto.request.PaymentValidationRequest;
 import com.bms.dto.request.SaleCreateRequest;
 import com.bms.dto.request.SaleReturnRequest;
 import com.bms.dto.response.*;
-import com.bms.entity.Sale;
 import com.bms.service.SaleReturnService;
 import com.bms.service.SaleService;
 import com.bms.service.PaymentValidationService;
@@ -159,15 +158,11 @@ public class SaleController {
     public ResponseEntity<ApiResponse<List<SaleResponse>>> getSalesByDateRange(
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        Pageable pageable = PageRequest.of(0, 1000, Sort.by("saleDate").descending());
-        Page<Sale> sales = saleService.getAllSales(pageable);
-        
-        List<SaleResponse> filteredSales = saleService.convertToResponses(sales).stream()
-            .filter(sale -> !sale.getSaleDate().toLocalDate().isBefore(startDate) && 
-                           !sale.getSaleDate().toLocalDate().isAfter(endDate))
-            .toList();
-        
-        return ResponseEntity.ok(new ApiResponse<>(true, "Sales retrieved successfully", filteredSales));
+        // T6-8: query the requested dates in SQL. The old newest-1000 page
+        // silently dropped every matching sale beyond that cap.
+        List<SaleResponse> sales = saleService.convertToResponses(
+                saleService.getSalesByDateRange(startDate, endDate)).getContent();
+        return ResponseEntity.ok(new ApiResponse<>(true, "Sales retrieved successfully", sales));
     }
 
     @PostMapping("/verify-cart")
