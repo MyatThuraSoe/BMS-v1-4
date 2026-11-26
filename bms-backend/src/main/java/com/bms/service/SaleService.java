@@ -728,6 +728,9 @@ public class SaleService {
                     ? customerRepository.findByIdForUpdate(order.getCustomer().getId())
                     : customerRepository.findById(order.getCustomer().getId()))
                     .orElseThrow(() -> new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId()));
+            if (!Boolean.TRUE.equals(customer.getIsActive()) || customer.getDeletedAt() != null) {
+                throw new ResourceNotFoundException("Customer not found: " + order.getCustomer().getId());
+            }
             redeemedCustomer = customer;
             sale.setCustomer(customer);
             sale.setCustomerDisplayName(buildCustomerDisplayName(customer));

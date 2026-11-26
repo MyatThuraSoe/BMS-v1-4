@@ -150,6 +150,13 @@ public class OrderService {
             if (!Boolean.TRUE.equals(product.getIsActive()) || product.getDeletedAt() != null) {
                 throw new ResourceNotFoundException("Product not found: " + entry.getKey());
             }
+            // T6-10: never reserve goods that have already expired. Conversion
+            // re-checks with manager approval, but an order must not park them.
+            if (Boolean.TRUE.equals(product.getHasExpiry()) && product.getExpiryDate() != null
+                    && product.getExpiryDate().isBefore(shopTimeService.today())) {
+                throw new BusinessException("Product '" + product.getName()
+                        + "' is expired and cannot be ordered");
+            }
             int mergedQty = entry.getValue();
             if (product.getAvailableQuantity() < mergedQty) {
                 throw new BusinessException("Insufficient available stock for product '" + product.getName()
