@@ -38,6 +38,7 @@ import org.mockito.quality.Strictness;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -188,6 +189,7 @@ class StoreCreditRedemptionTest {
         lenient().when(productRepository.findByIdForUpdate(anyLong())).thenReturn(Optional.of(product));
         lenient().when(productRepository.save(any(Product.class))).thenAnswer(inv -> inv.getArgument(0));
         lenient().when(sequenceService.nextInvoiceNumber()).thenReturn("INV-SC-1");
+        lenient().when(sequenceService.nextCreditInvoiceNumber()).thenReturn("CR-SC-1");
         lenient().when(shopInfoRepository.findTopByOrderByIdAsc()).thenReturn(Optional.of(shopInfo()));
         lenient().when(promotionService.getActivePromotions(any())).thenReturn(new ArrayList<>());
         lenient().when(promotionService.calculateBestPrice(any(Product.class), anyInt(), any(), any(), any()))
@@ -284,6 +286,36 @@ class StoreCreditRedemptionTest {
         assertTrue(message.contains("credit"), failure.getMessage());
         assertEquals(0, new BigDecimal("50.00").compareTo(customer.getCreditBalance()),
                 "a rejected redemption must not spend the customer's credit");
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void zeroTotalCashSaleWithStoreCreditLineIsRejectedWithoutDebitingCustomer() {
+        product.setUnitPrice(BigDecimal.ZERO);
+
+        BusinessException failure = assertThrows(BusinessException.class,
+                () -> saleService.createSale(cashSaleWithStoreCredit("30.00"), CASHIER_ID));
+
+        String message = failure.getMessage() == null ? "" : failure.getMessage().toLowerCase();
+        assertTrue(message.contains("zero"), failure.getMessage());
+        assertEquals(0, new BigDecimal("50.00").compareTo(customer.getCreditBalance()),
+                "a zero-total sale must not spend store credit");
+        verify(saleRepository, never()).save(any(Sale.class));
+    }
+
+    @Test
+    void zeroTotalCreditSaleWithStoreCreditLineIsRejectedWithoutNpe() {
+        product.setUnitPrice(BigDecimal.ZERO);
+        SaleCreateRequest request = cashSaleWithStoreCredit("30.00");
+        request.setSaleType(Sale.SaleType.CREDIT.name());
+        request.setDueDate(LocalDate.now().plusDays(1));
+
+        BusinessException failure = assertThrows(BusinessException.class,
+                () -> saleService.createSale(request, CASHIER_ID));
+
+        String message = failure.getMessage() == null ? "" : failure.getMessage().toLowerCase();
+        assertTrue(message.contains("zero"), failure.getMessage());
+        assertEquals(0, new BigDecimal("50.00").compareTo(customer.getCreditBalance()));
         verify(saleRepository, never()).save(any(Sale.class));
     }
 
