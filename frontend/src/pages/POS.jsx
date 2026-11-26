@@ -729,14 +729,14 @@ const POS = () => {
       setError(t('empty_cart'));
       return;
     }
-    const sanitizedCart = cart.map(item => {
-      const qty = parseInt(item.quantity, 10);
-      if (isNaN(qty) || qty <= 0) {
-        return { ...item, quantity: 1 };
-      }
-      return item;
-    });
-    setCart(sanitizedCart);
+    // An empty/zero quantity must block the order just like checkout does;
+    // silently turning it into one unit creates a pre-order nobody intended.
+    const quantityCheck = validateCartQuantities(cart);
+    if (!quantityCheck.ok) {
+      setError(t('enter_quantity'));
+      return;
+    }
+    setCart(quantityCheck.cart);
     setOrderNotes('');
     setShowOrderDialog(true);
   };
@@ -745,7 +745,7 @@ const POS = () => {
     createOrderMutation.mutate({
       items: cart.map((item) => ({
         productId: item.productId,
-        quantity: parseInt(item.quantity, 10) || 1,
+        quantity: parseInt(item.quantity, 10),
       })),
       customerId: registeredMode ? (selectedCustomer?.id ?? null) : null,
       notes: orderNotes.trim() || undefined,
