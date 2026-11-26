@@ -18,7 +18,6 @@ import com.bms.entity.Sale;
 import com.bms.entity.SaleItem;
 import com.bms.entity.SalePayment;
 import com.bms.entity.SaleReturn;
-import com.bms.exception.BusinessException;
 import com.bms.repository.CashDrawerSessionRepository;
 import com.bms.repository.ExpenseRepository;
 import com.bms.repository.ExpenseRepository;
@@ -29,7 +28,6 @@ import com.bms.repository.SaleRepository;
 import com.bms.repository.SaleReturnRepository;
 import com.bms.repository.StockMovementRepository;
 import com.bms.repository.LocationStockRepository;
-import com.bms.repository.SystemSettingRepository;
 import com.bms.util.CashVarianceUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
@@ -80,9 +78,6 @@ public class ReportService {
 
     @Autowired
     private LedgerReadService ledgerReadService;
-
-    @Autowired
-    private SystemSettingRepository systemSettingRepository;
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
@@ -463,17 +458,9 @@ public class ReportService {
             summary.put("outstandingAr", saleRepository.sumOutstandingAr());
             return summary;
         }
-        if (legacyEnabled()) {
-            return getLegacyProfitSummary(startDate, endDate);
-        }
-        throw new BusinessException("Ledger cutover not completed: the legacy report path is disabled. "
-                + "Backfill history and activate ledger reads, or enable accounting.ledger.legacy.enabled.");
-    }
-
-    private boolean legacyEnabled() {
-        return systemSettingRepository.findBySettingKey(LedgerReadService.LEGACY_ENABLED_KEY)
-                .map(setting -> "true".equalsIgnoreCase(setting.getSettingValue()))
-                .orElse(false);
+        // Reports stay available on installs that have not cut over yet. Cutover only
+        // chooses the ledger as the source; it must not turn the dashboard into a 400.
+        return getLegacyProfitSummary(startDate, endDate);
     }
 
     Map<String, Object> getLegacyProfitSummary(LocalDate startDate, LocalDate endDate) {

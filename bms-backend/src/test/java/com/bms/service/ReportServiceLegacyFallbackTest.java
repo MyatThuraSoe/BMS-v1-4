@@ -1,8 +1,6 @@
 package com.bms.service;
 
-import com.bms.entity.SystemSetting;
 import com.bms.repository.SaleRepository;
-import com.bms.repository.SystemSettingRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
@@ -12,7 +10,6 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -33,13 +30,6 @@ class ReportServiceLegacyFallbackTest {
         LedgerReadService ledger = mock(LedgerReadService.class);
         when(ledger.isActive()).thenReturn(false);
 
-        SystemSettingRepository settings = mock(SystemSettingRepository.class);
-        SystemSetting legacyFlag = new SystemSetting();
-        legacyFlag.setSettingKey(LedgerReadService.LEGACY_ENABLED_KEY);
-        legacyFlag.setSettingValue("false");
-        when(settings.findBySettingKey(LedgerReadService.LEGACY_ENABLED_KEY))
-                .thenReturn(Optional.of(legacyFlag));
-
         ShopTimeService shopTime = mock(ShopTimeService.class);
         when(shopTime.startOfDay(start)).thenReturn(start.atStartOfDay());
         when(shopTime.endOfDayExclusive(end)).thenReturn(end.plusDays(1).atStartOfDay());
@@ -54,7 +44,6 @@ class ReportServiceLegacyFallbackTest {
         when(sales.sumOutstandingAr()).thenReturn(BigDecimal.ZERO);
 
         ReflectionTestUtils.setField(service, "ledgerReadService", ledger);
-        ReflectionTestUtils.setField(service, "systemSettingRepository", settings);
         ReflectionTestUtils.setField(service, "shopTimeService", shopTime);
         ReflectionTestUtils.setField(service, "jdbcTemplate", jdbcTemplate);
         ReflectionTestUtils.setField(service, "saleRepository", sales);
