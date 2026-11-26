@@ -146,6 +146,20 @@ class SaleBulkDeleteTest {
     }
 
     @Test
+    void voidedUnpaidInvoicesDoNotBlockRetention() {
+        Sale unpaid = sale("OLD-VOID-1", LocalDateTime.of(2023, 4, 5, 10, 0), Sale.PaymentStatus.UNPAID);
+        unpaid.setIsVoided(true);
+        Sale partial = sale("OLD-VOID-2", LocalDateTime.of(2023, 4, 6, 10, 0), Sale.PaymentStatus.PARTIAL);
+        partial.setIsVoided(true);
+        em.flush();
+
+        Map<String, Object> result = dataRetentionService.deleteSalesOlderThanYears(1, true, cashier.getId());
+
+        assertEquals(2, result.get("deletedSales"));
+        assertEquals(0L, count("SELECT COUNT(s) FROM Sale s WHERE s.invoiceNumber LIKE 'OLD-VOID-%'"));
+    }
+
+    @Test
     void requiresABackupConfirmationBeforeAnythingIsDeleted() {
         Sale sale = sale("OLD-4", LocalDateTime.of(2023, 4, 5, 10, 0), Sale.PaymentStatus.PAID);
         em.flush();
